@@ -1,0 +1,318 @@
+.login-page {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg-white);
+}
+
+/* ── 左侧品牌区 ── */
+.login-brand {
+  position: relative;
+  width: 48%;
+  background: var(--primary-dark);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px;
+}
+
+/* 背景光晕 */
+.brand-bg-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.orb-1 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(102, 126, 234, 0.25) 0%, transparent 70%);
+  top: -100px;
+  right: -80px;
+  animation: orbFloat 8s ease-in-out infinite;
+}
+
+.orb-2 {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(118, 75, 162, 0.2) 0%, transparent 70%);
+  bottom: -60px;
+  left: -60px;
+  animation: orbFloat 10s ease-in-out infinite reverse;
+}
+
+/* 网格背景 */
+.brand-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.brand-content {
+  position: relative;
+  z-index: 1;
+  animation: slideInLeft 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.brand-logo {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 48px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.brand-headline {
+  font-size: 52px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.15;
+  letter-spacing: -2px;
+  margin-bottom: 20px;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.brand-headline-accent {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.brand-desc {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.8;
+  margin-bottom: 56px;
+  font-weight: 400;
+}
+
+.brand-stats {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.brand-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.brand-stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: -0.5px;
+}
+
+.brand-stat-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.5px;
+}
+
+.brand-stat-divider {
+  width: 1px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── 右侧表单区 ── */
+.login-form-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 40px;
+  background: var(--bg-light);
+}
+
+.login-form-card {
+  width: 100%;
+  max-width: 400px;
+  animation: fadeInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.2s both;
+}
+
+.form-header {
+  margin-bottom: 40px;
+}
+
+.form-title {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -1px;
+  margin-bottom: 8px;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.form-subtitle {
+  font-size: 15px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+/* 表单输入框 */
+.login-form .ant-form-item {
+  margin-bottom: 20px;
+}
+
+.login-input.ant-input-affix-wrapper,
+.login-input.ant-input-affix-wrapper-lg {
+  border-radius: 12px !important;
+  border: 1.5px solid var(--border-color) !important;
+  background: var(--bg-white) !important;
+  padding: 12px 16px !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.login-input.ant-input-affix-wrapper:hover {
+  border-color: var(--accent-purple) !important;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.08) !important;
+}
+
+.login-input.ant-input-affix-wrapper-focused,
+.login-input.ant-input-affix-wrapper:focus-within {
+  border-color: var(--accent-purple) !important;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12) !important;
+}
+
+.login-input .ant-input {
+  font-size: 15px !important;
+  background: transparent !important;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.input-icon {
+  color: var(--text-light);
+  font-size: 16px;
+  margin-right: 4px;
+}
+
+/* 记住我 & 忘记密码 */
+.form-options {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+}
+
+.remember-check {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.remember-check .ant-checkbox-checked .ant-checkbox-inner {
+  background: var(--accent-purple);
+  border-color: var(--accent-purple);
+}
+
+.forgot-link {
+  font-size: 14px;
+  color: var(--accent-purple);
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity var(--transition-fast);
+}
+
+.forgot-link:hover {
+  opacity: 0.75;
+}
+
+/* 登录按钮 */
+.login-btn.ant-btn-primary {
+  height: 52px !important;
+  border-radius: 12px !important;
+  background: var(--accent-gradient) !important;
+  border: none !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4) !important;
+  transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.login-btn.ant-btn-primary:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.5) !important;
+  opacity: 0.95;
+}
+
+.login-btn.ant-btn-primary:active {
+  transform: translateY(0) !important;
+}
+
+.btn-arrow {
+  font-size: 14px;
+  transition: transform var(--transition-fast);
+}
+
+.login-btn:hover .btn-arrow {
+  transform: translateX(4px);
+}
+
+/* 底部装饰点 */
+.form-footer {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 40px;
+}
+
+.footer-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-color);
+  transition: all var(--transition-base);
+}
+
+.footer-dot.active {
+  width: 20px;
+  border-radius: 3px;
+  background: var(--accent-gradient);
+}
+
+/* 动画 */
+@keyframes orbFloat {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-20px) scale(1.05); }
+}
+
+/* 响应式 */
+@media (max-width: 900px) {
+  .login-brand {
+    display: none;
+  }
+
+  .login-form-area {
+    background: var(--bg-white);
+  }
+}
+
+@media (max-width: 480px) {
+  .login-form-area {
+    padding: 40px 24px;
+  }
+
+  .form-title {
+    font-size: 28px;
+  }
+}
