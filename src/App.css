@@ -80,6 +80,41 @@
   font-size: 18px;
 }
 
+/* 子菜单标题样式 */
+.app-sider .ant-menu-submenu-title {
+  color: rgba(255, 255, 255, 0.7) !important;
+  border-radius: 8px !important;
+  margin: 4px 0 !important;
+  height: 48px !important;
+  line-height: 48px !important;
+  font-weight: 500;
+  transition: all var(--transition-base) !important;
+}
+
+.app-sider .ant-menu-submenu-title:hover {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* 子菜单展开箭头颜色 */
+.app-sider .ant-menu-submenu-arrow {
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+.app-sider .ant-menu-submenu-title:hover .ant-menu-submenu-arrow {
+  color: #ffffff !important;
+}
+
+/* 子菜单展开后的背景 */
+.app-sider .ant-menu-sub {
+  background: transparent !important;
+}
+
+/* 子菜单项缩进样式 */
+.app-sider .ant-menu-sub .ant-menu-item {
+  padding-left: 48px !important;
+}
+
 /* Header 样式 */
 .app-header {
   background: var(--bg-white) !important;

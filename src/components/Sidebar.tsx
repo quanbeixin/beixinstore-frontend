@@ -1,5 +1,5 @@
 import { Menu } from 'antd';
-import { DashboardOutlined } from '@ant-design/icons';
+import { DashboardOutlined, UserOutlined, SettingOutlined } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 // 侧边栏菜单组件
@@ -9,9 +9,21 @@ const Sidebar = () => {
 
   const menuItems = [
     {
-      key: '/',
+      key: '/dashboard',
       icon: <DashboardOutlined />,
       label: 'Dashboard',
+    },
+    {
+      key: 'system',
+      icon: <SettingOutlined />,
+      label: '系统设置',
+      children: [
+        {
+          key: '/users',
+          icon: <UserOutlined />,
+          label: '用户管理',
+        },
+      ],
     },
   ];
 
@@ -19,8 +31,14 @@ const Sidebar = () => {
     <Menu
       mode="inline"
       selectedKeys={[location.pathname]}
+      defaultOpenKeys={['system']}
       items={menuItems}
-      onClick={({ key }) => navigate(key)}
+      onClick={({ key }) => {
+        // 只有非父菜单项才导航
+        if (key !== 'system') {
+          navigate(key);
+        }
+      }}
     />
   );
 };

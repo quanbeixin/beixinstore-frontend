@@ -1,14 +1,46 @@
-import { Form, Input, Button, Checkbox } from 'antd';
+import { Form, Input, Button, Checkbox, message } from 'antd';
 import { UserOutlined, LockOutlined, ArrowRightOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { useState } from 'react';
 import './Login.css';
 
 // 登录页面组件
 const Login = () => {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
 
-  const onFinish = () => {
-    navigate('/');
+  const onFinish = async (values: { username: string; password: string; remember?: boolean }) => {
+    setLoading(true);
+    try {
+      const response = await fetch('http://localhost:3000/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: values.username,
+          password: values.password,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        // 保存 token 和用户信息到 localStorage
+        localStorage.setItem('token', result.data.token);
+        localStorage.setItem('user', JSON.stringify(result.data.user));
+
+        message.success('登录成功');
+        navigate('/dashboard');
+      } else {
+        message.error(result.message || '登录失败');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      message.error('网络请求失败，请检查后端服务是否启动');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -101,6 +133,7 @@ const Login = () => {
                 htmlType="submit"
                 size="large"
                 className="login-btn"
+                loading={loading}
                 block
               >
                 登录
@@ -114,6 +147,21 @@ const Login = () => {
             <span className="footer-dot" />
             <span className="footer-dot active" />
           </div>
+
+          <div className="form-divider">
+            <span>还没有账户？</span>
+          </div>
+
+          <Link to="/register" className="register-btn-link">
+            <Button
+              type="default"
+              size="large"
+              className="register-btn"
+              block
+            >
+              创建新账户
+            </Button>
+          </Link>
         </div>
       </div>
     </div>
