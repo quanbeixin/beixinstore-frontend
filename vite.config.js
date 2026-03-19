@@ -26,6 +26,7 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
     minify: 'terser',
+    chunkSizeWarningLimit: 1200,
     rollupOptions: {
       output: {
         manualChunks: (id) => {
@@ -35,10 +36,6 @@ export default defineConfig({
             id.includes('node_modules/react-router-dom')
           ) {
             return 'vendor'
-          }
-
-          if (id.includes('node_modules/antd')) {
-            return 'antd'
           }
 
           return undefined
