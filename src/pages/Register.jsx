@@ -1,21 +1,16 @@
-import { Form, Input, Button, message, Card, Divider } from 'antd';
-import { UserOutlined, LockOutlined, MailOutlined, ArrowRightOutlined } from '@ant-design/icons';
-import { useNavigate, Link } from 'react-router-dom';
-import { useState } from 'react';
-import './Register.css';
+﻿import { ArrowRightOutlined, LockOutlined, MailOutlined, UserOutlined } from '@ant-design/icons'
+import { Button, Card, Divider, Form, Input, message } from 'antd'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import './Register.css'
 
-const Register = () => {
-  const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [form] = Form.useForm();
+function Register() {
+  const navigate = useNavigate()
+  const [loading, setLoading] = useState(false)
+  const [form] = Form.useForm()
 
-  const onFinish = async (values: {
-    username: string;
-    email?: string;
-    password: string;
-    confirmPassword: string;
-  }) => {
-    setLoading(true);
+  const onFinish = async (values) => {
+    setLoading(true)
     try {
       const response = await fetch('http://localhost:3000/api/auth/register', {
         method: 'POST',
@@ -28,30 +23,30 @@ const Register = () => {
           password: values.password,
           confirmPassword: values.confirmPassword,
         }),
-      });
+      })
 
-      const result = await response.json();
+      const result = await response.json()
 
       if (response.ok && result.success) {
-        message.success('注册成功，请登录');
-        navigate('/login');
+        message.success('注册成功，请登录')
+        navigate('/login')
       } else {
-        message.error(result.message || '注册失败');
+        message.error(result.message || '注册失败')
       }
     } catch (error) {
-      console.error('Register error:', error);
-      message.error('网络请求失败，请检查后端服务是否启动');
+      console.error('Register error:', error)
+      message.error('网络请求失败，请检查后端服务是否启动')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
     <div className="register-page">
       <div className="register-container">
         <Card className="register-card">
           <div className="register-header">
-            <h2 className="register-title">创建账户</h2>
+            <h2 className="register-title">创建账号</h2>
             <p className="register-subtitle">加入我们的管理系统</p>
           </div>
 
@@ -75,11 +70,7 @@ const Register = () => {
                 },
               ]}
             >
-              <Input
-                prefix={<UserOutlined />}
-                placeholder="用户名"
-                size="large"
-              />
+              <Input prefix={<UserOutlined />} placeholder="用户名" size="large" />
             </Form.Item>
 
             <Form.Item
@@ -91,11 +82,7 @@ const Register = () => {
                 },
               ]}
             >
-              <Input
-                prefix={<MailOutlined />}
-                placeholder="邮箱（可选）"
-                size="large"
-              />
+              <Input prefix={<MailOutlined />} placeholder="邮箱（可选）" size="large" />
             </Form.Item>
 
             <Form.Item
@@ -105,11 +92,7 @@ const Register = () => {
                 { min: 6, message: '密码至少 6 个字符' },
               ]}
             >
-              <Input.Password
-                prefix={<LockOutlined />}
-                placeholder="密码"
-                size="large"
-              />
+              <Input.Password prefix={<LockOutlined />} placeholder="密码" size="large" />
             </Form.Item>
 
             <Form.Item
@@ -119,35 +102,25 @@ const Register = () => {
                 ({ getFieldValue }) => ({
                   validator(_, value) {
                     if (!value || getFieldValue('password') === value) {
-                      return Promise.resolve();
+                      return Promise.resolve()
                     }
-                    return Promise.reject(new Error('两次输入的密码不一致'));
+                    return Promise.reject(new Error('两次输入的密码不一致'))
                   },
                 }),
               ]}
             >
-              <Input.Password
-                prefix={<LockOutlined />}
-                placeholder="确认密码"
-                size="large"
-              />
+              <Input.Password prefix={<LockOutlined />} placeholder="确认密码" size="large" />
             </Form.Item>
 
             <Form.Item>
-              <Button
-                type="primary"
-                htmlType="submit"
-                size="large"
-                loading={loading}
-                block
-              >
+              <Button type="primary" htmlType="submit" size="large" loading={loading} block>
                 注册
                 <ArrowRightOutlined />
               </Button>
             </Form.Item>
           </Form>
 
-          <Divider>已有账户？</Divider>
+          <Divider>已有账号？</Divider>
 
           <Link to="/login" className="login-link">
             返回登录
@@ -155,7 +128,7 @@ const Register = () => {
         </Card>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Register;
+export default Register

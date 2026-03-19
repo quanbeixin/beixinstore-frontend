@@ -1,18 +1,17 @@
-import { Row, Col } from 'antd';
-import {
-  RiseOutlined,
+﻿import {
+  DollarOutlined,
   FallOutlined,
-  UserOutlined,
+  RiseOutlined,
   ShoppingOutlined,
-  DollarOutlined
-} from '@ant-design/icons';
+  UserOutlined,
+} from '@ant-design/icons'
+import { Col, Row } from 'antd'
 
-// Dashboard 页面 - 显示三张精美的统计卡片
-const Dashboard = () => {
+function Dashboard() {
   return (
     <div className="dashboard-container">
       <h1 className="dashboard-title">Dashboard</h1>
-      <p className="dashboard-subtitle">欢迎回来，这是您的数据概览</p>
+      <p className="dashboard-subtitle">欢迎回来，这里是你的业务数据概览。</p>
 
       <Row gutter={[24, 24]}>
         <Col xs={24} sm={12} lg={8}>
@@ -46,7 +45,7 @@ const Dashboard = () => {
             <div className="stat-card-icon gradient">
               <DollarOutlined />
             </div>
-            <div className="stat-card-title">总收入</div>
+            <div className="stat-card-title">总营收</div>
             <div className="stat-card-value">¥156K</div>
             <div className="stat-card-change negative">
               <FallOutlined /> -2.4%
@@ -55,7 +54,7 @@ const Dashboard = () => {
         </Col>
       </Row>
     </div>
-  );
-};
+  )
+}
 
-export default Dashboard;
+export default Dashboard

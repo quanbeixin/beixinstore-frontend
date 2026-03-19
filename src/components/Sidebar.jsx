@@ -1,11 +1,10 @@
-import { Menu } from 'antd';
-import { DashboardOutlined, UserOutlined, SettingOutlined } from '@ant-design/icons';
-import { useNavigate, useLocation } from 'react-router-dom';
+﻿import { DashboardOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons'
+import { Menu } from 'antd'
+import { useLocation, useNavigate } from 'react-router-dom'
 
-// 侧边栏菜单组件
-const Sidebar = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
+function Sidebar() {
+  const navigate = useNavigate()
+  const location = useLocation()
 
   const menuItems = [
     {
@@ -25,7 +24,7 @@ const Sidebar = () => {
         },
       ],
     },
-  ];
+  ]
 
   return (
     <Menu
@@ -34,13 +33,12 @@ const Sidebar = () => {
       defaultOpenKeys={['system']}
       items={menuItems}
       onClick={({ key }) => {
-        // 只有非父菜单项才导航
         if (key !== 'system') {
-          navigate(key);
+          navigate(key)
         }
       }}
     />
-  );
-};
+  )
+}
 
-export default Sidebar;
+export default Sidebar

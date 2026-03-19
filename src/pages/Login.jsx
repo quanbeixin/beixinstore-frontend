@@ -1,16 +1,15 @@
-import { Form, Input, Button, Checkbox, message } from 'antd';
-import { UserOutlined, LockOutlined, ArrowRightOutlined } from '@ant-design/icons';
-import { useNavigate, Link } from 'react-router-dom';
-import { useState } from 'react';
-import './Login.css';
+﻿import { ArrowRightOutlined, LockOutlined, UserOutlined } from '@ant-design/icons'
+import { Button, Checkbox, Form, Input, message } from 'antd'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import './Login.css'
 
-// 登录页面组件
-const Login = () => {
-  const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
+function Login() {
+  const navigate = useNavigate()
+  const [loading, setLoading] = useState(false)
 
-  const onFinish = async (values: { username: string; password: string; remember?: boolean }) => {
-    setLoading(true);
+  const onFinish = async (values) => {
+    setLoading(true)
     try {
       const response = await fetch('http://localhost:3000/api/auth/login', {
         method: 'POST',
@@ -21,31 +20,28 @@ const Login = () => {
           username: values.username,
           password: values.password,
         }),
-      });
+      })
 
-      const result = await response.json();
+      const result = await response.json()
 
       if (response.ok && result.success) {
-        // 保存 token 和用户信息到 localStorage
-        localStorage.setItem('token', result.data.token);
-        localStorage.setItem('user', JSON.stringify(result.data.user));
-
-        message.success('登录成功');
-        navigate('/dashboard');
+        localStorage.setItem('token', result.data.token)
+        localStorage.setItem('user', JSON.stringify(result.data.user))
+        message.success('登录成功')
+        navigate('/dashboard')
       } else {
-        message.error(result.message || '登录失败');
+        message.error(result.message || '登录失败')
       }
     } catch (error) {
-      console.error('Login error:', error);
-      message.error('网络请求失败，请检查后端服务是否启动');
+      console.error('Login error:', error)
+      message.error('网络请求失败，请检查后端服务是否启动')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
     <div className="login-page">
-      {/* 左侧品牌区 */}
       <div className="login-brand">
         <div className="brand-bg-orb orb-1" />
         <div className="brand-bg-orb orb-2" />
@@ -54,11 +50,13 @@ const Login = () => {
         <div className="brand-content">
           <div className="brand-logo">ADMIN</div>
           <h1 className="brand-headline">
-            掌控全局<br />
+            掌控全局
+            <br />
             <span className="brand-headline-accent">从这里开始</span>
           </h1>
           <p className="brand-desc">
-            统一管理您的业务数据、用户与运营，<br />
+            统一管理你的业务数据、用户与运营，
+            <br />
             让决策更清晰，效率更高。
           </p>
 
@@ -81,12 +79,11 @@ const Login = () => {
         </div>
       </div>
 
-      {/* 右侧表单区 */}
       <div className="login-form-area">
         <div className="login-form-card">
           <div className="form-header">
             <h2 className="form-title">欢迎回来</h2>
-            <p className="form-subtitle">请登录您的管理员账号</p>
+            <p className="form-subtitle">请登录你的管理员账号</p>
           </div>
 
           <Form
@@ -124,7 +121,9 @@ const Login = () => {
               <Form.Item name="remember" valuePropName="checked" noStyle>
                 <Checkbox className="remember-check">记住我</Checkbox>
               </Form.Item>
-              <a className="forgot-link" href="#">忘记密码？</a>
+              <a className="forgot-link" href="#">
+                忘记密码？
+              </a>
             </div>
 
             <Form.Item>
@@ -149,23 +148,18 @@ const Login = () => {
           </div>
 
           <div className="form-divider">
-            <span>还没有账户？</span>
+            <span>还没有账号？</span>
           </div>
 
           <Link to="/register" className="register-btn-link">
-            <Button
-              type="default"
-              size="large"
-              className="register-btn"
-              block
-            >
-              创建新账户
+            <Button type="default" size="large" className="register-btn" block>
+              创建新账号
             </Button>
           </Link>
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Login;
+export default Login

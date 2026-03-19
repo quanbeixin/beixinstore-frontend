@@ -1,10 +1,9 @@
-import { Layout, Avatar, Space } from 'antd';
-import { UserOutlined } from '@ant-design/icons';
+﻿import { Avatar, Layout, Space } from 'antd'
+import { UserOutlined } from '@ant-design/icons'
 
-const { Header: AntHeader } = Layout;
+const { Header: AntHeader } = Layout
 
-// 顶部导航栏组件
-const Header = () => {
+function Header() {
   return (
     <AntHeader className="app-header">
       <h2 className="header-title">管理后台</h2>
@@ -12,7 +11,7 @@ const Header = () => {
         <Avatar size={40} icon={<UserOutlined />} />
       </Space>
     </AntHeader>
-  );
-};
+  )
+}
 
-export default Header;
+export default Header
