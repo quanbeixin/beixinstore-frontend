@@ -2,6 +2,7 @@
 import { Button, Checkbox, Form, Input, message } from 'antd'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { loginApi } from '../api/auth'
 import './Login.css'
 
 function Login() {
@@ -11,20 +12,12 @@ function Login() {
   const onFinish = async (values) => {
     setLoading(true)
     try {
-      const response = await fetch('http://localhost:3000/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: values.username,
-          password: values.password,
-        }),
+      const result = await loginApi({
+        username: values.username,
+        password: values.password,
       })
 
-      const result = await response.json()
-
-      if (response.ok && result.success) {
+      if (result?.success) {
         localStorage.setItem('token', result.data.token)
         localStorage.setItem('user', JSON.stringify(result.data.user))
         message.success('登录成功')
@@ -34,7 +27,7 @@ function Login() {
       }
     } catch (error) {
       console.error('Login error:', error)
-      message.error('网络请求失败，请检查后端服务是否启动')
+      message.error(error?.message || '网络请求失败，请检查后端服务是否启动')
     } finally {
       setLoading(false)
     }

@@ -2,6 +2,7 @@
 import { Button, Card, Divider, Form, Input, message } from 'antd'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { registerApi } from '../api/auth'
 import './Register.css'
 
 function Register() {
@@ -12,22 +13,14 @@ function Register() {
   const onFinish = async (values) => {
     setLoading(true)
     try {
-      const response = await fetch('http://localhost:3000/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: values.username,
-          email: values.email || null,
-          password: values.password,
-          confirmPassword: values.confirmPassword,
-        }),
+      const result = await registerApi({
+        username: values.username,
+        email: values.email || null,
+        password: values.password,
+        confirmPassword: values.confirmPassword,
       })
 
-      const result = await response.json()
-
-      if (response.ok && result.success) {
+      if (result?.success) {
         message.success('注册成功，请登录')
         navigate('/login')
       } else {
@@ -35,7 +28,7 @@ function Register() {
       }
     } catch (error) {
       console.error('Register error:', error)
-      message.error('网络请求失败，请检查后端服务是否启动')
+      message.error(error?.message || '网络请求失败，请检查后端服务是否启动')
     } finally {
       setLoading(false)
     }

@@ -18,6 +18,7 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
+import { deleteUserApi, getUsersApi, updateUserApi } from '../api/users'
 
 const { Search } = Input
 
@@ -60,39 +61,14 @@ function Users() {
     }
   }
 
-  const apiRequest = useCallback(async (url, options = {}) => {
-    const token = localStorage.getItem('token')
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    }
-
-    const response = await fetch(`http://localhost:3000${url}`, {
-      ...options,
-      headers,
-    })
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-
-    return response.json()
-  }, [])
-
   const fetchUsers = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({
-        page: String(currentPage),
-        pageSize: String(pageSize),
+      const result = await getUsersApi({
+        page: currentPage,
+        pageSize,
+        ...(keyword ? { keyword } : {}),
       })
-
-      if (keyword) {
-        params.set('keyword', keyword)
-      }
-
-      const result = await apiRequest(`/api/users?${params.toString()}`)
 
       if (result.success) {
         setUsers(result.data.list)
@@ -106,7 +82,7 @@ function Users() {
     } finally {
       setLoading(false)
     }
-  }, [apiRequest, currentPage, pageSize, keyword])
+  }, [currentPage, pageSize, keyword])
 
   useEffect(() => {
     setCurrentUserId(getCurrentUserId())
@@ -146,10 +122,7 @@ function Users() {
       const values = await form.validateFields()
       if (!editingUser) return
 
-      const result = await apiRequest(`/api/users/${editingUser.id}/update`, {
-        method: 'POST',
-        body: JSON.stringify(values),
-      })
+      const result = await updateUserApi(editingUser.id, values)
 
       if (result.success) {
         message.success('更新成功')
@@ -175,9 +148,7 @@ function Users() {
     }
 
     try {
-      const result = await apiRequest(`/api/users/${user.id}/delete`, {
-        method: 'POST',
-      })
+      const result = await deleteUserApi(user.id)
 
       if (result.success) {
         message.success('删除成功')
