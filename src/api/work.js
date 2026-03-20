@@ -4,20 +4,16 @@ export function getWorkItemTypesApi(params) {
   return request.get('/work/item-types', { params })
 }
 
+export function getWorkPhaseTypesApi(params) {
+  return request.get('/work/phase-types', { params })
+}
+
 export function createWorkItemTypeApi(payload) {
   return request.post('/work/item-types', payload)
 }
 
 export function getWorkDemandsApi(params) {
   return request.get('/work/demands', { params })
-}
-
-export function getDemandPhasesApi(demandId) {
-  return request.get(`/work/demands/${demandId}/phases`)
-}
-
-export function batchSaveDemandPhasesApi(demandId, phases) {
-  return request.put(`/work/demands/${demandId}/phases/batch`, { phases })
 }
 
 export function createWorkDemandApi(payload) {

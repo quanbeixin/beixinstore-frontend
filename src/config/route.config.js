@@ -17,6 +17,10 @@ export const PRIVATE_ROUTES = [
     path: '/performance-dashboard',
     componentKey: 'performanceDashboard',
     requiredPermission: null,
+    page: {
+      title: '人效看板',
+      subtitle: '按部门查看效率与产出概览。',
+    },
     menu: {
       section: 'main',
       label: '人效看板',
@@ -27,6 +31,10 @@ export const PRIVATE_ROUTES = [
     path: '/work-logs',
     componentKey: 'workLogs',
     requiredPermission: 'worklog.view.self',
+    page: {
+      title: '个人工作台',
+      subtitle: '每日填报工作记录，关联需求与需求阶段。',
+    },
     menu: {
       section: 'main',
       label: '个人工作台',
@@ -34,19 +42,13 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
-    path: '/work-demands',
-    componentKey: 'workDemands',
-    requiredPermission: 'demand.view',
-    menu: {
-      section: 'main',
-      label: '需求池',
-      icon: 'tool',
-    },
-  },
-  {
     path: '/owner-workbench',
     componentKey: 'ownerWorkbench',
     requiredPermission: 'workbench.view.owner',
+    page: {
+      title: 'Owner工作台',
+      subtitle: '面向部门负责人的每日视图：填报覆盖、团队投入与事项 Owner 评估维护。',
+    },
     menu: {
       section: 'main',
       label: 'Owner工作台',
@@ -54,9 +56,27 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/work-demands',
+    componentKey: 'workDemands',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '需求池',
+      subtitle: '统一维护需求信息，支持筛选、创建与编辑需求。',
+    },
+    menu: {
+      section: 'main',
+      label: '需求池',
+      icon: 'tool',
+    },
+  },
+  {
     path: '/users',
     componentKey: 'users',
     requiredPermission: 'user.view',
+    page: {
+      title: '用户管理',
+      subtitle: '管理系统用户信息、权限和状态。',
+    },
     menu: {
       section: 'system',
       label: '用户管理',
@@ -67,6 +87,10 @@ export const PRIVATE_ROUTES = [
     path: '/departments',
     componentKey: 'departments',
     requiredPermission: 'dept.view',
+    page: {
+      title: '部门管理（树形）',
+      subtitle: '维护组织架构与部门负责人、启停状态。',
+    },
     menu: {
       section: 'system',
       label: '部门管理',
@@ -77,6 +101,10 @@ export const PRIVATE_ROUTES = [
     path: '/user-departments',
     componentKey: 'userDepartments',
     requiredPermission: 'dept.view',
+    page: {
+      title: '用户部门分配',
+      subtitle: '为用户维护唯一部门归属并同步主数据。',
+    },
     menu: {
       section: 'system',
       label: '用户部门分配',
@@ -87,6 +115,10 @@ export const PRIVATE_ROUTES = [
     path: '/options',
     componentKey: 'options',
     requiredPermission: 'option.view',
+    page: {
+      title: '角色管理',
+      subtitle: '维护角色选项。',
+    },
     menu: {
       section: 'system',
       label: '角色管理',
@@ -97,6 +129,10 @@ export const PRIVATE_ROUTES = [
     path: '/role-permissions',
     componentKey: 'rolePermissions',
     requiredPermission: 'option.view',
+    page: {
+      title: '角色权限',
+      subtitle: '为角色分配可访问权限。',
+    },
     menu: {
       section: 'system',
       label: '角色权限',
@@ -107,6 +143,10 @@ export const PRIVATE_ROUTES = [
     path: '/menu-visibility',
     componentKey: 'menuVisibility',
     requiredPermission: 'option.view',
+    page: {
+      title: '菜单权限',
+      subtitle: '按角色配置菜单可见范围与规则。',
+    },
     menu: {
       section: 'system',
       label: '菜单权限',
@@ -117,6 +157,10 @@ export const PRIVATE_ROUTES = [
     path: '/dict-center',
     componentKey: 'dictCenter',
     requiredPermission: 'dict.view',
+    page: {
+      title: '字典中心',
+      subtitle: '集中维护系统字典类型与字典项。',
+    },
     menu: {
       section: 'system',
       label: '字典中心',

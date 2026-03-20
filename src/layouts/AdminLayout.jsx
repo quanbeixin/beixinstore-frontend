@@ -4,7 +4,7 @@ import Sidebar from '../components/Sidebar'
 
 const { Content, Sider } = Layout
 
-function AdminLayout({ children }) {
+ function AdminLayout({ route, children }) {
   return (
     <Layout className="app-layout">
       <Sider width={240} className="app-sider">
@@ -14,7 +14,7 @@ function AdminLayout({ children }) {
         <Sidebar />
       </Sider>
       <Layout>
-        <Header />
+        <Header route={route} />
         <Content className="app-content">{children}</Content>
       </Layout>
     </Layout>

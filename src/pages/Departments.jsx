@@ -279,14 +279,7 @@ function Departments() {
   ]
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>部门管理（树形）</h1>
-        <p style={{ color: '#666', marginTop: '8px' }}>
-          维护企业组织架构，支持上级部门、负责人和启停状态管理。
-        </p>
-      </div>
-
+    <div style={{ padding: '16px' }}>
       <div
         style={{
           marginBottom: '16px',

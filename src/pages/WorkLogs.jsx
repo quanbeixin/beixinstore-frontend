@@ -26,10 +26,10 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createWorkLogApi,
-  getDemandPhasesApi,
   getMyWorkbenchApi,
   getWorkDemandsApi,
   getWorkItemTypesApi,
+  getWorkPhaseTypesApi,
   getWorkLogsApi,
   updateWorkLogApi,
 } from '../api/work'
@@ -95,7 +95,7 @@ function WorkLogs() {
 
   const [itemTypes, setItemTypes] = useState([])
   const [demands, setDemands] = useState([])
-  const [demandPhases, setDemandPhases] = useState([])
+  const [phaseDictItems, setPhaseDictItems] = useState([])
   const [logs, setLogs] = useState([])
   const [workbench, setWorkbench] = useState({
     today: {
@@ -110,7 +110,6 @@ function WorkLogs() {
 
   const [loadingBase, setLoadingBase] = useState(false)
   const [loadingLogs, setLoadingLogs] = useState(false)
-  const [loadingPhases, setLoadingPhases] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [actualSubmitting, setActualSubmitting] = useState(false)
   const [statusSubmittingId, setStatusSubmittingId] = useState(null)
@@ -151,11 +150,11 @@ function WorkLogs() {
 
   const phaseOptions = useMemo(
     () =>
-      demandPhases.map((item) => ({
+      phaseDictItems.map((item) => ({
         value: item.phase_key,
         label: `${item.phase_name} (${item.phase_key})`,
       })),
-    [demandPhases],
+    [phaseDictItems],
   )
 
   const activeItems = useMemo(() => {
@@ -211,9 +210,10 @@ function WorkLogs() {
   const loadBase = useCallback(async () => {
     setLoadingBase(true)
     try {
-      const [typeResult, demandResult, benchResult] = await Promise.all([
+      const [typeResult, demandResult, phaseResult, benchResult] = await Promise.all([
         getWorkItemTypesApi({ enabled_only: 1 }),
         getWorkDemandsApi({ page: 1, pageSize: 1000 }),
+        getWorkPhaseTypesApi({ enabled_only: 1 }),
         getMyWorkbenchApi(),
       ])
 
@@ -227,6 +227,11 @@ function WorkLogs() {
         return
       }
 
+      if (!phaseResult?.success) {
+        message.error(phaseResult?.message || '获取阶段字典失败')
+        return
+      }
+
       if (!benchResult?.success) {
         message.error(benchResult?.message || '获取工作台数据失败')
         return
@@ -234,6 +239,12 @@ function WorkLogs() {
 
       setItemTypes(typeResult.data || [])
       setDemands(demandResult.data?.list || [])
+      setPhaseDictItems(
+        (phaseResult.data || []).map((item) => ({
+          phase_key: item.phase_key,
+          phase_name: item.phase_name,
+        })),
+      )
       setWorkbench(benchResult.data || {})
     } catch (error) {
       message.error(error?.message || '加载基础数据失败')
@@ -265,41 +276,6 @@ function WorkLogs() {
     }
   }, [canView, page, pageSize])
 
-  const loadDemandPhases = useCallback(
-    async (demandId) => {
-      if (!demandId) {
-        setDemandPhases([])
-        form.setFieldValue('phase_key', undefined)
-        return
-      }
-
-      setLoadingPhases(true)
-      try {
-        const result = await getDemandPhasesApi(demandId)
-        if (!result?.success) {
-          message.error(result?.message || '获取需求阶段失败')
-          setDemandPhases([])
-          return
-        }
-
-        const rows = result.data || []
-        setDemandPhases(rows)
-
-        const currentPhase = form.getFieldValue('phase_key')
-        const exists = rows.some((item) => item.phase_key === currentPhase)
-        if (!exists) {
-          form.setFieldValue('phase_key', rows[0]?.phase_key)
-        }
-      } catch (error) {
-        message.error(error?.message || '获取需求阶段失败')
-        setDemandPhases([])
-      } finally {
-        setLoadingPhases(false)
-      }
-    },
-    [form],
-  )
-
   useEffect(() => {
     form.setFieldsValue({
       log_date: getTodayDateString(),
@@ -312,20 +288,8 @@ function WorkLogs() {
     loadLogs()
   }, [loadLogs])
 
-  useEffect(() => {
-    if (!selectedDemandId) {
-      setDemandPhases([])
-      form.setFieldValue('phase_key', undefined)
-      return
-    }
-    loadDemandPhases(selectedDemandId)
-  }, [selectedDemandId, loadDemandPhases, form])
-
   const handleRefresh = async () => {
     await Promise.all([loadBase(), loadLogs()])
-    if (selectedDemandId) {
-      await loadDemandPhases(selectedDemandId)
-    }
   }
 
   const handleCreateLog = async (values) => {
@@ -532,14 +496,7 @@ function WorkLogs() {
   ]
 
   return (
-    <div style={{ padding: 24, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ margin: 0, fontSize: 24 }}>个人工作台</h1>
-        <p style={{ margin: '8px 0 0', color: '#667085' }}>
-          每日填报工作记录，关联需求和阶段并沉淀数据，供个人和管理者查看进展。
-        </p>
-      </div>
-
+    <div style={{ padding: 16, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} md={8}>
           <Card variant="borderless">
@@ -618,7 +575,6 @@ function WorkLogs() {
                   onChange={(next) => {
                     if (!next) {
                       form.setFieldValue('phase_key', undefined)
-                      setDemandPhases([])
                     }
                   }}
                 />
@@ -632,7 +588,6 @@ function WorkLogs() {
                 <Select
                   allowClear
                   showSearch
-                  loading={loadingPhases}
                   options={phaseOptions}
                   placeholder={selectedDemandId ? '请选择需求阶段' : '请先选择关联需求'}
                   optionFilterProp="label"
@@ -643,12 +598,6 @@ function WorkLogs() {
               <Form.Item label="预计完成日期" name="expected_completion_date">
                 <Input type="date" />
               </Form.Item>
-
-              {selectedDemandId && demandPhases.length === 0 ? (
-                <div style={{ marginBottom: 12, color: '#d4380d' }}>
-                  该需求尚未配置阶段预算，请先到需求池的“阶段预算”中维护。
-                </div>
-              ) : null}
 
               <Form.Item
                 label="预计用时(h)"

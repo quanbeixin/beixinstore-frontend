@@ -193,14 +193,7 @@ function RolePermissions() {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>角色权限</h1>
-        <p style={{ color: '#666', marginTop: '8px' }}>
-          为不同角色分配可访问权限。超级管理员角色默认拥有全部权限，禁止手工修改。
-        </p>
-      </div>
-
+    <div style={{ padding: '16px' }}>
       <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between' }}>
         <Button icon={<ReloadOutlined />} onClick={fetchBaseData} loading={loadingBase}>
           刷新

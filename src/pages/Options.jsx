@@ -142,14 +142,7 @@ function Options() {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>角色管理</h1>
-        <p style={{ color: '#666', marginTop: '8px' }}>
-          仅维护角色选项。部门管理已迁移到独立的“部门管理（树形）”。
-        </p>
-      </div>
-
+    <div style={{ padding: '16px' }}>
       <div
         style={{
           marginBottom: '16px',

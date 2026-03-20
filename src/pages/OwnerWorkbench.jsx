@@ -25,7 +25,7 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getOwnerWorkbenchApi, previewNoFillReminderApi, updateWorkLogOwnerEstimateApi } from '../api/work'
+import { getOwnerWorkbenchApi, updateWorkLogOwnerEstimateApi } from '../api/work'
 
 const { Text } = Typography
 
@@ -67,7 +67,6 @@ function getSearchText(item) {
 
 function OwnerWorkbench() {
   const [loading, setLoading] = useState(false)
-  const [remindLoading, setRemindLoading] = useState(false)
   const [savingEstimate, setSavingEstimate] = useState(false)
   const [batchSaving, setBatchSaving] = useState(false)
   const [lastLoadedAt, setLastLoadedAt] = useState(null)
@@ -135,35 +134,11 @@ function OwnerWorkbench() {
     loadData()
   }, [loadData])
 
-  const handlePreviewReminder = async () => {
-    if (noAccess) {
-      message.warning(noAccessMessage)
-      return
-    }
-
-    setRemindLoading(true)
-    try {
-      const result = await previewNoFillReminderApi()
-      if (!result?.success) {
-        message.error(result?.message || '生成未填报提醒预览失败')
-        return
-      }
-      const count = result?.data?.no_fill_members?.length || 0
-      message.success(`提醒预览已生成，未填报 ${count} 人`)
-    } catch (error) {
-      message.error(error?.message || '生成未填报提醒预览失败')
-    } finally {
-      setRemindLoading(false)
-    }
-  }
-
   const overview = data.team_overview || {}
   const dataScope = data.data_scope || {}
   const teamSize = toNumber(overview.team_size, 0)
   const filledUsers = toNumber(overview.filled_users_today, 0)
   const fillRate = teamSize > 0 ? Math.min(100, Math.max(0, (filledUsers / teamSize) * 100)) : 0
-  const scopeLabel = dataScope.scope_label || (dataScope.scope_type === 'ALL' ? '全部部门' : '-')
-  const scopeMemberCount = toNumber(dataScope.team_member_count, teamSize)
   const noFillMembers = Array.isArray(data.no_fill_members) ? data.no_fill_members : []
   const ownerEstimateItems = Array.isArray(data.owner_estimate_items) ? data.owner_estimate_items : []
   const pendingOwnerEstimateCount = toNumber(data.owner_estimate_pending_count, 0)
@@ -400,7 +375,7 @@ function OwnerWorkbench() {
 
   if (noAccess) {
     return (
-      <div style={{ padding: 24 }}>
+      <div style={{ padding: 16 }}>
         <Card variant="borderless">
           <Result
             status="403"
@@ -418,18 +393,7 @@ function OwnerWorkbench() {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ margin: 0, fontSize: 24 }}>Owner工作台</h1>
-        <p style={{ margin: '8px 0 0', color: '#667085' }}>
-          面向部门负责人的每日视图：填报覆盖、团队投入与事项 Owner 评估维护。
-        </p>
-        <Space size={8} wrap style={{ marginTop: 10 }}>
-          <Tag color={dataScope.scope_type === 'ALL' ? 'purple' : 'blue'}>{`数据范围: ${scopeLabel}`}</Tag>
-          <Tag>{`在岗成员: ${scopeMemberCount}`}</Tag>
-        </Space>
-      </div>
-
+    <div style={{ padding: 16, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       <Card
         variant="borderless"
         style={{ marginBottom: 16 }}
@@ -438,9 +402,6 @@ function OwnerWorkbench() {
             <Text type="secondary">最近刷新：{formatDateTime(lastLoadedAt)}</Text>
             <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading}>
               刷新
-            </Button>
-            <Button icon={<AlertOutlined />} loading={remindLoading} onClick={handlePreviewReminder}>
-              未填报提醒预览
             </Button>
           </Space>
         }
@@ -652,4 +613,3 @@ function OwnerWorkbench() {
 }
 
 export default OwnerWorkbench
-

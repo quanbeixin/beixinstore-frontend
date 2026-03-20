@@ -37,7 +37,7 @@ const PAGE_COMPONENTS = {
 }
 
 function PageFallback() {
-  return <div style={{ padding: '24px' }}>页面加载中...</div>
+  return <div style={{ padding: '16px' }}>页面加载中...</div>
 }
 
 function RequireAuth({ children }) {
@@ -73,7 +73,7 @@ function renderPrivateRoute(route) {
     return <Navigate to="/performance-dashboard" replace />
   }
 
-  const inLayout = <AdminLayout>{page}</AdminLayout>
+  const inLayout = <AdminLayout route={route}>{page}</AdminLayout>
 
   return (
     <RequireAuth>

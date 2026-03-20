@@ -118,21 +118,39 @@
 /* Header 样式 */
 .app-header {
   background: var(--bg-white) !important;
-  padding: 0 32px !important;
+  padding: 0 20px !important;
   box-shadow: var(--shadow-sm);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: 80px !important;
+  height: 72px !important;
   animation: fadeInUp 0.6s var(--transition-base);
+}
+
+.header-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
 }
 
 .header-title {
   margin: 0 !important;
-  font-size: 28px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.5px;
+  letter-spacing: -0.2px;
+  line-height: 1.25;
+}
+
+.header-subtitle {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-user {
@@ -156,7 +174,7 @@
 
 /* Content 区域 */
 .app-content {
-  margin: 24px !important;
+  margin: 16px !important;
   background: transparent !important;
   min-height: calc(100vh - 128px);
 }
@@ -303,10 +321,15 @@
 @media (max-width: 768px) {
   .app-header {
     padding: 0 16px !important;
+    height: 64px !important;
   }
 
   .header-title {
-    font-size: 20px;
+    font-size: 18px;
+  }
+
+  .header-subtitle {
+    display: none;
   }
 
   .dashboard-container {

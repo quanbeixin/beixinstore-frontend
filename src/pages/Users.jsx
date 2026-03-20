@@ -337,12 +337,7 @@ function Users() {
   ]
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>用户管理</h1>
-        <p style={{ color: '#666', marginTop: '8px' }}>管理系统用户信息、权限和状态</p>
-      </div>
-
+    <div style={{ padding: '16px' }}>
       <div
         style={{
           marginBottom: '16px',

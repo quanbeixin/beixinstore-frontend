@@ -6,7 +6,7 @@ import { clearAuthStorage, getCurrentUser } from '../utils/access'
 const { Header: AntHeader } = Layout
 const { Text } = Typography
 
-function Header() {
+function Header({ route }) {
   const navigate = useNavigate()
   const currentUser = getCurrentUser()
 
@@ -17,7 +17,10 @@ function Header() {
 
   return (
     <AntHeader className="app-header">
-      <h2 className="header-title">管理后台</h2>
+      <div className="header-main">
+        <h2 className="header-title">{route?.page?.title || route?.menu?.label || ''}</h2>
+        {route?.page?.subtitle ? <Text className="header-subtitle">{route.page.subtitle}</Text> : null}
+      </div>
       <Space className="header-user">
         <Text>{currentUser?.username || '未登录用户'}</Text>
         <Avatar size={40} icon={<UserOutlined />} />

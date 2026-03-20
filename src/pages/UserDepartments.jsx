@@ -219,14 +219,7 @@ function UserDepartments() {
   ]
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>用户部门分配</h1>
-        <p style={{ color: '#666', marginTop: '8px' }}>
-          为用户分配唯一部门（会同步到用户主数据）。
-        </p>
-      </div>
-
+    <div style={{ padding: '16px' }}>
       <div
         style={{
           marginBottom: '16px',

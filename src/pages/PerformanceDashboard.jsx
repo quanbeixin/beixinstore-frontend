@@ -42,12 +42,7 @@ function PerformanceDashboard() {
   ]
 
   return (
-    <div style={{ padding: '24px' }}>
-      <h1 style={{ marginBottom: 8 }}>Performance Dashboard</h1>
-      <p style={{ marginTop: 0, color: '#666' }}>
-        Overview of efficiency and output by department (demo data).
-      </p>
-
+    <div style={{ padding: '16px' }}>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} md={8}>
           <Card title="Total Headcount">
