@@ -224,7 +224,7 @@ function RolePermissions() {
             {roles.length === 0 ? (
               <Empty description="暂无角色" />
             ) : (
-              <Space direction="vertical" size="small" style={{ width: '100%' }}>
+              <Space orientation="vertical" size="small" style={{ width: '100%' }}>
                 {roles.map((role) => {
                   const selected = role.id === selectedRoleId
                   return (
@@ -278,7 +278,7 @@ function RolePermissions() {
             ) : filteredPermissionGroups.length === 0 ? (
               <Empty description="没有匹配的权限点" />
             ) : (
-              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
                 {filteredPermissionGroups.map((group) => {
                   const enabledPermissionIds = group.items
                     .filter((item) => Number(item.enabled) === 1)

@@ -38,7 +38,7 @@ function Login() {
           access: accessSnapshot,
         })
         message.success('登录成功')
-        navigate('/dashboard')
+        navigate('/performance-dashboard')
       } else {
         message.error(result.message || '登录失败')
       }

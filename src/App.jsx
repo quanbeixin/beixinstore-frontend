@@ -6,7 +6,6 @@ import { canAccessRoute, getToken, setMenuVisibilityAccessMap } from './utils/ac
 import './App.css'
 
 const AdminLayout = lazy(() => import('./layouts/AdminLayout'))
-const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Users = lazy(() => import('./pages/Users'))
 const Departments = lazy(() => import('./pages/Departments'))
 const UserDepartments = lazy(() => import('./pages/UserDepartments'))
@@ -19,7 +18,6 @@ const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
 
 const PAGE_COMPONENTS = {
-  dashboard: Dashboard,
   departments: Departments,
   dictCenter: DictCenter,
   login: Login,
@@ -46,7 +44,7 @@ function RequireAuth({ children }) {
 
 function RequireRouteAccess({ route, children }) {
   if (!canAccessRoute(route)) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to="/performance-dashboard" replace />
   }
 
   return children
@@ -66,7 +64,7 @@ function renderPublicRoute(route) {
 function renderPrivateRoute(route) {
   const page = renderPage(route)
   if (!page) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to="/performance-dashboard" replace />
   }
 
   const inLayout = <AdminLayout>{page}</AdminLayout>
@@ -120,7 +118,10 @@ function App() {
     <BrowserRouter>
       <Suspense fallback={<PageFallback />}>
         <Routes>
-          <Route path="/" element={<Navigate to={getToken() ? '/dashboard' : '/login'} replace />} />
+          <Route
+            path="/"
+            element={<Navigate to={getToken() ? '/performance-dashboard' : '/login'} replace />}
+          />
           {PUBLIC_ROUTES.map((route) => (
             <Route key={route.path} path={route.path} element={renderPublicRoute(route)} />
           ))}

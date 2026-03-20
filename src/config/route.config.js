@@ -14,16 +14,6 @@ export const PRIVATE_ROUTES = [
   // requiredPermission: 'user.view'
   // requiredRoles: ['ADMIN', 'SUPER_ADMIN']
   {
-    path: '/dashboard',
-    componentKey: 'dashboard',
-    requiredPermission: null,
-    menu: {
-      section: 'main',
-      label: 'Dashboard',
-      icon: 'dashboard',
-    },
-  },
-  {
     path: '/performance-dashboard',
     componentKey: 'performanceDashboard',
     requiredPermission: null,

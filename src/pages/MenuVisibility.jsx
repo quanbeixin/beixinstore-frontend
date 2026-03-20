@@ -1,5 +1,14 @@
-import { ReloadOutlined, SaveOutlined } from '@ant-design/icons'
-import { Button, Card, Empty, Select, Space, Spin, Tag, Typography, message } from 'antd'
+﻿import {
+  ApartmentOutlined,
+  FilterOutlined,
+  GlobalOutlined,
+  ReloadOutlined,
+  SafetyCertificateOutlined,
+  SaveOutlined,
+  SearchOutlined,
+  TeamOutlined,
+} from '@ant-design/icons'
+import { Button, Card, Empty, Input, Select, Space, Spin, Tag, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   getMenuVisibilityDepartmentsApi,
@@ -19,6 +28,18 @@ const MENU_SCOPE_OPTIONS = [
   { label: '按部门成员可见', value: 'DEPT_MEMBERS' },
   { label: '按部门负责人可见', value: 'DEPT_MANAGERS' },
 ]
+
+const SCOPE_META = {
+  ALL: { label: '全员可见', color: 'green' },
+  ROLE: { label: '按角色可见', color: 'blue' },
+  DEPT_MEMBERS: { label: '按部门成员可见', color: 'gold' },
+  DEPT_MANAGERS: { label: '按部门负责人可见', color: 'purple' },
+}
+
+const SECTION_LABELS = {
+  main: '主导航',
+  system: '系统设置',
+}
 
 function toPositiveInt(value) {
   const num = Number(value)
@@ -91,7 +112,7 @@ function validateRule(rule) {
     (rule.scope_type === 'DEPT_MEMBERS' || rule.scope_type === 'DEPT_MANAGERS') &&
     !toPositiveInt(rule.department_id)
   ) {
-    return '部门范围需要选择一个部门'
+    return '按部门范围可见时，需要选择一个部门'
   }
 
   return ''
@@ -103,6 +124,7 @@ function MenuVisibility() {
   const [loading, setLoading] = useState(false)
   const [savingAll, setSavingAll] = useState(false)
   const [savingMenuKey, setSavingMenuKey] = useState('')
+  const [keyword, setKeyword] = useState('')
 
   const [roles, setRoles] = useState([])
   const [departments, setDepartments] = useState([])
@@ -131,14 +153,81 @@ function MenuVisibility() {
   const menuRouteItems = useMemo(() => {
     return PRIVATE_ROUTES.filter((route) => route.menu).map((route) => {
       const menuKey = String(route.menu.key || route.path || '').trim()
+      const section = route.menu.section || 'main'
       return {
         menuKey,
         path: route.path,
-        section: route.menu.section || 'main',
+        section,
+        sectionLabel: route.menu.sectionLabel || SECTION_LABELS[section] || section,
         label: route.menu.label || route.path,
       }
     })
   }, [])
+
+  const filteredMenuSections = useMemo(() => {
+    const sectionMap = {}
+
+    menuRouteItems.forEach((item) => {
+      if (!sectionMap[item.section]) {
+        sectionMap[item.section] = {
+          key: item.section,
+          label: item.sectionLabel || SECTION_LABELS[item.section] || item.section,
+          items: [],
+        }
+      }
+    })
+
+    const q = keyword.trim().toLowerCase()
+    menuRouteItems.forEach((item) => {
+      const section = sectionMap[item.section]
+      const haystack = `${item.label} ${item.path} ${item.section} ${section.label}`.toLowerCase()
+      if (!q || haystack.includes(q)) {
+        section.items.push(item)
+      }
+    })
+
+    const sections = Object.values(sectionMap).filter((section) => section.items.length > 0)
+    const orderedSections = []
+    const preferredOrder = ['main', 'system']
+
+    preferredOrder.forEach((key) => {
+      const section = sections.find((item) => item.key === key)
+      if (section) orderedSections.push(section)
+    })
+
+    sections.forEach((section) => {
+      if (!preferredOrder.includes(section.key)) {
+        orderedSections.push(section)
+      }
+    })
+
+    return orderedSections
+  }, [menuRouteItems, keyword])
+
+  const filteredMenuCount = useMemo(
+    () => filteredMenuSections.reduce((acc, section) => acc + section.items.length, 0),
+    [filteredMenuSections],
+  )
+
+  const summary = useMemo(() => {
+    const counts = {
+      total: menuRouteItems.length,
+      all: 0,
+      role: 0,
+      deptMembers: 0,
+      deptManagers: 0,
+    }
+
+    menuRouteItems.forEach((item) => {
+      const scope = normalizeRule(rulesMap[item.menuKey] || {}).scope_type
+      if (scope === 'ALL') counts.all += 1
+      if (scope === 'ROLE') counts.role += 1
+      if (scope === 'DEPT_MEMBERS') counts.deptMembers += 1
+      if (scope === 'DEPT_MANAGERS') counts.deptManagers += 1
+    })
+
+    return counts
+  }, [menuRouteItems, rulesMap])
 
   const syncMyMenuAccess = useCallback(async () => {
     try {
@@ -300,128 +389,197 @@ function MenuVisibility() {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>菜单权限</h1>
-        <p style={{ color: '#666', marginTop: '8px' }}>
-          支持按角色、部门成员、部门负责人配置菜单可见范围。
-        </p>
-      </div>
+    <div className="menu-visibility-page">
+      <Card className="menu-visibility-hero" variant="borderless">
+        <div className="menu-visibility-hero-head">
+          <div>
+            <h1 className="menu-visibility-title">菜单权限</h1>
+            <p className="menu-visibility-subtitle">
+              把可见规则和组织关系放在同一页统一管理，减少漏配与误配。
+            </p>
+          </div>
+          <Tag color="geekblue" className="menu-visibility-tag">
+            <SafetyCertificateOutlined /> 权限治理
+          </Tag>
+        </div>
 
-      <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between' }}>
-        <Button icon={<ReloadOutlined />} onClick={fetchBaseData} loading={loading}>
-          刷新
-        </Button>
-        <Button
-          type="primary"
-          icon={<SaveOutlined />}
-          onClick={handleSaveAll}
-          loading={savingAll}
-          disabled={!canManage || loading || menuRouteItems.length === 0}
-        >
-          批量保存全部菜单配置
-        </Button>
-      </div>
+        <div className="menu-visibility-stats">
+          <div className="menu-visibility-stat">
+            <div className="label">
+              <FilterOutlined /> 菜单总数
+            </div>
+            <div className="value">{summary.total}</div>
+          </div>
+          <div className="menu-visibility-stat">
+            <div className="label">
+              <GlobalOutlined /> 全员可见
+            </div>
+            <div className="value">{summary.all}</div>
+          </div>
+          <div className="menu-visibility-stat">
+            <div className="label">
+              <TeamOutlined /> 角色可见
+            </div>
+            <div className="value">{summary.role}</div>
+          </div>
+          <div className="menu-visibility-stat">
+            <div className="label">
+              <ApartmentOutlined /> 部门可见
+            </div>
+            <div className="value">{summary.deptMembers + summary.deptManagers}</div>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="menu-visibility-toolbar" variant="borderless">
+        <div className="toolbar-left">
+          <Input
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder="搜索菜单名称 / 路径 / 分组"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            style={{ width: 320 }}
+          />
+          <Text type="secondary">匹配 {filteredMenuCount} / {menuRouteItems.length} 项</Text>
+        </div>
+
+        <Space>
+          <Button icon={<ReloadOutlined />} onClick={fetchBaseData} loading={loading}>
+            刷新
+          </Button>
+          <Button
+            type="primary"
+            icon={<SaveOutlined />}
+            onClick={handleSaveAll}
+            loading={savingAll}
+            disabled={!canManage || loading || menuRouteItems.length === 0}
+          >
+            批量保存全部菜单配置
+          </Button>
+        </Space>
+      </Card>
 
       {loading ? (
-        <Spin />
+        <Card className="menu-visibility-panel">
+          <Spin />
+        </Card>
       ) : (
-        <Card>
-          {menuRouteItems.length === 0 ? (
-            <Empty description="暂无可配置菜单" />
+        <Card className="menu-visibility-panel">
+          {filteredMenuCount === 0 ? (
+            <Empty description={keyword ? '没有匹配的菜单' : '暂无可配置菜单'} />
           ) : (
-            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              {menuRouteItems.map((item) => {
-                const rule = normalizeRule(rulesMap[item.menuKey] || {})
-                const isRoleScope = rule.scope_type === 'ROLE'
-                const isDeptScope =
-                  rule.scope_type === 'DEPT_MEMBERS' || rule.scope_type === 'DEPT_MANAGERS'
-
-                return (
-                  <div
-                    key={item.menuKey}
-                    style={{
-                      border: '1px solid #f0f0f0',
-                      borderRadius: 8,
-                      padding: '12px',
-                      display: 'grid',
-                      gridTemplateColumns: '260px 200px 1fr auto',
-                      gap: '12px',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{item.label}</div>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {item.path} | {item.section}
-                      </Text>
+            <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+              {filteredMenuSections.map((section) => (
+                <div className="menu-visibility-section" key={section.key}>
+                  <div className="menu-visibility-section-head">
+                    <div className="menu-visibility-section-title">
+                      {section.key === 'main' ? <GlobalOutlined /> : <ApartmentOutlined />}
+                      <span>{section.label}</span>
+                      <Tag>父级</Tag>
                     </div>
-
-                    <Select
-                      value={rule.scope_type}
-                      options={MENU_SCOPE_OPTIONS}
-                      disabled={!canManage || savingAll}
-                      onChange={(value) => {
-                        if (value === 'ALL') {
-                          updateRuleDraft(item.menuKey, {
-                            scope_type: 'ALL',
-                            department_id: null,
-                            role_keys: [],
-                          })
-                          return
-                        }
-
-                        if (value === 'ROLE') {
-                          updateRuleDraft(item.menuKey, {
-                            scope_type: 'ROLE',
-                            department_id: null,
-                          })
-                          return
-                        }
-
-                        updateRuleDraft(item.menuKey, {
-                          scope_type: value,
-                          role_keys: [],
-                        })
-                      }}
-                    />
-
-                    {isRoleScope ? (
-                      <Select
-                        mode="multiple"
-                        allowClear
-                        placeholder="选择角色"
-                        value={rule.role_keys}
-                        options={roleOptions}
-                        disabled={!canManage || savingAll}
-                        onChange={(vals) => updateRuleDraft(item.menuKey, { role_keys: normalizeRoleKeys(vals) })}
-                      />
-                    ) : isDeptScope ? (
-                      <Select
-                        allowClear
-                        placeholder="选择部门"
-                        value={rule.department_id}
-                        options={departmentOptions}
-                        disabled={!canManage || savingAll}
-                        onChange={(value) => updateRuleDraft(item.menuKey, { department_id: toPositiveInt(value) })}
-                      />
-                    ) : (
-                      <div>
-                        <Tag color="green">无需额外条件</Tag>
-                      </div>
-                    )}
-
-                    <Button
-                      icon={<SaveOutlined />}
-                      loading={savingMenuKey === item.menuKey}
-                      disabled={!canManage || savingAll}
-                      onClick={() => handleSaveSingle(item.menuKey)}
-                    >
-                      保存
-                    </Button>
+                    <Text type="secondary">{section.items.length} 个子菜单</Text>
                   </div>
-                )
-              })}
+
+                  <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+                    {section.items.map((item) => {
+                      const rule = normalizeRule(rulesMap[item.menuKey] || {})
+                      const isRoleScope = rule.scope_type === 'ROLE'
+                      const isDeptScope =
+                        rule.scope_type === 'DEPT_MEMBERS' || rule.scope_type === 'DEPT_MANAGERS'
+                      const scopeMeta = SCOPE_META[rule.scope_type] || SCOPE_META.ALL
+
+                      return (
+                        <div className="menu-visibility-rule" key={item.menuKey}>
+                          <div className="menu-visibility-rule-meta">
+                            <div className="title-line">
+                              <span className="title">{item.label}</span>
+                              <Tag>子级</Tag>
+                              <Tag color={scopeMeta.color}>{scopeMeta.label}</Tag>
+                            </div>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              父级：{item.sectionLabel} | 路径：{item.path}
+                            </Text>
+                          </div>
+
+                          <div className="menu-visibility-rule-controls">
+                            <Select
+                              value={rule.scope_type}
+                              options={MENU_SCOPE_OPTIONS}
+                              disabled={!canManage || savingAll}
+                              onChange={(value) => {
+                                if (value === 'ALL') {
+                                  updateRuleDraft(item.menuKey, {
+                                    scope_type: 'ALL',
+                                    department_id: null,
+                                    role_keys: [],
+                                  })
+                                  return
+                                }
+
+                                if (value === 'ROLE') {
+                                  updateRuleDraft(item.menuKey, {
+                                    scope_type: 'ROLE',
+                                    department_id: null,
+                                  })
+                                  return
+                                }
+
+                                updateRuleDraft(item.menuKey, {
+                                  scope_type: value,
+                                  role_keys: [],
+                                })
+                              }}
+                            />
+
+                            {isRoleScope ? (
+                              <Select
+                                mode="multiple"
+                                allowClear
+                                placeholder="选择角色"
+                                value={rule.role_keys}
+                                options={roleOptions}
+                                disabled={!canManage || savingAll}
+                                onChange={(vals) =>
+                                  updateRuleDraft(item.menuKey, { role_keys: normalizeRoleKeys(vals) })
+                                }
+                              />
+                            ) : null}
+
+                            {isDeptScope ? (
+                              <Select
+                                allowClear
+                                placeholder="选择部门"
+                                value={rule.department_id}
+                                options={departmentOptions}
+                                disabled={!canManage || savingAll}
+                                onChange={(value) =>
+                                  updateRuleDraft(item.menuKey, { department_id: toPositiveInt(value) })
+                                }
+                              />
+                            ) : null}
+
+                            {!isRoleScope && !isDeptScope ? (
+                              <div className="no-filter">
+                                <GlobalOutlined /> 当前菜单默认对所有登录用户可见
+                              </div>
+                            ) : null}
+
+                            <Button
+                              icon={<SaveOutlined />}
+                              loading={savingMenuKey === item.menuKey}
+                              disabled={!canManage || savingAll}
+                              onClick={() => handleSaveSingle(item.menuKey)}
+                            >
+                              保存
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </Space>
+                </div>
+              ))}
             </Space>
           )}
         </Card>
