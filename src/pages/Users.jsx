@@ -18,7 +18,16 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
-import { deleteUserApi, getUsersApi, updateUserApi } from '../api/users'
+import { getDictItemsApi } from '../api/configDict'
+import { getDepartmentsApi } from '../api/org'
+import { getOptionsApi } from '../api/options'
+import {
+  createUserApi,
+  deleteUserApi,
+  getUserByIdApi,
+  getUsersApi,
+  updateUserApi,
+} from '../api/users'
 
 const { Search } = Input
 
@@ -30,21 +39,14 @@ function Users() {
   const [pageSize, setPageSize] = useState(10)
   const [keyword, setKeyword] = useState('')
   const [isModalVisible, setIsModalVisible] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
   const [currentUserId, setCurrentUserId] = useState(null)
-
-  const [departments] = useState([
-    { id: 1, name: '技术部' },
-    { id: 2, name: '运营部' },
-    { id: 3, name: '市场部' },
-    { id: 4, name: '财务部' },
-  ])
-
-  const [roles] = useState([
-    { id: 1, name: '超级管理员' },
-    { id: 2, name: '运营' },
-    { id: 3, name: '编辑' },
-    { id: 4, name: '审核员' },
+  const [departments, setDepartments] = useState([])
+  const [roles, setRoles] = useState([])
+  const [statusOptions, setStatusOptions] = useState([
+    { item_code: 'ACTIVE', item_name: '正常', color: 'success' },
+    { item_code: 'DISABLED', item_name: '停用', color: 'default' },
   ])
 
   const [form] = Form.useForm()
@@ -84,10 +86,46 @@ function Users() {
     }
   }, [currentPage, pageSize, keyword])
 
+  const fetchOptions = useCallback(async () => {
+    try {
+      const [departmentResult, roleResult] = await Promise.all([
+        getDepartmentsApi({ mode: 'flat' }),
+        getOptionsApi('roles'),
+      ])
+
+      if (departmentResult.success) {
+        setDepartments(departmentResult.data)
+      } else {
+        message.error(departmentResult.message || '获取部门选项失败')
+      }
+
+      if (roleResult.success) {
+        setRoles(roleResult.data)
+      } else {
+        message.error(roleResult.message || '获取角色选项失败')
+      }
+    } catch (error) {
+      message.error(error?.message || '获取系统选项失败')
+    }
+  }, [])
+
+  const fetchStatusOptions = useCallback(async () => {
+    try {
+      const result = await getDictItemsApi('user_status', { enabledOnly: true })
+      if (result.success && Array.isArray(result.data) && result.data.length > 0) {
+        setStatusOptions(result.data)
+      }
+    } catch (error) {
+      console.warn('Fetch user_status options failed, fallback to defaults:', error)
+    }
+  }, [])
+
   useEffect(() => {
     setCurrentUserId(getCurrentUserId())
     fetchUsers()
-  }, [fetchUsers])
+    fetchOptions()
+    fetchStatusOptions()
+  }, [fetchUsers, fetchOptions, fetchStatusOptions])
 
   const handleSearch = (value) => {
     setKeyword(value)
@@ -99,16 +137,46 @@ function Users() {
     setPageSize(pagination.pageSize || 10)
   }
 
-  const handleEdit = (user) => {
+  const refreshUsersAfterMutation = () => {
+    if (currentPage === 1) {
+      fetchUsers()
+      return
+    }
+
+    setCurrentPage(1)
+  }
+
+  const handleCreate = () => {
+    setEditingUser(null)
+    form.resetFields()
+    form.setFieldsValue({
+      status_code: 'ACTIVE',
+    })
+    setIsModalVisible(true)
+  }
+
+  const handleEdit = async (user) => {
     setEditingUser(user)
     setIsModalVisible(true)
+    try {
+      const result = await getUserByIdApi(user.id)
+      if (!result.success) {
+        message.error(result.message || '获取用户详情失败')
+        return
+      }
 
-    const roleIds = user.role_ids ? user.role_ids.split(',').map(Number) : []
-    form.setFieldsValue({
-      email: user.email,
-      department_id: user.department_id,
-      role_ids: roleIds,
-    })
+      const detail = result.data
+      const roleIds = detail.role_ids ? String(detail.role_ids).split(',').map(Number) : []
+      form.setFieldsValue({
+        email: detail.email,
+        department_id: detail.department_id,
+        status_code: detail.status_code || 'ACTIVE',
+        role_ids: roleIds,
+      })
+    } catch (error) {
+      message.error(error?.message || '获取用户详情失败')
+      console.error('Fetch user detail error:', error)
+    }
   }
 
   const handleCancel = () => {
@@ -119,25 +187,42 @@ function Users() {
 
   const handleSubmit = async () => {
     try {
+      setSubmitting(true)
       const values = await form.validateFields()
-      if (!editingUser) return
+      const payload = {
+        email: values.email || null,
+        department_id: values.department_id ?? null,
+        status_code: values.status_code || 'ACTIVE',
+        role_ids: values.role_ids || [],
+      }
 
-      const result = await updateUserApi(editingUser.id, values)
+      let result
+      if (editingUser) {
+        result = await updateUserApi(editingUser.id, payload)
+      } else {
+        result = await createUserApi({
+          ...payload,
+          username: values.username,
+          password: values.password,
+        })
+      }
 
       if (result.success) {
-        message.success('更新成功')
+        message.success(editingUser ? '更新成功' : '新增成功')
         handleCancel()
-        fetchUsers()
+        refreshUsersAfterMutation()
       } else {
-        message.error(result.message || '更新失败')
+        message.error(result.message || (editingUser ? '更新失败' : '新增失败'))
       }
     } catch (error) {
       if (error?.errorFields) {
         message.error('请检查表单输入')
       } else {
-        message.error('网络请求失败')
-        console.error('Update user error:', error)
+        message.error(error?.message || '网络请求失败')
+        console.error('Submit user error:', error)
       }
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -152,7 +237,7 @@ function Users() {
 
       if (result.success) {
         message.success('删除成功')
-        fetchUsers()
+        refreshUsersAfterMutation()
       } else {
         message.error(result.message || '删除失败')
       }
@@ -212,7 +297,12 @@ function Users() {
       title: '状态',
       key: 'status',
       width: 100,
-      render: () => <Tag color="success">正常</Tag>,
+      render: (_, record) => {
+        const option = statusOptions.find((item) => item.item_code === record.status_code)
+        const label = option?.item_name || record.status_code || '未知'
+        const color = option?.color || 'default'
+        return <Tag color={color}>{label}</Tag>
+      },
     },
     {
       title: '操作',
@@ -273,7 +363,7 @@ function Users() {
             刷新
           </Button>
         </Space>
-        <Button type="primary" icon={<PlusOutlined />}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
           新增用户
         </Button>
       </div>
@@ -297,15 +387,70 @@ function Users() {
       />
 
       <Modal
-        title="编辑用户"
+        title={editingUser ? '编辑用户' : '新增用户'}
         open={isModalVisible}
         onOk={handleSubmit}
         onCancel={handleCancel}
         okText="保存"
         cancelText="取消"
         width={500}
+        confirmLoading={submitting}
       >
         <Form form={form} layout="vertical" style={{ marginTop: '24px' }}>
+          {!editingUser && (
+            <>
+              <Form.Item
+                label="用户名"
+                name="username"
+                rules={[
+                  { required: true, message: '请输入用户名' },
+                  { min: 2, message: '用户名至少 2 个字符' },
+                  { max: 20, message: '用户名最多 20 个字符' },
+                  {
+                    pattern: /^[a-zA-Z0-9_]+$/,
+                    message: '用户名只能包含字母、数字和下划线',
+                  },
+                ]}
+              >
+                <Input placeholder="请输入用户名" />
+              </Form.Item>
+
+              <Form.Item
+                label="密码"
+                name="password"
+                rules={[
+                  { required: true, message: '请输入密码' },
+                  { min: 8, message: '密码至少 8 个字符' },
+                  {
+                    pattern: /^(?=.*[A-Za-z])(?=.*\d).+$/,
+                    message: '密码需同时包含字母和数字',
+                  },
+                ]}
+              >
+                <Input.Password placeholder="请输入密码" />
+              </Form.Item>
+
+              <Form.Item
+                label="确认密码"
+                name="confirmPassword"
+                dependencies={['password']}
+                rules={[
+                  { required: true, message: '请再次输入密码' },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      if (!value || getFieldValue('password') === value) {
+                        return Promise.resolve()
+                      }
+                      return Promise.reject(new Error('两次输入的密码不一致'))
+                    },
+                  }),
+                ]}
+              >
+                <Input.Password placeholder="请再次输入密码" />
+              </Form.Item>
+            </>
+          )}
+
           <Form.Item
             label="邮箱"
             name="email"
@@ -328,6 +473,21 @@ function Users() {
               placeholder="请选择角色"
               allowClear
               options={roles.map((role) => ({ value: role.id, label: role.name }))}
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="状态"
+            name="status_code"
+            rules={[{ required: true, message: '请选择用户状态' }]}
+            initialValue="ACTIVE"
+          >
+            <Select
+              placeholder="请选择状态"
+              options={statusOptions.map((item) => ({
+                value: item.item_code,
+                label: item.item_name,
+              }))}
             />
           </Form.Item>
         </Form>

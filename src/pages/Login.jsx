@@ -2,7 +2,8 @@
 import { Button, Checkbox, Form, Input, message } from 'antd'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { loginApi } from '../api/auth'
+import { getAccessApi, loginApi } from '../api/auth'
+import { setAuthStorage } from '../utils/access'
 import './Login.css'
 
 function Login() {
@@ -18,8 +19,24 @@ function Login() {
       })
 
       if (result?.success) {
-        localStorage.setItem('token', result.data.token)
-        localStorage.setItem('user', JSON.stringify(result.data.user))
+        setAuthStorage({
+          token: result.data.token,
+          user: result.data.user,
+        })
+
+        let accessSnapshot = null
+        try {
+          const accessResult = await getAccessApi()
+          if (accessResult?.success) {
+            accessSnapshot = accessResult.data
+          }
+        } catch (accessError) {
+          console.warn('Fetch access snapshot failed:', accessError)
+        }
+
+        setAuthStorage({
+          access: accessSnapshot,
+        })
         message.success('登录成功')
         navigate('/dashboard')
       } else {

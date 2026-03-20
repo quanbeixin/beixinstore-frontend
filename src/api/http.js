@@ -1,4 +1,5 @@
-import axios from 'axios'
+﻿import axios from 'axios'
+import { clearAuthStorage } from '../utils/access'
 
 const instance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
@@ -26,10 +27,13 @@ instance.interceptors.request.use(
 instance.interceptors.response.use(
   (response) => response.data,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-      window.location.href = '/login'
+    const requestUrl = error.config?.url || ''
+    const isAuthRequest =
+      requestUrl.includes('/auth/login') || requestUrl.includes('/auth/register')
+
+    if (error.response?.status === 401 && !isAuthRequest && window.location.pathname !== '/login') {
+      clearAuthStorage()
+      window.location.replace('/login')
     }
 
     const message = error.response?.data?.message || error.message || '请求失败'

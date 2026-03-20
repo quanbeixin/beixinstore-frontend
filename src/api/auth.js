@@ -1,4 +1,4 @@
-import { request } from './http'
+﻿import { request } from './http'
 
 export function loginApi(payload) {
   return request.post('/auth/login', payload)
@@ -6,4 +6,8 @@ export function loginApi(payload) {
 
 export function registerApi(payload) {
   return request.post('/auth/register', payload)
+}
+
+export function getAccessApi() {
+  return request.get('/auth/access')
 }
