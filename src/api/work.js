@@ -40,6 +40,10 @@ export function updateWorkLogApi(logId, payload) {
   return request.put(`/work/logs/${logId}`, payload)
 }
 
+export function updateWorkLogOwnerEstimateApi(logId, payload) {
+  return request.put(`/work/logs/${logId}/owner-estimate`, payload)
+}
+
 export function getMyWorkbenchApi() {
   return request.get('/work/workbench/me')
 }

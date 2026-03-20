@@ -1,46 +1,37 @@
 import {
   AlertOutlined,
+  EditOutlined,
   ReloadOutlined,
-  SearchOutlined,
   TeamOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
-import { Button, Card, Col, Empty, Input, Progress, Row, Select, Space, Table, Tag, Typography, message } from 'antd'
+import {
+  Button,
+  Card,
+  Col,
+  Empty,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Result,
+  Row,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getOwnerWorkbenchApi, previewNoFillReminderApi } from '../api/work'
+import { getOwnerWorkbenchApi, previewNoFillReminderApi, updateWorkLogOwnerEstimateApi } from '../api/work'
 
 const { Text } = Typography
 
 function toNumber(value, fallback = 0) {
   const num = Number(value)
   return Number.isFinite(num) ? num : fallback
-}
-
-function getPriorityColor(priority) {
-  if (priority === 'P0') return 'red'
-  if (priority === 'P1') return 'orange'
-  if (priority === 'P2') return 'blue'
-  return 'default'
-}
-
-function getStatusColor(status) {
-  if (status === 'DONE') return 'success'
-  if (status === 'IN_PROGRESS') return 'processing'
-  if (status === 'CANCELLED') return 'default'
-  return 'warning'
-}
-
-function renderDeviation(value) {
-  const num = toNumber(value, 0)
-  const color = num > 0 ? '#d4380d' : num < 0 ? '#389e0d' : '#595959'
-  return <span style={{ color }}>{num > 0 ? `+${num.toFixed(1)}` : num.toFixed(1)}</span>
-}
-
-function renderDeviationRate(value) {
-  if (value === null || value === undefined) return '-'
-  const num = toNumber(value, 0)
-  const color = num > 0 ? '#d4380d' : num < 0 ? '#389e0d' : '#595959'
-  return <span style={{ color }}>{num > 0 ? `+${num.toFixed(1)}%` : `${num.toFixed(1)}%`}</span>
 }
 
 function formatDateTime(value) {
@@ -50,26 +41,60 @@ function formatDateTime(value) {
   return text.slice(0, 19)
 }
 
-function calcDemandDeviationRate(row) {
-  const ownerEstimate = toNumber(row?.owner_estimate_hours, 0)
-  if (ownerEstimate <= 0) return null
-  return (toNumber(row?.deviation_hours, 0) / ownerEstimate) * 100
+function formatDateOnly(value) {
+  if (!value) return '-'
+  const text = String(value)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
+  if (text.includes('T')) return text.split('T')[0]
+  return text.slice(0, 10)
+}
+
+function getSearchText(item) {
+  return [
+    item?.id,
+    item?.username,
+    item?.item_type_name,
+    item?.demand_id,
+    item?.demand_name,
+    item?.phase_name,
+    item?.phase_key,
+    item?.description,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
 }
 
 function OwnerWorkbench() {
   const [loading, setLoading] = useState(false)
   const [remindLoading, setRemindLoading] = useState(false)
+  const [savingEstimate, setSavingEstimate] = useState(false)
+  const [batchSaving, setBatchSaving] = useState(false)
   const [lastLoadedAt, setLastLoadedAt] = useState(null)
+  const [noAccess, setNoAccess] = useState(false)
+  const [noAccessMessage, setNoAccessMessage] = useState('仅部门负责人可访问 Owner 工作台')
 
-  const [demandKeyword, setDemandKeyword] = useState('')
-  const [demandStatusFilter, setDemandStatusFilter] = useState('ALL')
-  const [demandRiskFilter, setDemandRiskFilter] = useState('RISK_ONLY')
+  const [estimateModalOpen, setEstimateModalOpen] = useState(false)
+  const [editingItem, setEditingItem] = useState(null)
+  const [batchModalOpen, setBatchModalOpen] = useState(false)
 
-  const [phaseKeyword, setPhaseKeyword] = useState('')
-  const [phaseStatusFilter, setPhaseStatusFilter] = useState('ALL')
-  const [phaseRiskFilter, setPhaseRiskFilter] = useState('RISK_ONLY')
+  const [keyword, setKeyword] = useState('')
+  const [memberFilter, setMemberFilter] = useState()
+  const [phaseFilter, setPhaseFilter] = useState()
+  const [pendingOnly, setPendingOnly] = useState(true)
+  const [selectedRowKeys, setSelectedRowKeys] = useState([])
+
+  const [estimateForm] = Form.useForm()
+  const [batchForm] = Form.useForm()
 
   const [data, setData] = useState({
+    data_scope: {
+      scope_type: 'SELF_DEPARTMENT',
+      scope_label: '-',
+      department_id: null,
+      department_name: null,
+      team_member_count: 0,
+    },
     team_overview: {
       team_size: 0,
       filled_users_today: 0,
@@ -78,8 +103,8 @@ function OwnerWorkbench() {
       total_actual_hours_today: 0,
     },
     no_fill_members: [],
-    demand_risks: [],
-    phase_risks: [],
+    owner_estimate_items: [],
+    owner_estimate_pending_count: 0,
   })
 
   const loadData = useCallback(async () => {
@@ -90,10 +115,17 @@ function OwnerWorkbench() {
         message.error(result?.message || '获取 Owner 工作台失败')
         return
       }
+      setNoAccess(false)
       setData(result.data || {})
       setLastLoadedAt(new Date().toISOString())
+      setSelectedRowKeys([])
     } catch (error) {
-      message.error(error?.message || '获取 Owner 工作台失败')
+      if (error?.status === 403) {
+        setNoAccess(true)
+        setNoAccessMessage(error?.message || '仅部门负责人可访问 Owner 工作台')
+      } else {
+        message.error(error?.message || '获取 Owner 工作台失败')
+      }
     } finally {
       setLoading(false)
     }
@@ -104,279 +136,298 @@ function OwnerWorkbench() {
   }, [loadData])
 
   const handlePreviewReminder = async () => {
+    if (noAccess) {
+      message.warning(noAccessMessage)
+      return
+    }
+
     setRemindLoading(true)
     try {
       const result = await previewNoFillReminderApi()
       if (!result?.success) {
-        message.error(result?.message || '生成提醒预览失败')
+        message.error(result?.message || '生成未填报提醒预览失败')
         return
       }
       const count = result?.data?.no_fill_members?.length || 0
       message.success(`提醒预览已生成，未填报 ${count} 人`)
     } catch (error) {
-      message.error(error?.message || '生成提醒预览失败')
+      message.error(error?.message || '生成未填报提醒预览失败')
     } finally {
       setRemindLoading(false)
     }
   }
 
-  const noFillColumns = useMemo(
-    () => [
-      {
-        title: '用户ID',
-        dataIndex: 'id',
-        key: 'id',
-        width: 100,
-      },
-      {
-        title: '用户名',
-        dataIndex: 'username',
-        key: 'username',
-      },
-    ],
-    [],
-  )
-
-  const demandRiskColumns = useMemo(
-    () => [
-      {
-        title: '需求ID',
-        dataIndex: 'id',
-        key: 'id',
-        width: 110,
-        render: (value) => <Tag color="blue">{value}</Tag>,
-      },
-      {
-        title: '需求名称',
-        dataIndex: 'name',
-        key: 'name',
-        width: 260,
-        ellipsis: true,
-      },
-      {
-        title: '状态',
-        dataIndex: 'status',
-        key: 'status',
-        width: 120,
-        render: (value) => <Tag color={getStatusColor(value)}>{value}</Tag>,
-      },
-      {
-        title: '优先级',
-        dataIndex: 'priority',
-        key: 'priority',
-        width: 100,
-        render: (value) => <Tag color={getPriorityColor(value)}>{value}</Tag>,
-      },
-      {
-        title: 'Owner预估(h)',
-        dataIndex: 'owner_estimate_hours',
-        key: 'owner_estimate_hours',
-        width: 130,
-        render: (value) => toNumber(value, 0).toFixed(1),
-      },
-      {
-        title: '累计个人预估(h)',
-        dataIndex: 'total_personal_estimate_hours',
-        key: 'total_personal_estimate_hours',
-        width: 140,
-        render: (value) => toNumber(value, 0).toFixed(1),
-      },
-      {
-        title: '累计实际(h)',
-        dataIndex: 'total_actual_hours',
-        key: 'total_actual_hours',
-        width: 120,
-        render: (value) => toNumber(value, 0).toFixed(1),
-      },
-      {
-        title: '最新剩余(h)',
-        dataIndex: 'latest_remaining_hours',
-        key: 'latest_remaining_hours',
-        width: 120,
-        render: (value) => toNumber(value, 0).toFixed(1),
-      },
-      {
-        title: '偏差(h)',
-        dataIndex: 'deviation_hours',
-        key: 'deviation_hours',
-        width: 110,
-        render: (value) => renderDeviation(value),
-      },
-      {
-        title: '偏差率',
-        key: 'deviation_rate',
-        width: 110,
-        render: (_, row) => renderDeviationRate(calcDemandDeviationRate(row)),
-      },
-    ],
-    [],
-  )
-
-  const phaseRiskColumns = useMemo(
-    () => [
-      {
-        title: '需求ID',
-        dataIndex: 'demand_id',
-        key: 'demand_id',
-        width: 110,
-        render: (value) => <Tag color="blue">{value}</Tag>,
-      },
-      {
-        title: '需求名称',
-        dataIndex: 'demand_name',
-        key: 'demand_name',
-        width: 220,
-        ellipsis: true,
-      },
-      {
-        title: '阶段',
-        key: 'phase',
-        width: 170,
-        render: (_, row) => (
-          <Space size={4}>
-            <Tag color="geekblue">{row.phase_key}</Tag>
-            <span>{row.phase_name}</span>
-          </Space>
-        ),
-      },
-      {
-        title: '阶段Owner',
-        dataIndex: 'owner_name',
-        key: 'owner_name',
-        width: 130,
-        render: (value) => value || '-',
-      },
-      {
-        title: '阶段状态',
-        dataIndex: 'status',
-        key: 'status',
-        width: 120,
-        render: (value) => <Tag color={getStatusColor(value)}>{value}</Tag>,
-      },
-      {
-        title: '阶段预估(h)',
-        dataIndex: 'estimate_hours',
-        key: 'estimate_hours',
-        width: 130,
-        render: (value) => toNumber(value, 0).toFixed(1),
-      },
-      {
-        title: '累计个人预估(h)',
-        dataIndex: 'personal_estimate_hours',
-        key: 'personal_estimate_hours',
-        width: 140,
-        render: (value) => toNumber(value, 0).toFixed(1),
-      },
-      {
-        title: '累计实际(h)',
-        dataIndex: 'actual_hours',
-        key: 'actual_hours',
-        width: 120,
-        render: (value) => toNumber(value, 0).toFixed(1),
-      },
-      {
-        title: '最新剩余(h)',
-        dataIndex: 'latest_remaining_hours',
-        key: 'latest_remaining_hours',
-        width: 120,
-        render: (value) => toNumber(value, 0).toFixed(1),
-      },
-      {
-        title: '偏差(h)',
-        dataIndex: 'deviation_hours',
-        key: 'deviation_hours',
-        width: 110,
-        render: (value) => renderDeviation(value),
-      },
-      {
-        title: '偏差率',
-        dataIndex: 'deviation_rate',
-        key: 'deviation_rate',
-        width: 100,
-        render: (value) => renderDeviationRate(value),
-      },
-    ],
-    [],
-  )
-
   const overview = data.team_overview || {}
+  const dataScope = data.data_scope || {}
   const teamSize = toNumber(overview.team_size, 0)
   const filledUsers = toNumber(overview.filled_users_today, 0)
   const fillRate = teamSize > 0 ? Math.min(100, Math.max(0, (filledUsers / teamSize) * 100)) : 0
+  const scopeLabel = dataScope.scope_label || (dataScope.scope_type === 'ALL' ? '全部部门' : '-')
+  const scopeMemberCount = toNumber(dataScope.team_member_count, teamSize)
+  const noFillMembers = Array.isArray(data.no_fill_members) ? data.no_fill_members : []
+  const ownerEstimateItems = Array.isArray(data.owner_estimate_items) ? data.owner_estimate_items : []
+  const pendingOwnerEstimateCount = toNumber(data.owner_estimate_pending_count, 0)
 
-  const noFillMembers = useMemo(() => (Array.isArray(data.no_fill_members) ? data.no_fill_members : []), [data])
-  const demandRisks = useMemo(() => (Array.isArray(data.demand_risks) ? data.demand_risks : []), [data])
-  const phaseRisks = useMemo(() => (Array.isArray(data.phase_risks) ? data.phase_risks : []), [data])
+  const memberOptions = useMemo(() => {
+    const map = new Map()
+    ownerEstimateItems.forEach((item) => {
+      const id = Number(item.user_id)
+      if (!Number.isInteger(id)) return
+      if (!map.has(id)) {
+        map.set(id, {
+          value: id,
+          label: item.username ? `${item.username} (#${id})` : `用户#${id}`,
+        })
+      }
+    })
+    return Array.from(map.values())
+  }, [ownerEstimateItems])
 
-  const demandRiskSummary = useMemo(
-    () =>
-      demandRisks.reduce(
-        (acc, item) => {
-          const deviation = toNumber(item?.deviation_hours, 0)
-          if (deviation > 0) acc.risk += 1
-          if (deviation <= 0) acc.safe += 1
-          return acc
-        },
-        { risk: 0, safe: 0 },
-      ),
-    [demandRisks],
+  const phaseOptions = useMemo(() => {
+    const map = new Map()
+    ownerEstimateItems.forEach((item) => {
+      const key = String(item.phase_key || '')
+      if (!key) return
+      if (!map.has(key)) {
+        const label = item.phase_name ? `${item.phase_name} (${key})` : key
+        map.set(key, { value: key, label })
+      }
+    })
+    return Array.from(map.values())
+  }, [ownerEstimateItems])
+
+  const filteredOwnerEstimateItems = useMemo(() => {
+    const q = keyword.trim().toLowerCase()
+    return ownerEstimateItems.filter((item) => {
+      if (pendingOnly && item.owner_estimate_hours !== null && item.owner_estimate_hours !== undefined) return false
+      if (memberFilter && Number(item.user_id) !== Number(memberFilter)) return false
+      if (phaseFilter && String(item.phase_key || '') !== String(phaseFilter)) return false
+      if (q && !getSearchText(item).includes(q)) return false
+      return true
+    })
+  }, [ownerEstimateItems, keyword, memberFilter, phaseFilter, pendingOnly])
+
+  const openEstimateModal = (item) => {
+    setEditingItem(item)
+    estimateForm.setFieldsValue({
+      owner_estimate_hours:
+        item?.owner_estimate_hours === null || item?.owner_estimate_hours === undefined
+          ? undefined
+          : toNumber(item.owner_estimate_hours, 0),
+    })
+    setEstimateModalOpen(true)
+  }
+
+  const closeEstimateModal = () => {
+    setEstimateModalOpen(false)
+    setEditingItem(null)
+    estimateForm.resetFields()
+  }
+
+  const handleSaveOwnerEstimate = async () => {
+    if (!editingItem?.id) return
+
+    try {
+      const values = await estimateForm.validateFields()
+      setSavingEstimate(true)
+      const result = await updateWorkLogOwnerEstimateApi(editingItem.id, {
+        owner_estimate_hours: values.owner_estimate_hours,
+      })
+
+      if (!result?.success) {
+        message.error(result?.message || 'Owner 预估更新失败')
+        return
+      }
+
+      message.success('Owner 预估已更新')
+      closeEstimateModal()
+      await loadData()
+    } catch (error) {
+      if (error?.errorFields) {
+        message.error('请检查 Owner 预估输入')
+      } else {
+        message.error(error?.message || 'Owner 预估更新失败')
+      }
+    } finally {
+      setSavingEstimate(false)
+    }
+  }
+
+  const openBatchModal = () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先勾选要批量评估的事项')
+      return
+    }
+    batchForm.setFieldsValue({ owner_estimate_hours: undefined })
+    setBatchModalOpen(true)
+  }
+
+  const closeBatchModal = () => {
+    setBatchModalOpen(false)
+    batchForm.resetFields()
+  }
+
+  const handleBatchSave = async () => {
+    try {
+      const values = await batchForm.validateFields()
+      const targets = filteredOwnerEstimateItems.filter((item) => selectedRowKeys.includes(item.id))
+      if (targets.length === 0) {
+        message.warning('当前筛选结果中没有可批量更新的事项')
+        return
+      }
+
+      setBatchSaving(true)
+      let successCount = 0
+      for (const item of targets) {
+        try {
+          const result = await updateWorkLogOwnerEstimateApi(item.id, {
+            owner_estimate_hours: values.owner_estimate_hours,
+          })
+          if (result?.success) successCount += 1
+        } catch {
+          // keep going for batch robustness
+        }
+      }
+
+      message.success(`批量更新完成：成功 ${successCount}/${targets.length}`)
+      closeBatchModal()
+      await loadData()
+    } catch (error) {
+      if (error?.errorFields) {
+        message.error('请检查批量评估输入')
+      } else {
+        message.error(error?.message || '批量更新失败')
+      }
+    } finally {
+      setBatchSaving(false)
+    }
+  }
+
+  const noFillColumns = useMemo(
+    () => [
+      { title: '用户ID', dataIndex: 'id', key: 'id', width: 100 },
+      { title: '用户名', dataIndex: 'username', key: 'username' },
+    ],
+    [],
   )
 
-  const phaseRiskSummary = useMemo(
-    () =>
-      phaseRisks.reduce(
-        (acc, item) => {
-          const deviation = toNumber(item?.deviation_hours, 0)
-          if (deviation > 0) acc.risk += 1
-          if (deviation <= 0) acc.safe += 1
-          return acc
-        },
-        { risk: 0, safe: 0 },
+  const ownerEstimateColumns = [
+    {
+      title: '事项ID',
+      dataIndex: 'id',
+      key: 'id',
+      width: 90,
+      render: (value) => <Tag color="blue">#{value}</Tag>,
+    },
+    {
+      title: '成员',
+      dataIndex: 'username',
+      key: 'username',
+      width: 120,
+    },
+    {
+      title: '事项类型',
+      dataIndex: 'item_type_name',
+      key: 'item_type_name',
+      width: 140,
+    },
+    {
+      title: '关联需求',
+      key: 'demand',
+      width: 240,
+      render: (_, row) => (row.demand_id ? `${row.demand_id} - ${row.demand_name || '-'}` : '-'),
+    },
+    {
+      title: '阶段',
+      key: 'phase',
+      width: 150,
+      render: (_, row) => row.phase_name || row.phase_key || '-',
+    },
+    {
+      title: '描述',
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+    },
+    {
+      title: '个人预估(h)',
+      dataIndex: 'personal_estimate_hours',
+      key: 'personal_estimate_hours',
+      width: 120,
+      render: (value) => toNumber(value, 0).toFixed(1),
+    },
+    {
+      title: '实际(h)',
+      dataIndex: 'actual_hours',
+      key: 'actual_hours',
+      width: 100,
+      render: (value) => toNumber(value, 0).toFixed(1),
+    },
+    {
+      title: '预计完成日期',
+      dataIndex: 'expected_completion_date',
+      key: 'expected_completion_date',
+      width: 130,
+      render: (value) => formatDateOnly(value),
+    },
+    {
+      title: 'Owner评估(h)',
+      dataIndex: 'owner_estimate_hours',
+      key: 'owner_estimate_hours',
+      width: 130,
+      render: (value) =>
+        value === null || value === undefined ? <Tag color="orange">待评估</Tag> : toNumber(value, 0).toFixed(1),
+    },
+    {
+      title: 'Owner评估时间',
+      dataIndex: 'owner_estimated_at',
+      key: 'owner_estimated_at',
+      width: 160,
+      render: (value) => formatDateTime(value),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 110,
+      fixed: 'right',
+      render: (_, row) => (
+        <Button type="link" icon={<EditOutlined />} onClick={() => openEstimateModal(row)}>
+          维护评估
+        </Button>
       ),
-    [phaseRisks],
-  )
+    },
+  ]
 
-  const filteredDemandRisks = useMemo(() => {
-    const keyword = demandKeyword.trim().toLowerCase()
-    return demandRisks.filter((item) => {
-      const status = String(item?.status || '').toUpperCase()
-      const deviation = toNumber(item?.deviation_hours, 0)
-
-      if (demandStatusFilter !== 'ALL' && status !== demandStatusFilter) return false
-      if (demandRiskFilter === 'RISK_ONLY' && deviation <= 0) return false
-      if (demandRiskFilter === 'SAFE_ONLY' && deviation > 0) return false
-
-      if (!keyword) return true
-      const text = `${item?.id || ''} ${item?.name || ''}`.toLowerCase()
-      return text.includes(keyword)
-    })
-  }, [demandRisks, demandKeyword, demandStatusFilter, demandRiskFilter])
-
-  const filteredPhaseRisks = useMemo(() => {
-    const keyword = phaseKeyword.trim().toLowerCase()
-    return phaseRisks.filter((item) => {
-      const status = String(item?.status || '').toUpperCase()
-      const deviation = toNumber(item?.deviation_hours, 0)
-
-      if (phaseStatusFilter !== 'ALL' && status !== phaseStatusFilter) return false
-      if (phaseRiskFilter === 'RISK_ONLY' && deviation <= 0) return false
-      if (phaseRiskFilter === 'SAFE_ONLY' && deviation > 0) return false
-
-      if (!keyword) return true
-      const text =
-        `${item?.demand_id || ''} ${item?.demand_name || ''} ` +
-        `${item?.phase_name || ''} ${item?.owner_name || ''}`.toLowerCase()
-      return text.includes(keyword)
-    })
-  }, [phaseRisks, phaseKeyword, phaseStatusFilter, phaseRiskFilter])
+  if (noAccess) {
+    return (
+      <div style={{ padding: 24 }}>
+        <Card variant="borderless">
+          <Result
+            status="403"
+            title="暂无访问权限"
+            subTitle={noAccessMessage}
+            extra={[
+              <Button key="refresh" icon={<ReloadOutlined />} onClick={loadData} loading={loading}>
+                重新校验权限
+              </Button>,
+            ]}
+          />
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: 24, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 24 }}>Owner工作台</h1>
         <p style={{ margin: '8px 0 0', color: '#667085' }}>
-          面向团队负责人的每日视图：填报覆盖、工时投入、需求风险和阶段风险。
+          面向部门负责人的每日视图：填报覆盖、团队投入与事项 Owner 评估维护。
         </p>
+        <Space size={8} wrap style={{ marginTop: 10 }}>
+          <Tag color={dataScope.scope_type === 'ALL' ? 'purple' : 'blue'}>{`数据范围: ${scopeLabel}`}</Tag>
+          <Tag>{`在岗成员: ${scopeMemberCount}`}</Tag>
+        </Space>
       </div>
 
       <Card
@@ -419,13 +470,7 @@ function OwnerWorkbench() {
                 <TeamOutlined />
                 <Text type="secondary">今日填报率</Text>
               </Space>
-              <div style={{ marginTop: 10 }}>
-                <Progress
-                  percent={Number(fillRate.toFixed(1))}
-                  size="small"
-                  status={fillRate >= 85 ? 'success' : fillRate >= 60 ? 'normal' : 'exception'}
-                />
-              </div>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{`${fillRate.toFixed(1)}%`}</div>
             </Card>
           </Col>
           <Col xs={24} md={8} lg={4}>
@@ -465,7 +510,7 @@ function OwnerWorkbench() {
       </Card>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={8}>
+        <Col xs={24} xl={7}>
           <Card title="今日未填报成员" variant="borderless">
             {noFillMembers.length === 0 ? (
               <Empty description="今日全员已填报" />
@@ -481,129 +526,130 @@ function OwnerWorkbench() {
             )}
           </Card>
         </Col>
-
-        <Col xs={24} lg={16}>
-          <Card title="需求风险排行" variant="borderless">
-            <div
-              style={{
-                marginBottom: 12,
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                gap: 8,
-              }}
-            >
+        <Col xs={24} xl={17}>
+          <Card
+            title="事项 Owner 评估维护"
+            variant="borderless"
+            extra={
+              <Space wrap>
+                <Tag color={pendingOwnerEstimateCount > 0 ? 'orange' : 'green'}>{`待评估 ${pendingOwnerEstimateCount}`}</Tag>
+                <Tag>{`总事项 ${ownerEstimateItems.length}`}</Tag>
+                <Tag>{`筛选后 ${filteredOwnerEstimateItems.length}`}</Tag>
+              </Space>
+            }
+          >
+            <Space wrap style={{ marginBottom: 12 }}>
               <Input
                 allowClear
-                value={demandKeyword}
-                onChange={(e) => setDemandKeyword(e.target.value)}
-                prefix={<SearchOutlined />}
-                placeholder="搜索需求ID/名称"
+                placeholder="搜索成员/需求/阶段/描述"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                style={{ width: 260 }}
               />
               <Select
-                value={demandStatusFilter}
-                onChange={(value) => setDemandStatusFilter(value)}
-                options={[
-                  { label: '全部状态', value: 'ALL' },
-                  { label: '待开始', value: 'TODO' },
-                  { label: '进行中', value: 'IN_PROGRESS' },
-                ]}
+                allowClear
+                placeholder="筛选成员"
+                options={memberOptions}
+                value={memberFilter}
+                onChange={setMemberFilter}
+                style={{ width: 180 }}
               />
               <Select
-                value={demandRiskFilter}
-                onChange={(value) => setDemandRiskFilter(value)}
-                options={[
-                  { label: '仅风险项', value: 'RISK_ONLY' },
-                  { label: '全部项', value: 'ALL' },
-                  { label: '仅健康项', value: 'SAFE_ONLY' },
-                ]}
+                allowClear
+                placeholder="筛选阶段"
+                options={phaseOptions}
+                value={phaseFilter}
+                onChange={setPhaseFilter}
+                style={{ width: 220 }}
               />
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <Space wrap>
-                <Tag color="red">风险需求 {demandRiskSummary.risk}</Tag>
-                <Tag color="green">健康需求 {demandRiskSummary.safe}</Tag>
-                <Tag>筛选后 {filteredDemandRisks.length}</Tag>
+              <Space>
+                <Text type="secondary">仅看待评估</Text>
+                <Switch checked={pendingOnly} onChange={setPendingOnly} />
               </Space>
-            </div>
-            <div style={{ width: '100%', overflowX: 'auto' }}>
-              <Table
-                rowKey="id"
-                loading={loading}
-                columns={demandRiskColumns}
-                dataSource={filteredDemandRisks}
-                size="middle"
-                scroll={{ x: 1360 }}
-                pagination={{
-                  pageSize: 10,
-                  showSizeChanger: false,
-                  showTotal: (count) => `共 ${count} 条`,
-                }}
-              />
-            </div>
+              <Button onClick={() => setSelectedRowKeys([])}>清空勾选</Button>
+              <Button type="primary" disabled={selectedRowKeys.length === 0} onClick={openBatchModal}>
+                批量评估
+              </Button>
+            </Space>
+
+            {filteredOwnerEstimateItems.length === 0 ? (
+              <Empty description="当前筛选下暂无可维护事项" />
+            ) : (
+              <div style={{ width: '100%', overflowX: 'auto' }}>
+                <Table
+                  rowKey="id"
+                  loading={loading}
+                  columns={ownerEstimateColumns}
+                  dataSource={filteredOwnerEstimateItems}
+                  size="small"
+                  scroll={{ x: 1680 }}
+                  rowSelection={{
+                    selectedRowKeys,
+                    onChange: (keys) => setSelectedRowKeys(keys),
+                    preserveSelectedRowKeys: true,
+                  }}
+                  pagination={{
+                    pageSize: 10,
+                    showSizeChanger: false,
+                    showTotal: (count) => `共 ${count} 条`,
+                  }}
+                />
+              </div>
+            )}
           </Card>
         </Col>
       </Row>
 
-      <Card title="阶段风险排行" variant="borderless" style={{ marginTop: 16 }}>
-        <div
-          style={{
-            marginBottom: 12,
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-            gap: 8,
-          }}
-        >
-          <Input
-            allowClear
-            value={phaseKeyword}
-            onChange={(e) => setPhaseKeyword(e.target.value)}
-            prefix={<SearchOutlined />}
-            placeholder="搜索需求/阶段/负责人"
-          />
-          <Select
-            value={phaseStatusFilter}
-            onChange={(value) => setPhaseStatusFilter(value)}
-            options={[
-              { label: '全部状态', value: 'ALL' },
-              { label: '待开始', value: 'TODO' },
-              { label: '进行中', value: 'IN_PROGRESS' },
-            ]}
-          />
-          <Select
-            value={phaseRiskFilter}
-            onChange={(value) => setPhaseRiskFilter(value)}
-            options={[
-              { label: '仅风险项', value: 'RISK_ONLY' },
-              { label: '全部项', value: 'ALL' },
-              { label: '仅健康项', value: 'SAFE_ONLY' },
-            ]}
-          />
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <Space wrap>
-            <Tag color="red">风险阶段 {phaseRiskSummary.risk}</Tag>
-            <Tag color="green">健康阶段 {phaseRiskSummary.safe}</Tag>
-            <Tag>筛选后 {filteredPhaseRisks.length}</Tag>
-          </Space>
-        </div>
-        <div style={{ width: '100%', overflowX: 'auto' }}>
-          <Table
-            rowKey={(row) => `${row.demand_id}_${row.phase_key}`}
-            loading={loading}
-            columns={phaseRiskColumns}
-            dataSource={filteredPhaseRisks}
-            size="middle"
-            scroll={{ x: 1540 }}
-            pagination={{
-              pageSize: 10,
-              showSizeChanger: false,
-              showTotal: (count) => `共 ${count} 条`,
-            }}
-          />
-        </div>
-      </Card>
+      <Modal
+        title={editingItem ? `维护 Owner 评估：#${editingItem.id}` : '维护 Owner 评估'}
+        open={estimateModalOpen}
+        onCancel={closeEstimateModal}
+        onOk={handleSaveOwnerEstimate}
+        confirmLoading={savingEstimate}
+        okText="保存"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Form form={estimateForm} layout="vertical" style={{ marginTop: 8 }}>
+          <Form.Item
+            label="Owner评估(h)"
+            name="owner_estimate_hours"
+            rules={[{ required: true, message: '请输入 Owner 评估工时' }]}
+          >
+            <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+          </Form.Item>
+          {editingItem ? (
+            <div style={{ color: '#667085', fontSize: 12 }}>
+              事项: {editingItem.item_type_name || '-'} / 成员: {editingItem.username || '-'}
+            </div>
+          ) : null}
+        </Form>
+      </Modal>
+
+      <Modal
+        title={`批量评估（已选 ${selectedRowKeys.length} 项）`}
+        open={batchModalOpen}
+        onCancel={closeBatchModal}
+        onOk={handleBatchSave}
+        confirmLoading={batchSaving}
+        okText="批量保存"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Form form={batchForm} layout="vertical" style={{ marginTop: 8 }}>
+          <Form.Item
+            label="统一 Owner评估(h)"
+            name="owner_estimate_hours"
+            rules={[{ required: true, message: '请输入评估工时' }]}
+          >
+            <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+          </Form.Item>
+          <Text type="secondary">将对当前筛选结果中已勾选事项统一设置该评估值。</Text>
+        </Form>
+      </Modal>
     </div>
   )
 }
 
 export default OwnerWorkbench
+

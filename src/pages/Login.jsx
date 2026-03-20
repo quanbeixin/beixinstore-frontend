@@ -69,23 +69,6 @@ function Login() {
             <br />
             让决策更清晰，效率更高。
           </p>
-
-          <div className="brand-stats">
-            <div className="brand-stat">
-              <span className="brand-stat-value">12K+</span>
-              <span className="brand-stat-label">活跃用户</span>
-            </div>
-            <div className="brand-stat-divider" />
-            <div className="brand-stat">
-              <span className="brand-stat-value">99.9%</span>
-              <span className="brand-stat-label">系统稳定性</span>
-            </div>
-            <div className="brand-stat-divider" />
-            <div className="brand-stat">
-              <span className="brand-stat-value">24/7</span>
-              <span className="brand-stat-label">实时监控</span>
-            </div>
-          </div>
         </div>
       </div>
 

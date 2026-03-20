@@ -84,6 +84,9 @@ export function hasPermission(permissionCode) {
   const access = getAccessSnapshot()
   if (!access || !permissionCode) return true
 
+  // Department managers can access Owner workbench without admin-role permission code.
+  if (permissionCode === 'workbench.view.owner' && access.is_department_manager) return true
+
   if (access.is_super_admin) return true
   if (access.permission_ready === false) return true
 
@@ -205,6 +208,12 @@ export function canAccessRoute(route) {
 
   const menuKey = String(route.menu?.key || route.path || '').trim()
   if (!menuKey) return true
+
+   // Ensure owner-workbench menu can be shown for department managers.
+  if (menuKey === '/owner-workbench') {
+    const access = getAccessSnapshot()
+    if (access?.is_department_manager) return true
+  }
 
   const accessMap = getMenuVisibilityAccessMap()
   if (Object.prototype.hasOwnProperty.call(accessMap, menuKey)) {

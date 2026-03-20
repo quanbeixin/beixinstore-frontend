@@ -17,6 +17,7 @@ import {
   Modal,
   Popconfirm,
   Row,
+  Select,
   Space,
   Switch,
   Table,
@@ -25,6 +26,7 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { getDepartmentsApi } from '../api/org'
 import {
   createDictItemApi,
   createDictTypeApi,
@@ -77,6 +79,31 @@ function getRequireDemandValue(raw) {
   return false
 }
 
+function getOwnerEstimateRuleValue(raw) {
+  const obj = parseJsonObject(raw)
+  if (!obj) return 'NONE'
+  const value = String(obj.owner_estimate_rule ?? obj.ownerEstimateRule ?? '').trim().toUpperCase()
+  if (value === 'OPTIONAL' || value === 'REQUIRED') return value
+  return 'NONE'
+}
+
+function getOwnerDepartmentIdValue(raw) {
+  const obj = parseJsonObject(raw)
+  if (!obj) return null
+  const value = obj.owner_department_id ?? obj.ownerDepartmentId
+  const id = Number(value)
+  return Number.isInteger(id) && id > 0 ? id : null
+}
+
+function getOwnerEstimateRequiredValue(raw) {
+  const obj = parseJsonObject(raw)
+  if (!obj) return false
+  const value = obj.owner_estimate_required ?? obj.ownerEstimateRequired
+  if (value === true || value === 1 || value === '1') return true
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'true') return true
+  return false
+}
+
 function DictCenter() {
   const [types, setTypes] = useState([])
   const [typesLoading, setTypesLoading] = useState(false)
@@ -85,6 +112,7 @@ function DictCenter() {
 
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
+  const [departments, setDepartments] = useState([])
 
   const [typeModalOpen, setTypeModalOpen] = useState(false)
   const [editingType, setEditingType] = useState(null)
@@ -103,6 +131,23 @@ function DictCenter() {
   )
   const itemModalTypeKey = editingItem?.type_key || selectedTypeKey
   const isIssueTypeItem = itemModalTypeKey === 'issue_type'
+  const isDemandPhaseTypeItem = itemModalTypeKey === 'demand_phase_type'
+
+  const departmentOptions = useMemo(
+    () =>
+      (departments || []).map((item) => ({
+        value: item.id,
+        label: item.name ? `${item.name} (#${item.id})` : `部门#${item.id}`,
+      })),
+    [departments],
+  )
+  const departmentNameMap = useMemo(() => {
+    const map = new Map()
+    ;(departments || []).forEach((item) => {
+      if (item?.id) map.set(Number(item.id), item.name || `部门#${item.id}`)
+    })
+    return map
+  }, [departments])
 
   const filteredTypes = useMemo(() => {
     const q = typeKeyword.trim().toLowerCase()
@@ -158,16 +203,32 @@ function DictCenter() {
     }
   }, [])
 
+  const fetchDepartments = useCallback(async () => {
+    try {
+      const result = await getDepartmentsApi({ mode: 'flat' })
+      if (!result?.success) return
+      const rows = Array.isArray(result.data) ? result.data : []
+      const enabledOnly = rows.filter((item) => Number(item.enabled ?? 1) === 1)
+      setDepartments(enabledOnly)
+    } catch {
+      setDepartments([])
+    }
+  }, [])
+
   useEffect(() => {
     fetchTypes()
   }, [fetchTypes])
+
+  useEffect(() => {
+    fetchDepartments()
+  }, [fetchDepartments])
 
   useEffect(() => {
     fetchItems(selectedTypeKey)
   }, [selectedTypeKey, fetchItems])
 
   const handleRefresh = async () => {
-    await Promise.all([fetchTypes(), fetchItems(selectedTypeKey)])
+    await Promise.all([fetchTypes(), fetchItems(selectedTypeKey), fetchDepartments()])
   }
 
   const openCreateType = () => {
@@ -261,6 +322,9 @@ function DictCenter() {
       enabled: true,
       sortOrder: 0,
       requireDemand: false,
+      ownerEstimateRule: 'NONE',
+      ownerDepartmentId: undefined,
+      ownerEstimateRequired: false,
       extraJson: '',
     })
     setItemModalOpen(true)
@@ -276,6 +340,9 @@ function DictCenter() {
       remark: record.remark,
       extraJson: toExtraJsonText(record.extra_json),
       requireDemand: getRequireDemandValue(record.extra_json),
+      ownerEstimateRule: getOwnerEstimateRuleValue(record.extra_json),
+      ownerDepartmentId: getOwnerDepartmentIdValue(record.extra_json) || undefined,
+      ownerEstimateRequired: getOwnerEstimateRequiredValue(record.extra_json),
     })
     setItemModalOpen(true)
   }
@@ -293,8 +360,9 @@ function DictCenter() {
       const extraJsonText = String(values.extraJson || '').trim()
       let finalExtraJson = extraJsonText || null
 
-      if (isIssueTypeItem) {
-        let baseObj = {}
+      let baseObj = null
+      if (isIssueTypeItem || isDemandPhaseTypeItem) {
+        baseObj = {}
         if (extraJsonText) {
           try {
             const parsed = JSON.parse(extraJsonText)
@@ -309,7 +377,23 @@ function DictCenter() {
             return
           }
         }
+      }
+
+      if (isIssueTypeItem && baseObj) {
         baseObj.require_demand = Boolean(values.requireDemand)
+        baseObj.owner_estimate_rule = String(values.ownerEstimateRule || 'NONE').toUpperCase()
+        finalExtraJson = JSON.stringify(baseObj)
+      }
+
+      if (isDemandPhaseTypeItem && baseObj) {
+        const ownerDepartmentId = Number(values.ownerDepartmentId)
+        if (Number.isInteger(ownerDepartmentId) && ownerDepartmentId > 0) {
+          baseObj.owner_department_id = ownerDepartmentId
+        } else {
+          delete baseObj.owner_department_id
+          delete baseObj.ownerDepartmentId
+        }
+        baseObj.owner_estimate_required = Boolean(values.ownerEstimateRequired)
         finalExtraJson = JSON.stringify(baseObj)
       }
 
@@ -446,6 +530,33 @@ function DictCenter() {
       render: (_, record) => (
         <Tag color={record.enabled ? 'success' : 'default'}>{record.enabled ? '启用' : '停用'}</Tag>
       ),
+    },
+    {
+      title: 'Owner评估配置',
+      key: 'owner_estimate_config',
+      width: 220,
+      render: (_, record) => {
+        if (selectedTypeKey === 'issue_type') {
+          const rule = getOwnerEstimateRuleValue(record.extra_json)
+          const color = rule === 'REQUIRED' ? 'red' : rule === 'OPTIONAL' ? 'gold' : 'default'
+          const text = rule === 'REQUIRED' ? '必须评估' : rule === 'OPTIONAL' ? '可选评估' : '不需要'
+          return <Tag color={color}>{text}</Tag>
+        }
+
+        if (selectedTypeKey === 'demand_phase_type') {
+          const deptId = getOwnerDepartmentIdValue(record.extra_json)
+          const deptName = deptId ? departmentNameMap.get(Number(deptId)) || `部门#${deptId}` : '未设置责任部门'
+          const required = getOwnerEstimateRequiredValue(record.extra_json)
+          return (
+            <Space size={4} wrap>
+              <Tag color={deptId ? 'blue' : 'default'}>{deptName}</Tag>
+              <Tag color={required ? 'red' : 'default'}>{required ? '必须评估' : '非必须'}</Tag>
+            </Space>
+          )
+        }
+
+        return '-'
+      },
     },
     {
       title: '颜色',
@@ -675,9 +786,42 @@ function DictCenter() {
           </Form.Item>
 
           {isIssueTypeItem ? (
-            <Form.Item label="是否需要关联需求" name="requireDemand" valuePropName="checked" initialValue={false}>
-              <Switch checkedChildren="需要" unCheckedChildren="不需要" />
-            </Form.Item>
+            <>
+              <Form.Item label="是否需要关联需求" name="requireDemand" valuePropName="checked" initialValue={false}>
+                <Switch checkedChildren="需要" unCheckedChildren="不需要" />
+              </Form.Item>
+              <Form.Item label="Owner评估规则" name="ownerEstimateRule" initialValue="NONE">
+                <Select
+                  options={[
+                    { value: 'NONE', label: '不需要负责人评估' },
+                    { value: 'OPTIONAL', label: '负责人可选评估' },
+                    { value: 'REQUIRED', label: '负责人必须评估' },
+                  ]}
+                />
+              </Form.Item>
+            </>
+          ) : null}
+
+          {isDemandPhaseTypeItem ? (
+            <>
+              <Form.Item label="责任部门（负责人）" name="ownerDepartmentId">
+                <Select
+                  allowClear
+                  placeholder="请选择负责评估该阶段的部门"
+                  options={departmentOptions}
+                  showSearch
+                  optionFilterProp="label"
+                />
+              </Form.Item>
+              <Form.Item
+                label="该阶段是否必须负责人评估"
+                name="ownerEstimateRequired"
+                valuePropName="checked"
+                initialValue={false}
+              >
+                <Switch checkedChildren="必须" unCheckedChildren="非必须" />
+              </Form.Item>
+            </>
           ) : null}
 
           <Form.Item label="启用" name="enabled" valuePropName="checked" initialValue>
