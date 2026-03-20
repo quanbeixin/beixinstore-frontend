@@ -24,6 +24,36 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/work-logs',
+    componentKey: 'workLogs',
+    requiredPermission: 'worklog.view.self',
+    menu: {
+      section: 'main',
+      label: '个人工作台',
+      icon: 'dashboard',
+    },
+  },
+  {
+    path: '/work-demands',
+    componentKey: 'workDemands',
+    requiredPermission: 'demand.view',
+    menu: {
+      section: 'main',
+      label: '需求池',
+      icon: 'tool',
+    },
+  },
+  {
+    path: '/owner-workbench',
+    componentKey: 'ownerWorkbench',
+    requiredPermission: 'workbench.view.owner',
+    menu: {
+      section: 'main',
+      label: 'Owner工作台',
+      icon: 'dashboard',
+    },
+  },
+  {
     path: '/users',
     componentKey: 'users',
     requiredPermission: 'user.view',

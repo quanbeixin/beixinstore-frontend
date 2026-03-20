@@ -11,6 +11,9 @@ const Departments = lazy(() => import('./pages/Departments'))
 const UserDepartments = lazy(() => import('./pages/UserDepartments'))
 const Options = lazy(() => import('./pages/Options'))
 const PerformanceDashboard = lazy(() => import('./pages/PerformanceDashboard'))
+const WorkDemands = lazy(() => import('./pages/WorkDemands'))
+const WorkLogs = lazy(() => import('./pages/WorkLogs'))
+const OwnerWorkbench = lazy(() => import('./pages/OwnerWorkbench'))
 const RolePermissions = lazy(() => import('./pages/RolePermissions'))
 const MenuVisibility = lazy(() => import('./pages/MenuVisibility'))
 const DictCenter = lazy(() => import('./pages/DictCenter'))
@@ -23,9 +26,12 @@ const PAGE_COMPONENTS = {
   login: Login,
   menuVisibility: MenuVisibility,
   options: Options,
+  ownerWorkbench: OwnerWorkbench,
   performanceDashboard: PerformanceDashboard,
   register: Register,
   rolePermissions: RolePermissions,
+  workDemands: WorkDemands,
+  workLogs: WorkLogs,
   userDepartments: UserDepartments,
   users: Users,
 }

@@ -1,20 +1,27 @@
 ﻿import {
+  DatabaseOutlined,
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+  TagsOutlined,
 } from '@ant-design/icons'
 import {
   Button,
   Card,
+  Col,
   Form,
   Input,
   InputNumber,
   Modal,
   Popconfirm,
+  Row,
   Space,
   Switch,
   Table,
   Tag,
+  Typography,
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -29,10 +36,52 @@ import {
   updateDictTypeApi,
 } from '../api/configDict'
 
+const { Search } = Input
+const { Text } = Typography
+
+function parseJsonObject(raw) {
+  if (!raw) return null
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw
+  if (typeof raw !== 'string') return null
+
+  const text = raw.trim()
+  if (!text) return null
+
+  try {
+    const parsed = JSON.parse(text)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function toExtraJsonText(raw) {
+  if (raw === null || raw === undefined || raw === '') return ''
+  if (typeof raw === 'string') return raw
+  if (typeof raw === 'object') {
+    try {
+      return JSON.stringify(raw, null, 2)
+    } catch {
+      return ''
+    }
+  }
+  return ''
+}
+
+function getRequireDemandValue(raw) {
+  const obj = parseJsonObject(raw)
+  if (!obj) return false
+  const value = obj.require_demand ?? obj.requireDemand
+  if (value === true || value === 1 || value === '1') return true
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'true') return true
+  return false
+}
+
 function DictCenter() {
   const [types, setTypes] = useState([])
   const [typesLoading, setTypesLoading] = useState(false)
   const [selectedTypeKey, setSelectedTypeKey] = useState('')
+  const [typeKeyword, setTypeKeyword] = useState('')
 
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
@@ -52,6 +101,18 @@ function DictCenter() {
     () => types.find((type) => type.type_key === selectedTypeKey) || null,
     [types, selectedTypeKey],
   )
+  const itemModalTypeKey = editingItem?.type_key || selectedTypeKey
+  const isIssueTypeItem = itemModalTypeKey === 'issue_type'
+
+  const filteredTypes = useMemo(() => {
+    const q = typeKeyword.trim().toLowerCase()
+    if (!q) return types
+
+    return types.filter((type) => {
+      const text = `${type.type_key} ${type.type_name} ${type.description || ''}`.toLowerCase()
+      return text.includes(q)
+    })
+  }, [types, typeKeyword])
 
   const fetchTypes = useCallback(async () => {
     setTypesLoading(true)
@@ -62,16 +123,18 @@ function DictCenter() {
         return
       }
 
-      setTypes(result.data)
-      if (!selectedTypeKey && result.data.length > 0) {
-        setSelectedTypeKey(result.data[0].type_key)
-      }
+      const list = result.data || []
+      setTypes(list)
+      setSelectedTypeKey((prev) => {
+        if (prev && list.some((item) => item.type_key === prev)) return prev
+        return list[0]?.type_key || ''
+      })
     } catch (error) {
       message.error(error?.message || '获取字典类型失败')
     } finally {
       setTypesLoading(false)
     }
-  }, [selectedTypeKey])
+  }, [])
 
   const fetchItems = useCallback(async (typeKey) => {
     if (!typeKey) {
@@ -87,7 +150,7 @@ function DictCenter() {
         return
       }
 
-      setItems(result.data)
+      setItems(result.data || [])
     } catch (error) {
       message.error(error?.message || '获取字典项失败')
     } finally {
@@ -102,6 +165,10 @@ function DictCenter() {
   useEffect(() => {
     fetchItems(selectedTypeKey)
   }, [selectedTypeKey, fetchItems])
+
+  const handleRefresh = async () => {
+    await Promise.all([fetchTypes(), fetchItems(selectedTypeKey)])
+  }
 
   const openCreateType = () => {
     setEditingType(null)
@@ -193,6 +260,8 @@ function DictCenter() {
     itemForm.setFieldsValue({
       enabled: true,
       sortOrder: 0,
+      requireDemand: false,
+      extraJson: '',
     })
     setItemModalOpen(true)
   }
@@ -205,7 +274,8 @@ function DictCenter() {
       enabled: Boolean(record.enabled),
       color: record.color,
       remark: record.remark,
-      extraJson: record.extra_json,
+      extraJson: toExtraJsonText(record.extra_json),
+      requireDemand: getRequireDemandValue(record.extra_json),
     })
     setItemModalOpen(true)
   }
@@ -220,6 +290,28 @@ function DictCenter() {
     try {
       setItemSubmitting(true)
       const values = await itemForm.validateFields()
+      const extraJsonText = String(values.extraJson || '').trim()
+      let finalExtraJson = extraJsonText || null
+
+      if (isIssueTypeItem) {
+        let baseObj = {}
+        if (extraJsonText) {
+          try {
+            const parsed = JSON.parse(extraJsonText)
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              baseObj = parsed
+            } else {
+              message.error('扩展 JSON 必须是对象（例如 {"a":1}）')
+              return
+            }
+          } catch {
+            message.error('扩展 JSON 不是合法 JSON')
+            return
+          }
+        }
+        baseObj.require_demand = Boolean(values.requireDemand)
+        finalExtraJson = JSON.stringify(baseObj)
+      }
 
       let result
       if (editingItem) {
@@ -229,7 +321,7 @@ function DictCenter() {
           enabled: values.enabled,
           color: values.color || null,
           remark: values.remark || null,
-          extraJson: values.extraJson || null,
+          extraJson: finalExtraJson,
         })
       } else {
         result = await createDictItemApi({
@@ -240,7 +332,7 @@ function DictCenter() {
           enabled: values.enabled,
           color: values.color || null,
           remark: values.remark || null,
-          extraJson: values.extraJson || null,
+          extraJson: finalExtraJson,
         })
       }
 
@@ -283,11 +375,15 @@ function DictCenter() {
       title: '类型标识',
       dataIndex: 'type_key',
       key: 'type_key',
+      width: 170,
+      render: (value) => <Text code>{value}</Text>,
     },
     {
       title: '类型名称',
       dataIndex: 'type_name',
       key: 'type_name',
+      width: 160,
+      ellipsis: true,
     },
     {
       title: '状态',
@@ -301,6 +397,7 @@ function DictCenter() {
       title: '操作',
       key: 'action',
       width: 180,
+      fixed: 'right',
       render: (_, record) => (
         <Space size="small">
           <Button type="link" icon={<EditOutlined />} onClick={() => openEditType(record)}>
@@ -327,12 +424,14 @@ function DictCenter() {
       dataIndex: 'item_code',
       key: 'item_code',
       width: 140,
+      render: (value) => <Text code>{value}</Text>,
     },
     {
       title: '名称',
       dataIndex: 'item_name',
       key: 'item_name',
       width: 160,
+      ellipsis: true,
     },
     {
       title: '排序',
@@ -364,15 +463,13 @@ function DictCenter() {
       title: '操作',
       key: 'action',
       width: 160,
+      fixed: 'right',
       render: (_, record) => (
         <Space size="small">
           <Button type="link" icon={<EditOutlined />} onClick={() => openEditItem(record)}>
             编辑
           </Button>
-          <Popconfirm
-            title="确认删除字典项"
-            onConfirm={() => removeItem(record)}
-          >
+          <Popconfirm title="确认删除字典项" onConfirm={() => removeItem(record)}>
             <Button type="link" danger icon={<DeleteOutlined />}>
               删除
             </Button>
@@ -383,56 +480,106 @@ function DictCenter() {
   ]
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>字典中心（M1）</h1>
-        <p style={{ color: '#666', marginTop: '8px' }}>
-          管理通用选型字段：先定义“字典类型”，再维护该类型下的“字典项”。
-        </p>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: '16px' }}>
-        <Card
-          title="字典类型"
-          extra={
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateType}>
-              新增类型
+    <div className="dict-center-page">
+      <Card className="dict-center-hero" variant="borderless">
+        <div className="dict-center-hero-head">
+          <div>
+            <h1 className="dict-center-title">字典中心（M1）</h1>
+            <p className="dict-center-subtitle">管理通用选型字段：先定义类型，再维护类型下字典项。</p>
+          </div>
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={typesLoading || itemsLoading}>
+              刷新数据
             </Button>
-          }
-        >
-          <Table
-            rowKey="type_key"
-            loading={typesLoading}
-            columns={typeColumns}
-            dataSource={types}
-            size="small"
-            pagination={false}
-            onRow={(record) => ({
-              onClick: () => setSelectedTypeKey(record.type_key),
-            })}
-            rowClassName={(record) => (record.type_key === selectedTypeKey ? 'selected-row' : '')}
-          />
-        </Card>
+          </Space>
+        </div>
 
-        <Card
-          title={selectedType ? `字典项：${selectedType.type_name} (${selectedType.type_key})` : '字典项'}
-          extra={
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateItem} disabled={!selectedTypeKey}>
-              新增字典项
-            </Button>
-          }
-        >
-          <Table
-            rowKey="id"
-            loading={itemsLoading}
-            columns={itemColumns}
-            dataSource={items}
-            size="small"
-            pagination={false}
-            scroll={{ x: 900 }}
-          />
-        </Card>
-      </div>
+        <div className="dict-center-stats">
+          <div className="dict-center-stat">
+            <div className="label">
+              <DatabaseOutlined /> 字典类型
+            </div>
+            <div className="value">{types.length}</div>
+          </div>
+          <div className="dict-center-stat">
+            <div className="label">
+              <TagsOutlined /> 当前类型字典项
+            </div>
+            <div className="value">{items.length}</div>
+          </div>
+          <div className="dict-center-stat">
+            <div className="label">当前选中</div>
+            <div className="value small">{selectedType ? selectedType.type_name : '未选择类型'}</div>
+          </div>
+        </div>
+      </Card>
+
+      <Row gutter={[16, 16]} className="dict-center-main">
+        <Col xs={24} xl={9}>
+          <Card
+            className="dict-center-panel"
+            title="字典类型"
+            variant="borderless"
+            extra={
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreateType}>
+                新增类型
+              </Button>
+            }
+          >
+            <div className="dict-center-toolbar">
+              <Search
+                allowClear
+                placeholder="搜索 type_key / 类型名称"
+                prefix={<SearchOutlined />}
+                onChange={(e) => setTypeKeyword(e.target.value)}
+              />
+            </div>
+
+            <div className="dict-center-table-wrap">
+              <Table
+                rowKey="type_key"
+                loading={typesLoading}
+                columns={typeColumns}
+                dataSource={filteredTypes}
+                size="small"
+                pagination={false}
+                scroll={{ x: 640 }}
+                onRow={(record) => ({
+                  onClick: () => setSelectedTypeKey(record.type_key),
+                })}
+                rowClassName={(record) =>
+                  record.type_key === selectedTypeKey ? 'dict-center-selected-row' : ''
+                }
+              />
+            </div>
+          </Card>
+        </Col>
+
+        <Col xs={24} xl={15}>
+          <Card
+            className="dict-center-panel"
+            title={selectedType ? `字典项：${selectedType.type_name} (${selectedType.type_key})` : '字典项'}
+            variant="borderless"
+            extra={
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreateItem} disabled={!selectedTypeKey}>
+                新增字典项
+              </Button>
+            }
+          >
+            <div className="dict-center-table-wrap">
+              <Table
+                rowKey="id"
+                loading={itemsLoading}
+                columns={itemColumns}
+                dataSource={items}
+                size="small"
+                pagination={false}
+                scroll={{ x: 980 }}
+              />
+            </div>
+          </Card>
+        </Col>
+      </Row>
 
       <Modal
         title={editingType ? '编辑字典类型' : '新增字典类型'}
@@ -440,15 +587,19 @@ function DictCenter() {
         onCancel={closeTypeModal}
         onOk={submitType}
         confirmLoading={typeSubmitting}
+        forceRender
       >
-        <Form form={typeForm} layout="vertical" style={{ marginTop: '16px' }}>
+        <Form form={typeForm} layout="vertical" style={{ marginTop: 16 }}>
           {!editingType && (
             <Form.Item
               label="类型标识（typeKey）"
               name="typeKey"
               rules={[
                 { required: true, message: '请输入类型标识' },
-                { pattern: /^[a-z][a-z0-9_]{1,63}$/, message: '仅支持小写字母、数字、下划线，需字母开头' },
+                {
+                  pattern: /^[a-z][a-z0-9_]{1,63}$/,
+                  message: '仅支持小写字母、数字、下划线，需字母开头',
+                },
               ]}
             >
               <Input placeholder="示例：user_status" />
@@ -480,15 +631,19 @@ function DictCenter() {
         onOk={submitItem}
         confirmLoading={itemSubmitting}
         width={640}
+        forceRender
       >
-        <Form form={itemForm} layout="vertical" style={{ marginTop: '16px' }}>
+        <Form form={itemForm} layout="vertical" style={{ marginTop: 16 }}>
           {!editingItem && (
             <Form.Item
               label="字典项编码（itemCode）"
               name="itemCode"
               rules={[
                 { required: true, message: '请输入字典项编码' },
-                { pattern: /^[A-Za-z][A-Za-z0-9_]{1,63}$/, message: '仅支持字母、数字、下划线，需字母开头' },
+                {
+                  pattern: /^[A-Za-z][A-Za-z0-9_]{1,63}$/,
+                  message: '仅支持字母、数字、下划线，需字母开头',
+                },
               ]}
             >
               <Input placeholder="示例：enabled（保存时会自动转为 ENABLED）" />
@@ -519,6 +674,12 @@ function DictCenter() {
             <Input.TextArea rows={3} placeholder='可选：{"icon":"check-circle"}' />
           </Form.Item>
 
+          {isIssueTypeItem ? (
+            <Form.Item label="是否需要关联需求" name="requireDemand" valuePropName="checked" initialValue={false}>
+              <Switch checkedChildren="需要" unCheckedChildren="不需要" />
+            </Form.Item>
+          ) : null}
+
           <Form.Item label="启用" name="enabled" valuePropName="checked" initialValue>
             <Switch />
           </Form.Item>
@@ -529,3 +690,4 @@ function DictCenter() {
 }
 
 export default DictCenter
+

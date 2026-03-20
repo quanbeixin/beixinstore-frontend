@@ -573,3 +573,119 @@
     line-height: 1.4;
   }
 }
+/* Dict Center */
+.dict-center-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.dict-center-hero,
+.dict-center-panel {
+  border-radius: 16px !important;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+.dict-center-hero {
+  background:
+    radial-gradient(900px 200px at 10% -30%, rgba(34, 197, 94, 0.1), transparent 45%),
+    radial-gradient(900px 200px at 95% -30%, rgba(59, 130, 246, 0.1), transparent 45%),
+    var(--bg-white);
+}
+
+.dict-center-hero-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.dict-center-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.dict-center-subtitle {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.dict-center-stats {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dict-center-stat {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 12px 14px;
+}
+
+.dict-center-stat .label {
+  color: var(--text-secondary);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dict-center-stat .value {
+  margin-top: 8px;
+  color: var(--text-primary);
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.dict-center-stat .value.small {
+  font-size: 16px;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.dict-center-main {
+  max-width: 100%;
+}
+
+.dict-center-toolbar {
+  margin-bottom: 10px;
+}
+
+.dict-center-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.dict-center-selected-row td {
+  background: rgba(59, 130, 246, 0.08) !important;
+}
+
+@media (max-width: 992px) {
+  .dict-center-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .dict-center-title {
+    font-size: 20px;
+  }
+
+  .dict-center-hero-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dict-center-stats {
+    grid-template-columns: 1fr;
+  }
+}
