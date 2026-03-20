@@ -41,16 +41,6 @@ function UserDepartments() {
     [departments],
   )
 
-  const watchedDepartmentIds = Form.useWatch('department_ids', form)
-  const selectedDepartmentIds = useMemo(
-    () => (Array.isArray(watchedDepartmentIds) ? watchedDepartmentIds : []),
-    [watchedDepartmentIds],
-  )
-  const primaryDepartmentOptions = useMemo(
-    () => departmentOptions.filter((option) => selectedDepartmentIds.includes(option.value)),
-    [departmentOptions, selectedDepartmentIds],
-  )
-
   const fetchUsers = useCallback(async () => {
     setLoading(true)
     try {
@@ -93,13 +83,6 @@ function UserDepartments() {
     fetchDepartments()
   }, [fetchDepartments])
 
-  useEffect(() => {
-    const currentPrimary = form.getFieldValue('primary_department_id')
-    if (currentPrimary && !selectedDepartmentIds.includes(currentPrimary)) {
-      form.setFieldValue('primary_department_id', undefined)
-    }
-  }, [form, selectedDepartmentIds])
-
   const handleSearch = (value) => {
     setKeyword(value)
     setCurrentPage(1)
@@ -123,12 +106,11 @@ function UserDepartments() {
       }
 
       const list = result.data?.departments || []
-      const departmentIds = list.map((item) => item.id)
       const primary = list.find((item) => Number(item.is_primary) === 1)?.id
+      const firstDepartmentId = list[0]?.id
 
       form.setFieldsValue({
-        department_ids: departmentIds,
-        primary_department_id: primary,
+        department_id: primary || firstDepartmentId || undefined,
       })
     } catch (error) {
       message.error(error?.message || '读取用户部门关系失败')
@@ -148,9 +130,10 @@ function UserDepartments() {
       const values = await form.validateFields()
       setSubmitting(true)
 
+      const selectedDepartmentId = values.department_id || null
       const payload = {
-        department_ids: values.department_ids || [],
-        primary_department_id: values.primary_department_id || null,
+        department_ids: selectedDepartmentId ? [selectedDepartmentId] : [],
+        primary_department_id: selectedDepartmentId,
       }
 
       const result = await setUserDepartmentsApi(editingUser.id, payload)
@@ -194,7 +177,7 @@ function UserDepartments() {
       render: (email) => email || '-',
     },
     {
-      title: '当前主部门',
+      title: '当前部门',
       dataIndex: 'department_name',
       key: 'department_name',
       width: 160,
@@ -240,7 +223,7 @@ function UserDepartments() {
       <div style={{ marginBottom: '24px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>用户部门分配</h1>
         <p style={{ color: '#666', marginTop: '8px' }}>
-          为用户分配多个所属部门，并设置唯一主部门（会同步到用户主数据）。
+          为用户分配唯一部门（会同步到用户主数据）。
         </p>
       </div>
 
@@ -295,41 +278,14 @@ function UserDepartments() {
       >
         <Form form={form} layout="vertical" style={{ marginTop: '16px' }}>
           <Form.Item
-            label="所属部门（可多选）"
-            name="department_ids"
-            rules={[{ required: true, message: '请至少选择一个部门' }]}
+            label="所属部门"
+            name="department_id"
+            rules={[{ required: true, message: '请选择部门' }]}
           >
             <Select
-              mode="multiple"
               allowClear
               placeholder="请选择部门"
               options={departmentOptions}
-              showSearch
-              optionFilterProp="label"
-            />
-          </Form.Item>
-
-          <Form.Item
-            label="主部门"
-            name="primary_department_id"
-            dependencies={['department_ids']}
-            rules={[
-              { required: true, message: '请选择主部门' },
-              ({ getFieldValue }) => ({
-                validator(_, value) {
-                  const ids = getFieldValue('department_ids') || []
-                  if (!value || ids.includes(value)) {
-                    return Promise.resolve()
-                  }
-                  return Promise.reject(new Error('主部门必须在所属部门列表中'))
-                },
-              }),
-            ]}
-          >
-            <Select
-              allowClear
-              placeholder="请选择主部门"
-              options={primaryDepartmentOptions}
               showSearch
               optionFilterProp="label"
             />

@@ -1,6 +1,8 @@
-﻿import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { getToken, hasPermission } from './utils/access'
+import { getMyMenuVisibilityApi } from './api/rbac'
+import { PRIVATE_ROUTES, PUBLIC_ROUTES } from './config/route.config'
+import { canAccessRoute, getToken, setMenuVisibilityAccessMap } from './utils/access'
 import './App.css'
 
 const AdminLayout = lazy(() => import('./layouts/AdminLayout'))
@@ -9,9 +11,26 @@ const Users = lazy(() => import('./pages/Users'))
 const Departments = lazy(() => import('./pages/Departments'))
 const UserDepartments = lazy(() => import('./pages/UserDepartments'))
 const Options = lazy(() => import('./pages/Options'))
+const PerformanceDashboard = lazy(() => import('./pages/PerformanceDashboard'))
+const RolePermissions = lazy(() => import('./pages/RolePermissions'))
+const MenuVisibility = lazy(() => import('./pages/MenuVisibility'))
 const DictCenter = lazy(() => import('./pages/DictCenter'))
 const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
+
+const PAGE_COMPONENTS = {
+  dashboard: Dashboard,
+  departments: Departments,
+  dictCenter: DictCenter,
+  login: Login,
+  menuVisibility: MenuVisibility,
+  options: Options,
+  performanceDashboard: PerformanceDashboard,
+  register: Register,
+  rolePermissions: RolePermissions,
+  userDepartments: UserDepartments,
+  users: Users,
+}
 
 function PageFallback() {
   return <div style={{ padding: '24px' }}>页面加载中...</div>
@@ -25,92 +44,89 @@ function RequireAuth({ children }) {
   return children
 }
 
-function RequirePermission({ code, children }) {
-  if (!hasPermission(code)) {
+function RequireRouteAccess({ route, children }) {
+  if (!canAccessRoute(route)) {
     return <Navigate to="/dashboard" replace />
   }
 
   return children
 }
 
+function renderPage(route) {
+  const Component = PAGE_COMPONENTS[route.componentKey]
+  if (!Component) return null
+  return <Component />
+}
+
+function renderPublicRoute(route) {
+  const page = renderPage(route)
+  return page || <Navigate to="/" replace />
+}
+
+function renderPrivateRoute(route) {
+  const page = renderPage(route)
+  if (!page) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  const inLayout = <AdminLayout>{page}</AdminLayout>
+
+  return (
+    <RequireAuth>
+      <RequireRouteAccess route={route}>{inLayout}</RequireRouteAccess>
+    </RequireAuth>
+  )
+}
+
 function App() {
+  const [loadingVisibility, setLoadingVisibility] = useState(Boolean(getToken()))
+
+  useEffect(() => {
+    let active = true
+
+    const loadMyMenuVisibility = async () => {
+      if (!getToken()) {
+        if (active) setLoadingVisibility(false)
+        return
+      }
+
+      try {
+        const result = await getMyMenuVisibilityApi()
+        if (result?.success) {
+          setMenuVisibilityAccessMap(result?.data?.menu_access_map || {})
+        } else {
+          setMenuVisibilityAccessMap({})
+        }
+      } catch {
+        // keep the app available even when this endpoint is temporarily unavailable
+        setMenuVisibilityAccessMap({})
+      } finally {
+        if (active) setLoadingVisibility(false)
+      }
+    }
+
+    loadMyMenuVisibility()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  if (loadingVisibility) {
+    return <PageFallback />
+  }
+
   return (
     <BrowserRouter>
       <Suspense fallback={<PageFallback />}>
         <Routes>
           <Route path="/" element={<Navigate to={getToken() ? '/dashboard' : '/login'} replace />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route
-            path="/dashboard"
-            element={
-              <RequireAuth>
-                <AdminLayout>
-                  <Dashboard />
-                </AdminLayout>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/users"
-            element={
-              <RequireAuth>
-                <RequirePermission code="user.view">
-                  <AdminLayout>
-                    <Users />
-                  </AdminLayout>
-                </RequirePermission>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/departments"
-            element={
-              <RequireAuth>
-                <RequirePermission code="dept.view">
-                  <AdminLayout>
-                    <Departments />
-                  </AdminLayout>
-                </RequirePermission>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/user-departments"
-            element={
-              <RequireAuth>
-                <RequirePermission code="dept.view">
-                  <AdminLayout>
-                    <UserDepartments />
-                  </AdminLayout>
-                </RequirePermission>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/options"
-            element={
-              <RequireAuth>
-                <RequirePermission code="option.view">
-                  <AdminLayout>
-                    <Options />
-                  </AdminLayout>
-                </RequirePermission>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/dict-center"
-            element={
-              <RequireAuth>
-                <RequirePermission code="dict.view">
-                  <AdminLayout>
-                    <DictCenter />
-                  </AdminLayout>
-                </RequirePermission>
-              </RequireAuth>
-            }
-          />
+          {PUBLIC_ROUTES.map((route) => (
+            <Route key={route.path} path={route.path} element={renderPublicRoute(route)} />
+          ))}
+          {PRIVATE_ROUTES.map((route) => (
+            <Route key={route.path} path={route.path} element={renderPrivateRoute(route)} />
+          ))}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
