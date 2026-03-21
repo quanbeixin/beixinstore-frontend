@@ -14,6 +14,7 @@ const PerformanceDashboard = lazy(() => import('./pages/PerformanceDashboard'))
 const WorkDemands = lazy(() => import('./pages/WorkDemands'))
 const WorkLogs = lazy(() => import('./pages/WorkLogs'))
 const OwnerWorkbench = lazy(() => import('./pages/OwnerWorkbench'))
+const PersonalSettings = lazy(() => import('./pages/PersonalSettings'))
 const RolePermissions = lazy(() => import('./pages/RolePermissions'))
 const MenuVisibility = lazy(() => import('./pages/MenuVisibility'))
 const DictCenter = lazy(() => import('./pages/DictCenter'))
@@ -27,6 +28,7 @@ const PAGE_COMPONENTS = {
   menuVisibility: MenuVisibility,
   options: Options,
   ownerWorkbench: OwnerWorkbench,
+  personalSettings: PersonalSettings,
   performanceDashboard: PerformanceDashboard,
   register: Register,
   rolePermissions: RolePermissions,
@@ -37,7 +39,15 @@ const PAGE_COMPONENTS = {
 }
 
 function PageFallback() {
-  return <div style={{ padding: '16px' }}>页面加载中...</div>
+  return <div style={{ padding: '12px' }}>页面加载中...</div>
+}
+
+function getDefaultPrivatePath() {
+  const personalWorkbenchRoute = PRIVATE_ROUTES.find((route) => route.path === '/work-logs')
+  if (personalWorkbenchRoute && canAccessRoute(personalWorkbenchRoute)) return '/work-logs'
+
+  const firstAccessibleRoute = PRIVATE_ROUTES.find((route) => canAccessRoute(route))
+  return firstAccessibleRoute?.path || '/work-logs'
 }
 
 function RequireAuth({ children }) {
@@ -50,7 +60,7 @@ function RequireAuth({ children }) {
 
 function RequireRouteAccess({ route, children }) {
   if (!canAccessRoute(route)) {
-    return <Navigate to="/performance-dashboard" replace />
+    return <Navigate to={getDefaultPrivatePath()} replace />
   }
 
   return children
@@ -70,7 +80,7 @@ function renderPublicRoute(route) {
 function renderPrivateRoute(route) {
   const page = renderPage(route)
   if (!page) {
-    return <Navigate to="/performance-dashboard" replace />
+    return <Navigate to={getDefaultPrivatePath()} replace />
   }
 
   const inLayout = <AdminLayout route={route}>{page}</AdminLayout>
@@ -126,7 +136,7 @@ function App() {
         <Routes>
           <Route
             path="/"
-            element={<Navigate to={getToken() ? '/performance-dashboard' : '/login'} replace />}
+            element={<Navigate to={getToken() ? getDefaultPrivatePath() : '/login'} replace />}
           />
           {PUBLIC_ROUTES.map((route) => (
             <Route key={route.path} path={route.path} element={renderPublicRoute(route)} />

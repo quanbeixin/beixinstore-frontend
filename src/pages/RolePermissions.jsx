@@ -193,7 +193,7 @@ function RolePermissions() {
   }
 
   return (
-    <div style={{ padding: '16px' }}>
+    <div style={{ padding: '12px' }}>
       <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between' }}>
         <Button icon={<ReloadOutlined />} onClick={fetchBaseData} loading={loadingBase}>
           刷新

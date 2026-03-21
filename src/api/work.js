@@ -24,6 +24,10 @@ export function updateWorkDemandApi(demandId, payload) {
   return request.put(`/work/demands/${demandId}`, payload)
 }
 
+export function deleteWorkDemandApi(demandId) {
+  return request.delete(`/work/demands/${demandId}`)
+}
+
 export function getWorkLogsApi(params) {
   return request.get('/work/logs', { params })
 }

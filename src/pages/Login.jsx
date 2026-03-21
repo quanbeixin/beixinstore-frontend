@@ -2,8 +2,8 @@
 import { Button, Checkbox, Form, Input, message } from 'antd'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { getAccessApi, loginApi } from '../api/auth'
-import { setAuthStorage } from '../utils/access'
+import { getAccessApi, getPreferencesApi, loginApi } from '../api/auth'
+import { setAuthStorage, setUserPreferences } from '../utils/access'
 import './Login.css'
 
 function Login() {
@@ -19,26 +19,47 @@ function Login() {
       })
 
       if (result?.success) {
-        setAuthStorage({
-          token: result.data.token,
-          user: result.data.user,
-        })
+        const token = result?.data?.token || result?.token || result?.data?.data?.token || ''
+        const user = result?.data?.user || result?.user || result?.data?.data?.user || null
 
-        let accessSnapshot = null
-        try {
-          const accessResult = await getAccessApi()
-          if (accessResult?.success) {
-            accessSnapshot = accessResult.data
-          }
-        } catch (accessError) {
-          console.warn('Fetch access snapshot failed:', accessError)
+        if (!token) {
+          console.error('Login response missing token:', result)
+          message.error('登录响应异常：未返回 token')
+          return
         }
 
         setAuthStorage({
-          access: accessSnapshot,
+          token,
+          user,
         })
+
+        // Do not block page transition; sync access/preferences in background.
+        ;(async () => {
+          let accessSnapshot = null
+          try {
+            const accessResult = await getAccessApi()
+            if (accessResult?.success) {
+              accessSnapshot = accessResult.data
+            }
+          } catch (accessError) {
+            console.warn('Fetch access snapshot failed:', accessError)
+          }
+
+          setAuthStorage({
+            access: accessSnapshot,
+          })
+          try {
+            const preferenceResult = await getPreferencesApi()
+            if (preferenceResult?.success) {
+              setUserPreferences(preferenceResult.data || {})
+            }
+          } catch (preferenceError) {
+            console.warn('Fetch user preferences failed:', preferenceError)
+          }
+        })()
+
         message.success('登录成功')
-        navigate('/performance-dashboard')
+        navigate('/', { replace: true })
       } else {
         message.error(result.message || '登录失败')
       }

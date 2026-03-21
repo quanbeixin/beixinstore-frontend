@@ -34,6 +34,7 @@ import {
   updateWorkLogApi,
 } from '../api/work'
 import { hasPermission } from '../utils/access'
+import { formatBeijingDate, getBeijingTodayDateString } from '../utils/datetime'
 
 const { Text } = Typography
 const ITEM_STATUS_OPTIONS = [
@@ -43,11 +44,7 @@ const ITEM_STATUS_OPTIONS = [
 ]
 
 function getTodayDateString() {
-  const d = new Date()
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  return getBeijingTodayDateString()
 }
 
 function toNumber(value, fallback = 0) {
@@ -56,11 +53,7 @@ function toNumber(value, fallback = 0) {
 }
 
 function formatDateOnly(value) {
-  if (!value) return '-'
-  const text = String(value)
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
-  if (text.includes('T')) return text.split('T')[0]
-  return text.slice(0, 10)
+  return formatBeijingDate(value)
 }
 
 function toDateInputValue(value) {
@@ -496,7 +489,7 @@ function WorkLogs() {
   ]
 
   return (
-    <div style={{ padding: 16, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
+    <div style={{ padding: 12, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} md={8}>
           <Card variant="borderless">
@@ -805,7 +798,7 @@ function WorkLogs() {
         confirmLoading={actualSubmitting}
         okText="保存"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={actualForm} layout="vertical" style={{ marginTop: 8 }}>
           <Form.Item

@@ -11,6 +11,7 @@ function readJsonStorage(key) {
 
 const MENU_VISIBILITY_RULES_KEY = 'menu_visibility_rules'
 const MENU_VISIBILITY_ACCESS_KEY = 'menu_visibility_access'
+const USER_PREFERENCES_KEY = 'user_preferences'
 
 const MENU_SCOPE_TYPES = {
   ALL: 'ALL',
@@ -29,6 +30,17 @@ function normalizeRoleKeys(value) {
   return [...new Set(value.map((item) => String(item || '').trim()).filter(Boolean))]
 }
 
+function normalizeDepartmentIds(value) {
+  if (!Array.isArray(value)) return []
+  return [
+    ...new Set(
+      value
+        .map((item) => toPositiveInt(item))
+        .filter((item) => Number.isInteger(item) && item > 0),
+    ),
+  ]
+}
+
 function normalizeScopeType(value) {
   const scopeType = String(value || MENU_SCOPE_TYPES.ALL).trim().toUpperCase()
   return MENU_SCOPE_TYPES[scopeType] || MENU_SCOPE_TYPES.ALL
@@ -36,20 +48,24 @@ function normalizeScopeType(value) {
 
 function normalizeMenuRule(rule) {
   const scopeType = normalizeScopeType(rule?.scope_type)
-  const departmentId = toPositiveInt(rule?.department_id)
+  const departmentIdsFromPayload = normalizeDepartmentIds(rule?.department_ids)
+  const fallbackDepartmentIds = normalizeDepartmentIds([rule?.department_id])
+  const departmentIds =
+    departmentIdsFromPayload.length > 0 ? departmentIdsFromPayload : fallbackDepartmentIds
   const roleKeys = normalizeRoleKeys(rule?.role_keys)
 
   if (scopeType === MENU_SCOPE_TYPES.ALL) {
-    return { scope_type: MENU_SCOPE_TYPES.ALL, department_id: null, role_keys: [] }
+    return { scope_type: MENU_SCOPE_TYPES.ALL, department_id: null, department_ids: [], role_keys: [] }
   }
 
   if (scopeType === MENU_SCOPE_TYPES.ROLE) {
-    return { scope_type: MENU_SCOPE_TYPES.ROLE, department_id: null, role_keys: roleKeys }
+    return { scope_type: MENU_SCOPE_TYPES.ROLE, department_id: null, department_ids: [], role_keys: roleKeys }
   }
 
   return {
     scope_type: scopeType,
-    department_id: departmentId,
+    department_id: departmentIds[0] || null,
+    department_ids: departmentIds,
     role_keys: [],
   }
 }
@@ -60,6 +76,42 @@ export function getToken() {
 
 export function getCurrentUser() {
   return readJsonStorage('user')
+}
+
+function normalizeUserPreferences(value) {
+  const raw = value && typeof value === 'object' ? value : {}
+  const defaultHome = String(raw.default_home || '').trim() || '/work-logs'
+  const dateDisplayMode = String(raw.date_display_mode || '').trim().toLowerCase() === 'date' ? 'date' : 'datetime'
+  const compactDefault =
+    raw.demand_list_compact_default === true ||
+    raw.demand_list_compact_default === 1 ||
+    raw.demand_list_compact_default === '1'
+      ? 1
+      : 0
+
+  return {
+    default_home: defaultHome,
+    date_display_mode: dateDisplayMode,
+    demand_list_compact_default: compactDefault,
+  }
+}
+
+export function getUserPreferences() {
+  const raw = readJsonStorage(USER_PREFERENCES_KEY)
+  if (!raw) {
+    return normalizeUserPreferences({})
+  }
+  return normalizeUserPreferences(raw)
+}
+
+export function setUserPreferences(value) {
+  const normalized = normalizeUserPreferences(value)
+  localStorage.setItem(USER_PREFERENCES_KEY, JSON.stringify(normalized))
+  return normalized
+}
+
+export function getPreferredHomePath() {
+  return getUserPreferences().default_home || '/work-logs'
 }
 
 export function getAccessSnapshot() {
@@ -243,4 +295,5 @@ export function clearAuthStorage() {
   localStorage.removeItem('access')
   localStorage.removeItem(MENU_VISIBILITY_RULES_KEY)
   localStorage.removeItem(MENU_VISIBILITY_ACCESS_KEY)
+  localStorage.removeItem(USER_PREFERENCES_KEY)
 }

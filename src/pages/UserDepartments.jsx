@@ -219,7 +219,7 @@ function UserDepartments() {
   ]
 
   return (
-    <div style={{ padding: '16px' }}>
+    <div style={{ padding: '12px' }}>
       <div
         style={{
           marginBottom: '16px',

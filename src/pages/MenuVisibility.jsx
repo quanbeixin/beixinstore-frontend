@@ -51,15 +51,30 @@ function normalizeRoleKeys(value) {
   return [...new Set(value.map((item) => String(item || '').trim()).filter(Boolean))]
 }
 
+function normalizeDepartmentIds(value) {
+  if (!Array.isArray(value)) return []
+  return [
+    ...new Set(
+      value
+        .map((item) => toPositiveInt(item))
+        .filter((item) => Number.isInteger(item) && item > 0),
+    ),
+  ]
+}
+
 function normalizeRule(rule = {}) {
   const scopeType = String(rule.scope_type || 'ALL').trim().toUpperCase()
-  const departmentId = toPositiveInt(rule.department_id)
+  const departmentIdsFromPayload = normalizeDepartmentIds(rule.department_ids)
+  const fallbackDepartmentIds = normalizeDepartmentIds([rule.department_id])
+  const departmentIds =
+    departmentIdsFromPayload.length > 0 ? departmentIdsFromPayload : fallbackDepartmentIds
   const roleKeys = normalizeRoleKeys(rule.role_keys)
 
   if (scopeType === 'ROLE') {
     return {
       scope_type: 'ROLE',
       department_id: null,
+      department_ids: [],
       role_keys: roleKeys,
     }
   }
@@ -67,7 +82,8 @@ function normalizeRule(rule = {}) {
   if (scopeType === 'DEPT_MEMBERS' || scopeType === 'DEPT_MANAGERS') {
     return {
       scope_type: scopeType,
-      department_id: departmentId,
+      department_id: departmentIds[0] || null,
+      department_ids: departmentIds,
       role_keys: [],
     }
   }
@@ -75,6 +91,7 @@ function normalizeRule(rule = {}) {
   return {
     scope_type: 'ALL',
     department_id: null,
+    department_ids: [],
     role_keys: [],
   }
 }
@@ -110,9 +127,9 @@ function validateRule(rule) {
 
   if (
     (rule.scope_type === 'DEPT_MEMBERS' || rule.scope_type === 'DEPT_MANAGERS') &&
-    !toPositiveInt(rule.department_id)
+    normalizeDepartmentIds(rule.department_ids).length === 0
   ) {
-    return '按部门范围可见时，需要选择一个部门'
+    return '按部门范围可见时，至少需要选择一个部门'
   }
 
   return ''
@@ -298,10 +315,12 @@ function MenuVisibility() {
 
   const buildSavePayload = (menuKey) => {
     const rule = normalizeRule(rulesMap[menuKey] || {})
+    const departmentIds = normalizeDepartmentIds(rule.department_ids)
     return {
       menu_key: menuKey,
       scope_type: rule.scope_type,
-      department_id: rule.department_id,
+      department_id: departmentIds[0] || null,
+      department_ids: departmentIds,
       role_keys: rule.role_keys,
     }
   }
@@ -512,6 +531,7 @@ function MenuVisibility() {
                                   updateRuleDraft(item.menuKey, {
                                     scope_type: 'ALL',
                                     department_id: null,
+                                    department_ids: [],
                                     role_keys: [],
                                   })
                                   return
@@ -521,12 +541,15 @@ function MenuVisibility() {
                                   updateRuleDraft(item.menuKey, {
                                     scope_type: 'ROLE',
                                     department_id: null,
+                                    department_ids: [],
                                   })
                                   return
                                 }
 
                                 updateRuleDraft(item.menuKey, {
                                   scope_type: value,
+                                  department_id: null,
+                                  department_ids: [],
                                   role_keys: [],
                                 })
                               }}
@@ -536,9 +559,14 @@ function MenuVisibility() {
                               <Select
                                 mode="multiple"
                                 allowClear
+                                showSearch
                                 placeholder="选择角色"
                                 value={rule.role_keys}
                                 options={roleOptions}
+                                optionFilterProp="label"
+                                maxTagCount="responsive"
+                                maxTagTextLength={8}
+                                maxTagPlaceholder={(omittedValues) => `+${omittedValues.length} 项`}
                                 disabled={!canManage || savingAll}
                                 onChange={(vals) =>
                                   updateRuleDraft(item.menuKey, { role_keys: normalizeRoleKeys(vals) })
@@ -548,13 +576,21 @@ function MenuVisibility() {
 
                             {isDeptScope ? (
                               <Select
+                                mode="multiple"
                                 allowClear
-                                placeholder="选择部门"
-                                value={rule.department_id}
+                                showSearch
+                                placeholder="选择部门（可多选）"
+                                value={rule.department_ids}
                                 options={departmentOptions}
+                                optionFilterProp="label"
+                                maxTagCount="responsive"
+                                maxTagTextLength={8}
+                                maxTagPlaceholder={(omittedValues) => `+${omittedValues.length} 项`}
                                 disabled={!canManage || savingAll}
                                 onChange={(value) =>
-                                  updateRuleDraft(item.menuKey, { department_id: toPositiveInt(value) })
+                                  updateRuleDraft(item.menuKey, {
+                                    department_ids: normalizeDepartmentIds(value),
+                                  })
                                 }
                               />
                             ) : null}

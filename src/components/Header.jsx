@@ -9,6 +9,7 @@ const { Text } = Typography
 function Header({ route }) {
   const navigate = useNavigate()
   const currentUser = getCurrentUser()
+  const currentUserName = currentUser?.real_name || currentUser?.username || '未登录用户'
 
   const handleLogout = () => {
     clearAuthStorage()
@@ -18,13 +19,15 @@ function Header({ route }) {
   return (
     <AntHeader className="app-header">
       <div className="header-main">
-        <h2 className="header-title">{route?.page?.title || route?.menu?.label || ''}</h2>
-        {route?.page?.subtitle ? <Text className="header-subtitle">{route.page.subtitle}</Text> : null}
+        <div className="header-title-row">
+          <h2 className="header-title">{route?.page?.title || route?.menu?.label || ''}</h2>
+          {route?.page?.subtitle ? <Text className="header-subtitle">{route.page.subtitle}</Text> : null}
+        </div>
       </div>
       <Space className="header-user">
-        <Text>{currentUser?.username || '未登录用户'}</Text>
-        <Avatar size={40} icon={<UserOutlined />} />
-        <Button icon={<LogoutOutlined />} onClick={handleLogout}>
+        <Text className="header-username">{currentUserName}</Text>
+        <Avatar size={38} icon={<UserOutlined />} />
+        <Button type="text" className="header-logout-btn" icon={<LogoutOutlined />} onClick={handleLogout}>
           退出登录
         </Button>
       </Space>

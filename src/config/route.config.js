@@ -56,6 +56,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/personal-settings',
+    componentKey: 'personalSettings',
+    requiredPermission: null,
+    page: {
+      title: '个人设置',
+      subtitle: '维护个人资料、安全信息与界面偏好。',
+    },
+    menu: {
+      section: 'main',
+      label: '个人设置',
+      icon: 'setting',
+    },
+  },
+  {
     path: '/work-demands',
     componentKey: 'workDemands',
     requiredPermission: 'demand.view',

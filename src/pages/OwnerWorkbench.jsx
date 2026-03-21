@@ -26,27 +26,13 @@ import {
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getOwnerWorkbenchApi, updateWorkLogOwnerEstimateApi } from '../api/work'
+import { formatBeijingDate, formatBeijingDateTime } from '../utils/datetime'
 
 const { Text } = Typography
 
 function toNumber(value, fallback = 0) {
   const num = Number(value)
   return Number.isFinite(num) ? num : fallback
-}
-
-function formatDateTime(value) {
-  if (!value) return '-'
-  const text = String(value)
-  if (text.includes('T')) return text.replace('T', ' ').slice(0, 19)
-  return text.slice(0, 19)
-}
-
-function formatDateOnly(value) {
-  if (!value) return '-'
-  const text = String(value)
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
-  if (text.includes('T')) return text.split('T')[0]
-  return text.slice(0, 10)
 }
 
 function getSearchText(item) {
@@ -116,7 +102,7 @@ function OwnerWorkbench() {
       }
       setNoAccess(false)
       setData(result.data || {})
-      setLastLoadedAt(new Date().toISOString())
+      setLastLoadedAt(new Date())
       setSelectedRowKeys([])
     } catch (error) {
       if (error?.status === 403) {
@@ -281,7 +267,7 @@ function OwnerWorkbench() {
   const noFillColumns = useMemo(
     () => [
       { title: '用户ID', dataIndex: 'id', key: 'id', width: 100 },
-      { title: '用户名', dataIndex: 'username', key: 'username' },
+      { title: '成员姓名', dataIndex: 'username', key: 'username' },
     ],
     [],
   )
@@ -343,7 +329,7 @@ function OwnerWorkbench() {
       dataIndex: 'expected_completion_date',
       key: 'expected_completion_date',
       width: 130,
-      render: (value) => formatDateOnly(value),
+      render: (value) => formatBeijingDate(value),
     },
     {
       title: 'Owner评估(h)',
@@ -358,7 +344,7 @@ function OwnerWorkbench() {
       dataIndex: 'owner_estimated_at',
       key: 'owner_estimated_at',
       width: 160,
-      render: (value) => formatDateTime(value),
+      render: (value) => formatBeijingDateTime(value),
     },
     {
       title: '操作',
@@ -375,7 +361,7 @@ function OwnerWorkbench() {
 
   if (noAccess) {
     return (
-      <div style={{ padding: 16 }}>
+      <div style={{ padding: 12 }}>
         <Card variant="borderless">
           <Result
             status="403"
@@ -393,13 +379,13 @@ function OwnerWorkbench() {
   }
 
   return (
-    <div style={{ padding: 16, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
+    <div style={{ padding: 12, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       <Card
         variant="borderless"
         style={{ marginBottom: 16 }}
         extra={
           <Space wrap>
-            <Text type="secondary">最近刷新：{formatDateTime(lastLoadedAt)}</Text>
+            <Text type="secondary">最近刷新：{formatBeijingDateTime(lastLoadedAt)}</Text>
             <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading}>
               刷新
             </Button>
@@ -569,7 +555,7 @@ function OwnerWorkbench() {
         confirmLoading={savingEstimate}
         okText="保存"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={estimateForm} layout="vertical" style={{ marginTop: 8 }}>
           <Form.Item
@@ -595,7 +581,7 @@ function OwnerWorkbench() {
         confirmLoading={batchSaving}
         okText="批量保存"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={batchForm} layout="vertical" style={{ marginTop: 8 }}>
           <Form.Item

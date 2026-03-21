@@ -31,6 +31,37 @@ import {
 
 const { Search } = Input
 
+function highlightText(text, keyword) {
+  const source = String(text || '')
+  const key = String(keyword || '').trim()
+  if (!key) return source
+
+  const lowerSource = source.toLowerCase()
+  const lowerKey = key.toLowerCase()
+  const parts = []
+  let cursor = 0
+
+  while (cursor < source.length) {
+    const matchedIndex = lowerSource.indexOf(lowerKey, cursor)
+    if (matchedIndex < 0) {
+      parts.push(source.slice(cursor))
+      break
+    }
+
+    if (matchedIndex > cursor) {
+      parts.push(source.slice(cursor, matchedIndex))
+    }
+    parts.push(
+      <mark key={`${matchedIndex}-${lowerKey}`} style={{ padding: 0, background: '#fff3bf' }}>
+        {source.slice(matchedIndex, matchedIndex + key.length)}
+      </mark>,
+    )
+    cursor = matchedIndex + key.length
+  }
+
+  return <>{parts}</>
+}
+
 function Users() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(false)
@@ -38,6 +69,8 @@ function Users() {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [keyword, setKeyword] = useState('')
+  const [sortBy, setSortBy] = useState('real_name')
+  const [sortOrder, setSortOrder] = useState('asc')
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
@@ -70,6 +103,8 @@ function Users() {
         page: currentPage,
         pageSize,
         ...(keyword ? { keyword } : {}),
+        sort_by: sortBy,
+        sort_order: sortOrder,
       })
 
       if (result.success) {
@@ -84,7 +119,7 @@ function Users() {
     } finally {
       setLoading(false)
     }
-  }, [currentPage, pageSize, keyword])
+  }, [currentPage, pageSize, keyword, sortBy, sortOrder])
 
   const fetchOptions = useCallback(async () => {
     try {
@@ -132,9 +167,18 @@ function Users() {
     setCurrentPage(1)
   }
 
-  const handleTableChange = (pagination) => {
+  const handleTableChange = (pagination, _filters, sorter) => {
     setCurrentPage(pagination.current || 1)
     setPageSize(pagination.pageSize || 10)
+    const nextSorter = Array.isArray(sorter) ? sorter[0] : sorter
+    const nextColumnKey = String(nextSorter?.columnKey || '')
+    if ((nextColumnKey === 'username' || nextColumnKey === 'real_name') && nextSorter?.order) {
+      setSortBy(nextColumnKey)
+      setSortOrder(nextSorter.order === 'ascend' ? 'asc' : 'desc')
+      return
+    }
+    setSortBy('real_name')
+    setSortOrder('asc')
   }
 
   const refreshUsersAfterMutation = () => {
@@ -168,6 +212,7 @@ function Users() {
       const detail = result.data
       const roleIds = detail.role_ids ? String(detail.role_ids).split(',').map(Number) : []
       form.setFieldsValue({
+        real_name: detail.real_name || '',
         email: detail.email,
         department_id: detail.department_id,
         status_code: detail.status_code || 'ACTIVE',
@@ -190,6 +235,7 @@ function Users() {
       setSubmitting(true)
       const values = await form.validateFields()
       const payload = {
+        real_name: values.real_name || '',
         email: values.email || null,
         department_id: values.department_id ?? null,
         status_code: values.status_code || 'ACTIVE',
@@ -249,6 +295,8 @@ function Users() {
 
   const handleRefresh = () => {
     setKeyword('')
+    setSortBy('real_name')
+    setSortOrder('asc')
     setCurrentPage(1)
     fetchUsers()
   }
@@ -265,12 +313,25 @@ function Users() {
       dataIndex: 'username',
       key: 'username',
       width: 150,
+      sorter: true,
+      sortOrder: sortBy === 'username' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      render: (value) => highlightText(value, keyword),
+    },
+    {
+      title: '真实姓名',
+      dataIndex: 'real_name',
+      key: 'real_name',
+      width: 160,
+      sorter: true,
+      sortOrder: sortBy === 'real_name' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      render: (value, record) => highlightText(value || record.username || '-', keyword),
     },
     {
       title: '邮箱',
       dataIndex: 'email',
       key: 'email',
       width: 200,
+      render: (value) => highlightText(value, keyword),
     },
     {
       title: '部门',
@@ -316,7 +377,7 @@ function Users() {
           </Button>
           <Popconfirm
             title="确认删除"
-            description={`确定要删除用户 "${record.username}" 吗？`}
+            description={`确定要删除用户 "${record.real_name || record.username}" 吗？`}
             onConfirm={() => handleDelete(record)}
             okText="确定"
             cancelText="取消"
@@ -337,7 +398,7 @@ function Users() {
   ]
 
   return (
-    <div style={{ padding: '16px' }}>
+    <div style={{ padding: '12px' }}>
       <div
         style={{
           marginBottom: '16px',
@@ -348,7 +409,7 @@ function Users() {
       >
         <Space>
           <Search
-            placeholder="搜索用户名或邮箱"
+            placeholder="搜索用户名/真实姓名/邮箱"
             allowClear
             enterButton={<SearchOutlined />}
             onSearch={handleSearch}
@@ -445,6 +506,18 @@ function Users() {
               </Form.Item>
             </>
           )}
+
+          <Form.Item
+            label="真实姓名"
+            name="real_name"
+            rules={[
+              { required: true, message: '请输入真实姓名' },
+              { min: 2, message: '真实姓名至少 2 个字符' },
+              { max: 32, message: '真实姓名最多 32 个字符' },
+            ]}
+          >
+            <Input placeholder="请输入真实姓名" />
+          </Form.Item>
 
           <Form.Item
             label="邮箱"

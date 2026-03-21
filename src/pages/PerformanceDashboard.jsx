@@ -42,7 +42,7 @@ function PerformanceDashboard() {
   ]
 
   return (
-    <div style={{ padding: '16px' }}>
+    <div style={{ padding: '12px' }}>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} md={8}>
           <Card title="Total Headcount">
