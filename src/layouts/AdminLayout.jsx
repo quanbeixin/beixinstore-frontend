@@ -13,7 +13,7 @@ const { Content, Sider } = Layout
         </div>
         <Sidebar />
       </Sider>
-      <Layout>
+      <Layout className="app-main-layout">
         <Header route={route} />
         <Content className="app-content">{children}</Content>
       </Layout>

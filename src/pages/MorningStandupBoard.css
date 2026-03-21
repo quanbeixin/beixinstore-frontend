@@ -1,0 +1,37 @@
+.morning-focus-ultra .ant-card-head {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.morning-focus-ultra .ant-card-head-title {
+  padding: 8px 0;
+  font-size: 13px;
+}
+
+.morning-focus-ultra .ant-card-extra {
+  padding: 6px 0;
+}
+
+.morning-focus-ultra .ant-card-small .ant-card-body {
+  padding: 8px;
+}
+
+.morning-focus-table-ultra .ant-table {
+  font-size: 12px;
+}
+
+.morning-focus-table-ultra .ant-table-thead > tr > th {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.morning-focus-table-ultra .ant-table-tbody > tr > td {
+  padding: 5px 8px;
+  line-height: 1.2;
+}
+
+.morning-focus-table-ultra .ant-tag {
+  margin-inline-end: 4px;
+  line-height: 18px;
+  padding-inline: 6px;
+}

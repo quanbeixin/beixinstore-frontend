@@ -42,6 +42,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/morning-standup',
+    componentKey: 'morningStandupBoard',
+    requiredPermission: null,
+    page: {
+      title: '晨会看板',
+      subtitle: '按部门同步每日进展，快速查看成员在做什么以及预计完成时间。',
+    },
+    menu: {
+      section: 'main',
+      label: '晨会看板',
+      icon: 'dashboard',
+    },
+  },
+  {
     path: '/owner-workbench',
     componentKey: 'ownerWorkbench',
     requiredPermission: 'workbench.view.owner',

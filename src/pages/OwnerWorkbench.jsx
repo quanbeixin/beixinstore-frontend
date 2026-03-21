@@ -137,7 +137,7 @@ function OwnerWorkbench() {
       if (!map.has(id)) {
         map.set(id, {
           value: id,
-          label: item.username ? `${item.username} (#${id})` : `用户#${id}`,
+          label: item.username ? item.username : `User ${id}`,
         })
       }
     })

@@ -137,7 +137,7 @@ function DictCenter() {
     () =>
       (departments || []).map((item) => ({
         value: item.id,
-        label: item.name ? `${item.name} (#${item.id})` : `部门#${item.id}`,
+        label: item.name ? item.name : `部门${item.id}`,
       })),
     [departments],
   )

@@ -13,6 +13,7 @@ const Options = lazy(() => import('./pages/Options'))
 const PerformanceDashboard = lazy(() => import('./pages/PerformanceDashboard'))
 const WorkDemands = lazy(() => import('./pages/WorkDemands'))
 const WorkLogs = lazy(() => import('./pages/WorkLogs'))
+const MorningStandupBoard = lazy(() => import('./pages/MorningStandupBoard'))
 const OwnerWorkbench = lazy(() => import('./pages/OwnerWorkbench'))
 const PersonalSettings = lazy(() => import('./pages/PersonalSettings'))
 const RolePermissions = lazy(() => import('./pages/RolePermissions'))
@@ -26,6 +27,7 @@ const PAGE_COMPONENTS = {
   dictCenter: DictCenter,
   login: Login,
   menuVisibility: MenuVisibility,
+  morningStandupBoard: MorningStandupBoard,
   options: Options,
   ownerWorkbench: OwnerWorkbench,
   personalSettings: PersonalSettings,

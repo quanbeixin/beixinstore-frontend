@@ -52,6 +52,10 @@ export function getOwnerWorkbenchApi() {
   return request.get('/work/workbench/owner')
 }
 
+export function getMorningStandupBoardApi(params) {
+  return request.get('/work/workbench/morning', { params })
+}
+
 export function previewNoFillReminderApi() {
   return request.post('/work/reminders/no-fill')
 }

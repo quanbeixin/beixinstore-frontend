@@ -161,7 +161,7 @@ function WorkDemands() {
       if (!map.has(user.id)) {
         map.set(user.id, {
           value: user.id,
-          label: `${displayName} (${user.id})`,
+          label: displayName,
         })
       }
     })
@@ -171,7 +171,7 @@ function WorkDemands() {
       if (!Number.isInteger(ownerId) || ownerId <= 0 || map.has(ownerId)) return
       map.set(ownerId, {
         value: ownerId,
-        label: `${item.owner_name || '用户'} (${ownerId})`,
+        label: item.owner_name || `用户${ownerId}`,
       })
     })
 
@@ -179,7 +179,7 @@ function WorkDemands() {
       const displayName = currentUser.real_name || currentUser.username || '当前用户'
       map.set(currentUser.id, {
         value: currentUser.id,
-        label: `${displayName} (${currentUser.id})`,
+        label: displayName,
       })
     }
 
