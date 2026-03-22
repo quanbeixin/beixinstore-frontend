@@ -7,7 +7,6 @@
   UserOutlined,
 } from '@ant-design/icons'
 import { Menu } from 'antd'
-import { useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { MENU_SECTIONS } from '../config/menu.config'
 import { canAccessRoute } from '../utils/access'
@@ -66,16 +65,11 @@ function Sidebar() {
   const location = useLocation()
 
   const menuItems = buildMenuItems()
-  const openKeys = useMemo(
-    () => MENU_SECTIONS.filter((section) => section.key !== 'main').map((section) => section.key),
-    [],
-  )
 
   return (
     <Menu
       mode="inline"
       selectedKeys={[location.pathname]}
-      defaultOpenKeys={openKeys}
       items={menuItems}
       onClick={({ key }) => {
         if (!String(key).startsWith('/')) return

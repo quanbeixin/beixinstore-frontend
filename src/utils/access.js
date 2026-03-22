@@ -254,6 +254,11 @@ function canAccessRouteByCachedRule(route, menuKey) {
 export function canAccessRoute(route) {
   if (!route) return false
 
+  const access = getAccessSnapshot()
+  if (Array.isArray(route.requiredRoles) && route.requiredRoles.includes('SUPER_ADMIN')) {
+    if (!access?.is_super_admin) return false
+  }
+
   const passPermission = hasPermission(route.requiredPermission)
   const passRole = hasAnyRole(route.requiredRoles)
   if (!passPermission || !passRole) return false
@@ -263,7 +268,6 @@ export function canAccessRoute(route) {
 
    // Ensure owner-workbench menu can be shown for department managers.
   if (menuKey === '/owner-workbench') {
-    const access = getAccessSnapshot()
     if (access?.is_department_manager) return true
   }
 

@@ -14,16 +14,32 @@ export const PRIVATE_ROUTES = [
   // requiredPermission: 'user.view'
   // requiredRoles: ['ADMIN', 'SUPER_ADMIN']
   {
-    path: '/performance-dashboard',
-    componentKey: 'performanceDashboard',
+    path: '/efficiency/demand',
+    componentKey: 'demandInsightBoard',
     requiredPermission: null,
+    requiredRoles: ['SUPER_ADMIN'],
     page: {
-      title: '人效看板',
-      subtitle: '按部门查看效率与产出概览。',
+      title: '需求投入看板',
+      subtitle: '按需求、阶段、参与人查看负责人预估、个人预估与个人实际投入。',
     },
     menu: {
-      section: 'main',
-      label: '人效看板',
+      section: 'efficiency',
+      label: '需求投入看板',
+      icon: 'dashboard',
+    },
+  },
+  {
+    path: '/efficiency/member',
+    componentKey: 'memberRhythmBoard',
+    requiredPermission: null,
+    requiredRoles: ['SUPER_ADMIN'],
+    page: {
+      title: '成员工作节奏',
+      subtitle: '按成员和日期观察工作饱和度与投入节奏。',
+    },
+    menu: {
+      section: 'efficiency',
+      label: '成员工作节奏',
       icon: 'dashboard',
     },
   },

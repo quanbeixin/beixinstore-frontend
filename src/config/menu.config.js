@@ -1,11 +1,12 @@
-import { PRIVATE_ROUTES } from './route.config'
+﻿import { PRIVATE_ROUTES } from './route.config'
 
 const SECTION_META = {
   main: { key: 'main' },
+  efficiency: { key: 'efficiency', label: '效能总览', icon: 'dashboard' },
   system: { key: 'system', label: '系统设置', icon: 'setting' },
 }
 
-const SECTION_ORDER = ['main', 'system']
+const SECTION_ORDER = ['main', 'efficiency', 'system']
 
 function buildMenuSectionsFromRoutes() {
   const sectionMap = {}

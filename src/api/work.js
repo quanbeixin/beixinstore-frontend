@@ -59,3 +59,15 @@ export function getMorningStandupBoardApi(params) {
 export function previewNoFillReminderApi() {
   return request.post('/work/reminders/no-fill')
 }
+
+export function getInsightFilterOptionsApi() {
+  return request.get('/work/insight/filters')
+}
+
+export function getDemandInsightApi(params) {
+  return request.get('/work/insight/demand', { params })
+}
+
+export function getMemberInsightApi(params) {
+  return request.get('/work/insight/member', { params })
+}

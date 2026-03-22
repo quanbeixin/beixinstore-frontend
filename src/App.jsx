@@ -10,7 +10,8 @@ const Users = lazy(() => import('./pages/Users'))
 const Departments = lazy(() => import('./pages/Departments'))
 const UserDepartments = lazy(() => import('./pages/UserDepartments'))
 const Options = lazy(() => import('./pages/Options'))
-const PerformanceDashboard = lazy(() => import('./pages/PerformanceDashboard'))
+const DemandInsightBoard = lazy(() => import('./pages/DemandInsightBoard'))
+const MemberRhythmBoard = lazy(() => import('./pages/MemberRhythmBoard'))
 const WorkDemands = lazy(() => import('./pages/WorkDemands'))
 const WorkLogs = lazy(() => import('./pages/WorkLogs'))
 const MorningStandupBoard = lazy(() => import('./pages/MorningStandupBoard'))
@@ -31,7 +32,8 @@ const PAGE_COMPONENTS = {
   options: Options,
   ownerWorkbench: OwnerWorkbench,
   personalSettings: PersonalSettings,
-  performanceDashboard: PerformanceDashboard,
+  demandInsightBoard: DemandInsightBoard,
+  memberRhythmBoard: MemberRhythmBoard,
   register: Register,
   rolePermissions: RolePermissions,
   workDemands: WorkDemands,
