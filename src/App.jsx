@@ -2,7 +2,12 @@ import { Suspense, lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { getMyMenuVisibilityApi } from './api/rbac'
 import { PRIVATE_ROUTES, PUBLIC_ROUTES } from './config/route.config'
-import { canAccessRoute, getToken, setMenuVisibilityAccessMap } from './utils/access'
+import {
+  AUTH_STORAGE_UPDATED_EVENT,
+  canAccessRoute,
+  getToken,
+  setMenuVisibilityAccessMap,
+} from './utils/access'
 import './App.css'
 
 const AdminLayout = lazy(() => import('./layouts/AdminLayout'))
@@ -45,7 +50,7 @@ const PAGE_COMPONENTS = {
 }
 
 function PageFallback() {
-  return <div style={{ padding: '12px' }}>页面加载中...</div>
+  return <div style={{ padding: '12px' }}>Loading...</div>
 }
 
 function getDefaultPrivatePath() {
@@ -103,15 +108,22 @@ function App() {
 
   useEffect(() => {
     let active = true
+    let requestId = 0
 
-    const loadMyMenuVisibility = async () => {
+    const loadMyMenuVisibility = async ({ showLoading = false } = {}) => {
+      const currentRequestId = ++requestId
+      if (showLoading && active) setLoadingVisibility(true)
+
       if (!getToken()) {
-        if (active) setLoadingVisibility(false)
+        setMenuVisibilityAccessMap({}, { user_id: null })
+        if (active && currentRequestId === requestId) setLoadingVisibility(false)
         return
       }
 
       try {
         const result = await getMyMenuVisibilityApi()
+        if (!active || currentRequestId !== requestId) return
+
         if (result?.success) {
           setMenuVisibilityAccessMap(result?.data?.menu_access_map || {})
         } else {
@@ -119,16 +131,23 @@ function App() {
         }
       } catch {
         // keep the app available even when this endpoint is temporarily unavailable
+        if (!active || currentRequestId !== requestId) return
         setMenuVisibilityAccessMap({})
       } finally {
-        if (active) setLoadingVisibility(false)
+        if (active && currentRequestId === requestId) setLoadingVisibility(false)
       }
     }
 
-    loadMyMenuVisibility()
+    loadMyMenuVisibility({ showLoading: Boolean(getToken()) })
+
+    const handleAuthStorageUpdated = () => {
+      loadMyMenuVisibility({ showLoading: false })
+    }
+    window.addEventListener(AUTH_STORAGE_UPDATED_EVENT, handleAuthStorageUpdated)
 
     return () => {
       active = false
+      window.removeEventListener(AUTH_STORAGE_UPDATED_EVENT, handleAuthStorageUpdated)
     }
   }, [])
 
@@ -158,3 +177,4 @@ function App() {
 }
 
 export default App
+

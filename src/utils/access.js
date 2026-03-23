@@ -12,6 +12,8 @@ function readJsonStorage(key) {
 const MENU_VISIBILITY_RULES_KEY = 'menu_visibility_rules'
 const MENU_VISIBILITY_ACCESS_KEY = 'menu_visibility_access'
 const USER_PREFERENCES_KEY = 'user_preferences'
+const AUTH_STORAGE_EVENT = 'auth-storage-updated'
+export const AUTH_STORAGE_UPDATED_EVENT = AUTH_STORAGE_EVENT
 
 const MENU_SCOPE_TYPES = {
   ALL: 'ALL',
@@ -44,6 +46,43 @@ function normalizeDepartmentIds(value) {
 function normalizeScopeType(value) {
   const scopeType = String(value || MENU_SCOPE_TYPES.ALL).trim().toUpperCase()
   return MENU_SCOPE_TYPES[scopeType] || MENU_SCOPE_TYPES.ALL
+}
+
+function toBooleanMap(value) {
+  const map = {}
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return map
+
+  Object.keys(value).forEach((menuKey) => {
+    const normalizedKey = String(menuKey || '').trim()
+    if (!normalizedKey) return
+    map[normalizedKey] = Boolean(value[menuKey])
+  })
+
+  return map
+}
+
+function getCurrentUserId() {
+  const user = readJsonStorage('user')
+  return toPositiveInt(user?.id)
+}
+
+function normalizeMenuVisibilityAccessPayload(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value) && value.map) {
+    return {
+      user_id: toPositiveInt(value.user_id),
+      map: toBooleanMap(value.map),
+    }
+  }
+
+  return {
+    user_id: null,
+    map: toBooleanMap(value),
+  }
+}
+
+function emitAuthStorageUpdated() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event(AUTH_STORAGE_EVENT))
 }
 
 function normalizeMenuRule(rule) {
@@ -115,7 +154,17 @@ export function getPreferredHomePath() {
 }
 
 export function getAccessSnapshot() {
-  return readJsonStorage('access')
+  const access = readJsonStorage('access')
+  if (!access || typeof access !== 'object') return null
+
+  const currentUserId = getCurrentUserId()
+  const accessUserId = toPositiveInt(access.user_id)
+  if (currentUserId && accessUserId && currentUserId !== accessUserId) {
+    localStorage.removeItem('access')
+    return null
+  }
+
+  return access
 }
 
 function getRoleKeys(access) {
@@ -203,34 +252,29 @@ export function setMenuVisibilityRules(value) {
 }
 
 export function getMenuVisibilityAccessMap() {
-  const raw = readJsonStorage(MENU_VISIBILITY_ACCESS_KEY)
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+  const payload = normalizeMenuVisibilityAccessPayload(readJsonStorage(MENU_VISIBILITY_ACCESS_KEY))
+  const currentUserId = getCurrentUserId()
+
+  if (currentUserId && payload.user_id && currentUserId !== payload.user_id) {
+    localStorage.removeItem(MENU_VISIBILITY_ACCESS_KEY)
     return {}
   }
 
-  const map = {}
-
-  Object.keys(raw).forEach((menuKey) => {
-    const normalizedKey = String(menuKey || '').trim()
-    if (!normalizedKey) return
-    map[normalizedKey] = Boolean(raw[menuKey])
-  })
-
-  return map
+  return payload.map
 }
 
-export function setMenuVisibilityAccessMap(value) {
-  const map = {}
+export function setMenuVisibilityAccessMap(value, options = {}) {
+  const map = toBooleanMap(value)
+  const currentUserId = getCurrentUserId()
+  const userId = toPositiveInt(options?.user_id) || currentUserId || null
 
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    Object.keys(value).forEach((menuKey) => {
-      const normalizedKey = String(menuKey || '').trim()
-      if (!normalizedKey) return
-      map[normalizedKey] = Boolean(value[menuKey])
-    })
-  }
-
-  localStorage.setItem(MENU_VISIBILITY_ACCESS_KEY, JSON.stringify(map))
+  localStorage.setItem(
+    MENU_VISIBILITY_ACCESS_KEY,
+    JSON.stringify({
+      user_id: userId,
+      map,
+    }),
+  )
   return map
 }
 
@@ -280,17 +324,34 @@ export function canAccessRoute(route) {
 }
 
 export function setAuthStorage({ token, user, access }) {
+  const previousUserId = getCurrentUserId()
+  const nextUserId = user === undefined ? previousUserId : toPositiveInt(user?.id)
+
+  if (previousUserId && nextUserId && previousUserId !== nextUserId) {
+    localStorage.removeItem('access')
+    localStorage.removeItem(MENU_VISIBILITY_ACCESS_KEY)
+    localStorage.removeItem(USER_PREFERENCES_KEY)
+  }
+
   if (token) {
     localStorage.setItem('token', token)
+  } else if (token === null) {
+    localStorage.removeItem('token')
   }
 
   if (user) {
     localStorage.setItem('user', JSON.stringify(user))
+  } else if (user === null) {
+    localStorage.removeItem('user')
   }
 
   if (access) {
     localStorage.setItem('access', JSON.stringify(access))
+  } else if (access === null) {
+    localStorage.removeItem('access')
   }
+
+  emitAuthStorageUpdated()
 }
 
 export function clearAuthStorage() {
@@ -300,4 +361,5 @@ export function clearAuthStorage() {
   localStorage.removeItem(MENU_VISIBILITY_RULES_KEY)
   localStorage.removeItem(MENU_VISIBILITY_ACCESS_KEY)
   localStorage.removeItem(USER_PREFERENCES_KEY)
+  emitAuthStorageUpdated()
 }

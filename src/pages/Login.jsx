@@ -3,8 +3,16 @@ import { Button, Checkbox, Form, Input, message } from 'antd'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getAccessApi, getPreferencesApi, loginApi } from '../api/auth'
-import { setAuthStorage, setUserPreferences } from '../utils/access'
+import { getMyMenuVisibilityApi } from '../api/rbac'
+import { setAuthStorage, setMenuVisibilityAccessMap, setUserPreferences } from '../utils/access'
 import './Login.css'
+
+async function warmupWorkbenchPage() {
+  await Promise.allSettled([
+    import('../layouts/AdminLayout'),
+    import('./WorkLogs'),
+  ])
+}
 
 function Login() {
   const navigate = useNavigate()
@@ -33,33 +41,38 @@ function Login() {
           user,
         })
 
-        // Do not block page transition; sync access/preferences in background.
-        ;(async () => {
-          let accessSnapshot = null
-          try {
-            const accessResult = await getAccessApi()
-            if (accessResult?.success) {
-              accessSnapshot = accessResult.data
-            }
-          } catch (accessError) {
-            console.warn('Fetch access snapshot failed:', accessError)
-          }
+        const userId = Number(user?.id) > 0 ? Number(user.id) : null
+        const [accessTask, menuTask, preferenceTask] = await Promise.allSettled([
+          getAccessApi(),
+          getMyMenuVisibilityApi(),
+          getPreferencesApi(),
+          warmupWorkbenchPage(),
+        ])
 
-          setAuthStorage({
-            access: accessSnapshot,
-          })
-          try {
-            const preferenceResult = await getPreferencesApi()
-            if (preferenceResult?.success) {
-              setUserPreferences(preferenceResult.data || {})
-            }
-          } catch (preferenceError) {
-            console.warn('Fetch user preferences failed:', preferenceError)
-          }
-        })()
+        let accessSnapshot = null
+        if (accessTask.status === 'fulfilled' && accessTask.value?.success) {
+          accessSnapshot = accessTask.value.data
+        } else if (accessTask.status === 'rejected') {
+          console.warn('Fetch access snapshot failed:', accessTask.reason)
+        }
+        setAuthStorage({ access: accessSnapshot })
+
+        let menuAccessMap = {}
+        if (menuTask.status === 'fulfilled' && menuTask.value?.success) {
+          menuAccessMap = menuTask.value?.data?.menu_access_map || {}
+        } else if (menuTask.status === 'rejected') {
+          console.warn('Fetch menu visibility failed:', menuTask.reason)
+        }
+        setMenuVisibilityAccessMap(menuAccessMap, { user_id: userId })
+
+        if (preferenceTask.status === 'fulfilled' && preferenceTask.value?.success) {
+          setUserPreferences(preferenceTask.value.data || {})
+        } else if (preferenceTask.status === 'rejected') {
+          console.warn('Fetch user preferences failed:', preferenceTask.reason)
+        }
 
         message.success('登录成功')
-        navigate('/', { replace: true })
+        navigate('/work-logs', { replace: true })
       } else {
         message.error(result.message || '登录失败')
       }
