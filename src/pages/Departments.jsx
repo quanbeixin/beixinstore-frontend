@@ -90,7 +90,17 @@ function Departments() {
   }, [editingDept, flatDepartments])
 
   const userOptions = useMemo(
-    () => users.map((user) => ({ value: user.id, label: `${user.username}${user.email ? ` (${user.email})` : ''}` })),
+    () =>
+      users.map((user) => {
+        const realName = String(user?.real_name || '').trim()
+        const username = String(user?.username || '').trim()
+        const label = realName || username || '-'
+
+        return {
+          value: user.id,
+          label,
+        }
+      }),
     [users],
   )
 

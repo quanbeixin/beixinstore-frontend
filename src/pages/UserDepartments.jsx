@@ -170,6 +170,13 @@ function UserDepartments() {
       width: 140,
     },
     {
+      title: '真实姓名',
+      dataIndex: 'real_name',
+      key: 'real_name',
+      width: 140,
+      render: (realName) => realName || '-',
+    },
+    {
       title: '邮箱',
       dataIndex: 'email',
       key: 'email',

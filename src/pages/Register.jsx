@@ -15,6 +15,7 @@ function Register() {
     try {
       const result = await registerApi({
         username: values.username,
+        real_name: values.real_name,
         email: values.email || null,
         password: values.password,
         confirmPassword: values.confirmPassword,
@@ -64,6 +65,17 @@ function Register() {
               ]}
             >
               <Input prefix={<UserOutlined />} placeholder="用户名" size="large" />
+            </Form.Item>
+
+            <Form.Item
+              name="real_name"
+              rules={[
+                { required: true, message: '请输入真实姓名' },
+                { min: 2, message: '真实姓名至少 2 个字符' },
+                { max: 32, message: '真实姓名最多 32 个字符' },
+              ]}
+            >
+              <Input prefix={<UserOutlined />} placeholder="真实姓名" size="large" />
             </Form.Item>
 
             <Form.Item

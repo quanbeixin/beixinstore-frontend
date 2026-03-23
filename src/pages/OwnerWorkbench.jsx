@@ -430,14 +430,6 @@ function OwnerWorkbench() {
     }
   }
 
-  const noFillColumns = useMemo(
-    () => [
-      { title: '用户ID', dataIndex: 'id', key: 'id', width: 100 },
-      { title: '成员姓名', dataIndex: 'username', key: 'username' },
-    ],
-    [],
-  )
-
   const ownerEstimateColumns = [
     {
       title: '事项ID',
@@ -557,6 +549,8 @@ function OwnerWorkbench() {
     )
   }
 
+  const metricCardStyle = { height: 168, width: '100%' }
+
   return (
     <div style={{ padding: 12, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       <Card
@@ -572,8 +566,8 @@ function OwnerWorkbench() {
         }
       >
         <Row gutter={[16, 16]}>
-          <Col xs={24} md={8} lg={4}>
-            <Card variant="borderless">
+          <Col xs={24} md={8} lg={4} style={{ display: 'flex' }}>
+            <Card variant="borderless" style={metricCardStyle}>
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">团队人数</Text>
@@ -581,8 +575,8 @@ function OwnerWorkbench() {
               <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{teamSize}</div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={4}>
-            <Card variant="borderless">
+          <Col xs={24} md={8} lg={4} style={{ display: 'flex' }}>
+            <Card variant="borderless" style={metricCardStyle}>
               <Space>
                 <AlertOutlined />
                 <Text type="secondary">今日已填报</Text>
@@ -590,8 +584,8 @@ function OwnerWorkbench() {
               <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{filledUsers}</div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={4}>
-            <Card variant="borderless">
+          <Col xs={24} md={8} lg={4} style={{ display: 'flex' }}>
+            <Card variant="borderless" style={metricCardStyle}>
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">今日填报率</Text>
@@ -599,19 +593,31 @@ function OwnerWorkbench() {
               <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{`${fillRate.toFixed(1)}%`}</div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={4}>
-            <Card variant="borderless">
-              <Space>
-                <WarningOutlined />
-                <Text type="secondary">今日未填报</Text>
+          <Col xs={24} md={8} lg={4} style={{ display: 'flex' }}>
+            <Card variant="borderless" style={metricCardStyle}>
+              <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                <Space>
+                  <WarningOutlined />
+                  <Text type="secondary">今日未填报</Text>
+                </Space>
+                {noFillMembers.length === 0 ? (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    今日全员已填报
+                  </Text>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 96, overflowY: 'auto' }}>
+                    {noFillMembers.map((member) => (
+                      <Tag color="error" key={member.id}>
+                        {member.username || `用户${member.id}`}
+                      </Tag>
+                    ))}
+                  </div>
+                )}
               </Space>
-              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#d4380d' }}>
-                {toNumber(overview.unfilled_users_today, 0)}
-              </div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={4}>
-            <Card variant="borderless">
+          <Col xs={24} md={8} lg={4} style={{ display: 'flex' }}>
+            <Card variant="borderless" style={metricCardStyle}>
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">团队今日预估(h)</Text>
@@ -621,8 +627,8 @@ function OwnerWorkbench() {
               </div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={4}>
-            <Card variant="borderless">
+          <Col xs={24} md={8} lg={4} style={{ display: 'flex' }}>
+            <Card variant="borderless" style={metricCardStyle}>
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">团队今日实际(h)</Text>
@@ -635,99 +641,79 @@ function OwnerWorkbench() {
         </Row>
       </Card>
 
-      <Row gutter={[16, 16]}>
-        <Col xs={24} xl={7}>
-          <Card title="今日未填报成员" variant="borderless">
-            {noFillMembers.length === 0 ? (
-              <Empty description="今日全员已填报" />
-            ) : (
-              <Table
-                rowKey="id"
-                loading={loading}
-                columns={noFillColumns}
-                dataSource={noFillMembers}
-                pagination={false}
-                size="small"
-              />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} xl={17}>
-          <Card
-            title="事项 Owner 评估维护"
-            variant="borderless"
-            extra={
-              <Space wrap>
-                <Tag color={pendingOwnerEstimateCount > 0 ? 'orange' : 'green'}>{`待评估 ${pendingOwnerEstimateCount}`}</Tag>
-                <Tag>{`总事项 ${ownerEstimateItems.length}`}</Tag>
-                <Tag>{`筛选后 ${filteredOwnerEstimateItems.length}`}</Tag>
-                <Button type="primary" icon={<PlusOutlined />} onClick={openAssignModal}>
-                  添加事项
-                </Button>
-              </Space>
-            }
-          >
-            <Space wrap style={{ marginBottom: 12 }}>
-              <Input
-                allowClear
-                placeholder="搜索成员/需求/阶段/描述"
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                style={{ width: 260 }}
-              />
-              <Select
-                allowClear
-                placeholder="筛选成员"
-                options={memberOptions}
-                value={memberFilter}
-                onChange={setMemberFilter}
-                style={{ width: 180 }}
-              />
-              <Select
-                allowClear
-                placeholder="筛选阶段"
-                options={phaseOptions}
-                value={phaseFilter}
-                onChange={setPhaseFilter}
-                style={{ width: 220 }}
-              />
-              <Space>
-                <Text type="secondary">仅看待评估</Text>
-                <Switch checked={pendingOnly} onChange={setPendingOnly} />
-              </Space>
-              <Button onClick={() => setSelectedRowKeys([])}>清空勾选</Button>
-              <Button type="primary" disabled={selectedRowKeys.length === 0} onClick={openBatchModal}>
-                批量评估
-              </Button>
-            </Space>
+      <Card
+        title="事项 Owner 评估维护"
+        variant="borderless"
+        extra={
+          <Space wrap>
+            <Tag color={pendingOwnerEstimateCount > 0 ? 'orange' : 'green'}>{`待评估 ${pendingOwnerEstimateCount}`}</Tag>
+            <Tag>{`总事项 ${ownerEstimateItems.length}`}</Tag>
+            <Tag>{`筛选后 ${filteredOwnerEstimateItems.length}`}</Tag>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openAssignModal}>
+              添加事项
+            </Button>
+          </Space>
+        }
+      >
+        <Space wrap style={{ marginBottom: 12 }}>
+          <Input
+            allowClear
+            placeholder="搜索成员/需求/阶段/描述"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            style={{ width: 260 }}
+          />
+          <Select
+            allowClear
+            placeholder="筛选成员"
+            options={memberOptions}
+            value={memberFilter}
+            onChange={setMemberFilter}
+            style={{ width: 180 }}
+          />
+          <Select
+            allowClear
+            placeholder="筛选阶段"
+            options={phaseOptions}
+            value={phaseFilter}
+            onChange={setPhaseFilter}
+            style={{ width: 220 }}
+          />
+          <Space>
+            <Text type="secondary">仅看待评估</Text>
+            <Switch checked={pendingOnly} onChange={setPendingOnly} />
+          </Space>
+          <Button onClick={() => setSelectedRowKeys([])}>清空勾选</Button>
+          <Button type="primary" disabled={selectedRowKeys.length === 0} onClick={openBatchModal}>
+            批量评估
+          </Button>
+        </Space>
 
-            {filteredOwnerEstimateItems.length === 0 ? (
-              <Empty description="当前筛选下暂无可维护事项" />
-            ) : (
-              <div style={{ width: '100%', overflowX: 'auto' }}>
-                <Table
-                  rowKey="id"
-                  loading={loading}
-                  columns={ownerEstimateColumns}
-                  dataSource={filteredOwnerEstimateItems}
-                  size="small"
-                  scroll={{ x: 1860 }}
-                  rowSelection={{
-                    selectedRowKeys,
-                    onChange: (keys) => setSelectedRowKeys(keys),
-                    preserveSelectedRowKeys: true,
-                  }}
-                  pagination={{
-                    pageSize: 10,
-                    showSizeChanger: false,
-                    showTotal: (count) => `共 ${count} 条`,
-                  }}
-                />
-              </div>
-            )}
-          </Card>
-        </Col>
-      </Row>
+        {filteredOwnerEstimateItems.length === 0 ? (
+          <Empty description="当前筛选下暂无可维护事项" />
+        ) : (
+          <div style={{ width: '100%', overflowX: 'auto' }}>
+            <Table
+              rowKey="id"
+              loading={loading}
+              columns={ownerEstimateColumns}
+              dataSource={filteredOwnerEstimateItems}
+              size="small"
+              scroll={{ x: 1860 }}
+              rowSelection={{
+                selectedRowKeys,
+                onChange: (keys) => setSelectedRowKeys(keys),
+                preserveSelectedRowKeys: true,
+              }}
+              pagination={{
+                pageSize: 10,
+                showSizeChanger: false,
+                showTotal: (count) => `共 ${count} 条`,
+              }}
+            />
+          </div>
+        )}
+      </Card>
 
       <Modal
         title={editingItem ? `维护 Owner 评估：#${editingItem.id}` : '维护 Owner 评估'}
