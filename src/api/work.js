@@ -16,6 +16,10 @@ export function getWorkDemandsApi(params) {
   return request.get('/work/demands', { params })
 }
 
+export function getWorkDemandByIdApi(demandId) {
+  return request.get(`/work/demands/${demandId}`)
+}
+
 export function createWorkDemandApi(payload) {
   return request.post('/work/demands', payload)
 }
@@ -28,6 +32,26 @@ export function deleteWorkDemandApi(demandId) {
   return request.delete(`/work/demands/${demandId}`)
 }
 
+export function initDemandWorkflowApi(demandId) {
+  return request.post(`/work/demands/${demandId}/workflow/init`)
+}
+
+export function getDemandWorkflowApi(demandId) {
+  return request.get(`/work/demands/${demandId}/workflow`)
+}
+
+export function assignDemandWorkflowCurrentNodeApi(demandId, payload) {
+  return request.post(`/work/demands/${demandId}/workflow/current/assign`, payload)
+}
+
+export function assignDemandWorkflowNodeApi(demandId, nodeKey, payload) {
+  return request.post(`/work/demands/${demandId}/workflow/nodes/${nodeKey}/assign`, payload)
+}
+
+export function submitDemandWorkflowCurrentNodeApi(demandId, payload = {}) {
+  return request.post(`/work/demands/${demandId}/workflow/current/submit`, payload)
+}
+
 export function getWorkLogsApi(params) {
   return request.get('/work/logs', { params })
 }
@@ -38,6 +62,10 @@ export function createWorkLogApi(payload) {
 
 export function updateWorkLogApi(logId, payload) {
   return request.put(`/work/logs/${logId}`, payload)
+}
+
+export function deleteWorkLogApi(logId) {
+  return request.delete(`/work/logs/${logId}`)
 }
 
 export function updateWorkLogOwnerEstimateApi(logId, payload) {

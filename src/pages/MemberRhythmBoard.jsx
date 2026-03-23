@@ -329,7 +329,7 @@ function MemberRhythmBoard() {
       key: 'member',
       width: 220,
       render: (_, row) => (
-        <Space direction="vertical" size={2}>
+        <Space orientation="vertical" size={2}>
           <Text strong>{row.username}</Text>
           <Space size={4}>
             <Tag color="blue">#{row.user_id}</Tag>
@@ -713,7 +713,7 @@ function MemberRhythmBoard() {
         ]}
         onCancel={() => setMetricModalOpen(false)}
       >
-        <Space direction="vertical" size={8}>
+        <Space orientation="vertical" size={8}>
           <Text>1. 统计范围按筛选时间内 `work_logs.log_date` 计算。</Text>
           <Text>2. 饱和度口径：`个人实际工时 / 8h`，当前按固定 8h/天计算。</Text>
           <Text>3. 超负荷：饱和度 {'>'} 100%；低负荷：饱和度 {'<'} 60%。</Text>

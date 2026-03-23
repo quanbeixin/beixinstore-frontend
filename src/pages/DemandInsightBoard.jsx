@@ -338,7 +338,7 @@ function DemandInsightBoard() {
       key: 'demand',
       width: 280,
       render: (_, row) => (
-        <Space direction="vertical" size={2}>
+        <Space orientation="vertical" size={2}>
           <Text strong>{row.demand_name || row.demand_id}</Text>
           <Space size={4}>
             <Tag color="blue">{row.demand_id}</Tag>
@@ -815,7 +815,7 @@ function DemandInsightBoard() {
         ]}
         onCancel={() => setMetricModalOpen(false)}
       >
-        <Space direction="vertical" size={8}>
+        <Space orientation="vertical" size={8}>
           <Text>1. 统计范围按筛选时间内 `work_logs.log_date` 计算。</Text>
           <Text>2. 三类工时分别为：负责人预估、个人预估、个人实际。</Text>
           <Text>3. 需求-阶段参与人按 `demand_id + phase_key + user_id` 去重统计。</Text>

@@ -1,4 +1,4 @@
-import { Card, Col, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Typography, message, Button } from 'antd'
+﻿import { Card, Col, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Typography, message, Button } from 'antd'
 import { useEffect, useState } from 'react'
 import {
   getPreferencesApi,
@@ -146,6 +146,7 @@ function PersonalSettings() {
           items={[
             {
               key: 'profile',
+              forceRender: true,
               label: '基础信息',
               children: (
                 <Row gutter={[16, 16]}>
@@ -198,7 +199,7 @@ function PersonalSettings() {
                   </Col>
                   <Col xs={24} md={10}>
                     <Card size="small" title="账号信息">
-                      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                         <div>
                           <Text type="secondary">所属部门：</Text>
                           <Text>{profile?.department_name || '-'}</Text>
@@ -231,6 +232,7 @@ function PersonalSettings() {
             },
             {
               key: 'security',
+              forceRender: true,
               label: '账号安全',
               children: (
                 <Row gutter={[16, 16]}>
@@ -279,6 +281,7 @@ function PersonalSettings() {
             },
             {
               key: 'preference',
+              forceRender: true,
               label: '界面偏好',
               children: (
                 <Row gutter={[16, 16]}>
@@ -319,3 +322,4 @@ function PersonalSettings() {
 }
 
 export default PersonalSettings
+

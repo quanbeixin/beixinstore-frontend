@@ -65,11 +65,15 @@ function Sidebar() {
   const location = useLocation()
 
   const menuItems = buildMenuItems()
+  const selectedKey =
+    location.pathname.startsWith('/work-demands/') && location.pathname !== '/work-demands'
+      ? '/work-demands'
+      : location.pathname
 
   return (
     <Menu
       mode="inline"
-      selectedKeys={[location.pathname]}
+      selectedKeys={[selectedKey]}
       items={menuItems}
       onClick={({ key }) => {
         if (!String(key).startsWith('/')) return

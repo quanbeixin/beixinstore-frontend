@@ -1,11 +1,11 @@
-import {
+﻿import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   ReloadOutlined,
   TeamOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
-import { Button, Card, Col, Empty, Row, Space, Table, Tabs, Tag, Typography, message } from 'antd'
+import { Button, Card, Col, Empty, Row, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getMorningStandupBoardApi } from '../api/work'
 import { getCurrentUser } from '../utils/access'
@@ -31,6 +31,14 @@ function getStatusTagColor(status) {
   if (status === 'IN_PROGRESS') return 'processing'
   if (status === 'DONE') return 'success'
   return 'default'
+}
+
+function truncateText(value, maxLength = 8) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  const chars = Array.from(text)
+  if (chars.length <= maxLength) return text
+  return `${chars.slice(0, maxLength).join('')}...`
 }
 
 function getFocusLevelTag(level) {
@@ -184,6 +192,23 @@ function MorningStandupBoard() {
         width: 96,
         render: (value) => <Tag color={getStatusTagColor(value)}>{value || '-'}</Tag>,
       },
+      {
+        title: '工作描述',
+        dataIndex: 'description',
+        key: 'description',
+        width: 300,
+        render: (value) => {
+          const fullText = String(value || '').trim()
+          if (!fullText) return '-'
+          const shortText = truncateText(fullText, 8)
+          if (shortText === fullText) return shortText
+          return (
+            <Tooltip title={fullText}>
+              <span>{shortText}</span>
+            </Tooltip>
+          )
+        },
+      },
     ],
     [],
   )
@@ -259,7 +284,7 @@ function MorningStandupBoard() {
                     </Space>
                   </div>
                   <div style={{ marginTop: 6, color: '#667085', fontSize: 13 }}>
-                    预计完成：
+                    预计完成:
                     <span style={{ color: overdue ? '#cf1322' : dueToday ? '#d48806' : '#344054' }}>
                       {formatBeijingDate(item.expected_completion_date)}
                     </span>
@@ -468,3 +493,4 @@ function MorningStandupBoard() {
 }
 
 export default MorningStandupBoard
+

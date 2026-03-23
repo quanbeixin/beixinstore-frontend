@@ -114,6 +114,15 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/work-demands/:id',
+    componentKey: 'workDemands',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '需求详情',
+      subtitle: '查看单个需求的状态、流程和关联事项。',
+    },
+  },
+  {
     path: '/users',
     componentKey: 'users',
     requiredPermission: 'user.view',

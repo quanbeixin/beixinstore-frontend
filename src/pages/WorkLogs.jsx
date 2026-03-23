@@ -5,6 +5,7 @@
   ReloadOutlined,
   SaveOutlined,
   UnorderedListOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -15,17 +16,20 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Row,
   Select,
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createWorkLogApi,
+  deleteWorkLogApi,
   getMyWorkbenchApi,
   getWorkDemandsApi,
   getWorkItemTypesApi,
@@ -78,6 +82,14 @@ function isOverdueDate(value) {
   return date < getTodayDateString()
 }
 
+function truncateText(value, maxLength = 8) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  const chars = Array.from(text)
+  if (chars.length <= maxLength) return text
+  return `${chars.slice(0, maxLength).join('')}...`
+}
+
 function WorkLogs() {
   const canCreate = hasPermission('worklog.create')
   const canView = hasPermission('worklog.view.self')
@@ -106,6 +118,7 @@ function WorkLogs() {
   const [submitting, setSubmitting] = useState(false)
   const [actualSubmitting, setActualSubmitting] = useState(false)
   const [statusSubmittingId, setStatusSubmittingId] = useState(null)
+  const [deletingLogId, setDeletingLogId] = useState(null)
   const [actualModalOpen, setActualModalOpen] = useState(false)
   const [editingLog, setEditingLog] = useState(null)
   const [activeItemKeyword, setActiveItemKeyword] = useState('')
@@ -281,6 +294,17 @@ function WorkLogs() {
     loadLogs()
   }, [loadLogs])
 
+  useEffect(() => {
+    if (!actualModalOpen || !editingLog) return
+    actualForm.setFieldsValue({
+      log_status: editingLog.log_status || 'IN_PROGRESS',
+      personal_estimate_hours: toNumber(editingLog.personal_estimate_hours, 0),
+      actual_hours: toNumber(editingLog.actual_hours, 0),
+      expected_completion_date: toDateInputValue(editingLog.expected_completion_date),
+      log_completed_at: toDateInputValue(editingLog.log_completed_at),
+    })
+  }, [actualForm, actualModalOpen, editingLog])
+
   const handleRefresh = async () => {
     await Promise.all([loadBase(), loadLogs()])
   }
@@ -330,19 +354,13 @@ function WorkLogs() {
   }
   const openActualModal = (record) => {
     setEditingLog(record)
-    actualForm.setFieldsValue({
-      personal_estimate_hours: toNumber(record.personal_estimate_hours, 0),
-      actual_hours: toNumber(record.actual_hours, 0),
-      expected_completion_date: toDateInputValue(record.expected_completion_date),
-      log_completed_at: toDateInputValue(record.log_completed_at),
-    })
     setActualModalOpen(true)
   }
 
   const closeActualModal = () => {
+    actualForm.resetFields()
     setActualModalOpen(false)
     setEditingLog(null)
-    actualForm.resetFields()
   }
 
   const handleUpdateActual = async () => {
@@ -351,19 +369,27 @@ function WorkLogs() {
     try {
       setActualSubmitting(true)
       const values = await actualForm.validateFields()
-      const nextCompletedAt = values.log_completed_at || null
-      const currentStatus = String(editingLog.log_status || 'IN_PROGRESS').toUpperCase()
-      const payload = {
-        personal_estimate_hours: values.personal_estimate_hours,
-        actual_hours: values.actual_hours,
-        expected_completion_date: values.expected_completion_date || null,
-        log_completed_at: nextCompletedAt,
+      const selectedStatus = String(values.log_status || editingLog.log_status || 'IN_PROGRESS').toUpperCase()
+      let nextCompletedAt = values.log_completed_at || null
+
+      if (selectedStatus === 'DONE' && !nextCompletedAt) {
+        nextCompletedAt = getTodayDateString()
+      }
+      if (selectedStatus !== 'DONE') {
+        nextCompletedAt = null
       }
 
-      if (nextCompletedAt) {
-        payload.log_status = 'DONE'
-      } else if (currentStatus === 'DONE') {
-        payload.log_status = 'IN_PROGRESS'
+      const resolvedActualHours =
+        values.actual_hours === undefined || values.actual_hours === null || values.actual_hours === ''
+          ? 0
+          : values.actual_hours
+
+      const payload = {
+        log_status: selectedStatus,
+        personal_estimate_hours: values.personal_estimate_hours,
+        actual_hours: resolvedActualHours,
+        expected_completion_date: values.expected_completion_date || null,
+        log_completed_at: nextCompletedAt,
       }
 
       const result = await updateWorkLogApi(editingLog.id, {
@@ -412,6 +438,27 @@ function WorkLogs() {
       setStatusSubmittingId(null)
     }
   }
+
+  const handleDeleteLog = async (record) => {
+    if (!record?.id || !canUpdate) return
+
+    try {
+      setDeletingLogId(record.id)
+      const result = await deleteWorkLogApi(record.id)
+      if (!result?.success) {
+        message.error(result?.message || '删除工作记录失败')
+        return
+      }
+
+      message.success('工作记录已删除')
+      await Promise.all([loadBase(), loadLogs()])
+    } catch (error) {
+      message.error(error?.message || '删除工作记录失败')
+    } finally {
+      setDeletingLogId(null)
+    }
+  }
+
   const logColumns = [
     {
       title: '日期',
@@ -448,7 +495,7 @@ function WorkLogs() {
       render: (value) => formatDateOnly(value),
     },
     {
-      title: '完成日期',
+      title: '实际完成日期',
       dataIndex: 'log_completed_at',
       key: 'log_completed_at',
       width: 130,
@@ -477,13 +524,27 @@ function WorkLogs() {
     {
       title: '操作',
       key: 'action',
-      width: 130,
+      width: 220,
       fixed: 'right',
       render: (_, record) =>
         canUpdate ? (
-          <Button type='link' icon={<EditOutlined />} onClick={() => openActualModal(record)}>
-            编辑进展
-          </Button>
+          <Space size={4}>
+            <Button type='link' icon={<EditOutlined />} onClick={() => openActualModal(record)}>
+              编辑进展
+            </Button>
+            <Popconfirm
+              title="确认删除该工作记录？"
+              description="删除后不可恢复，请谨慎操作。"
+              okText="确认删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true, loading: deletingLogId === record.id }}
+              onConfirm={() => handleDeleteLog(record)}
+            >
+              <Button type='link' danger icon={<DeleteOutlined />} loading={deletingLogId === record.id}>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
         ) : null,
     },
   ]
@@ -526,11 +587,12 @@ function WorkLogs() {
         </Col>
       </Row>
 
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={10}>
+      <Row gutter={[16, 16]} style={{ alignItems: 'stretch' }}>
+        <Col xs={24} lg={10} style={{ display: 'flex' }}>
           <Card
             title="快速填报"
             variant="borderless"
+            style={{ width: '100%', height: '100%' }}
             extra={
               <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={loadingBase || loadingLogs}>
                 刷新
@@ -625,8 +687,8 @@ function WorkLogs() {
           </Card>
         </Col>
 
-        <Col xs={24} lg={14}>
-          <Card title="我的进行中事项" variant="borderless" style={{ marginBottom: 16 }}>
+        <Col xs={24} lg={14} style={{ display: 'flex' }}>
+          <Card title="我的进行中事项" variant="borderless" style={{ width: '100%', height: '100%' }}>
             {activeItems.length === 0 ? (
               <Empty description="暂无未完成事项" />
             ) : (
@@ -711,7 +773,21 @@ function WorkLogs() {
                         </Text>
                       </Space>
                       <Space wrap>
-                        {item.demand_id ? <Tag>{item.demand_id}</Tag> : <Tag>无需求</Tag>}
+                        {item.demand_id ? (
+                          (() => {
+                            const demandFullName = String(item.demand_name || item.demand_id || '').trim()
+                            const demandShortName = truncateText(demandFullName, 8)
+                            if (!demandShortName) return <Tag>{item.demand_id}</Tag>
+                            if (demandShortName === demandFullName) return <Tag>{demandShortName}</Tag>
+                            return (
+                              <Tooltip title={demandFullName}>
+                                <Tag>{demandShortName}</Tag>
+                              </Tooltip>
+                            )
+                          })()
+                        ) : (
+                          <Tag>无需求</Tag>
+                        )}
                         {item.phase_name ? <Tag color="geekblue">{item.phase_name}</Tag> : null}
                       </Space>
                     </div>
@@ -763,7 +839,11 @@ function WorkLogs() {
               </div>
             )}
           </Card>
+        </Col>
+      </Row>
 
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col span={24}>
           <Card title="我的工作记录" variant="borderless">
             <div style={{ width: '100%', overflowX: 'auto' }}>
               <Table
@@ -801,6 +881,9 @@ function WorkLogs() {
         destroyOnHidden
       >
         <Form form={actualForm} layout="vertical" style={{ marginTop: 8 }}>
+          <Form.Item label="事项状态" name="log_status" rules={[{ required: true, message: '请选择事项状态' }]}>
+            <Select options={ITEM_STATUS_OPTIONS} />
+          </Form.Item>
           <Form.Item
             label="预计用时(h)"
             name="personal_estimate_hours"
@@ -811,14 +894,18 @@ function WorkLogs() {
           <Form.Item
             label="实际工时(h)"
             name="actual_hours"
-            rules={[{ required: true, message: '请输入实际工时' }]}
+            extra="默认 0.0；仅当状态为“已完成”且实际工时为 0.0 时，保存后会自动与预计用时一致"
           >
             <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item label="预计完成日期" name="expected_completion_date">
             <Input type="date" />
           </Form.Item>
-          <Form.Item label="完成日期" name="log_completed_at">
+          <Form.Item
+            label="实际完成日期"
+            name="log_completed_at"
+            extra="状态为“已完成”时可设置；若不填，保存时默认使用今天"
+          >
             <Input type="date" />
           </Form.Item>
         </Form>
