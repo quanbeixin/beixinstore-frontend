@@ -642,12 +642,12 @@ function DemandInsightBoard() {
         </Col>
         <Col xs={24} sm={12} xl={6}>
           <Card variant="borderless">
-            <Statistic title="负责人预估总工时(h)" value={toNumber(summary.total_owner_estimate_hours, 0)} precision={1} />
+            <Statistic title="负责人预估总用时(h)" value={toNumber(summary.total_owner_estimate_hours, 0)} precision={1} />
           </Card>
         </Col>
         <Col xs={24} sm={12} xl={6}>
           <Card variant="borderless">
-            <Statistic title="个人实际总工时(h)" value={toNumber(summary.total_actual_hours, 0)} precision={1} />
+            <Statistic title="个人实际总用时(h)" value={toNumber(summary.total_actual_hours, 0)} precision={1} />
           </Card>
         </Col>
       </Row>
@@ -817,7 +817,7 @@ function DemandInsightBoard() {
       >
         <Space orientation="vertical" size={8}>
           <Text>1. 统计范围按筛选时间内 `work_logs.log_date` 计算。</Text>
-          <Text>2. 三类工时分别为：负责人预估、个人预估、个人实际。</Text>
+          <Text>2. 三类用时分别为：负责人预估、个人预估、个人实际。</Text>
           <Text>3. 需求-阶段参与人按 `demand_id + phase_key + user_id` 去重统计。</Text>
           <Text>4. `owner_estimate_hours` 为空按 0 汇总，同时展示“未评估项数量”。</Text>
           <Text>5. 偏差定义：`个人实际 - 负责人预估`，正值代表超支。</Text>
@@ -828,3 +828,4 @@ function DemandInsightBoard() {
 }
 
 export default DemandInsightBoard
+

@@ -1,4 +1,4 @@
-import {
+﻿import {
   AlertOutlined,
   EditOutlined,
   PlusOutlined,
@@ -744,7 +744,7 @@ function OwnerWorkbench() {
           <Form.Item
             label="Owner评估(h)"
             name="owner_estimate_hours"
-            rules={[{ required: true, message: '请输入 Owner 评估工时' }]}
+            rules={[{ required: true, message: '请输入 Owner 评估用时' }]}
           >
             <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
           </Form.Item>
@@ -771,7 +771,7 @@ function OwnerWorkbench() {
           <Form.Item
             label="统一 Owner评估(h)"
             name="owner_estimate_hours"
-            rules={[{ required: true, message: '请输入评估工时' }]}
+            rules={[{ required: true, message: '请输入评估用时' }]}
           >
             <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
           </Form.Item>
@@ -893,7 +893,7 @@ function OwnerWorkbench() {
               <Form.Item
                 label="Owner评估(h)"
                 name="owner_estimate_hours"
-                rules={[{ required: true, message: '请输入Owner评估工时' }]}
+                rules={[{ required: true, message: '请输入Owner评估用时' }]}
               >
                 <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
               </Form.Item>
@@ -946,3 +946,4 @@ function OwnerWorkbench() {
 }
 
 export default OwnerWorkbench
+

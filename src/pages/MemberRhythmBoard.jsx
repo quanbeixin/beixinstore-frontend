@@ -619,7 +619,7 @@ function MemberRhythmBoard() {
         </Col>
         <Col xs={24} sm={12} xl={6}>
           <Card variant="borderless">
-            <Statistic title="日均实际工时(h)" value={toNumber(summary.avg_actual_hours_per_day, 0)} precision={1} />
+            <Statistic title="日均实际用时(h)" value={toNumber(summary.avg_actual_hours_per_day, 0)} precision={1} />
           </Card>
         </Col>
         <Col xs={24} sm={12} xl={6}>
@@ -644,12 +644,12 @@ function MemberRhythmBoard() {
         </Col>
         <Col xs={24} sm={12} xl={6}>
           <Card variant="borderless">
-            <Statistic title="负责人预估总工时(h)" value={toNumber(summary.total_owner_estimate_hours, 0)} precision={1} />
+            <Statistic title="负责人预估总用时(h)" value={toNumber(summary.total_owner_estimate_hours, 0)} precision={1} />
           </Card>
         </Col>
         <Col xs={24} sm={12} xl={6}>
           <Card variant="borderless">
-            <Statistic title="个人实际总工时(h)" value={toNumber(summary.total_actual_hours, 0)} precision={1} />
+            <Statistic title="个人实际总用时(h)" value={toNumber(summary.total_actual_hours, 0)} precision={1} />
           </Card>
         </Col>
       </Row>
@@ -715,10 +715,10 @@ function MemberRhythmBoard() {
       >
         <Space orientation="vertical" size={8}>
           <Text>1. 统计范围按筛选时间内 `work_logs.log_date` 计算。</Text>
-          <Text>2. 饱和度口径：`个人实际工时 / 8h`，当前按固定 8h/天计算。</Text>
+          <Text>2. 饱和度口径：`个人实际用时 / 8h`，当前按固定 8h/天计算。</Text>
           <Text>3. 超负荷：饱和度 {'>'} 100%；低负荷：饱和度 {'<'} 60%。</Text>
           <Text>4. 可从“需求数”直接联动到需求投入看板，继续追踪投入分布。</Text>
-          <Text>5. 三类工时分别为：负责人预估、个人预估、个人实际。</Text>
+          <Text>5. 三类用时分别为：负责人预估、个人预估、个人实际。</Text>
         </Space>
       </Modal>
     </div>
@@ -726,3 +726,4 @@ function MemberRhythmBoard() {
 }
 
 export default MemberRhythmBoard
+

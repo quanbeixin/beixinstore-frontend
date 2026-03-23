@@ -410,7 +410,7 @@ function WorkLogs() {
       })
 
       if (!result?.success) {
-        message.error(result?.message || '实际工时登记失败')
+        message.error(result?.message || '实际用时登记失败')
         return
       }
 
@@ -419,9 +419,9 @@ function WorkLogs() {
       await Promise.all([loadBase(), loadLogs()])
     } catch (error) {
       if (error?.errorFields) {
-        message.error('请检查实际工时表单输入')
+        message.error('请检查实际用时表单输入')
       } else {
-        message.error(error?.message || '实际工时登记失败')
+        message.error(error?.message || '实际用时登记失败')
       }
     } finally {
       setActualSubmitting(false)
@@ -542,7 +542,7 @@ function WorkLogs() {
       render: (value) => toNumber(value, 0).toFixed(1),
     },
     {
-      title: '实际工时(h)',
+      title: '实际用时(h)',
       dataIndex: 'actual_hours',
       key: 'actual_hours',
       width: 140,
@@ -605,7 +605,7 @@ function WorkLogs() {
           <Card variant="borderless">
             <Space>
               <FileTextOutlined />
-              <Text type="secondary">今日实际工时(h)</Text>
+              <Text type="secondary">今日实际用时(h)</Text>
             </Space>
             <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
               {toNumber(workbench?.today?.actual_hours_today, 0).toFixed(1)}
@@ -929,9 +929,9 @@ function WorkLogs() {
             <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item
-            label="实际工时(h)"
+            label="实际用时(h)"
             name="actual_hours"
-            extra="默认 0.0；仅当状态为“已完成”且实际工时为 0.0 时，保存后会自动与预计用时一致"
+            extra="默认 0.0；仅当状态为“已完成”且实际用时为 0.0 时，保存后会自动与预计用时一致"
           >
             <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
           </Form.Item>
@@ -955,6 +955,7 @@ function WorkLogs() {
 }
 
 export default WorkLogs
+
 
 
 
