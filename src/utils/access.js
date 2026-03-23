@@ -181,6 +181,23 @@ function getRoleKeys(access) {
   return []
 }
 
+const PERMISSION_ALIAS_MAP = Object.freeze({
+  'demand.view': ['requirement.view'],
+  'demand.manage': ['requirement.create', 'requirement.edit', 'requirement.transition'],
+  'demand.workflow.view': ['requirement.view'],
+  'demand.workflow.manage': ['requirement.transition'],
+})
+
+function hasPermissionCode(codes, permissionCode) {
+  const normalized = String(permissionCode || '').trim()
+  if (!normalized) return true
+  if (codes.includes(normalized)) return true
+
+  const aliases = PERMISSION_ALIAS_MAP[normalized]
+  if (!Array.isArray(aliases)) return false
+  return aliases.some((alias) => codes.includes(String(alias || '').trim()))
+}
+
 export function hasPermission(permissionCode) {
   const access = getAccessSnapshot()
   if (!access || !permissionCode) return true
@@ -191,8 +208,10 @@ export function hasPermission(permissionCode) {
   if (access.is_super_admin) return true
   if (access.permission_ready === false) return true
 
-  const codes = Array.isArray(access.permission_codes) ? access.permission_codes : []
-  return codes.includes(permissionCode)
+  const codes = Array.isArray(access.permission_codes)
+    ? access.permission_codes.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+  return hasPermissionCode(codes, permissionCode)
 }
 
 export function hasRole(roleKey) {

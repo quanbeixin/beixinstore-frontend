@@ -105,6 +105,7 @@ function renderPrivateRoute(route) {
 
 function App() {
   const [loadingVisibility, setLoadingVisibility] = useState(Boolean(getToken()))
+  const [, setVisibilityVersion] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -116,6 +117,7 @@ function App() {
 
       if (!getToken()) {
         setMenuVisibilityAccessMap({}, { user_id: null })
+        setVisibilityVersion((value) => value + 1)
         if (active && currentRequestId === requestId) setLoadingVisibility(false)
         return
       }
@@ -129,10 +131,12 @@ function App() {
         } else {
           setMenuVisibilityAccessMap({})
         }
+        setVisibilityVersion((value) => value + 1)
       } catch {
         // keep the app available even when this endpoint is temporarily unavailable
         if (!active || currentRequestId !== requestId) return
         setMenuVisibilityAccessMap({})
+        setVisibilityVersion((value) => value + 1)
       } finally {
         if (active && currentRequestId === requestId) setLoadingVisibility(false)
       }
