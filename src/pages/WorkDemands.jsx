@@ -159,6 +159,7 @@ function WorkDemands() {
   const [selectedWorkflowNodeKey, setSelectedWorkflowNodeKey] = useState('')
   const [workflowAssignee, setWorkflowAssignee] = useState()
   const [workflowDueAt, setWorkflowDueAt] = useState(null)
+  const [workflowExpectedStartAt, setWorkflowExpectedStartAt] = useState(() => dayjs(getBeijingTodayDateString()))
   const [detailStatus, setDetailStatus] = useState('')
 
   const detailLogStats = useMemo(() => {
@@ -504,6 +505,7 @@ function WorkDemands() {
     setSelectedWorkflowNodeKey('')
     setWorkflowAssignee(undefined)
     setWorkflowDueAt(null)
+    setWorkflowExpectedStartAt(dayjs(getBeijingTodayDateString()))
     navigate('/work-demands')
   }
 
@@ -560,16 +562,19 @@ function WorkDemands() {
     setSelectedWorkflowNodeKey('')
     setWorkflowAssignee(undefined)
     setWorkflowDueAt(null)
+    setWorkflowExpectedStartAt(dayjs(getBeijingTodayDateString()))
   }, [isDetailPage])
 
   useEffect(() => {
     if (!selectedWorkflowNode) {
       setWorkflowAssignee(undefined)
       setWorkflowDueAt(null)
+      setWorkflowExpectedStartAt(dayjs(getBeijingTodayDateString()))
       return
     }
     setWorkflowAssignee(selectedWorkflowNode.assignee_user_id || undefined)
     setWorkflowDueAt(selectedWorkflowNode.due_at ? dayjs(selectedWorkflowNode.due_at) : null)
+    setWorkflowExpectedStartAt(dayjs(getBeijingTodayDateString()))
   }, [selectedWorkflowNode])
 
   useEffect(() => {
@@ -661,6 +666,7 @@ function WorkDemands() {
       const result = await assignDemandWorkflowNodeApi(detailDemand.id, selectedWorkflowNode.node_key, {
         assignee_user_id: workflowAssignee,
         due_at: workflowDueAt ? workflowDueAt.format('YYYY-MM-DD') : null,
+        expected_start_date: workflowExpectedStartAt ? workflowExpectedStartAt.format('YYYY-MM-DD') : null,
       })
       if (!result?.success) {
         message.error(result?.message || '节点指派失败')
@@ -1241,6 +1247,13 @@ function WorkDemands() {
                           disabled={!canAssignSelectedWorkflowNode}
                           onChange={(value) => setWorkflowDueAt(value)}
                         />
+                        <DatePicker
+                          value={workflowExpectedStartAt}
+                          format="YYYY-MM-DD"
+                          placeholder="预计开始日"
+                          disabled={!canAssignSelectedWorkflowNode}
+                          onChange={(value) => setWorkflowExpectedStartAt(value)}
+                        />
                         <Button
                           loading={workflowSubmitting}
                           disabled={!canAssignSelectedWorkflowNode}
@@ -1322,6 +1335,13 @@ function WorkDemands() {
                   key: 'phase_name',
                   width: 140,
                   render: (_, row) => row.phase_name || row.phase_key || '-',
+                },
+                {
+                  title: '预计开始',
+                  dataIndex: 'expected_start_date',
+                  key: 'expected_start_date',
+                  width: 120,
+                  render: (value) => formatBeijingDate(value),
                 },
                 {
                   title: '预计完成',

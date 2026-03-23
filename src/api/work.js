@@ -60,6 +60,10 @@ export function createWorkLogApi(payload) {
   return request.post('/work/logs', payload)
 }
 
+export function createOwnerAssignedLogApi(payload) {
+  return request.post('/work/logs/owner-assign', payload)
+}
+
 export function updateWorkLogApi(logId, payload) {
   return request.put(`/work/logs/${logId}`, payload)
 }

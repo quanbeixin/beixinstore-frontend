@@ -1,6 +1,7 @@
 import {
   AlertOutlined,
   EditOutlined,
+  PlusOutlined,
   ReloadOutlined,
   TeamOutlined,
   WarningOutlined,
@@ -25,8 +26,15 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getOwnerWorkbenchApi, updateWorkLogOwnerEstimateApi } from '../api/work'
-import { formatBeijingDate, formatBeijingDateTime } from '../utils/datetime'
+import {
+  createOwnerAssignedLogApi,
+  getOwnerWorkbenchApi,
+  getWorkDemandsApi,
+  getWorkItemTypesApi,
+  getWorkPhaseTypesApi,
+  updateWorkLogOwnerEstimateApi,
+} from '../api/work'
+import { formatBeijingDate, formatBeijingDateTime, getBeijingTodayDateString } from '../utils/datetime'
 
 const { Text } = Typography
 
@@ -42,13 +50,27 @@ function getSearchText(item) {
     item?.item_type_name,
     item?.demand_id,
     item?.demand_name,
+    item?.assigned_by_name,
     item?.phase_name,
     item?.phase_key,
+    item?.task_source,
     item?.description,
   ]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
+}
+
+function getTaskSourceLabel(source) {
+  if (source === 'OWNER_ASSIGN') return 'Owner指派'
+  if (source === 'WORKFLOW_AUTO') return '流程待办'
+  return '自主填报'
+}
+
+function getTaskSourceColor(source) {
+  if (source === 'OWNER_ASSIGN') return 'purple'
+  if (source === 'WORKFLOW_AUTO') return 'geekblue'
+  return 'default'
 }
 
 function OwnerWorkbench() {
@@ -62,6 +84,8 @@ function OwnerWorkbench() {
   const [estimateModalOpen, setEstimateModalOpen] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [batchModalOpen, setBatchModalOpen] = useState(false)
+  const [assignModalOpen, setAssignModalOpen] = useState(false)
+  const [assignSaving, setAssignSaving] = useState(false)
 
   const [keyword, setKeyword] = useState('')
   const [memberFilter, setMemberFilter] = useState()
@@ -71,6 +95,7 @@ function OwnerWorkbench() {
 
   const [estimateForm] = Form.useForm()
   const [batchForm] = Form.useForm()
+  const [assignForm] = Form.useForm()
 
   const [data, setData] = useState({
     data_scope: {
@@ -88,9 +113,14 @@ function OwnerWorkbench() {
       total_actual_hours_today: 0,
     },
     no_fill_members: [],
+    team_members: [],
     owner_estimate_items: [],
     owner_estimate_pending_count: 0,
   })
+
+  const [itemTypes, setItemTypes] = useState([])
+  const [demands, setDemands] = useState([])
+  const [phaseDictItems, setPhaseDictItems] = useState([])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -116,9 +146,39 @@ function OwnerWorkbench() {
     }
   }, [])
 
+  const loadAssignBase = useCallback(async () => {
+    try {
+      const [itemTypeResult, demandResult, phaseResult] = await Promise.all([
+        getWorkItemTypesApi({ enabled_only: 1 }),
+        getWorkDemandsApi({ page: 1, pageSize: 1000 }),
+        getWorkPhaseTypesApi({ enabled_only: 1 }),
+      ])
+      if (itemTypeResult?.success) {
+        setItemTypes(itemTypeResult.data || [])
+      }
+      if (demandResult?.success) {
+        setDemands(demandResult.data?.list || [])
+      }
+      if (phaseResult?.success) {
+        setPhaseDictItems(
+          (phaseResult.data || []).map((item) => ({
+            phase_key: item.phase_key,
+            phase_name: item.phase_name,
+          })),
+        )
+      }
+    } catch {
+      // keep owner panel available even if optional lists fail
+    }
+  }, [])
+
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    loadAssignBase()
+  }, [loadAssignBase])
 
   const overview = data.team_overview || {}
   const dataScope = data.data_scope || {}
@@ -126,11 +186,23 @@ function OwnerWorkbench() {
   const filledUsers = toNumber(overview.filled_users_today, 0)
   const fillRate = teamSize > 0 ? Math.min(100, Math.max(0, (filledUsers / teamSize) * 100)) : 0
   const noFillMembers = Array.isArray(data.no_fill_members) ? data.no_fill_members : []
+  const teamMembers = Array.isArray(data.team_members) ? data.team_members : []
   const ownerEstimateItems = Array.isArray(data.owner_estimate_items) ? data.owner_estimate_items : []
   const pendingOwnerEstimateCount = toNumber(data.owner_estimate_pending_count, 0)
+  const assignItemTypeId = Form.useWatch('item_type_id', assignForm)
 
   const memberOptions = useMemo(() => {
     const map = new Map()
+    teamMembers.forEach((item) => {
+      const id = Number(item.id)
+      if (!Number.isInteger(id) || id <= 0) return
+      if (!map.has(id)) {
+        map.set(id, {
+          value: id,
+          label: item.username ? item.username : `User ${id}`,
+        })
+      }
+    })
     ownerEstimateItems.forEach((item) => {
       const id = Number(item.user_id)
       if (!Number.isInteger(id)) return
@@ -142,7 +214,7 @@ function OwnerWorkbench() {
       }
     })
     return Array.from(map.values())
-  }, [ownerEstimateItems])
+  }, [ownerEstimateItems, teamMembers])
 
   const phaseOptions = useMemo(() => {
     const map = new Map()
@@ -156,6 +228,39 @@ function OwnerWorkbench() {
     })
     return Array.from(map.values())
   }, [ownerEstimateItems])
+
+  const assignItemTypeOptions = useMemo(
+    () =>
+      itemTypes.map((item) => ({
+        value: item.id,
+        label: `${item.name}${Number(item.require_demand) === 1 ? '（需关联需求）' : ''}`,
+        require_demand: Number(item.require_demand) === 1 ? 1 : 0,
+      })),
+    [itemTypes],
+  )
+
+  const assignDemandOptions = useMemo(
+    () =>
+      demands.map((item) => ({
+        value: item.id,
+        label: `${item.id} - ${item.name}`,
+      })),
+    [demands],
+  )
+
+  const assignPhaseOptions = useMemo(
+    () =>
+      phaseDictItems.map((item) => ({
+        value: item.phase_key,
+        label: `${item.phase_name} (${item.phase_key})`,
+      })),
+    [phaseDictItems],
+  )
+
+  const selectedAssignItemType = useMemo(
+    () => itemTypes.find((item) => Number(item.id) === Number(assignItemTypeId)) || null,
+    [itemTypes, assignItemTypeId],
+  )
 
   const filteredOwnerEstimateItems = useMemo(() => {
     const q = keyword.trim().toLowerCase()
@@ -264,6 +369,67 @@ function OwnerWorkbench() {
     }
   }
 
+  const openAssignModal = () => {
+    assignForm.resetFields()
+    assignForm.setFieldsValue({
+      log_status: 'TODO',
+      owner_estimate_hours: 1,
+      expected_start_date: getBeijingTodayDateString(),
+      log_date: getBeijingTodayDateString(),
+    })
+    setAssignModalOpen(true)
+  }
+
+  const closeAssignModal = () => {
+    setAssignModalOpen(false)
+    assignForm.resetFields()
+  }
+
+  const handleCreateOwnerAssign = async () => {
+    try {
+      const values = await assignForm.validateFields()
+      const requireDemand = Number(selectedAssignItemType?.require_demand) === 1
+      if (requireDemand && !values.demand_id) {
+        message.warning('当前事项类型必须关联需求')
+        return
+      }
+      if (values.demand_id && !values.phase_key) {
+        message.warning('关联需求时必须选择阶段')
+        return
+      }
+
+      setAssignSaving(true)
+      const payload = {
+        assignee_user_id: values.assignee_user_id,
+        item_type_id: values.item_type_id,
+        demand_id: values.demand_id || null,
+        phase_key: values.demand_id ? values.phase_key : null,
+        description: values.description,
+        owner_estimate_hours: values.owner_estimate_hours,
+        expected_start_date: values.expected_start_date || getBeijingTodayDateString(),
+        expected_completion_date: values.expected_completion_date || null,
+        log_status: values.log_status || 'TODO',
+        log_date: values.log_date || getBeijingTodayDateString(),
+      }
+
+      const result = await createOwnerAssignedLogApi(payload)
+      if (!result?.success) {
+        message.error(result?.message || '指派事项创建失败')
+        return
+      }
+
+      message.success('指派事项已创建')
+      closeAssignModal()
+      await loadData()
+    } catch (error) {
+      if (!error?.errorFields) {
+        message.error(error?.message || '指派事项创建失败')
+      }
+    } finally {
+      setAssignSaving(false)
+    }
+  }
+
   const noFillColumns = useMemo(
     () => [
       { title: '用户ID', dataIndex: 'id', key: 'id', width: 100 },
@@ -303,6 +469,19 @@ function OwnerWorkbench() {
       key: 'phase',
       width: 150,
       render: (_, row) => row.phase_name || row.phase_key || '-',
+    },
+    {
+      title: '来源',
+      key: 'task_source',
+      width: 110,
+      render: (_, row) => <Tag color={getTaskSourceColor(row.task_source)}>{getTaskSourceLabel(row.task_source)}</Tag>,
+    },
+    {
+      title: '指派人',
+      dataIndex: 'assigned_by_name',
+      key: 'assigned_by_name',
+      width: 120,
+      render: (value) => value || '-',
     },
     {
       title: '描述',
@@ -482,6 +661,9 @@ function OwnerWorkbench() {
                 <Tag color={pendingOwnerEstimateCount > 0 ? 'orange' : 'green'}>{`待评估 ${pendingOwnerEstimateCount}`}</Tag>
                 <Tag>{`总事项 ${ownerEstimateItems.length}`}</Tag>
                 <Tag>{`筛选后 ${filteredOwnerEstimateItems.length}`}</Tag>
+                <Button type="primary" icon={<PlusOutlined />} onClick={openAssignModal}>
+                  添加事项
+                </Button>
               </Space>
             }
           >
@@ -529,7 +711,7 @@ function OwnerWorkbench() {
                   columns={ownerEstimateColumns}
                   dataSource={filteredOwnerEstimateItems}
                   size="small"
-                  scroll={{ x: 1680 }}
+                  scroll={{ x: 1860 }}
                   rowSelection={{
                     selectedRowKeys,
                     onChange: (keys) => setSelectedRowKeys(keys),
@@ -555,6 +737,7 @@ function OwnerWorkbench() {
         confirmLoading={savingEstimate}
         okText="保存"
         cancelText="取消"
+        forceRender
         destroyOnHidden
       >
         <Form form={estimateForm} layout="vertical" style={{ marginTop: 8 }}>
@@ -581,6 +764,7 @@ function OwnerWorkbench() {
         confirmLoading={batchSaving}
         okText="批量保存"
         cancelText="取消"
+        forceRender
         destroyOnHidden
       >
         <Form form={batchForm} layout="vertical" style={{ marginTop: 8 }}>
@@ -592,6 +776,169 @@ function OwnerWorkbench() {
             <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
           </Form.Item>
           <Text type="secondary">将对当前筛选结果中已勾选事项统一设置该评估值。</Text>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="添加并指派事项"
+        open={assignModalOpen}
+        onCancel={closeAssignModal}
+        onOk={handleCreateOwnerAssign}
+        confirmLoading={assignSaving}
+        okText="确认指派"
+        cancelText="取消"
+        forceRender
+        destroyOnHidden
+      >
+        <Form
+          form={assignForm}
+          layout="vertical"
+          style={{ marginTop: 8 }}
+          onValuesChange={(changedValues) => {
+            if (Object.prototype.hasOwnProperty.call(changedValues, 'item_type_id')) {
+              const nextItemType = itemTypes.find((item) => Number(item.id) === Number(changedValues.item_type_id))
+              if (Number(nextItemType?.require_demand) !== 1) {
+                assignForm.setFieldsValue({
+                  demand_id: undefined,
+                  phase_key: undefined,
+                })
+              }
+            }
+            if (Object.prototype.hasOwnProperty.call(changedValues, 'demand_id') && !changedValues.demand_id) {
+              assignForm.setFieldsValue({ phase_key: undefined })
+            }
+          }}
+        >
+          <Form.Item
+            label="指派给成员"
+            name="assignee_user_id"
+            rules={[{ required: true, message: '请选择成员' }]}
+          >
+            <Select
+              showSearch
+              placeholder="请选择成员"
+              options={memberOptions}
+              optionFilterProp="label"
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="事项类型"
+            name="item_type_id"
+            rules={[{ required: true, message: '请选择事项类型' }]}
+          >
+            <Select
+              showSearch
+              placeholder="请选择事项类型"
+              options={assignItemTypeOptions}
+              optionFilterProp="label"
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="关联需求"
+            name="demand_id"
+            rules={[
+              {
+                validator(_, value) {
+                  if (Number(selectedAssignItemType?.require_demand) === 1 && !value) {
+                    return Promise.reject(new Error('当前事项类型必须关联需求'))
+                  }
+                  return Promise.resolve()
+                },
+              },
+            ]}
+          >
+            <Select
+              allowClear
+              showSearch
+              placeholder={Number(selectedAssignItemType?.require_demand) === 1 ? '必选：请选择需求' : '可选：选择需求'}
+              options={assignDemandOptions}
+              optionFilterProp="label"
+            />
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, next) => prev.demand_id !== next.demand_id}
+          >
+            {({ getFieldValue }) =>
+              getFieldValue('demand_id') ? (
+                <Form.Item
+                  label="需求阶段"
+                  name="phase_key"
+                  rules={[{ required: true, message: '请选择需求阶段' }]}
+                >
+                  <Select
+                    showSearch
+                    placeholder="请选择阶段"
+                    options={assignPhaseOptions}
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              ) : null
+            }
+          </Form.Item>
+
+          <Form.Item
+            label="工作描述"
+            name="description"
+            rules={[{ required: true, message: '请输入工作描述' }]}
+          >
+            <Input.TextArea rows={3} maxLength={2000} placeholder="请输入本次要指派的事项说明" />
+          </Form.Item>
+
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item
+                label="Owner评估(h)"
+                name="owner_estimate_hours"
+                rules={[{ required: true, message: '请输入Owner评估工时' }]}
+              >
+                <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="状态"
+                name="log_status"
+                rules={[{ required: true, message: '请选择状态' }]}
+              >
+                <Select
+                  options={[
+                    { label: '待开始', value: 'TODO' },
+                    { label: '进行中', value: 'IN_PROGRESS' },
+                    { label: '已完成', value: 'DONE' },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item
+                label="预计开始日期"
+                name="expected_start_date"
+                rules={[{ required: true, message: '请选择预计开始日期' }]}
+              >
+                <Input type="date" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="预计完成日期" name="expected_completion_date">
+                <Input type="date" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item label="填报日期" name="log_date">
+            <Input type="date" />
+          </Form.Item>
+
+          <Text type="secondary">
+            指派事项会同步出现在被指派人的“我进行中的事项”中，并标记来源为“Owner指派”。
+          </Text>
         </Form>
       </Modal>
     </div>

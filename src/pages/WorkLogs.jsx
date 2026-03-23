@@ -76,6 +76,12 @@ function getItemStatusLabel(status) {
   return matched?.label || status || '进行中'
 }
 
+function getTaskSourceLabel(source) {
+  if (source === 'OWNER_ASSIGN') return 'Owner指派'
+  if (source === 'WORKFLOW_AUTO') return '流程待办'
+  return '自主填报'
+}
+
 function isOverdueDate(value) {
   const date = formatDateOnly(value)
   if (!date || date === '-') return false
@@ -192,7 +198,9 @@ function WorkLogs() {
         if (!keyword) return true
         const text = `${item?.item_type_name || ''} ${item?.demand_id || ''} ${item?.phase_name || ''} ${
           item?.description || ''
-        } ${item?.expected_completion_date || ''}`.toLowerCase()
+        } ${item?.assigned_by_name || ''} ${
+          item?.task_source || ''
+        } ${item?.expected_start_date || ''} ${item?.expected_completion_date || ''}`.toLowerCase()
         return text.includes(keyword)
       })
       .sort((a, b) => {
@@ -285,6 +293,7 @@ function WorkLogs() {
   useEffect(() => {
     form.setFieldsValue({
       log_date: getTodayDateString(),
+      expected_start_date: getTodayDateString(),
       personal_estimate_hours: 1,
     })
     loadBase()
@@ -300,6 +309,7 @@ function WorkLogs() {
       log_status: editingLog.log_status || 'IN_PROGRESS',
       personal_estimate_hours: toNumber(editingLog.personal_estimate_hours, 0),
       actual_hours: toNumber(editingLog.actual_hours, 0),
+      expected_start_date: toDateInputValue(editingLog.expected_start_date),
       expected_completion_date: toDateInputValue(editingLog.expected_completion_date),
       log_completed_at: toDateInputValue(editingLog.log_completed_at),
     })
@@ -330,6 +340,7 @@ function WorkLogs() {
         item_type_id: values.item_type_id,
         demand_id: values.demand_id || null,
         phase_key: values.demand_id ? values.phase_key : null,
+        expected_start_date: values.expected_start_date || values.log_date || getTodayDateString(),
         expected_completion_date: values.expected_completion_date || null,
         description: values.description,
         personal_estimate_hours: values.personal_estimate_hours,
@@ -343,6 +354,7 @@ function WorkLogs() {
       message.success('工作记录已提交')
       form.setFieldsValue({
         description: '',
+        expected_start_date: getTodayDateString(),
         personal_estimate_hours: 1,
       })
       await Promise.all([loadBase(), loadLogs()])
@@ -388,6 +400,7 @@ function WorkLogs() {
         log_status: selectedStatus,
         personal_estimate_hours: values.personal_estimate_hours,
         actual_hours: resolvedActualHours,
+        expected_start_date: values.expected_start_date || null,
         expected_completion_date: values.expected_completion_date || null,
         log_completed_at: nextCompletedAt,
       }
@@ -486,6 +499,20 @@ function WorkLogs() {
       key: 'phase_name',
       width: 150,
       render: (_, record) => (record.phase_name || record.phase_key || '-'),
+    },
+    {
+      title: '指派人',
+      dataIndex: 'assigned_by_name',
+      key: 'assigned_by_name',
+      width: 120,
+      render: (_, record) => record.assigned_by_name || '-',
+    },
+    {
+      title: '预计开始日期',
+      dataIndex: 'expected_start_date',
+      key: 'expected_start_date',
+      width: 140,
+      render: (value) => formatDateOnly(value),
     },
     {
       title: '预计完成日期',
@@ -653,6 +680,13 @@ function WorkLogs() {
               <Form.Item label="预计完成日期" name="expected_completion_date">
                 <Input type="date" />
               </Form.Item>
+              <Form.Item
+                label="预计开始日期"
+                name="expected_start_date"
+                rules={[{ required: true, message: '请选择预计开始日期' }]}
+              >
+                <Input type="date" />
+              </Form.Item>
 
               <Form.Item
                 label="预计用时(h)"
@@ -768,6 +802,7 @@ function WorkLogs() {
                         <Tag color={getItemStatusColor(item.log_status)}>
                           {getItemStatusLabel(item.log_status || 'IN_PROGRESS')}
                         </Tag>
+                        <Tag>{getTaskSourceLabel(item.task_source)}</Tag>
                         <Text strong style={{ wordBreak: 'break-all' }}>
                           {item.item_type_name || '事项'}
                         </Text>
@@ -803,6 +838,8 @@ function WorkLogs() {
                       }}
                     >
                       <div>填报日期: {formatDateOnly(item.log_date)}</div>
+                      <div>指派人: {item.assigned_by_name || '-'}</div>
+                      <div>预计开始: {formatDateOnly(item.expected_start_date)}</div>
                       <div style={{ color: isOverdueDate(item.expected_completion_date) ? '#d46b08' : '#667085' }}>
                         预计完成: {formatDateOnly(item.expected_completion_date)}
                       </div>
@@ -899,6 +936,9 @@ function WorkLogs() {
             <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item label="预计完成日期" name="expected_completion_date">
+            <Input type="date" />
+          </Form.Item>
+          <Form.Item label="预计开始日期" name="expected_start_date">
             <Input type="date" />
           </Form.Item>
           <Form.Item
