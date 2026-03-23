@@ -207,6 +207,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/archive-demands',
+    componentKey: 'archiveDemands',
+    requiredPermission: 'archive.view',
+    page: {
+      title: '归档管理',
+      subtitle: '集中管理已归档需求，并支持彻底删除。',
+    },
+    menu: {
+      section: 'system',
+      label: '归档管理',
+      icon: 'tool',
+    },
+  },
+  {
     path: '/dict-center',
     componentKey: 'dictCenter',
     requiredPermission: 'dict.view',

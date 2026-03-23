@@ -32,6 +32,16 @@ export function deleteWorkDemandApi(demandId) {
   return request.delete(`/work/demands/${demandId}`)
 }
 
+export function getArchivedDemandsApi(params) {
+  return request.get('/work/archive/demands', { params })
+}
+
+export function purgeArchivedDemandApi(demandId, payload) {
+  return request.delete(`/work/archive/demands/${demandId}/purge`, {
+    data: payload || {},
+  })
+}
+
 export function initDemandWorkflowApi(demandId) {
   return request.post(`/work/demands/${demandId}/workflow/init`)
 }

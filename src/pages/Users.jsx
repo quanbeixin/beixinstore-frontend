@@ -13,6 +13,7 @@ import {
   Popconfirm,
   Select,
   Space,
+  Switch,
   Table,
   Tag,
   message,
@@ -195,6 +196,7 @@ function Users() {
     form.resetFields()
     form.setFieldsValue({
       status_code: 'ACTIVE',
+      include_in_metrics: true,
     })
     setIsModalVisible(true)
   }
@@ -216,6 +218,7 @@ function Users() {
         email: detail.email,
         department_id: detail.department_id,
         status_code: detail.status_code || 'ACTIVE',
+        include_in_metrics: Number(detail.include_in_metrics ?? 1) === 1,
         role_ids: roleIds,
       })
     } catch (error) {
@@ -239,6 +242,7 @@ function Users() {
         email: values.email || null,
         department_id: values.department_id ?? null,
         status_code: values.status_code || 'ACTIVE',
+        include_in_metrics: values.include_in_metrics ? 1 : 0,
         role_ids: values.role_ids || [],
       }
 
@@ -364,6 +368,13 @@ function Users() {
         const color = option?.color || 'default'
         return <Tag color={color}>{label}</Tag>
       },
+    },
+    {
+      title: '纳入考核',
+      key: 'include_in_metrics',
+      width: 110,
+      render: (_, record) =>
+        Number(record.include_in_metrics ?? 1) === 1 ? <Tag color="green">纳入</Tag> : <Tag>不纳入</Tag>,
     },
     {
       title: '操作',
@@ -557,6 +568,10 @@ function Users() {
                 label: item.item_name,
               }))}
             />
+          </Form.Item>
+
+          <Form.Item label="纳入考核" name="include_in_metrics" valuePropName="checked" initialValue={true}>
+            <Switch checkedChildren="纳入" unCheckedChildren="不纳入" />
           </Form.Item>
         </Form>
       </Modal>

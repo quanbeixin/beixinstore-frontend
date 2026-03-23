@@ -19,6 +19,7 @@ const OwnerWorkbench = lazy(() => import('./pages/OwnerWorkbench'))
 const PersonalSettings = lazy(() => import('./pages/PersonalSettings'))
 const RolePermissions = lazy(() => import('./pages/RolePermissions'))
 const MenuVisibility = lazy(() => import('./pages/MenuVisibility'))
+const ArchiveDemands = lazy(() => import('./pages/ArchiveDemands'))
 const DictCenter = lazy(() => import('./pages/DictCenter'))
 const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
@@ -28,6 +29,7 @@ const PAGE_COMPONENTS = {
   dictCenter: DictCenter,
   login: Login,
   menuVisibility: MenuVisibility,
+  archiveDemands: ArchiveDemands,
   morningStandupBoard: MorningStandupBoard,
   options: Options,
   ownerWorkbench: OwnerWorkbench,
