@@ -5,7 +5,7 @@
   TeamOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
-import { Button, Card, Col, Empty, Row, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
+import { Card, Col, Empty, Progress, Row, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getMorningStandupBoardApi } from '../api/work'
 import { getCurrentUser } from '../utils/access'
@@ -33,6 +33,13 @@ function getStatusTagColor(status) {
   return 'default'
 }
 
+function getStatusLabel(status) {
+  if (status === 'TODO') return '待开始'
+  if (status === 'IN_PROGRESS') return '进行中'
+  if (status === 'DONE') return '已完成'
+  return status || '-'
+}
+
 function truncateText(value, maxLength = 8) {
   const text = String(value || '').trim()
   if (!text) return ''
@@ -47,11 +54,31 @@ function getFocusLevelTag(level) {
   return <Tag>普通</Tag>
 }
 
+function getYesterdayCheckTag(checkResult) {
+  if (checkResult === 'NOT_DONE') return <Tag color="error">未完成</Tag>
+  if (checkResult === 'LATE_DONE') return <Tag color="warning">延迟完成</Tag>
+  if (checkResult === 'ON_TIME') return <Tag color="success">按期完成</Tag>
+  return <Tag>待检查</Tag>
+}
+
+function getStartHintTag(daysToStart) {
+  const days = Number(daysToStart)
+  if (!Number.isFinite(days)) return <Text type="secondary">-</Text>
+  if (days < 0) return <Tag color="warning">{`开始已滞后 ${Math.abs(days)} 天`}</Tag>
+  if (days === 0) return <Tag color="processing">今日启动</Tag>
+  return <Tag color="blue">{`${days} 天后开始`}</Tag>
+}
+
+function clampPercent(value) {
+  const num = toNumber(value, 0)
+  return Math.max(0, Math.min(100, num))
+}
+
 function MorningStandupBoard() {
   const currentUser = useMemo(() => getCurrentUser(), [])
   const [loading, setLoading] = useState(false)
   const [activeTabKey, setActiveTabKey] = useState('')
-  const [focusExpanded, setFocusExpanded] = useState(false)
+  const [activeAlignmentTab, setActiveAlignmentTab] = useState('in_progress')
   const [data, setData] = useState({
     tabs: [],
     default_tab_key: '',
@@ -64,8 +91,12 @@ function MorningStandupBoard() {
     },
     summary: {
       team_size: 0,
+      scheduled_users_today: 0,
       filled_users_today: 0,
       unfilled_users_today: 0,
+      unscheduled_users_today: 0,
+      total_planned_hours_today: 0,
+      total_actual_hours_today: 0,
       active_item_count: 0,
       overdue_item_count: 0,
       due_today_item_count: 0,
@@ -75,8 +106,16 @@ function MorningStandupBoard() {
       due_today_count: 0,
       active_count: 0,
       unfilled_count: 0,
+      yesterday_due_total: 0,
+      yesterday_due_not_done_count: 0,
+      yesterday_due_late_done_count: 0,
+      in_progress_count: 0,
+      todo_pending_count: 0,
     },
     focus_items: [],
+    focus_yesterday_due_items: [],
+    focus_in_progress_items: [],
+    focus_todo_items: [],
     members: [],
     no_fill_members: [],
   })
@@ -103,7 +142,7 @@ function MorningStandupBoard() {
 
       const payload = result.data || {}
       setData(payload)
-      setFocusExpanded(false)
+      setActiveAlignmentTab('in_progress')
       const nextTabKey = payload.current_tab_key || payload.default_tab_key || normalizedTabKey || 'all'
       setActiveTabKey(nextTabKey)
     } catch (error) {
@@ -122,7 +161,13 @@ function MorningStandupBoard() {
   const noFillMembers = Array.isArray(data.no_fill_members) ? data.no_fill_members : []
   const summary = data.summary || {}
   const focusSummary = data.focus_summary || {}
-  const focusItems = Array.isArray(data.focus_items) ? data.focus_items : []
+  const focusYesterdayDueItems = Array.isArray(data.focus_yesterday_due_items)
+    ? data.focus_yesterday_due_items
+    : []
+  const focusInProgressItems = Array.isArray(data.focus_in_progress_items)
+    ? data.focus_in_progress_items
+    : []
+  const focusTodoItems = Array.isArray(data.focus_todo_items) ? data.focus_todo_items : []
   const todayDate = getBeijingTodayDateString()
 
   const sortedMembers = useMemo(() => {
@@ -138,12 +183,7 @@ function MorningStandupBoard() {
     return copy
   }, [members, currentUser?.id])
 
-  const visibleFocusItems = useMemo(() => {
-    const limit = focusExpanded ? 20 : 5
-    return focusItems.slice(0, limit)
-  }, [focusItems, focusExpanded])
-
-  const focusColumns = useMemo(
+  const inProgressColumns = useMemo(
     () => [
       {
         title: '级别',
@@ -170,6 +210,7 @@ function MorningStandupBoard() {
         title: '需求名称',
         dataIndex: 'demand_name',
         key: 'demand_name',
+         width: 400,
         ellipsis: true,
         render: (value, record) => (
           <Space size={4} wrap>
@@ -186,17 +227,47 @@ function MorningStandupBoard() {
         render: (value) => formatBeijingDate(value, '-'),
       },
       {
+        title: '进展',
+        key: 'progress',
+        width: 170,
+        render: (_, record) => {
+          const showProgress = Boolean(record?.progress_show)
+          if (!showProgress) return <Text type="secondary">-</Text>
+
+          const progressPercent = clampPercent(record?.progress_percent)
+          const expectedPercent = clampPercent(record?.expected_progress_percent)
+          const risky = Boolean(record?.progress_risk)
+
+          return (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <Text strong>{`${progressPercent.toFixed(0)}%`}</Text>
+                {risky ? <Tag color="warning">风险</Tag> : null}
+              </div>
+              <Progress
+                percent={progressPercent}
+                size="small"
+                showInfo={false}
+                strokeColor={risky ? '#faad14' : '#1677ff'}
+              />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {`应达 ${expectedPercent.toFixed(0)}%`}
+              </Text>
+            </div>
+          )
+        },
+      },
+      {
         title: '状态',
         dataIndex: 'log_status',
         key: 'log_status',
         width: 96,
-        render: (value) => <Tag color={getStatusTagColor(value)}>{value || '-'}</Tag>,
+        render: (value) => <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>,
       },
       {
         title: '工作描述',
         dataIndex: 'description',
         key: 'description',
-        width: 300,
         render: (value) => {
           const fullText = String(value || '').trim()
           if (!fullText) return '-'
@@ -213,14 +284,198 @@ function MorningStandupBoard() {
     [],
   )
 
-  const focusDataSource = useMemo(
+  const inProgressDataSource = useMemo(
     () =>
-      visibleFocusItems.map((item) => ({
+      focusInProgressItems.map((item) => ({
         ...item,
         key: `${item.id}-${item.user_id}`,
       })),
-    [visibleFocusItems],
+    [focusInProgressItems],
   )
+
+  const yesterdayDueColumns = useMemo(
+    () => [
+      {
+        title: '检查结果',
+        dataIndex: 'check_result',
+        key: 'check_result',
+        width: 100,
+        render: (value) => getYesterdayCheckTag(value),
+      },
+      {
+        title: '负责人',
+        dataIndex: 'username',
+        key: 'username',
+        width: 100,
+        ellipsis: true,
+      },
+      {
+        title: '事项',
+        dataIndex: 'item_type_name',
+        key: 'item_type_name',
+        width: 100,
+        ellipsis: true,
+      },
+      {
+        title: '需求',
+        dataIndex: 'demand_name',
+        key: 'demand_name',
+        width: 180,
+        ellipsis: true,
+      },
+      {
+        title: '预计完成',
+        dataIndex: 'expected_completion_date',
+        key: 'expected_completion_date',
+        width: 108,
+        render: (value) => formatBeijingDate(value, '-'),
+      },
+      {
+        title: '实际完成',
+        dataIndex: 'log_completed_at',
+        key: 'log_completed_at',
+        width: 108,
+        render: (value) => formatBeijingDate(value, '-'),
+      },
+      {
+        title: '状态',
+        dataIndex: 'log_status',
+        key: 'log_status',
+        width: 90,
+        render: (value) => <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>,
+      },
+    ],
+    [],
+  )
+
+  const yesterdayDueDataSource = useMemo(
+    () =>
+      focusYesterdayDueItems.map((item) => ({
+        ...item,
+        key: `y-${item.id}-${item.user_id}`,
+      })),
+    [focusYesterdayDueItems],
+  )
+
+  const todoColumns = useMemo(
+    () => [
+      {
+        title: '负责人',
+        dataIndex: 'username',
+        key: 'username',
+        width: 100,
+        ellipsis: true,
+      },
+      {
+        title: '事项',
+        dataIndex: 'item_type_name',
+        key: 'item_type_name',
+        width: 100,
+        ellipsis: true,
+      },
+      {
+        title: '需求',
+        dataIndex: 'demand_name',
+        key: 'demand_name',
+        width: 180,
+        ellipsis: true,
+      },
+      {
+        title: '预计开始',
+        dataIndex: 'expected_start_date',
+        key: 'expected_start_date',
+        width: 108,
+        render: (value) => formatBeijingDate(value, '-'),
+      },
+      {
+        title: '开始提示',
+        dataIndex: 'days_to_start',
+        key: 'days_to_start',
+        width: 140,
+        render: (value) => getStartHintTag(value),
+      },
+      {
+        title: '状态',
+        dataIndex: 'log_status',
+        key: 'log_status',
+        width: 90,
+        render: (value) => <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>,
+      },
+    ],
+    [],
+  )
+
+  const todoDataSource = useMemo(
+    () =>
+      focusTodoItems.map((item) => ({
+        ...item,
+        key: `t-${item.id}-${item.user_id}`,
+      })),
+    [focusTodoItems],
+  )
+
+  const alignmentTabItems = useMemo(
+    () => [
+      {
+        key: 'in_progress',
+        label: `进行中事项 (${toNumber(focusSummary.in_progress_count)})`,
+      },
+      {
+        key: 'yesterday_due',
+        label: `昨日应完成检查 (${toNumber(focusSummary.yesterday_due_total)})`,
+      },
+      {
+        key: 'todo_pending',
+        label: `待开始事项 (${toNumber(focusSummary.todo_pending_count)})`,
+      },
+      {
+        key: 'members',
+        label: `成员进行中事项 (${members.length})`,
+      },
+    ],
+    [focusSummary, members.length],
+  )
+
+  const alignmentView = useMemo(() => {
+    if (activeAlignmentTab === 'members') {
+      return {
+        columns: [],
+        dataSource: [],
+        emptyText: '当前范围暂无成员',
+        scrollX: 0,
+      }
+    }
+    if (activeAlignmentTab === 'yesterday_due') {
+      return {
+        columns: yesterdayDueColumns,
+        dataSource: yesterdayDueDataSource,
+        emptyText: '昨天无应完成事项',
+        scrollX: 900,
+      }
+    }
+    if (activeAlignmentTab === 'todo_pending') {
+      return {
+        columns: todoColumns,
+        dataSource: todoDataSource,
+        emptyText: '暂无待开始事项',
+        scrollX: 820,
+      }
+    }
+    return {
+      columns: inProgressColumns,
+      dataSource: inProgressDataSource,
+      emptyText: '暂无进行中事项',
+      scrollX: 1100,
+    }
+  }, [
+    activeAlignmentTab,
+    yesterdayDueColumns,
+    yesterdayDueDataSource,
+    todoColumns,
+    todoDataSource,
+    inProgressColumns,
+    inProgressDataSource,
+  ])
 
   const tabItems = useMemo(
     () =>
@@ -238,7 +493,16 @@ function MorningStandupBoard() {
 
   const renderMemberCard = (member) => {
     const activeItems = Array.isArray(member?.active_items) ? member.active_items : []
+    const todayScheduled = Boolean(member?.today_scheduled)
     const todayFilled = Boolean(member?.today_filled)
+    const todayPlannedHours = toNumber(member?.today_planned_hours, 0)
+    const todayActualHours = toNumber(member?.today_actual_hours, 0)
+    const assignableHours = toNumber(member?.assignable_hours, 0)
+    const todayTag = todayScheduled
+      ? todayFilled
+        ? <Tag color="green">今日已填报</Tag>
+        : <Tag color="orange">今日待填报</Tag>
+      : <Tag color="blue">今日未安排</Tag>
 
     return (
       <Card
@@ -248,11 +512,33 @@ function MorningStandupBoard() {
           <Space size={8}>
             <Text strong>{member.username}</Text>
             {Number(member.user_id) === Number(currentUser?.id) ? <Tag color="blue">我</Tag> : null}
-            {todayFilled ? <Tag color="green">已填报</Tag> : <Tag color="orange">未填报</Tag>}
+            {todayTag}
             <Tag>{`进行中 ${activeItems.length}`}</Tag>
           </Space>
         }
       >
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
+            gap: 6,
+            marginBottom: 10,
+          }}
+        >
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>今日安排</div>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>{todayPlannedHours.toFixed(1)}h</div>
+          </div>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>今日已填</div>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>{todayActualHours.toFixed(1)}h</div>
+          </div>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>可指派</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#1677ff' }}>{assignableHours.toFixed(1)}h</div>
+          </div>
+        </div>
+
         {activeItems.length === 0 ? (
           <Text type="secondary">暂无进行中事项</Text>
         ) : (
@@ -275,7 +561,7 @@ function MorningStandupBoard() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                     <Space size={6} wrap>
                       <Tag color="blue">#{item.id}</Tag>
-                      <Tag color={getStatusTagColor(item.log_status)}>{item.log_status || 'IN_PROGRESS'}</Tag>
+                      <Tag color={getStatusTagColor(item.log_status)}>{getStatusLabel(item.log_status)}</Tag>
                       <Text strong>{item.item_type_name || '-'}</Text>
                     </Space>
                     <Space size={6} wrap>
@@ -303,7 +589,15 @@ function MorningStandupBoard() {
   }
 
   return (
-    <div style={{ padding: 12 }}>
+    <div
+      style={{
+        padding: 12,
+        height: '100%',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
       <Card
         variant="borderless"
         style={{ marginBottom: 16 }}
@@ -326,7 +620,7 @@ function MorningStandupBoard() {
         )}
 
         <Row gutter={[12, 12]} style={{ marginTop: 8 }}>
-          <Col xs={24} sm={12} md={8} lg={4}>
+          <Col xs={24} sm={12} md={8} lg={6} xl={3}>
             <Card size="small">
               <Space>
                 <TeamOutlined />
@@ -335,54 +629,80 @@ function MorningStandupBoard() {
               <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>{toNumber(summary.team_size)}</div>
             </Card>
           </Col>
-          <Col xs={24} sm={12} md={8} lg={4}>
+          <Col xs={24} sm={12} md={8} lg={6} xl={3}>
+            <Card size="small">
+              <Space>
+                <TeamOutlined />
+                <Text type="secondary">今日有安排</Text>
+              </Space>
+              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
+                {toNumber(summary.scheduled_users_today)}
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={8} lg={6} xl={3}>
             <Card size="small">
               <Space>
                 <CheckCircleOutlined />
-                <Text type="secondary">今日已填报</Text>
+                <Text type="secondary">有安排已填报</Text>
               </Space>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>{toNumber(summary.filled_users_today)}</div>
+              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6, color: '#389e0d' }}>
+                {toNumber(summary.filled_users_today)}
+              </div>
             </Card>
           </Col>
-          <Col xs={24} sm={12} md={8} lg={4}>
+          <Col xs={24} sm={12} md={8} lg={6} xl={3}>
             <Card size="small">
               <Space>
                 <WarningOutlined />
-                <Text type="secondary">今日未填报</Text>
+                <Text type="secondary">有安排待填报</Text>
               </Space>
               <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6, color: '#d4380d' }}>
                 {toNumber(summary.unfilled_users_today)}
               </div>
             </Card>
           </Col>
-          <Col xs={24} sm={12} md={8} lg={4}>
+          <Col xs={24} sm={12} md={8} lg={6} xl={3}>
+            <Card size="small">
+              <Space>
+                <TeamOutlined />
+                <Text type="secondary">今日未安排</Text>
+              </Space>
+              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
+                {toNumber(summary.unscheduled_users_today)}
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={8} lg={6} xl={3}>
+            <Card size="small">
+              <Space>
+                <ClockCircleOutlined />
+                <Text type="secondary">计划用时(h)</Text>
+              </Space>
+              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
+                {toNumber(summary.total_planned_hours_today).toFixed(1)}
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={8} lg={6} xl={3}>
+            <Card size="small">
+              <Space>
+                <ClockCircleOutlined />
+                <Text type="secondary">实际用时(h)</Text>
+              </Space>
+              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
+                {toNumber(summary.total_actual_hours_today).toFixed(1)}
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={8} lg={6} xl={3}>
             <Card size="small">
               <Space>
                 <ClockCircleOutlined />
                 <Text type="secondary">进行中事项</Text>
               </Space>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>{toNumber(summary.active_item_count)}</div>
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={8} lg={4}>
-            <Card size="small">
-              <Space>
-                <WarningOutlined />
-                <Text type="secondary">逾期事项</Text>
-              </Space>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6, color: '#cf1322' }}>
-                {toNumber(summary.overdue_item_count)}
-              </div>
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={8} lg={4}>
-            <Card size="small">
-              <Space>
-                <ClockCircleOutlined />
-                <Text type="secondary">今日到期</Text>
-              </Space>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6, color: '#d48806' }}>
-                {toNumber(summary.due_today_item_count)}
+              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
+                {toNumber(summary.active_item_count)}
               </div>
             </Card>
           </Col>
@@ -391,9 +711,9 @@ function MorningStandupBoard() {
 
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col span={24}>
-          <Card size="small" title="未填报名单" variant="borderless" styles={{ body: { paddingTop: 8 } }}>
+          <Card size="small" title="有安排待填报名单" variant="borderless" styles={{ body: { paddingTop: 8 } }}>
             {noFillMembers.length === 0 ? (
-              <Text type="secondary">今天已全部填报</Text>
+              <Text type="secondary">今天有安排成员均已填报</Text>
             ) : (
               <Space wrap>
                 {noFillMembers.map((member) => (
@@ -407,90 +727,60 @@ function MorningStandupBoard() {
         </Col>
       </Row>
 
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col span={24}>
+      <Row gutter={[12, 12]} style={{ marginBottom: 16, flex: 1, minHeight: 0 }}>
+        <Col span={24} style={{ display: 'flex', minHeight: 0 }}>
           <Card
             size="small"
-            title="今日重点事项"
+            title="今日事项对齐"
             variant="borderless"
-            className="morning-focus-ultra"
-            styles={{ body: { paddingTop: 10, paddingBottom: 8 } }}
+            style={{ flex: 1, minHeight: 0 }}
+            styles={{ body: { paddingTop: 8, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 } }}
             extra={
-              focusItems.length > 5 ? (
-                <Button type="link" size="small" onClick={() => setFocusExpanded((prev) => !prev)}>
-                  {focusExpanded ? '收起' : '展开更多'}
-                </Button>
-              ) : null
+              <Space size={6} wrap>
+                <Tag color="error">{`昨日未完成 ${toNumber(focusSummary.yesterday_due_not_done_count)}`}</Tag>
+                <Tag color="warning">{`延迟完成 ${toNumber(focusSummary.yesterday_due_late_done_count)}`}</Tag>
+              </Space>
             }
           >
-            <Row gutter={[8, 8]} style={{ marginBottom: 8 }}>
-              <Col xs={12} md={6}>
-                <Card size="small" styles={{ body: { padding: 8 } }}>
-                  <Text type="secondary">逾期事项</Text>
-                  <div style={{ marginTop: 4, fontSize: 16, fontWeight: 700, color: '#cf1322', lineHeight: '20px' }}>
-                    {toNumber(focusSummary.overdue_count)}
-                  </div>
-                </Card>
-              </Col>
-              <Col xs={12} md={6}>
-                <Card size="small" styles={{ body: { padding: 8 } }}>
-                  <Text type="secondary">今日到期</Text>
-                  <div style={{ marginTop: 4, fontSize: 16, fontWeight: 700, color: '#d48806', lineHeight: '20px' }}>
-                    {toNumber(focusSummary.due_today_count)}
-                  </div>
-                </Card>
-              </Col>
-              <Col xs={12} md={6}>
-                <Card size="small" styles={{ body: { padding: 8 } }}>
-                  <Text type="secondary">进行中事项</Text>
-                  <div style={{ marginTop: 4, fontSize: 16, fontWeight: 700, lineHeight: '20px' }}>
-                    {toNumber(focusSummary.active_count)}
-                  </div>
-                </Card>
-              </Col>
-              <Col xs={12} md={6}>
-                <Card size="small" styles={{ body: { padding: 8 } }}>
-                  <Text type="secondary">未填报人数</Text>
-                  <div style={{ marginTop: 4, fontSize: 16, fontWeight: 700, color: '#d4380d', lineHeight: '20px' }}>
-                    {toNumber(focusSummary.unfilled_count)}
-                  </div>
-                </Card>
-              </Col>
-            </Row>
-
-            {visibleFocusItems.length === 0 ? (
-              <Empty description="暂无重点事项" />
-            ) : (
-              <Table
-                size="small"
-                columns={focusColumns}
-                dataSource={focusDataSource}
-                pagination={false}
-                bordered={false}
-                className="morning-focus-table-ultra"
-                scroll={{ x: 760 }}
-              />
-            )}
+            <Tabs
+              activeKey={activeAlignmentTab}
+              onChange={setActiveAlignmentTab}
+              items={alignmentTabItems}
+              size="small"
+            />
+            <div style={{ marginTop: 6, flex: 1, minHeight: 0, overflow: 'auto' }}>
+              {activeAlignmentTab === 'members' ? (
+                members.length === 0 ? (
+                  <Empty description="当前范围暂无成员" />
+                ) : (
+                  <Row gutter={[12, 12]}>
+                    {sortedMembers.map((member) => (
+                      <Col key={member.user_id} xs={24} md={12} xl={8}>
+                        {renderMemberCard(member)}
+                      </Col>
+                    ))}
+                  </Row>
+                )
+              ) : alignmentView.dataSource.length === 0 ? (
+                <Empty description={alignmentView.emptyText} />
+              ) : (
+                <Table
+                  size="small"
+                  columns={alignmentView.columns}
+                  dataSource={alignmentView.dataSource}
+                  pagination={false}
+                  bordered={false}
+                  className="morning-focus-table-ultra"
+                  scroll={{ x: alignmentView.scrollX }}
+                />
+              )}
+            </div>
           </Card>
         </Col>
       </Row>
 
-      <Card title="成员进行中事项" variant="borderless" loading={loading}>
-        {members.length === 0 ? (
-          <Empty description="当前范围暂无成员" />
-        ) : (
-          <Row gutter={[12, 12]}>
-            {sortedMembers.map((member) => (
-              <Col key={member.user_id} xs={24} md={12} xl={8}>
-                {renderMemberCard(member)}
-              </Col>
-            ))}
-          </Row>
-        )}
-      </Card>
     </div>
   )
 }
 
 export default MorningStandupBoard
-

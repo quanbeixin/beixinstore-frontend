@@ -82,6 +82,22 @@ export function deleteWorkLogApi(logId) {
   return request.delete(`/work/logs/${logId}`)
 }
 
+export function getLogDailyPlansApi(logId, params) {
+  return request.get(`/work/logs/${logId}/daily-plans`, { params })
+}
+
+export function upsertLogDailyPlanApi(logId, payload) {
+  return request.post(`/work/logs/${logId}/daily-plan`, payload)
+}
+
+export function getLogDailyEntriesApi(logId, params) {
+  return request.get(`/work/logs/${logId}/daily-entries`, { params })
+}
+
+export function createLogDailyEntryApi(logId, payload) {
+  return request.post(`/work/logs/${logId}/daily-entries`, payload)
+}
+
 export function updateWorkLogOwnerEstimateApi(logId, payload) {
   return request.put(`/work/logs/${logId}/owner-estimate`, payload)
 }

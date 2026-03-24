@@ -1,5 +1,6 @@
 ﻿import {
   EditOutlined,
+  CheckCircleOutlined,
   ClockCircleOutlined,
   FileTextOutlined,
   ReloadOutlined,
@@ -29,12 +30,16 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createWorkLogApi,
+  createLogDailyEntryApi,
   deleteWorkLogApi,
+  getLogDailyEntriesApi,
+  getLogDailyPlansApi,
   getMyWorkbenchApi,
   getWorkDemandsApi,
   getWorkItemTypesApi,
   getWorkPhaseTypesApi,
   getWorkLogsApi,
+  upsertLogDailyPlanApi,
   updateWorkLogApi,
 } from '../api/work'
 import { hasPermission } from '../utils/access'
@@ -96,6 +101,59 @@ function truncateText(value, maxLength = 8) {
   return `${chars.slice(0, maxLength).join('')}...`
 }
 
+function buildDailyTimeline(plans = [], entries = []) {
+  const dateMap = new Map()
+
+  ;(plans || []).forEach((item) => {
+    const date = formatDateOnly(item?.plan_date)
+    if (!date || date === '-') return
+    if (!dateMap.has(date)) {
+      dateMap.set(date, {
+        date,
+        planned_hours: 0,
+        actual_hours: 0,
+        entry_count: 0,
+        entry_details: [],
+      })
+    }
+    const target = dateMap.get(date)
+    target.planned_hours = toNumber(target.planned_hours, 0) + toNumber(item?.planned_hours, 0)
+  })
+
+  ;(entries || []).forEach((item) => {
+    const date = formatDateOnly(item?.entry_date)
+    if (!date || date === '-') return
+    if (!dateMap.has(date)) {
+      dateMap.set(date, {
+        date,
+        planned_hours: 0,
+        actual_hours: 0,
+        entry_count: 0,
+        entry_details: [],
+      })
+    }
+    const target = dateMap.get(date)
+    const actualHours = toNumber(item?.actual_hours, 0)
+    target.actual_hours = toNumber(target.actual_hours, 0) + actualHours
+    target.entry_count = toNumber(target.entry_count, 0) + 1
+    target.entry_details.push({
+      id: item?.id,
+      actual_hours: actualHours,
+      description: String(item?.description || '').trim(),
+      created_at: item?.created_at || '',
+    })
+  })
+
+  return Array.from(dateMap.values())
+    .map((item) => ({
+      ...item,
+      planned_hours: toNumber(item.planned_hours, 0),
+      actual_hours: toNumber(item.actual_hours, 0),
+      entry_count: toNumber(item.entry_count, 0),
+    }))
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+}
+
 function WorkLogs() {
   const canCreate = hasPermission('worklog.create')
   const canView = hasPermission('worklog.view.self')
@@ -103,6 +161,8 @@ function WorkLogs() {
 
   const [form] = Form.useForm()
   const [actualForm] = Form.useForm()
+  const [dailyEntryForm] = Form.useForm()
+  const [dailyPlanForm] = Form.useForm()
 
   const [itemTypes, setItemTypes] = useState([])
   const [demands, setDemands] = useState([])
@@ -126,7 +186,16 @@ function WorkLogs() {
   const [statusSubmittingId, setStatusSubmittingId] = useState(null)
   const [deletingLogId, setDeletingLogId] = useState(null)
   const [actualModalOpen, setActualModalOpen] = useState(false)
+  const [dailyEntryModalOpen, setDailyEntryModalOpen] = useState(false)
+  const [dailyPlanModalOpen, setDailyPlanModalOpen] = useState(false)
+  const [detailModalOpen, setDetailModalOpen] = useState(false)
+  const [dailyEntrySubmitting, setDailyEntrySubmitting] = useState(false)
+  const [dailyPlanSubmitting, setDailyPlanSubmitting] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [editingLog, setEditingLog] = useState(null)
+  const [operatingLog, setOperatingLog] = useState(null)
+  const [detailLog, setDetailLog] = useState(null)
+  const [detailTimeline, setDetailTimeline] = useState([])
   const [activeItemKeyword, setActiveItemKeyword] = useState('')
   const [activeItemStatusFilter, setActiveItemStatusFilter] = useState('ALL')
 
@@ -375,6 +444,129 @@ function WorkLogs() {
     setEditingLog(null)
   }
 
+  const openDailyEntryModal = (record) => {
+    setOperatingLog(record)
+    dailyEntryForm.setFieldsValue({
+      entry_date: getTodayDateString(),
+      actual_hours: toNumber(record?.today_planned_hours, 0) > 0 ? toNumber(record.today_planned_hours, 0) : 1,
+      description: '',
+    })
+    setDailyEntryModalOpen(true)
+  }
+
+  const closeDailyEntryModal = () => {
+    dailyEntryForm.resetFields()
+    setDailyEntryModalOpen(false)
+    setOperatingLog(null)
+  }
+
+  const openDailyPlanModal = (record) => {
+    setOperatingLog(record)
+    dailyPlanForm.setFieldsValue({
+      plan_date: getTodayDateString(),
+      planned_hours: toNumber(record?.today_planned_hours, 0),
+      note: '',
+    })
+    setDailyPlanModalOpen(true)
+  }
+
+  const closeDailyPlanModal = () => {
+    dailyPlanForm.resetFields()
+    setDailyPlanModalOpen(false)
+    setOperatingLog(null)
+  }
+
+  const openDetailModal = async (record) => {
+    if (!record?.id) return
+    setDetailLog(record)
+    setDetailTimeline([])
+    setDetailModalOpen(true)
+    setDetailLoading(true)
+    try {
+      const [planResult, entryResult] = await Promise.all([
+        getLogDailyPlansApi(record.id),
+        getLogDailyEntriesApi(record.id),
+      ])
+
+      if (!planResult?.success) {
+        message.error(planResult?.message || '获取事项日计划失败')
+        return
+      }
+      if (!entryResult?.success) {
+        message.error(entryResult?.message || '获取事项日投入失败')
+        return
+      }
+
+      const timeline = buildDailyTimeline(planResult.data || [], entryResult.data || [])
+      setDetailTimeline(timeline)
+    } catch (error) {
+      message.error(error?.message || '获取事项日明细失败')
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  const closeDetailModal = () => {
+    setDetailModalOpen(false)
+    setDetailLoading(false)
+    setDetailLog(null)
+    setDetailTimeline([])
+  }
+
+  const handleCreateDailyEntry = async () => {
+    if (!operatingLog?.id) return
+    try {
+      setDailyEntrySubmitting(true)
+      const values = await dailyEntryForm.validateFields()
+      const result = await createLogDailyEntryApi(operatingLog.id, {
+        entry_date: values.entry_date || getTodayDateString(),
+        actual_hours: values.actual_hours,
+        description: values.description || '',
+      })
+      if (!result?.success) {
+        message.error(result?.message || '登记今日投入失败')
+        return
+      }
+
+      message.success('今日投入已登记')
+      closeDailyEntryModal()
+      await Promise.all([loadBase(), loadLogs()])
+    } catch (error) {
+      if (!error?.errorFields) {
+        message.error(error?.message || '登记今日投入失败')
+      }
+    } finally {
+      setDailyEntrySubmitting(false)
+    }
+  }
+
+  const handleUpsertDailyPlan = async () => {
+    if (!operatingLog?.id) return
+    try {
+      setDailyPlanSubmitting(true)
+      const values = await dailyPlanForm.validateFields()
+      const result = await upsertLogDailyPlanApi(operatingLog.id, {
+        plan_date: values.plan_date || getTodayDateString(),
+        planned_hours: values.planned_hours,
+        note: values.note || '',
+      })
+      if (!result?.success) {
+        message.error(result?.message || '更新今日安排失败')
+        return
+      }
+
+      message.success('今日安排已更新')
+      closeDailyPlanModal()
+      await Promise.all([loadBase(), loadLogs()])
+    } catch (error) {
+      if (!error?.errorFields) {
+        message.error(error?.message || '更新今日安排失败')
+      }
+    } finally {
+      setDailyPlanSubmitting(false)
+    }
+  }
+
   const handleUpdateActual = async () => {
     if (!editingLog?.id) return
 
@@ -481,6 +673,17 @@ function WorkLogs() {
       render: (value) => formatDateOnly(value),
     },
     {
+      title: '事项状态',
+      dataIndex: 'log_status',
+      key: 'log_status',
+      width: 120,
+      render: (value) => (
+        <Tag color={getItemStatusColor(value)}>
+          {getItemStatusLabel(value)}
+        </Tag>
+      ),
+    },
+    {
       title: '事项类型',
       dataIndex: 'item_type_name',
       key: 'item_type_name',
@@ -576,32 +779,108 @@ function WorkLogs() {
     },
   ]
 
+  const detailSummary = useMemo(() => {
+    return detailTimeline.reduce(
+      (acc, item) => {
+        acc.days += 1
+        acc.totalPlanned += toNumber(item?.planned_hours, 0)
+        acc.totalActual += toNumber(item?.actual_hours, 0)
+        acc.totalEntries += toNumber(item?.entry_count, 0)
+        return acc
+      },
+      { days: 0, totalPlanned: 0, totalActual: 0, totalEntries: 0 },
+    )
+  }, [detailTimeline])
+
+  const detailColumns = [
+    {
+      title: '日期',
+      dataIndex: 'date',
+      key: 'date',
+      width: 120,
+    },
+    {
+      title: '计划(h)',
+      dataIndex: 'planned_hours',
+      key: 'planned_hours',
+      width: 110,
+      render: (value) => toNumber(value, 0).toFixed(1),
+    },
+    {
+      title: '实际(h)',
+      dataIndex: 'actual_hours',
+      key: 'actual_hours',
+      width: 110,
+      render: (value) => toNumber(value, 0).toFixed(1),
+    },
+    {
+      title: '投入记录',
+      dataIndex: 'entry_count',
+      key: 'entry_count',
+      width: 100,
+      render: (value) => `${toNumber(value, 0)} 条`,
+    },
+    {
+      title: '投入说明',
+      dataIndex: 'entry_details',
+      key: 'entry_details',
+      render: (value) => {
+        const rows = Array.isArray(value) ? value : []
+        if (rows.length === 0) return <Text type="secondary">-</Text>
+        const merged = rows
+          .map((item) => {
+            const desc = String(item?.description || '').trim()
+            return desc ? `${toNumber(item?.actual_hours, 0).toFixed(1)}h ${desc}` : `${toNumber(item?.actual_hours, 0).toFixed(1)}h`
+          })
+          .join('；')
+
+        if (Array.from(merged).length <= 30) return merged
+        return (
+          <Tooltip title={merged}>
+            <span>{truncateText(merged, 30)}</span>
+          </Tooltip>
+        )
+      },
+    },
+  ]
+
   return (
     <div style={{ padding: 12, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={8}>
+        <Col xs={24} sm={12} lg={4}>
           <Card variant="borderless">
             <Space>
               <UnorderedListOutlined />
-              <Text type="secondary">今日填报条数</Text>
+              <Text type="secondary">今日安排事项</Text>
             </Space>
             <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
-              {toNumber(workbench?.today?.log_count_today, 0)}
+              {toNumber(workbench?.today?.scheduled_item_count_today, 0)}
             </div>
           </Card>
         </Col>
-        <Col xs={24} md={8}>
+        <Col xs={24} sm={12} lg={4}>
+          <Card variant="borderless">
+            <Space>
+              <CheckCircleOutlined />
+              <Text type="secondary">今日已填报事项</Text>
+            </Space>
+            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
+              {toNumber(workbench?.today?.filled_item_count_today, 0)}
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={5}>
           <Card variant="borderless">
             <Space>
               <ClockCircleOutlined />
-              <Text type="secondary">今日个人预估(h)</Text>
+              <Text type="secondary">今日计划用时(h)</Text>
             </Space>
             <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
-              {toNumber(workbench?.today?.personal_estimate_hours_today, 0).toFixed(1)}
+              {toNumber(workbench?.today?.planned_hours_today, 0).toFixed(1)}
             </div>
           </Card>
         </Col>
-        <Col xs={24} md={8}>
+        <Col xs={24} sm={12} lg={5}>
           <Card variant="borderless">
             <Space>
               <FileTextOutlined />
@@ -609,6 +888,17 @@ function WorkLogs() {
             </Space>
             <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
               {toNumber(workbench?.today?.actual_hours_today, 0).toFixed(1)}
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} sm={24} lg={6}>
+          <Card variant="borderless">
+            <Space>
+              <ClockCircleOutlined />
+              <Text type="secondary">今日可指派用时(h)</Text>
+            </Space>
+            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#1677ff' }}>
+              {toNumber(workbench?.today?.assignable_hours_today, 0).toFixed(1)}
             </div>
           </Card>
         </Col>
@@ -847,6 +1137,32 @@ function WorkLogs() {
 
                     <div
                       style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                        gap: 8,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
+                        <div style={{ fontSize: 12, color: '#667085' }}>今日安排</div>
+                        <div style={{ fontSize: 16, fontWeight: 600 }}>{toNumber(item.today_planned_hours, 0).toFixed(1)}h</div>
+                      </div>
+                      <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
+                        <div style={{ fontSize: 12, color: '#667085' }}>今日已填报</div>
+                        <div style={{ fontSize: 16, fontWeight: 600 }}>{toNumber(item.today_actual_hours, 0).toFixed(1)}h</div>
+                      </div>
+                      <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
+                        <div style={{ fontSize: 12, color: '#667085' }}>累计实际</div>
+                        <div style={{ fontSize: 16, fontWeight: 600 }}>{toNumber(item.cumulative_actual_hours, 0).toFixed(1)}h</div>
+                      </div>
+                      <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
+                        <div style={{ fontSize: 12, color: '#667085' }}>剩余用时</div>
+                        <div style={{ fontSize: 16, fontWeight: 600 }}>{toNumber(item.remaining_hours, 0).toFixed(1)}h</div>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
                         color: '#475467',
                         fontSize: 13,
                         marginBottom: 10,
@@ -861,7 +1177,32 @@ function WorkLogs() {
                       {item.description || '-'}
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                      <Space wrap>
+                        <Button
+                          size="small"
+                          type="default"
+                          onClick={() => openDetailModal(item)}
+                        >
+                          查看日明细
+                        </Button>
+                        <Button
+                          size="small"
+                          type="default"
+                          onClick={() => openDailyPlanModal(item)}
+                          disabled={!canUpdate}
+                        >
+                          调整今日安排
+                        </Button>
+                        <Button
+                          size="small"
+                          type="primary"
+                          onClick={() => openDailyEntryModal(item)}
+                          disabled={!canUpdate}
+                        >
+                          填报今日投入
+                        </Button>
+                      </Space>
                       <Select
                         style={{ width: 140 }}
                         options={ITEM_STATUS_OPTIONS}
@@ -908,6 +1249,68 @@ function WorkLogs() {
       </Row>
 
       <Modal
+        title={detailLog ? `事项详情与日明细：#${detailLog.id}` : '事项详情与日明细'}
+        open={detailModalOpen}
+        onCancel={closeDetailModal}
+        footer={null}
+        width={900}
+        destroyOnHidden
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginBottom: 12 }}>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>覆盖天数</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{detailSummary.days}</div>
+          </div>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>累计计划(h)</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{toNumber(detailSummary.totalPlanned, 0).toFixed(1)}</div>
+          </div>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>累计实际(h)</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{toNumber(detailSummary.totalActual, 0).toFixed(1)}</div>
+          </div>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>投入记录数</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{detailSummary.totalEntries}</div>
+          </div>
+        </div>
+
+        {detailLog ? (
+          <div
+            style={{
+              border: '1px solid #eef2f6',
+              borderRadius: 8,
+              background: '#fcfcfd',
+              padding: '8px 10px',
+              marginBottom: 12,
+              color: '#475467',
+              fontSize: 13,
+            }}
+          >
+            <div>事项类型: {detailLog.item_type_name || '-'}</div>
+            <div>需求: {detailLog.demand_name || detailLog.demand_id || '无需求'}</div>
+            <div>阶段: {detailLog.phase_name || detailLog.phase_key || '-'}</div>
+            <div>描述: {detailLog.description || '-'}</div>
+          </div>
+        ) : null}
+
+        {detailLoading ? (
+          <div style={{ padding: '16px 0', textAlign: 'center', color: '#667085' }}>正在加载日明细...</div>
+        ) : detailTimeline.length === 0 ? (
+          <Empty description="暂无日计划/日投入数据" />
+        ) : (
+          <Table
+            rowKey="date"
+            size="small"
+            pagination={false}
+            columns={detailColumns}
+            dataSource={detailTimeline}
+            scroll={{ x: 760 }}
+          />
+        )}
+      </Modal>
+
+      <Modal
         title={editingLog ? `编辑事项进展：#${editingLog.id}` : '编辑事项进展'}
         open={actualModalOpen}
         onCancel={closeActualModal}
@@ -947,6 +1350,68 @@ function WorkLogs() {
             extra="状态为“已完成”时可设置；若不填，保存时默认使用今天"
           >
             <Input type="date" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={operatingLog ? `登记今日投入：#${operatingLog.id}` : '登记今日投入'}
+        open={dailyEntryModalOpen}
+        onCancel={closeDailyEntryModal}
+        onOk={handleCreateDailyEntry}
+        confirmLoading={dailyEntrySubmitting}
+        okText="保存"
+        cancelText="取消"
+        destroyOnHidden
+      >
+        <Form form={dailyEntryForm} layout="vertical" style={{ marginTop: 8 }}>
+          <Form.Item
+            label="投入日期"
+            name="entry_date"
+            rules={[{ required: true, message: '请选择投入日期' }]}
+          >
+            <Input type="date" />
+          </Form.Item>
+          <Form.Item
+            label="实际用时(h)"
+            name="actual_hours"
+            rules={[{ required: true, message: '请输入实际用时' }]}
+          >
+            <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item label="工作描述" name="description">
+            <Input.TextArea rows={3} maxLength={2000} placeholder="可填写今天具体做了什么（选填）" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={operatingLog ? `调整今日安排：#${operatingLog.id}` : '调整今日安排'}
+        open={dailyPlanModalOpen}
+        onCancel={closeDailyPlanModal}
+        onOk={handleUpsertDailyPlan}
+        confirmLoading={dailyPlanSubmitting}
+        okText="保存"
+        cancelText="取消"
+        destroyOnHidden
+      >
+        <Form form={dailyPlanForm} layout="vertical" style={{ marginTop: 8 }}>
+          <Form.Item
+            label="安排日期"
+            name="plan_date"
+            rules={[{ required: true, message: '请选择安排日期' }]}
+          >
+            <Input type="date" />
+          </Form.Item>
+          <Form.Item
+            label="计划用时(h)"
+            name="planned_hours"
+            rules={[{ required: true, message: '请输入计划用时' }]}
+          >
+            <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item label="备注" name="note">
+            <Input.TextArea rows={3} maxLength={500} placeholder="可填写今日安排说明（选填）" />
           </Form.Item>
         </Form>
       </Modal>

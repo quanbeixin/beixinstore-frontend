@@ -183,8 +183,12 @@ function OwnerWorkbench() {
   const overview = data.team_overview || {}
   const dataScope = data.data_scope || {}
   const teamSize = toNumber(overview.team_size, 0)
+  const scheduledUsers = toNumber(overview.scheduled_users_today, 0)
   const filledUsers = toNumber(overview.filled_users_today, 0)
-  const fillRate = teamSize > 0 ? Math.min(100, Math.max(0, (filledUsers / teamSize) * 100)) : 0
+  const unfilledUsers = toNumber(overview.unfilled_users_today, 0)
+  const unscheduledUsers = toNumber(overview.unscheduled_users_today, 0)
+  const scheduledFillRate =
+    scheduledUsers > 0 ? Math.min(100, Math.max(0, (filledUsers / scheduledUsers) * 100)) : 100
   const noFillMembers = Array.isArray(data.no_fill_members) ? data.no_fill_members : []
   const teamMembers = Array.isArray(data.team_members) ? data.team_members : []
   const ownerEstimateItems = Array.isArray(data.owner_estimate_items) ? data.owner_estimate_items : []
@@ -530,6 +534,49 @@ function OwnerWorkbench() {
     },
   ]
 
+  const teamCapacityColumns = [
+    {
+      title: '成员',
+      dataIndex: 'username',
+      key: 'username',
+      width: 140,
+      render: (value) => value || '-',
+    },
+    {
+      title: '今日状态',
+      key: 'today_status',
+      width: 130,
+      render: (_, row) => {
+        const todayScheduled = Boolean(row?.today_scheduled)
+        const todayFilled = Boolean(row?.today_filled)
+        if (!todayScheduled) return <Tag color="blue">未安排</Tag>
+        if (todayFilled) return <Tag color="green">已填报</Tag>
+        return <Tag color="orange">待填报</Tag>
+      },
+    },
+    {
+      title: '今日计划(h)',
+      dataIndex: 'today_planned_hours',
+      key: 'today_planned_hours',
+      width: 120,
+      render: (value) => toNumber(value, 0).toFixed(1),
+    },
+    {
+      title: '今日实际(h)',
+      dataIndex: 'today_actual_hours',
+      key: 'today_actual_hours',
+      width: 120,
+      render: (value) => toNumber(value, 0).toFixed(1),
+    },
+    {
+      title: '可指派(h)',
+      dataIndex: 'assignable_hours',
+      key: 'assignable_hours',
+      width: 120,
+      render: (value) => <Text style={{ color: '#1677ff' }}>{toNumber(value, 0).toFixed(1)}</Text>,
+    },
+  ]
+
   if (noAccess) {
     return (
       <div style={{ padding: 12 }}>
@@ -566,7 +613,7 @@ function OwnerWorkbench() {
         }
       >
         <Row gutter={[16, 16]}>
-          <Col xs={24} md={8} lg={4} style={{ display: 'flex' }}>
+          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
             <Card variant="borderless" style={metricCardStyle}>
               <Space>
                 <TeamOutlined />
@@ -575,34 +622,61 @@ function OwnerWorkbench() {
               <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{teamSize}</div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={4} style={{ display: 'flex' }}>
+          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
             <Card variant="borderless" style={metricCardStyle}>
               <Space>
                 <AlertOutlined />
-                <Text type="secondary">今日已填报</Text>
+                <Text type="secondary">今日有安排</Text>
               </Space>
-              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{filledUsers}</div>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{scheduledUsers}</div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={4} style={{ display: 'flex' }}>
+          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
+            <Card variant="borderless" style={metricCardStyle}>
+              <Space>
+                <AlertOutlined />
+                <Text type="secondary">有安排已填报</Text>
+              </Space>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#389e0d' }}>{filledUsers}</div>
+            </Card>
+          </Col>
+          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
+            <Card variant="borderless" style={metricCardStyle}>
+              <Space>
+                <WarningOutlined />
+                <Text type="secondary">有安排待填报</Text>
+              </Space>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#d4380d' }}>{unfilledUsers}</div>
+            </Card>
+          </Col>
+          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
             <Card variant="borderless" style={metricCardStyle}>
               <Space>
                 <TeamOutlined />
-                <Text type="secondary">今日填报率</Text>
+                <Text type="secondary">今日未安排</Text>
               </Space>
-              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{`${fillRate.toFixed(1)}%`}</div>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{unscheduledUsers}</div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={4} style={{ display: 'flex' }}>
+          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
+            <Card variant="borderless" style={metricCardStyle}>
+              <Space>
+                <TeamOutlined />
+                <Text type="secondary">安排填报率</Text>
+              </Space>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{`${scheduledFillRate.toFixed(1)}%`}</div>
+            </Card>
+          </Col>
+          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
             <Card variant="borderless" style={metricCardStyle}>
               <Space direction="vertical" size={6} style={{ width: '100%' }}>
                 <Space>
                   <WarningOutlined />
-                  <Text type="secondary">今日未填报</Text>
+                  <Text type="secondary">待填报名单</Text>
                 </Space>
                 {noFillMembers.length === 0 ? (
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    今日全员已填报
+                    今日有安排成员已填报
                   </Text>
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 96, overflowY: 'auto' }}>
@@ -616,18 +690,18 @@ function OwnerWorkbench() {
               </Space>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={4} style={{ display: 'flex' }}>
+          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
             <Card variant="borderless" style={metricCardStyle}>
               <Space>
                 <TeamOutlined />
-                <Text type="secondary">团队今日预估(h)</Text>
+                <Text type="secondary">团队今日计划(h)</Text>
               </Space>
               <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
                 {toNumber(overview.total_personal_estimate_hours_today, 0).toFixed(1)}
               </div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={4} style={{ display: 'flex' }}>
+          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
             <Card variant="borderless" style={metricCardStyle}>
               <Space>
                 <TeamOutlined />
@@ -638,7 +712,40 @@ function OwnerWorkbench() {
               </div>
             </Card>
           </Col>
+          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
+            <Card variant="borderless" style={metricCardStyle}>
+              <Space>
+                <TeamOutlined />
+                <Text type="secondary">可指派(h)</Text>
+              </Space>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#1677ff' }}>
+                {toNumber(overview.total_assignable_hours_today, 0).toFixed(1)}
+              </div>
+            </Card>
+          </Col>
         </Row>
+      </Card>
+
+      <Card
+        title="成员当日负载"
+        variant="borderless"
+        style={{ marginBottom: 16 }}
+        extra={<Tag>{`成员 ${teamMembers.length}`}</Tag>}
+      >
+        {teamMembers.length === 0 ? (
+          <Empty description="当前范围暂无成员数据" />
+        ) : (
+          <div style={{ width: '100%', overflowX: 'auto' }}>
+            <Table
+              rowKey="id"
+              size="small"
+              pagination={false}
+              columns={teamCapacityColumns}
+              dataSource={teamMembers}
+              scroll={{ x: 680 }}
+            />
+          </div>
+        )}
       </Card>
 
       <Card
