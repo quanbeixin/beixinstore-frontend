@@ -35,3 +35,21 @@
   line-height: 18px;
   padding-inline: 6px;
 }
+
+.morning-focus-table-ultra .ant-table-container {
+  overflow-x: auto;
+}
+
+.morning-focus-table-ultra .ant-table-content {
+  overflow-x: auto !important;
+}
+
+.morning-focus-table-ultra .ant-table-sticky-scroll {
+  opacity: 1;
+}
+
+.morning-focus-table-ultra .ant-table-sticky-scroll-bar {
+  background: rgba(22, 119, 255, 0.35);
+  height: 8px;
+  border-radius: 999px;
+}

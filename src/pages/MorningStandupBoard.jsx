@@ -210,7 +210,6 @@ function MorningStandupBoard() {
         title: '需求名称',
         dataIndex: 'demand_name',
         key: 'demand_name',
-         width: 400,
         ellipsis: true,
         render: (value, record) => (
           <Space size={4} wrap>
@@ -218,6 +217,20 @@ function MorningStandupBoard() {
             <Text>{value || '-'}</Text>
           </Space>
         ),
+      },
+      {
+        title: '当前阶段',
+        dataIndex: 'phase_name',
+        key: 'phase_name',
+        width: 120,
+        render: (_, record) => record?.phase_name || record?.phase_key || '-',
+      },
+      {
+        title: '预计开始',
+        dataIndex: 'expected_start_date',
+        key: 'expected_start_date',
+        width: 112,
+        render: (value) => formatBeijingDate(value, '-'),
       },
       {
         title: '预计完成',
@@ -324,6 +337,20 @@ function MorningStandupBoard() {
         ellipsis: true,
       },
       {
+        title: '当前阶段',
+        dataIndex: 'phase_name',
+        key: 'phase_name',
+        width: 120,
+        render: (_, record) => record?.phase_name || record?.phase_key || '-',
+      },
+      {
+        title: '预计开始',
+        dataIndex: 'expected_start_date',
+        key: 'expected_start_date',
+        width: 108,
+        render: (value) => formatBeijingDate(value, '-'),
+      },
+      {
         title: '预计完成',
         dataIndex: 'expected_completion_date',
         key: 'expected_completion_date',
@@ -381,9 +408,23 @@ function MorningStandupBoard() {
         ellipsis: true,
       },
       {
+        title: '当前阶段',
+        dataIndex: 'phase_name',
+        key: 'phase_name',
+        width: 120,
+        render: (_, record) => record?.phase_name || record?.phase_key || '-',
+      },
+      {
         title: '预计开始',
         dataIndex: 'expected_start_date',
         key: 'expected_start_date',
+        width: 108,
+        render: (value) => formatBeijingDate(value, '-'),
+      },
+      {
+        title: '预计完成',
+        dataIndex: 'expected_completion_date',
+        key: 'expected_completion_date',
         width: 108,
         render: (value) => formatBeijingDate(value, '-'),
       },
@@ -442,7 +483,7 @@ function MorningStandupBoard() {
         columns: [],
         dataSource: [],
         emptyText: '当前范围暂无成员',
-        scrollX: 0,
+        scrollX: undefined,
       }
     }
     if (activeAlignmentTab === 'yesterday_due') {
@@ -450,7 +491,7 @@ function MorningStandupBoard() {
         columns: yesterdayDueColumns,
         dataSource: yesterdayDueDataSource,
         emptyText: '昨天无应完成事项',
-        scrollX: 900,
+        scrollX: 'max-content',
       }
     }
     if (activeAlignmentTab === 'todo_pending') {
@@ -458,14 +499,14 @@ function MorningStandupBoard() {
         columns: todoColumns,
         dataSource: todoDataSource,
         emptyText: '暂无待开始事项',
-        scrollX: 820,
+        scrollX: 'max-content',
       }
     }
     return {
       columns: inProgressColumns,
       dataSource: inProgressDataSource,
       emptyText: '暂无进行中事项',
-      scrollX: 1100,
+      scrollX: 'max-content',
     }
   }, [
     activeAlignmentTab,
@@ -568,6 +609,12 @@ function MorningStandupBoard() {
                       {item.demand_id ? <Tag>{item.demand_name || item.demand_id}</Tag> : null}
                       {item.phase_name ? <Tag color="geekblue">{item.phase_name}</Tag> : null}
                     </Space>
+                  </div>
+                  <div style={{ marginTop: 6, color: '#667085', fontSize: 13 }}>
+                    预计开始:
+                    <span style={{ color: '#344054' }}>
+                      {formatBeijingDate(item.expected_start_date)}
+                    </span>
                   </div>
                   <div style={{ marginTop: 6, color: '#667085', fontSize: 13 }}>
                     预计完成:
@@ -727,14 +774,14 @@ function MorningStandupBoard() {
         </Col>
       </Row>
 
-      <Row gutter={[12, 12]} style={{ marginBottom: 16, flex: 1, minHeight: 0 }}>
-        <Col span={24} style={{ display: 'flex', minHeight: 0 }}>
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col span={24}>
           <Card
             size="small"
             title="今日事项对齐"
             variant="borderless"
-            style={{ flex: 1, minHeight: 0 }}
-            styles={{ body: { paddingTop: 8, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 } }}
+            style={{ width: '100%' }}
+            styles={{ body: { paddingTop: 8, display: 'flex', flexDirection: 'column', minHeight: 0 } }}
             extra={
               <Space size={6} wrap>
                 <Tag color="error">{`昨日未完成 ${toNumber(focusSummary.yesterday_due_not_done_count)}`}</Tag>
@@ -748,7 +795,7 @@ function MorningStandupBoard() {
               items={alignmentTabItems}
               size="small"
             />
-            <div style={{ marginTop: 6, flex: 1, minHeight: 0, overflow: 'auto' }}>
+            <div style={{ marginTop: 6, width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'auto' }}>
               {activeAlignmentTab === 'members' ? (
                 members.length === 0 ? (
                   <Empty description="当前范围暂无成员" />
@@ -764,15 +811,23 @@ function MorningStandupBoard() {
               ) : alignmentView.dataSource.length === 0 ? (
                 <Empty description={alignmentView.emptyText} />
               ) : (
-                <Table
-                  size="small"
-                  columns={alignmentView.columns}
-                  dataSource={alignmentView.dataSource}
-                  pagination={false}
-                  bordered={false}
-                  className="morning-focus-table-ultra"
-                  scroll={{ x: alignmentView.scrollX }}
-                />
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      可左右滑动查看更多列
+                    </Text>
+                  </div>
+                  <Table
+                    size="small"
+                    columns={alignmentView.columns}
+                    dataSource={alignmentView.dataSource}
+                    pagination={false}
+                    bordered={false}
+                    className="morning-focus-table-ultra"
+                    scroll={alignmentView.scrollX ? { x: alignmentView.scrollX } : undefined}
+                    sticky
+                  />
+                </>
               )}
             </div>
           </Card>

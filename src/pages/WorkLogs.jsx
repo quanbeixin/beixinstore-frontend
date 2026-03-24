@@ -7,6 +7,7 @@
   SaveOutlined,
   UnorderedListOutlined,
   DeleteOutlined,
+  CopyOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -35,6 +36,7 @@ import {
   getLogDailyEntriesApi,
   getLogDailyPlansApi,
   getMyWorkbenchApi,
+  getMyWeeklyReportApi,
   getWorkDemandsApi,
   getWorkItemTypesApi,
   getWorkPhaseTypesApi,
@@ -46,6 +48,7 @@ import { hasPermission } from '../utils/access'
 import { formatBeijingDate, getBeijingTodayDateString } from '../utils/datetime'
 
 const { Text } = Typography
+const ACTIVE_ITEMS_PANEL_MAX_HEIGHT = '72vh'
 const ITEM_STATUS_OPTIONS = [
   { label: '待开始', value: 'TODO' },
   { label: '进行中', value: 'IN_PROGRESS' },
@@ -54,6 +57,45 @@ const ITEM_STATUS_OPTIONS = [
 
 function getTodayDateString() {
   return getBeijingTodayDateString()
+}
+
+function addDays(date, days) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + Number(days || 0))
+  return next
+}
+
+function formatDateInput(date) {
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function getDefaultWeeklyRange() {
+  const now = new Date()
+  const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const weekday = localToday.getDay()
+  const offsetToMonday = weekday === 0 ? 6 : weekday - 1
+  const thisWeekMonday = addDays(localToday, -offsetToMonday)
+  return {
+    start_date: formatDateInput(thisWeekMonday),
+    end_date: formatDateInput(localToday),
+  }
+}
+
+function getLastWeeklyRange() {
+  const now = new Date()
+  const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const weekday = localToday.getDay()
+  const offsetToMonday = weekday === 0 ? 6 : weekday - 1
+  const thisWeekMonday = addDays(localToday, -offsetToMonday)
+  const lastWeekMonday = addDays(thisWeekMonday, -7)
+  const lastWeekSunday = addDays(thisWeekMonday, -1)
+  return {
+    start_date: formatDateInput(lastWeekMonday),
+    end_date: formatDateInput(lastWeekSunday),
+  }
 }
 
 function toNumber(value, fallback = 0) {
@@ -99,6 +141,12 @@ function truncateText(value, maxLength = 8) {
   const chars = Array.from(text)
   if (chars.length <= maxLength) return text
   return `${chars.slice(0, maxLength).join('')}...`
+}
+
+function formatRateText(value) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return `${num > 0 ? '+' : ''}${num.toFixed(2)}%`
 }
 
 function buildDailyTimeline(plans = [], entries = []) {
@@ -198,6 +246,10 @@ function WorkLogs() {
   const [detailTimeline, setDetailTimeline] = useState([])
   const [activeItemKeyword, setActiveItemKeyword] = useState('')
   const [activeItemStatusFilter, setActiveItemStatusFilter] = useState('ALL')
+  const [weeklyModalOpen, setWeeklyModalOpen] = useState(false)
+  const [weeklyLoading, setWeeklyLoading] = useState(false)
+  const [weeklyRange, setWeeklyRange] = useState(() => getDefaultWeeklyRange())
+  const [weeklyReport, setWeeklyReport] = useState(null)
 
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -290,6 +342,51 @@ function WorkLogs() {
     return list
   }, [activeItems, activeItemKeyword, activeItemStatusFilter])
 
+  const weeklySummary = useMemo(() => weeklyReport?.summary || {}, [weeklyReport])
+  const weeklyTopItems = useMemo(
+    () => (Array.isArray(weeklyReport?.top_items) ? weeklyReport.top_items : []),
+    [weeklyReport],
+  )
+  const weeklyDailyRows = useMemo(
+    () => (Array.isArray(weeklyReport?.daily_breakdown) ? weeklyReport.daily_breakdown : []),
+    [weeklyReport],
+  )
+
+  const weeklySummaryText = useMemo(() => {
+    if (!weeklyReport) return ''
+
+    const range = weeklyReport.range || {}
+    const topLines = weeklyTopItems
+      .slice(0, 5)
+      .map((item, index) => {
+        const demandName = String(item?.demand_name || item?.demand_id || '').trim()
+        const phaseName = String(item?.phase_name || item?.phase_key || '').trim()
+        const label = demandName ? `${item.item_type_name || '事项'}｜${demandName}` : item.item_type_name || '事项'
+        const phaseText = phaseName ? `｜阶段:${phaseName}` : ''
+        return `${index + 1}. ${label}${phaseText}｜计划:${toNumber(item?.planned_hours, 0).toFixed(1)}h｜实际:${toNumber(
+          item?.actual_hours,
+          0,
+        ).toFixed(1)}h`
+      })
+      .join('\n')
+
+    const rangeText = `${range.start_date || weeklyRange.start_date} ~ ${range.end_date || weeklyRange.end_date}`
+    return [
+      `【个人周报】${rangeText}`,
+      `事项总数: ${toNumber(weeklySummary.item_count, 0)}（待开始 ${toNumber(weeklySummary.todo_count, 0)} / 进行中 ${toNumber(
+        weeklySummary.in_progress_count,
+        0,
+      )} / 已完成 ${toNumber(weeklySummary.done_count, 0)}）`,
+      `计划用时: ${toNumber(weeklySummary.planned_hours, 0).toFixed(1)}h`,
+      `实际用时: ${toNumber(weeklySummary.actual_hours, 0).toFixed(1)}h`,
+      `偏差: ${toNumber(weeklySummary.variance_hours, 0).toFixed(1)}h（${formatRateText(weeklySummary.variance_rate)}）`,
+      `活跃天数: ${toNumber(weeklySummary.active_days, 0)} / 填报天数: ${toNumber(weeklySummary.filled_days, 0)}`,
+      `超期事项: ${toNumber(weeklySummary.overdue_count, 0)}`,
+      '本周投入Top事项:',
+      topLines || '无',
+    ].join('\n')
+  }, [weeklyReport, weeklyRange.end_date, weeklyRange.start_date, weeklySummary, weeklyTopItems])
+
   const loadBase = useCallback(async () => {
     setLoadingBase(true)
     try {
@@ -358,6 +455,98 @@ function WorkLogs() {
       setLoadingLogs(false)
     }
   }, [canView, page, pageSize])
+
+  const fetchWeeklyReport = useCallback(
+    async (rangeInput = weeklyRange) => {
+      const startDate = String(rangeInput?.start_date || '').trim()
+      const endDate = String(rangeInput?.end_date || '').trim()
+      if (!startDate || !endDate) {
+        message.warning('请先选择完整的周报时间范围')
+        return
+      }
+      if (startDate > endDate) {
+        message.warning('开始日期不能晚于结束日期')
+        return
+      }
+
+      setWeeklyLoading(true)
+      try {
+        const result = await getMyWeeklyReportApi({
+          start_date: startDate,
+          end_date: endDate,
+        })
+        if (!result?.success) {
+          message.error(result?.message || '获取个人周报失败')
+          return
+        }
+        setWeeklyReport(result.data || null)
+      } catch (error) {
+        message.error(error?.message || '获取个人周报失败')
+      } finally {
+        setWeeklyLoading(false)
+      }
+    },
+    [weeklyRange],
+  )
+
+  const openWeeklyModal = async () => {
+    setWeeklyModalOpen(true)
+    await fetchWeeklyReport(weeklyRange)
+  }
+
+  const closeWeeklyModal = () => {
+    setWeeklyModalOpen(false)
+  }
+
+  const handleWeeklyRangeChange = (field, value) => {
+    setWeeklyRange((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+  }
+
+  const handleWeeklySwitchToThisWeek = async () => {
+    const next = getDefaultWeeklyRange()
+    setWeeklyRange(next)
+    await fetchWeeklyReport(next)
+  }
+
+  const handleWeeklySwitchToLastWeek = async () => {
+    const next = getLastWeeklyRange()
+    setWeeklyRange(next)
+    await fetchWeeklyReport(next)
+  }
+
+  const handleCopyWeeklySummary = async () => {
+    if (!weeklySummaryText) {
+      message.warning('暂无可复制的周报内容')
+      return
+    }
+    if (navigator?.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(weeklySummaryText)
+        message.success('周报文案已复制')
+        return
+      } catch (error) {
+        // 继续走降级方案
+      }
+    }
+    const textarea = document.createElement('textarea')
+    textarea.value = weeklySummaryText
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+    try {
+      document.execCommand('copy')
+      message.success('周报文案已复制')
+    } catch (error) {
+      message.error('复制失败，请手动复制')
+    } finally {
+      document.body.removeChild(textarea)
+    }
+  }
 
   useEffect(() => {
     form.setFieldsValue({
@@ -844,6 +1033,110 @@ function WorkLogs() {
     },
   ]
 
+  const weeklyDailyColumns = [
+    {
+      title: '日期',
+      dataIndex: 'date',
+      key: 'date',
+      width: 120,
+    },
+    {
+      title: '计划用时(h)',
+      dataIndex: 'planned_hours',
+      key: 'planned_hours',
+      width: 120,
+      render: (value) => toNumber(value, 0).toFixed(1),
+    },
+    {
+      title: '实际用时(h)',
+      dataIndex: 'actual_hours',
+      key: 'actual_hours',
+      width: 120,
+      render: (value) => toNumber(value, 0).toFixed(1),
+    },
+    {
+      title: '事项数',
+      dataIndex: 'item_count',
+      key: 'item_count',
+      width: 90,
+      render: (value) => toNumber(value, 0),
+    },
+    {
+      title: '填报条数',
+      dataIndex: 'entry_count',
+      key: 'entry_count',
+      width: 110,
+      render: (value) => toNumber(value, 0),
+    },
+  ]
+
+  const weeklyTopColumns = [
+    {
+      title: '事项ID',
+      dataIndex: 'id',
+      key: 'id',
+      width: 80,
+      render: (value) => `#${value}`,
+    },
+    {
+      title: '状态',
+      dataIndex: 'log_status',
+      key: 'log_status',
+      width: 90,
+      render: (value) => <Tag color={getItemStatusColor(value)}>{getItemStatusLabel(value)}</Tag>,
+    },
+    {
+      title: '事项类型',
+      dataIndex: 'item_type_name',
+      key: 'item_type_name',
+      width: 130,
+    },
+    {
+      title: '需求',
+      dataIndex: 'demand_name',
+      key: 'demand_name',
+      width: 210,
+      render: (_, record) => record?.demand_name || record?.demand_id || '-',
+    },
+    {
+      title: '阶段',
+      dataIndex: 'phase_name',
+      key: 'phase_name',
+      width: 140,
+      render: (_, record) => record?.phase_name || record?.phase_key || '-',
+    },
+    {
+      title: '描述',
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+    },
+    {
+      title: '计划(h)',
+      dataIndex: 'planned_hours',
+      key: 'planned_hours',
+      width: 100,
+      render: (value) => toNumber(value, 0).toFixed(1),
+    },
+    {
+      title: '实际(h)',
+      dataIndex: 'actual_hours',
+      key: 'actual_hours',
+      width: 100,
+      render: (value) => toNumber(value, 0).toFixed(1),
+    },
+    {
+      title: '偏差(h)',
+      dataIndex: 'variance_hours',
+      key: 'variance_hours',
+      width: 110,
+      render: (value) => {
+        const num = toNumber(value, 0)
+        return <Text type={num > 0 ? 'danger' : 'success'}>{num.toFixed(1)}</Text>
+      },
+    },
+  ]
+
   return (
     <div style={{ padding: 12, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
@@ -917,74 +1210,91 @@ function WorkLogs() {
             }
           >
             <Form form={form} layout="vertical" onFinish={handleCreateLog} disabled={!canCreate || loadingBase}>
-              <Form.Item label="填报日期" name="log_date" rules={[{ required: true, message: '请选择日期' }]}>
-                <Input type="date" />
-              </Form.Item>
+              <Row gutter={12}>
+                <Col xs={24} md={12}>
+                  <Form.Item label="填报日期" name="log_date" rules={[{ required: true, message: '请选择日期' }]}>
+                    <Input type="date" />
+                  </Form.Item>
+                </Col>
 
-              <Form.Item
-                label="事项类型"
-                name="item_type_id"
-                rules={[{ required: true, message: '请选择事项类型' }]}
-              >
-                <Select options={itemTypeOptions} placeholder="请选择事项类型" />
-              </Form.Item>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="事项类型"
+                    name="item_type_id"
+                    rules={[{ required: true, message: '请选择事项类型' }]}
+                  >
+                    <Select options={itemTypeOptions} placeholder="请选择事项类型" />
+                  </Form.Item>
+                </Col>
 
-              <Form.Item
-                label="关联需求"
-                name="demand_id"
-                rules={
-                  Number(selectedItemType?.require_demand) === 1
-                    ? [{ required: true, message: '当前事项类型需关联需求' }]
-                    : []
-                }
-              >
-                <Select
-                  allowClear
-                  showSearch
-                  options={demandOptions}
-                  placeholder="请选择需求池中的需求（可选）"
-                  optionFilterProp="label"
-                  onChange={(next) => {
-                    if (!next) {
-                      form.setFieldValue('phase_key', undefined)
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="关联需求"
+                    name="demand_id"
+                    rules={
+                      Number(selectedItemType?.require_demand) === 1
+                        ? [{ required: true, message: '当前事项类型需关联需求' }]
+                        : []
                     }
-                  }}
-                />
-              </Form.Item>
+                  >
+                    <Select
+                      allowClear
+                      showSearch
+                      options={demandOptions}
+                      placeholder="请选择需求池中的需求（可选）"
+                      optionFilterProp="label"
+                      onChange={(next) => {
+                        if (!next) {
+                          form.setFieldValue('phase_key', undefined)
+                        }
+                      }}
+                    />
+                  </Form.Item>
+                </Col>
 
-              <Form.Item
-                label="需求阶段"
-                name="phase_key"
-                rules={selectedDemandId ? [{ required: true, message: '请选择需求阶段' }] : []}
-              >
-                <Select
-                  allowClear
-                  showSearch
-                  options={phaseOptions}
-                  placeholder={selectedDemandId ? '请选择需求阶段' : '请先选择关联需求'}
-                  optionFilterProp="label"
-                  disabled={!selectedDemandId}
-                />
-              </Form.Item>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="需求阶段"
+                    name="phase_key"
+                    rules={selectedDemandId ? [{ required: true, message: '请选择需求阶段' }] : []}
+                  >
+                    <Select
+                      allowClear
+                      showSearch
+                      options={phaseOptions}
+                      placeholder={selectedDemandId ? '请选择需求阶段' : '请先选择关联需求'}
+                      optionFilterProp="label"
+                      disabled={!selectedDemandId}
+                    />
+                  </Form.Item>
+                </Col>
 
-              <Form.Item label="预计完成日期" name="expected_completion_date">
-                <Input type="date" />
-              </Form.Item>
-              <Form.Item
-                label="预计开始日期"
-                name="expected_start_date"
-                rules={[{ required: true, message: '请选择预计开始日期' }]}
-              >
-                <Input type="date" />
-              </Form.Item>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="预计开始日期"
+                    name="expected_start_date"
+                    rules={[{ required: true, message: '请选择预计开始日期' }]}
+                  >
+                    <Input type="date" />
+                  </Form.Item>
+                </Col>
 
-              <Form.Item
-                label="预计用时(h)"
-                name="personal_estimate_hours"
-                rules={[{ required: true, message: '请输入预计用时' }]}
-              >
-                <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
-              </Form.Item>
+                <Col xs={24} md={12}>
+                  <Form.Item label="预计完成日期" name="expected_completion_date">
+                    <Input type="date" />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="预计用时(h)"
+                    name="personal_estimate_hours"
+                    rules={[{ required: true, message: '请输入预计用时' }]}
+                  >
+                    <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
 
               <Form.Item
                 label="工作描述"
@@ -992,7 +1302,7 @@ function WorkLogs() {
                 rules={[{ required: true, message: '请填写工作描述' }]}
               >
                 <Input.TextArea
-                  rows={4}
+                  rows={3}
                   maxLength={2000}
                   placeholder="建议写清楚：做了什么、产出了什么、是否有风险"
                 />
@@ -1012,11 +1322,24 @@ function WorkLogs() {
         </Col>
 
         <Col xs={24} lg={14} style={{ display: 'flex' }}>
-          <Card title="我的进行中事项" variant="borderless" style={{ width: '100%', height: '100%' }}>
+          <Card
+            title="我的进行中事项"
+            variant="borderless"
+            style={{ width: '100%', maxHeight: ACTIVE_ITEMS_PANEL_MAX_HEIGHT }}
+            styles={{
+              body: {
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
+                paddingTop: 10,
+              },
+            }}
+          >
             {activeItems.length === 0 ? (
               <Empty description="暂无未完成事项" />
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', minHeight: 0 }}>
                 <div
                   style={{
                     display: 'grid',
@@ -1059,161 +1382,165 @@ function WorkLogs() {
                   />
                 </div>
 
-                {filteredActiveItems.length === 0 ? (
-                  <Empty description="没有匹配的进行中事项" />
-                ) : null}
-
-                {filteredActiveItems.map((item) => (
-                  <div
-                    key={item.id}
-                    style={{
-                      border: isOverdueDate(item.expected_completion_date)
-                        ? '1px solid #ffd591'
-                        : '1px solid #e4e7ec',
-                      borderLeft: `4px solid ${
-                        item.log_status === 'TODO' ? '#8c8c8c' : item.log_status === 'IN_PROGRESS' ? '#1677ff' : '#52c41a'
-                      }`,
-                      borderRadius: 10,
-                      padding: 12,
-                      background: isOverdueDate(item.expected_completion_date) ? '#fffaf0' : '#fff',
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        gap: 8,
-                        flexWrap: 'wrap',
-                        marginBottom: 8,
-                      }}
-                    >
-                      <Space wrap>
-                        <Tag color="blue">#{item.id}</Tag>
-                        <Tag color={getItemStatusColor(item.log_status)}>
-                          {getItemStatusLabel(item.log_status || 'IN_PROGRESS')}
-                        </Tag>
-                        <Tag>{getTaskSourceLabel(item.task_source)}</Tag>
-                        <Text strong style={{ wordBreak: 'break-all' }}>
-                          {item.item_type_name || '事项'}
-                        </Text>
-                      </Space>
-                      <Space wrap>
-                        {item.demand_id ? (
-                          (() => {
-                            const demandFullName = String(item.demand_name || item.demand_id || '').trim()
-                            const demandShortName = truncateText(demandFullName, 8)
-                            if (!demandShortName) return <Tag>{item.demand_id}</Tag>
-                            if (demandShortName === demandFullName) return <Tag>{demandShortName}</Tag>
-                            return (
-                              <Tooltip title={demandFullName}>
-                                <Tag>{demandShortName}</Tag>
-                              </Tooltip>
-                            )
-                          })()
-                        ) : (
-                          <Tag>无需求</Tag>
-                        )}
-                        {item.phase_name ? <Tag color="geekblue">{item.phase_name}</Tag> : null}
-                      </Space>
-                    </div>
-
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                        gap: 8,
-                        marginBottom: 8,
-                        fontSize: 13,
-                        color: '#667085',
-                      }}
-                    >
-                      <div>填报日期: {formatDateOnly(item.log_date)}</div>
-                      <div>指派人: {item.assigned_by_name || '-'}</div>
-                      <div>预计开始: {formatDateOnly(item.expected_start_date)}</div>
-                      <div style={{ color: isOverdueDate(item.expected_completion_date) ? '#d46b08' : '#667085' }}>
-                        预计完成: {formatDateOnly(item.expected_completion_date)}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-                        gap: 8,
-                        marginBottom: 8,
-                      }}
-                    >
-                      <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
-                        <div style={{ fontSize: 12, color: '#667085' }}>今日安排</div>
-                        <div style={{ fontSize: 16, fontWeight: 600 }}>{toNumber(item.today_planned_hours, 0).toFixed(1)}h</div>
-                      </div>
-                      <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
-                        <div style={{ fontSize: 12, color: '#667085' }}>今日已填报</div>
-                        <div style={{ fontSize: 16, fontWeight: 600 }}>{toNumber(item.today_actual_hours, 0).toFixed(1)}h</div>
-                      </div>
-                      <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
-                        <div style={{ fontSize: 12, color: '#667085' }}>累计实际</div>
-                        <div style={{ fontSize: 16, fontWeight: 600 }}>{toNumber(item.cumulative_actual_hours, 0).toFixed(1)}h</div>
-                      </div>
-                      <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
-                        <div style={{ fontSize: 12, color: '#667085' }}>剩余用时</div>
-                        <div style={{ fontSize: 16, fontWeight: 600 }}>{toNumber(item.remaining_hours, 0).toFixed(1)}h</div>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        color: '#475467',
-                        fontSize: 13,
-                        marginBottom: 10,
-                        background: '#f8fafc',
-                        border: '1px solid #eef2f6',
-                        borderRadius: 8,
-                        padding: '8px 10px',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {item.description || '-'}
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                      <Space wrap>
-                        <Button
-                          size="small"
-                          type="default"
-                          onClick={() => openDetailModal(item)}
+                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
+                  {filteredActiveItems.length === 0 ? (
+                    <Empty description="没有匹配的进行中事项" />
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {filteredActiveItems.map((item) => (
+                        <div
+                          key={item.id}
+                          style={{
+                            border: isOverdueDate(item.expected_completion_date)
+                              ? '1px solid #ffd591'
+                              : '1px solid #e4e7ec',
+                            borderLeft: `4px solid ${
+                              item.log_status === 'TODO' ? '#8c8c8c' : item.log_status === 'IN_PROGRESS' ? '#1677ff' : '#52c41a'
+                            }`,
+                            borderRadius: 10,
+                            padding: 12,
+                            background: isOverdueDate(item.expected_completion_date) ? '#fffaf0' : '#fff',
+                          }}
                         >
-                          查看日明细
-                        </Button>
-                        <Button
-                          size="small"
-                          type="default"
-                          onClick={() => openDailyPlanModal(item)}
-                          disabled={!canUpdate}
-                        >
-                          调整今日安排
-                        </Button>
-                        <Button
-                          size="small"
-                          type="primary"
-                          onClick={() => openDailyEntryModal(item)}
-                          disabled={!canUpdate}
-                        >
-                          填报今日投入
-                        </Button>
-                      </Space>
-                      <Select
-                        style={{ width: 140 }}
-                        options={ITEM_STATUS_OPTIONS}
-                        value={item.log_status || 'IN_PROGRESS'}
-                        disabled={!canUpdate}
-                        loading={statusSubmittingId === item.id}
-                        onChange={(next) => handleUpdateItemStatus(item, next)}
-                      />
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: 8,
+                              flexWrap: 'wrap',
+                              marginBottom: 8,
+                            }}
+                          >
+                            <Space wrap>
+                              <Tag color="blue">#{item.id}</Tag>
+                              <Tag color={getItemStatusColor(item.log_status)}>
+                                {getItemStatusLabel(item.log_status || 'IN_PROGRESS')}
+                              </Tag>
+                              <Tag>{getTaskSourceLabel(item.task_source)}</Tag>
+                              <Text strong style={{ wordBreak: 'break-all' }}>
+                                {item.item_type_name || '事项'}
+                              </Text>
+                            </Space>
+                            <Space wrap>
+                              {item.demand_id ? (
+                                (() => {
+                                  const demandFullName = String(item.demand_name || item.demand_id || '').trim()
+                                  const demandShortName = truncateText(demandFullName, 8)
+                                  if (!demandShortName) return <Tag>{item.demand_id}</Tag>
+                                  if (demandShortName === demandFullName) return <Tag>{demandShortName}</Tag>
+                                  return (
+                                    <Tooltip title={demandFullName}>
+                                      <Tag>{demandShortName}</Tag>
+                                    </Tooltip>
+                                  )
+                                })()
+                              ) : (
+                                <Tag>无需求</Tag>
+                              )}
+                              {item.phase_name ? <Tag color="geekblue">{item.phase_name}</Tag> : null}
+                            </Space>
+                          </div>
+
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                              gap: 8,
+                              marginBottom: 8,
+                              fontSize: 13,
+                              color: '#667085',
+                            }}
+                          >
+                            <div>填报日期: {formatDateOnly(item.log_date)}</div>
+                            <div>指派人: {item.assigned_by_name || '-'}</div>
+                            <div>预计开始: {formatDateOnly(item.expected_start_date)}</div>
+                            <div style={{ color: isOverdueDate(item.expected_completion_date) ? '#d46b08' : '#667085' }}>
+                              预计完成: {formatDateOnly(item.expected_completion_date)}
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                              gap: 8,
+                              marginBottom: 8,
+                            }}
+                          >
+                            <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
+                              <div style={{ fontSize: 12, color: '#667085' }}>今日安排</div>
+                              <div style={{ fontSize: 16, fontWeight: 600 }}>{toNumber(item.today_planned_hours, 0).toFixed(1)}h</div>
+                            </div>
+                            <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
+                              <div style={{ fontSize: 12, color: '#667085' }}>今日已填报</div>
+                              <div style={{ fontSize: 16, fontWeight: 600 }}>{toNumber(item.today_actual_hours, 0).toFixed(1)}h</div>
+                            </div>
+                            <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
+                              <div style={{ fontSize: 12, color: '#667085' }}>累计实际</div>
+                              <div style={{ fontSize: 16, fontWeight: 600 }}>{toNumber(item.cumulative_actual_hours, 0).toFixed(1)}h</div>
+                            </div>
+                            <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
+                              <div style={{ fontSize: 12, color: '#667085' }}>剩余用时</div>
+                              <div style={{ fontSize: 16, fontWeight: 600 }}>{toNumber(item.remaining_hours, 0).toFixed(1)}h</div>
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              color: '#475467',
+                              fontSize: 13,
+                              marginBottom: 10,
+                              background: '#f8fafc',
+                              border: '1px solid #eef2f6',
+                              borderRadius: 8,
+                              padding: '8px 10px',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {item.description || '-'}
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                            <Space wrap>
+                              <Button
+                                size="small"
+                                type="default"
+                                onClick={() => openDetailModal(item)}
+                              >
+                                查看日明细
+                              </Button>
+                              <Button
+                                size="small"
+                                type="default"
+                                onClick={() => openDailyPlanModal(item)}
+                                disabled={!canUpdate}
+                              >
+                                调整今日安排
+                              </Button>
+                              <Button
+                                size="small"
+                                type="primary"
+                                onClick={() => openDailyEntryModal(item)}
+                                disabled={!canUpdate}
+                              >
+                                填报今日投入
+                              </Button>
+                            </Space>
+                            <Select
+                              style={{ width: 140 }}
+                              options={ITEM_STATUS_OPTIONS}
+                              value={item.log_status || 'IN_PROGRESS'}
+                              disabled={!canUpdate}
+                              loading={statusSubmittingId === item.id}
+                              onChange={(next) => handleUpdateItemStatus(item, next)}
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                ))}
+                  )}
+                </div>
               </div>
             )}
           </Card>
@@ -1222,7 +1549,15 @@ function WorkLogs() {
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col span={24}>
-          <Card title="我的工作记录" variant="borderless">
+          <Card
+            title="我的工作记录"
+            variant="borderless"
+            extra={
+              <Button onClick={openWeeklyModal} loading={weeklyLoading && weeklyModalOpen}>
+                周报
+              </Button>
+            }
+          >
             <div style={{ width: '100%', overflowX: 'auto' }}>
               <Table
                 rowKey="id"
@@ -1247,6 +1582,145 @@ function WorkLogs() {
           </Card>
         </Col>
       </Row>
+
+      <Modal
+        title="个人周报（V1）"
+        open={weeklyModalOpen}
+        onCancel={closeWeeklyModal}
+        width={1080}
+        destroyOnHidden
+        footer={[
+          <Button
+            key="copy"
+            icon={<CopyOutlined />}
+            onClick={handleCopyWeeklySummary}
+            disabled={!weeklySummaryText}
+          >
+            复制周报文案
+          </Button>,
+          <Button key="close" type="primary" onClick={closeWeeklyModal}>
+            关闭
+          </Button>,
+        ]}
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+          <div>
+            <Text type="secondary">开始日期</Text>
+            <Input
+              type="date"
+              value={weeklyRange.start_date}
+              onChange={(e) => handleWeeklyRangeChange('start_date', e.target.value)}
+            />
+          </div>
+          <div>
+            <Text type="secondary">结束日期</Text>
+            <Input
+              type="date"
+              value={weeklyRange.end_date}
+              onChange={(e) => handleWeeklyRangeChange('end_date', e.target.value)}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <Button type="primary" loading={weeklyLoading} onClick={() => fetchWeeklyReport(weeklyRange)}>
+              生成周报
+            </Button>
+            <Button onClick={handleWeeklySwitchToThisWeek} disabled={weeklyLoading}>
+              本周周报
+            </Button>
+            <Button onClick={handleWeeklySwitchToLastWeek} disabled={weeklyLoading}>
+              上周周报
+            </Button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+            gap: 8,
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>事项总数</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{toNumber(weeklySummary.item_count, 0)}</div>
+          </div>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>待开始</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{toNumber(weeklySummary.todo_count, 0)}</div>
+          </div>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>进行中</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{toNumber(weeklySummary.in_progress_count, 0)}</div>
+          </div>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>已完成</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{toNumber(weeklySummary.done_count, 0)}</div>
+          </div>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>计划用时(h)</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{toNumber(weeklySummary.planned_hours, 0).toFixed(1)}</div>
+          </div>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>实际用时(h)</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{toNumber(weeklySummary.actual_hours, 0).toFixed(1)}</div>
+          </div>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>偏差(h)</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: toNumber(weeklySummary.variance_hours, 0) > 0 ? '#d4380d' : '#389e0d' }}>
+              {toNumber(weeklySummary.variance_hours, 0).toFixed(1)}
+            </div>
+          </div>
+          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>偏差率</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{formatRateText(weeklySummary.variance_rate)}</div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            border: '1px solid #e4e7ec',
+            borderRadius: 8,
+            padding: 10,
+            marginBottom: 12,
+            background: '#fcfcfd',
+          }}
+        >
+          <Text strong>周报文案预览</Text>
+          <div style={{ marginTop: 8, whiteSpace: 'pre-wrap', color: '#344054', lineHeight: 1.7 }}>
+            {weeklySummaryText || '暂无可展示内容'}
+          </div>
+        </div>
+
+        <Row gutter={[12, 12]}>
+          <Col xs={24} lg={10}>
+            <Card size="small" title="每日投入分布">
+              <Table
+                rowKey="date"
+                size="small"
+                columns={weeklyDailyColumns}
+                dataSource={weeklyDailyRows}
+                loading={weeklyLoading}
+                pagination={false}
+                scroll={{ x: 520, y: 280 }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} lg={14}>
+            <Card size="small" title="投入 Top 事项">
+              <Table
+                rowKey="id"
+                size="small"
+                columns={weeklyTopColumns}
+                dataSource={weeklyTopItems}
+                loading={weeklyLoading}
+                pagination={false}
+                scroll={{ x: 900, y: 280 }}
+              />
+            </Card>
+          </Col>
+        </Row>
+      </Modal>
 
       <Modal
         title={detailLog ? `事项详情与日明细：#${detailLog.id}` : '事项详情与日明细'}
@@ -1355,7 +1829,7 @@ function WorkLogs() {
       </Modal>
 
       <Modal
-        title={operatingLog ? `登记今日投入：#${operatingLog.id}` : '登记今日投入'}
+        title={operatingLog ? `填报今日投入：#${operatingLog.id}` : '填报今日投入'}
         open={dailyEntryModalOpen}
         onCancel={closeDailyEntryModal}
         onOk={handleCreateDailyEntry}
@@ -1376,6 +1850,7 @@ function WorkLogs() {
             label="实际用时(h)"
             name="actual_hours"
             rules={[{ required: true, message: '请输入实际用时' }]}
+            extra="同一事项在同一天重复填报时，以最后一次提交为准（不会累加）"
           >
             <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
           </Form.Item>
