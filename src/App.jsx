@@ -20,10 +20,15 @@ const PersonalSettings = lazy(() => import('./pages/PersonalSettings'))
 const RolePermissions = lazy(() => import('./pages/RolePermissions'))
 const MenuVisibility = lazy(() => import('./pages/MenuVisibility'))
 const DictCenter = lazy(() => import('./pages/DictCenter'))
+const Projects = lazy(() => import('./pages/Projects'))
+const Requirements = lazy(() => import('./pages/Requirements'))
+const Bugs = lazy(() => import('./pages/Bugs'))
+const ProjectStats = lazy(() => import('./pages/ProjectStats'))
 const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
 
 const PAGE_COMPONENTS = {
+  bugs: Bugs,
   departments: Departments,
   dictCenter: DictCenter,
   login: Login,
@@ -32,6 +37,9 @@ const PAGE_COMPONENTS = {
   options: Options,
   ownerWorkbench: OwnerWorkbench,
   personalSettings: PersonalSettings,
+  projectStats: ProjectStats,
+  projects: Projects,
+  requirements: Requirements,
   demandInsightBoard: DemandInsightBoard,
   memberRhythmBoard: MemberRhythmBoard,
   register: Register,

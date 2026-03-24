@@ -14,6 +14,62 @@ export const PRIVATE_ROUTES = [
   // requiredPermission: 'user.view'
   // requiredRoles: ['ADMIN', 'SUPER_ADMIN']
   {
+    path: '/pm/projects',
+    componentKey: 'projects',
+    requiredPermission: 'project.view',
+    page: {
+      title: '业务线',
+      subtitle: '管理业务线基础信息、成员角色和活动日志。',
+    },
+    menu: {
+      section: 'projectManagement',
+      label: '业务线',
+      icon: 'folder',
+    },
+  },
+  {
+    path: '/pm/requirements',
+    componentKey: 'requirements',
+    requiredPermission: 'requirement.view',
+    page: {
+      title: '需求管理',
+      subtitle: '维护需求标题、优先级、负责人、阶段和工时。',
+    },
+    menu: {
+      section: 'projectManagement',
+      label: '需求管理',
+      icon: 'tool',
+    },
+  },
+  {
+    path: '/pm/bugs',
+    componentKey: 'bugs',
+    requiredPermission: 'bug.view',
+    page: {
+      title: '缺陷管理',
+      subtitle: '管理缺陷信息、严重程度、负责人和处理流程。',
+    },
+    menu: {
+      section: 'projectManagement',
+      label: '缺陷管理',
+      icon: 'bug',
+    },
+  },
+  {
+    path: '/pm/stats',
+    componentKey: 'projectStats',
+    requiredPermission: 'project.stats.view',
+    page: {
+      title: '业务线统计',
+      subtitle: '查看业务线与成员维度的工时、人天和任务投入统计。',
+    },
+    menu: {
+      section: 'projectManagement',
+      label: '业务线统计',
+      icon: 'barChart',
+    },
+  },
+  {
     path: '/efficiency/demand',
     componentKey: 'demandInsightBoard',
     requiredPermission: null,

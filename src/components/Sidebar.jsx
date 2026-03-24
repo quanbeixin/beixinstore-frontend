@@ -1,6 +1,9 @@
-﻿import {
+import {
   ApartmentOutlined,
+  BarChartOutlined,
+  BugOutlined,
   DashboardOutlined,
+  FolderOpenOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
   ToolOutlined,
@@ -13,7 +16,10 @@ import { canAccessRoute } from '../utils/access'
 
 const iconMap = {
   apartment: <ApartmentOutlined />,
+  barChart: <BarChartOutlined />,
+  bug: <BugOutlined />,
   dashboard: <DashboardOutlined />,
+  folder: <FolderOpenOutlined />,
   safety: <SafetyCertificateOutlined />,
   setting: <SettingOutlined />,
   tool: <ToolOutlined />,
