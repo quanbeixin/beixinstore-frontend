@@ -5,7 +5,7 @@
   TeamOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
-import { Card, Col, Empty, Progress, Row, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
+import { Card, Col, Empty, Progress, Row, Segmented, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getMorningStandupBoardApi } from '../api/work'
 import { getCurrentUser } from '../utils/access'
@@ -48,6 +48,20 @@ function truncateText(value, maxLength = 8) {
   return `${chars.slice(0, maxLength).join('')}...`
 }
 
+function renderDemandNameWithLimit(value, maxLength = 30) {
+  const fullText = String(value || '').trim()
+  if (!fullText) return '-'
+  const shortText = truncateText(fullText, maxLength)
+  if (shortText === fullText) {
+    return <span style={{ whiteSpace: 'nowrap' }}>{fullText}</span>
+  }
+  return (
+    <Tooltip title={fullText}>
+      <span style={{ whiteSpace: 'nowrap' }}>{shortText}</span>
+    </Tooltip>
+  )
+}
+
 function getFocusLevelTag(level) {
   if (level === 'OVERDUE') return <Tag color="error">逾期</Tag>
   if (level === 'DUE_TODAY') return <Tag color="warning">今日到期</Tag>
@@ -59,6 +73,19 @@ function getYesterdayCheckTag(checkResult) {
   if (checkResult === 'LATE_DONE') return <Tag color="warning">延迟完成</Tag>
   if (checkResult === 'ON_TIME') return <Tag color="success">按期完成</Tag>
   return <Tag>待检查</Tag>
+}
+
+function getGroupYesterdayCheckResult(stats) {
+  if (toNumber(stats?.not_done_count, 0) > 0) return 'NOT_DONE'
+  if (toNumber(stats?.late_done_count, 0) > 0) return 'LATE_DONE'
+  if (toNumber(stats?.pending_count, 0) > 0) return 'PENDING'
+  if (toNumber(stats?.on_time_count, 0) > 0) return 'ON_TIME'
+  return 'PENDING'
+}
+
+function getPhaseDisplayName(record) {
+  const text = String(record?.phase_name || record?.phase_key || '').trim()
+  return text || '其他事项'
 }
 
 function getStartHintTag(daysToStart) {
@@ -79,6 +106,8 @@ function MorningStandupBoard() {
   const [loading, setLoading] = useState(false)
   const [activeTabKey, setActiveTabKey] = useState('')
   const [activeAlignmentTab, setActiveAlignmentTab] = useState('in_progress')
+  const [inProgressViewMode, setInProgressViewMode] = useState('tree')
+  const [yesterdayDueViewMode, setYesterdayDueViewMode] = useState('tree')
   const [data, setData] = useState({
     tabs: [],
     default_tab_key: '',
@@ -189,8 +218,13 @@ function MorningStandupBoard() {
         title: '级别',
         dataIndex: 'focus_level',
         key: 'focus_level',
-        width: 90,
-        render: (value) => getFocusLevelTag(value),
+        width: 200,
+        render: (value, record) => {
+          if (record?.row_type === 'phase_group') {
+            return <Text strong>{getPhaseDisplayName(record)}</Text>
+          }
+          return getFocusLevelTag(value)
+        },
       },
       {
         title: '负责人',
@@ -200,30 +234,35 @@ function MorningStandupBoard() {
         ellipsis: true,
       },
       {
-        title: '事项类型',
-        dataIndex: 'item_type_name',
-        key: 'item_type_name',
-        width: 104,
-        ellipsis: true,
+        title: '需求任务',
+        dataIndex: 'phase_name',
+        key: 'phase_name',
+        width: 120,
+        render: (_, record) =>
+          record?.row_type === 'phase_group' ? (
+            <Text strong>{getPhaseDisplayName(record)}</Text>
+          ) : (
+            getPhaseDisplayName(record)
+          ),
       },
       {
         title: '需求名称',
         dataIndex: 'demand_name',
         key: 'demand_name',
-        ellipsis: true,
-        render: (value, record) => (
-          <Space size={4} wrap>
-            {record?.demand_priority ? <Tag color="volcano">{record.demand_priority}</Tag> : null}
-            <Text>{value || '-'}</Text>
-          </Space>
-        ),
-      },
-      {
-        title: '当前阶段',
-        dataIndex: 'phase_name',
-        key: 'phase_name',
-        width: 120,
-        render: (_, record) => record?.phase_name || record?.phase_key || '-',
+        width: 280,
+        render: (value, record) =>
+          record?.row_type === 'phase_group' ? (
+            <Space size={6} wrap>
+              <Tag color="error">{`风险 ${toNumber(record?.risk_count, 0)}`}</Tag>
+              <Tag color="warning">{`逾期 ${toNumber(record?.overdue_count, 0)}`}</Tag>
+              <Tag color="success">{`正常 ${toNumber(record?.normal_count, 0)}`}</Tag>
+            </Space>
+          ) : (
+            <Space size={4} wrap={false}>
+              {record?.demand_priority ? <Tag color="volcano">{record.demand_priority}</Tag> : null}
+              <span>{renderDemandNameWithLimit(value, 30)}</span>
+            </Space>
+          ),
       },
       {
         title: '预计开始',
@@ -275,7 +314,20 @@ function MorningStandupBoard() {
         dataIndex: 'log_status',
         key: 'log_status',
         width: 96,
-        render: (value) => <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>,
+        render: (value, record) =>
+          record?.row_type === 'phase_group' ? (
+            <Text type="secondary">-</Text>
+          ) : (
+            <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>
+          ),
+      },
+      {
+        title: '事项类型',
+        dataIndex: 'item_type_name',
+        key: 'item_type_name',
+        width: 104,
+        ellipsis: true,
+        render: (value, record) => (record?.row_type === 'phase_group' ? <Text type="secondary">-</Text> : value || '-'),
       },
       {
         title: '工作描述',
@@ -284,13 +336,7 @@ function MorningStandupBoard() {
         render: (value) => {
           const fullText = String(value || '').trim()
           if (!fullText) return '-'
-          const shortText = truncateText(fullText, 8)
-          if (shortText === fullText) return shortText
-          return (
-            <Tooltip title={fullText}>
-              <span>{shortText}</span>
-            </Tooltip>
-          )
+          return <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{fullText}</span>
         },
       },
     ],
@@ -301,10 +347,60 @@ function MorningStandupBoard() {
     () =>
       focusInProgressItems.map((item) => ({
         ...item,
+        row_type: 'item',
         key: `${item.id}-${item.user_id}`,
       })),
     [focusInProgressItems],
   )
+
+  const inProgressTreeDataSource = useMemo(() => {
+    const groups = new Map()
+
+    inProgressDataSource.forEach((item) => {
+      const phaseLabel = getPhaseDisplayName(item)
+      if (!groups.has(phaseLabel)) {
+        groups.set(phaseLabel, {
+          items: [],
+          risk_count: 0,
+          overdue_count: 0,
+          normal_count: 0,
+          progress_sum: 0,
+          expected_sum: 0,
+        })
+      }
+      const group = groups.get(phaseLabel)
+      group.items.push(item)
+      if (item?.progress_risk) group.risk_count += 1
+      const isOverdue = String(item?.focus_level || '').toUpperCase() === 'OVERDUE'
+      if (isOverdue) group.overdue_count += 1
+      if (!item?.progress_risk && !isOverdue) group.normal_count += 1
+      group.progress_sum += toNumber(item?.progress_percent, 0)
+      group.expected_sum += toNumber(item?.expected_progress_percent, 0)
+    })
+
+    let index = 0
+    return Array.from(groups.entries()).map(([phaseLabel, group]) => {
+      const itemCount = group.items.length || 1
+      const avgProgress = Number((group.progress_sum / itemCount).toFixed(1))
+      const avgExpected = Number((group.expected_sum / itemCount).toFixed(1))
+
+      return {
+        key: `phase-group-${index++}`,
+        row_type: 'phase_group',
+        phase_name: phaseLabel,
+        username: `共 ${itemCount} 项`,
+        demand_name: `共 ${itemCount} 项，风险 ${group.risk_count} 项`,
+        progress_show: true,
+        progress_percent: avgProgress,
+        expected_progress_percent: avgExpected,
+        progress_risk: group.risk_count > 0,
+        risk_count: group.risk_count,
+        overdue_count: group.overdue_count,
+        normal_count: group.normal_count,
+        children: group.items,
+      }
+    })
+  }, [inProgressDataSource])
 
   const yesterdayDueColumns = useMemo(
     () => [
@@ -313,7 +409,12 @@ function MorningStandupBoard() {
         dataIndex: 'check_result',
         key: 'check_result',
         width: 100,
-        render: (value) => getYesterdayCheckTag(value),
+        render: (value, record) =>
+          record?.row_type === 'phase_group' ? (
+            <Text strong>{getPhaseDisplayName(record)}</Text>
+          ) : (
+            getYesterdayCheckTag(value)
+          ),
       },
       {
         title: '负责人',
@@ -323,25 +424,40 @@ function MorningStandupBoard() {
         ellipsis: true,
       },
       {
+        title: '需求任务',
+        dataIndex: 'phase_name',
+        key: 'phase_name',
+        width: 120,
+        render: (_, record) =>
+          record?.row_type === 'phase_group' ? (
+            <Text strong>{getPhaseDisplayName(record)}</Text>
+          ) : (
+            getPhaseDisplayName(record)
+          ),
+      },
+      {
         title: '事项',
         dataIndex: 'item_type_name',
         key: 'item_type_name',
         width: 100,
         ellipsis: true,
+        render: (value, record) => (record?.row_type === 'phase_group' ? <Text type="secondary">-</Text> : value || '-'),
       },
       {
         title: '需求',
         dataIndex: 'demand_name',
         key: 'demand_name',
-        width: 180,
-        ellipsis: true,
-      },
-      {
-        title: '当前阶段',
-        dataIndex: 'phase_name',
-        key: 'phase_name',
-        width: 120,
-        render: (_, record) => record?.phase_name || record?.phase_key || '-',
+        width: 280,
+        render: (value, record) =>
+          record?.row_type === 'phase_group' ? (
+            <Space size={6} wrap>
+              <Tag color="error">{`未完成 ${toNumber(record?.not_done_count, 0)}`}</Tag>
+              <Tag color="warning">{`延迟 ${toNumber(record?.late_done_count, 0)}`}</Tag>
+              <Tag color="success">{`按期 ${toNumber(record?.on_time_count, 0)}`}</Tag>
+            </Space>
+          ) : (
+            renderDemandNameWithLimit(value, 30)
+          ),
       },
       {
         title: '预计开始',
@@ -369,7 +485,12 @@ function MorningStandupBoard() {
         dataIndex: 'log_status',
         key: 'log_status',
         width: 90,
-        render: (value) => <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>,
+        render: (value, record) =>
+          record?.row_type === 'phase_group' ? (
+            <Text type="secondary">-</Text>
+          ) : (
+            <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>
+          ),
       },
     ],
     [],
@@ -379,10 +500,54 @@ function MorningStandupBoard() {
     () =>
       focusYesterdayDueItems.map((item) => ({
         ...item,
+        row_type: 'item',
         key: `y-${item.id}-${item.user_id}`,
       })),
     [focusYesterdayDueItems],
   )
+
+  const yesterdayDueTreeDataSource = useMemo(() => {
+    const groups = new Map()
+
+    yesterdayDueDataSource.forEach((item) => {
+      const phaseLabel = getPhaseDisplayName(item)
+      if (!groups.has(phaseLabel)) {
+        groups.set(phaseLabel, {
+          items: [],
+          not_done_count: 0,
+          late_done_count: 0,
+          on_time_count: 0,
+          pending_count: 0,
+        })
+      }
+
+      const group = groups.get(phaseLabel)
+      group.items.push(item)
+      const result = String(item?.check_result || '').toUpperCase()
+      if (result === 'NOT_DONE') group.not_done_count += 1
+      else if (result === 'LATE_DONE') group.late_done_count += 1
+      else if (result === 'ON_TIME') group.on_time_count += 1
+      else group.pending_count += 1
+    })
+
+    let index = 0
+    return Array.from(groups.entries()).map(([phaseLabel, group]) => {
+      const itemCount = group.items.length
+      const mergedResult = getGroupYesterdayCheckResult(group)
+      return {
+        key: `y-phase-group-${index++}`,
+        row_type: 'phase_group',
+        phase_name: phaseLabel,
+        check_result: mergedResult,
+        username: `共 ${itemCount} 项`,
+        demand_name: `未完成 ${group.not_done_count}，延迟 ${group.late_done_count}，按期 ${group.on_time_count}`,
+        not_done_count: group.not_done_count,
+        late_done_count: group.late_done_count,
+        on_time_count: group.on_time_count,
+        children: group.items,
+      }
+    })
+  }, [yesterdayDueDataSource])
 
   const todoColumns = useMemo(
     () => [
@@ -392,6 +557,13 @@ function MorningStandupBoard() {
         key: 'username',
         width: 100,
         ellipsis: true,
+      },
+      {
+        title: '需求任务',
+        dataIndex: 'phase_name',
+        key: 'phase_name',
+        width: 120,
+        render: (_, record) => getPhaseDisplayName(record),
       },
       {
         title: '事项',
@@ -404,15 +576,8 @@ function MorningStandupBoard() {
         title: '需求',
         dataIndex: 'demand_name',
         key: 'demand_name',
-        width: 180,
-        ellipsis: true,
-      },
-      {
-        title: '当前阶段',
-        dataIndex: 'phase_name',
-        key: 'phase_name',
-        width: 120,
-        render: (_, record) => record?.phase_name || record?.phase_key || '-',
+        width: 280,
+        render: (value) => renderDemandNameWithLimit(value, 30),
       },
       {
         title: '预计开始',
@@ -489,9 +654,10 @@ function MorningStandupBoard() {
     if (activeAlignmentTab === 'yesterday_due') {
       return {
         columns: yesterdayDueColumns,
-        dataSource: yesterdayDueDataSource,
+        dataSource: yesterdayDueViewMode === 'tree' ? yesterdayDueTreeDataSource : yesterdayDueDataSource,
         emptyText: '昨天无应完成事项',
         scrollX: 'max-content',
+        treeMode: yesterdayDueViewMode === 'tree',
       }
     }
     if (activeAlignmentTab === 'todo_pending') {
@@ -504,18 +670,23 @@ function MorningStandupBoard() {
     }
     return {
       columns: inProgressColumns,
-      dataSource: inProgressDataSource,
+      dataSource: inProgressViewMode === 'tree' ? inProgressTreeDataSource : inProgressDataSource,
       emptyText: '暂无进行中事项',
       scrollX: 'max-content',
+      treeMode: inProgressViewMode === 'tree',
     }
   }, [
     activeAlignmentTab,
     yesterdayDueColumns,
     yesterdayDueDataSource,
+    yesterdayDueTreeDataSource,
+    yesterdayDueViewMode,
     todoColumns,
     todoDataSource,
     inProgressColumns,
     inProgressDataSource,
+    inProgressTreeDataSource,
+    inProgressViewMode,
   ])
 
   const tabItems = useMemo(
@@ -812,7 +983,32 @@ function MorningStandupBoard() {
                 <Empty description={alignmentView.emptyText} />
               ) : (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
+                    <div>
+                      {activeAlignmentTab === 'in_progress' || activeAlignmentTab === 'yesterday_due' ? (
+                        <Space size={6} wrap>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            视图模式
+                          </Text>
+                          <Segmented
+                            size="small"
+                            value={activeAlignmentTab === 'in_progress' ? inProgressViewMode : yesterdayDueViewMode}
+                            onChange={(value) => {
+                              const nextMode = String(value)
+                              if (activeAlignmentTab === 'in_progress') {
+                                setInProgressViewMode(nextMode)
+                              } else if (activeAlignmentTab === 'yesterday_due') {
+                                setYesterdayDueViewMode(nextMode)
+                              }
+                            }}
+                            options={[
+                              { label: '平铺', value: 'flat' },
+                              { label: '树形', value: 'tree' },
+                            ]}
+                          />
+                        </Space>
+                      ) : null}
+                    </div>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       可左右滑动查看更多列
                     </Text>
@@ -826,6 +1022,7 @@ function MorningStandupBoard() {
                     className="morning-focus-table-ultra"
                     scroll={alignmentView.scrollX ? { x: alignmentView.scrollX } : undefined}
                     sticky
+                    expandable={alignmentView.treeMode ? { defaultExpandAllRows: true } : undefined}
                   />
                 </>
               )}

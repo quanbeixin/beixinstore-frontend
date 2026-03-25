@@ -62,6 +62,10 @@ export function submitDemandWorkflowCurrentNodeApi(demandId, payload = {}) {
   return request.post(`/work/demands/${demandId}/workflow/current/submit`, payload)
 }
 
+export function replaceDemandWorkflowLatestApi(demandId, payload = {}) {
+  return request.post(`/work/demands/${demandId}/workflow/replace-latest`, payload)
+}
+
 export function getWorkLogsApi(params) {
   return request.get('/work/logs', { params })
 }

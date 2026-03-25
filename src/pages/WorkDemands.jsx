@@ -34,6 +34,7 @@ import {
   getWorkDemandsApi,
   getWorkLogsApi,
   initDemandWorkflowApi,
+  replaceDemandWorkflowLatestApi,
   submitDemandWorkflowCurrentNodeApi,
   updateWorkDemandApi,
 } from '../api/work'
@@ -104,17 +105,30 @@ function isOverdueLogItem(item) {
   return expectedDate < getBeijingTodayDateString()
 }
 
+function getWorkflowNodeDisplayName(node) {
+  const phaseName = String(node?.phase_name || '').trim()
+  if (phaseName) return phaseName
+
+  const snapshotName = String(node?.node_name_snapshot || '').trim()
+  if (snapshotName) return snapshotName
+
+  const nodeKey = String(node?.node_key || '').trim()
+  return nodeKey || '-'
+}
+
 function WorkDemands() {
   const navigate = useNavigate()
   const { id: routeDemandId } = useParams()
   const isDetailPage = Boolean(routeDemandId)
   const canView = hasPermission('demand.view')
+  const canViewUsers = hasPermission('user.view')
   const canCreate = hasPermission('demand.manage')
   const canTransferOwner = hasPermission('demand.transfer_owner') || hasRole('ADMIN')
   const canViewSelfLogs = hasPermission('worklog.view.self')
   const canViewTeamLogs = hasPermission('worklog.view.team')
   const canViewWorkflow = hasPermission('demand.workflow.view') || hasPermission('demand.view')
   const canManageWorkflow = hasPermission('demand.workflow.manage') || hasPermission('demand.manage')
+  const canForceReplaceWorkflow = canManageWorkflow && hasRole('SUPER_ADMIN')
   const currentUser = getCurrentUser()
 
   const [form] = Form.useForm()
@@ -154,6 +168,7 @@ function WorkDemands() {
   const [detailLogFilter, setDetailLogFilter] = useState('ALL')
   const [workflowLoading, setWorkflowLoading] = useState(false)
   const [workflowSubmitting, setWorkflowSubmitting] = useState(false)
+  const [workflowReplacing, setWorkflowReplacing] = useState(false)
   const [workflowData, setWorkflowData] = useState(null)
   const [workflowWarning, setWorkflowWarning] = useState('')
   const [selectedWorkflowNodeKey, setSelectedWorkflowNodeKey] = useState('')
@@ -251,7 +266,10 @@ function WorkDemands() {
   )
 
   const loadUsers = useCallback(async () => {
-    if (!canView) return
+    if (!canView || !canViewUsers) {
+      setUsers([])
+      return
+    }
 
     try {
       const result = await getUsersApi({ page: 1, pageSize: 200 })
@@ -261,7 +279,7 @@ function WorkDemands() {
     } catch {
       // fallback to current user only
     }
-  }, [canView])
+  }, [canView, canViewUsers])
 
   const loadBusinessGroups = useCallback(async () => {
     try {
@@ -705,6 +723,29 @@ function WorkDemands() {
       message.error(error?.message || '节点提交失败')
     } finally {
       setWorkflowSubmitting(false)
+    }
+  }
+
+  const handleReplaceWorkflowLatest = async () => {
+    if (!detailDemand?.id || !canForceReplaceWorkflow) return
+
+    try {
+      setWorkflowReplacing(true)
+      const result = await replaceDemandWorkflowLatestApi(detailDemand.id, {})
+      if (!result?.success) {
+        message.error(result?.message || '强制替换流程失败')
+        return
+      }
+
+      message.success(result?.message || '已替换为最新流程模板')
+      const workflow = result?.data?.workflow || null
+      setWorkflowData(workflow)
+      setSelectedWorkflowNodeKey(workflow?.current_node?.node_key || workflow?.nodes?.[0]?.node_key || '')
+      await refreshListAndDetail()
+    } catch (error) {
+      message.error(error?.message || '强制替换流程失败')
+    } finally {
+      setWorkflowReplacing(false)
     }
   }
 
@@ -1195,7 +1236,7 @@ function WorkDemands() {
                         </Tag>
                       </Descriptions.Item>
                       <Descriptions.Item label="当前节点">
-                        {workflowData?.current_node?.node_name_snapshot || '-'}
+                        {getWorkflowNodeDisplayName(workflowData?.current_node)}
                       </Descriptions.Item>
                       <Descriptions.Item label="当前负责人">
                         {workflowData?.current_node?.assignee_name || '-'}
@@ -1217,7 +1258,7 @@ function WorkDemands() {
                               String(selectedWorkflowNode?.node_key || '') === String(node?.node_key || '') ? 2 : 1,
                           }}
                         >
-                          {node.node_name_snapshot || node.node_key}
+                          {getWorkflowNodeDisplayName(node)}
                         </Tag>
                       ))}
                     </div>
@@ -1226,7 +1267,7 @@ function WorkDemands() {
                       <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                         <Text type="secondary">
                           已选择节点:
-                          {selectedWorkflowNode?.node_name_snapshot || selectedWorkflowNode?.node_key || '-'}
+                          {getWorkflowNodeDisplayName(selectedWorkflowNode)}
                           {isSelectedCurrentWorkflowNode ? '（当前节点）' : '（预指派）'}
                         </Text>
                         <Space wrap align="end">
@@ -1256,7 +1297,7 @@ function WorkDemands() {
                         />
                         <Button
                           loading={workflowSubmitting}
-                          disabled={!canAssignSelectedWorkflowNode}
+                          disabled={!canAssignSelectedWorkflowNode || workflowReplacing}
                           onClick={handleAssignWorkflowNode}
                         >
                           {isSelectedCurrentWorkflowNode ? '指派当前节点' : '预指派节点'}
@@ -1264,11 +1305,26 @@ function WorkDemands() {
                         <Button
                           type="primary"
                           loading={workflowSubmitting}
-                          disabled={!isSelectedCurrentWorkflowNode}
+                          disabled={!isSelectedCurrentWorkflowNode || workflowReplacing}
                           onClick={handleSubmitWorkflowNode}
                         >
                           提交当前节点
                         </Button>
+                        {canForceReplaceWorkflow ? (
+                          <Popconfirm
+                            title="强制替换为最新流程模板"
+                            description={`将终止当前流程并重建为最新模板，确认替换需求 ${detailDemand?.id || ''} 吗？`}
+                            okText="确认替换"
+                            cancelText="取消"
+                            onConfirm={handleReplaceWorkflowLatest}
+                            okButtonProps={{ danger: true, loading: workflowReplacing }}
+                            disabled={workflowSubmitting || workflowReplacing}
+                          >
+                            <Button danger loading={workflowReplacing} disabled={workflowSubmitting || workflowReplacing}>
+                              强制替换最新流程
+                            </Button>
+                          </Popconfirm>
+                        ) : null}
                         </Space>
                       </Space>
                     ) : null}
@@ -1396,4 +1452,3 @@ function WorkDemands() {
 }
 
 export default WorkDemands
-

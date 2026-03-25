@@ -1,4 +1,4 @@
-﻿import { LogoutOutlined, UserOutlined } from '@ant-design/icons'
+﻿import { LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, UserOutlined } from '@ant-design/icons'
 import { Avatar, Button, Layout, Space, Typography } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { clearAuthStorage, getCurrentUser } from '../utils/access'
@@ -6,7 +6,7 @@ import { clearAuthStorage, getCurrentUser } from '../utils/access'
 const { Header: AntHeader } = Layout
 const { Text } = Typography
 
-function Header({ route }) {
+function Header({ route, collapsed, onToggleSidebar }) {
   const navigate = useNavigate()
   const currentUser = getCurrentUser()
   const currentUserName = currentUser?.real_name || currentUser?.username || '未登录用户'
@@ -19,6 +19,13 @@ function Header({ route }) {
   return (
     <AntHeader className="app-header">
       <div className="header-main">
+        <Button
+          type="text"
+          className="header-collapse-btn"
+          icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          onClick={onToggleSidebar}
+          aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
+        />
         <div className="header-title-row">
           <h2 className="header-title">{route?.page?.title || route?.menu?.label || ''}</h2>
           {route?.page?.subtitle ? <Text className="header-subtitle">{route.page.subtitle}</Text> : null}

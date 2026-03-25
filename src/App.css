@@ -61,6 +61,16 @@
   background-clip: text;
   letter-spacing: -0.5px;
   font-family: 'DM Sans', sans-serif;
+  transition: all var(--transition-base);
+}
+
+.app-sider.ant-layout-sider-collapsed .logo-container {
+  padding: 0;
+}
+
+.app-sider.ant-layout-sider-collapsed .logo-text {
+  font-size: 18px;
+  letter-spacing: 0;
 }
 
 /* 侧边栏菜单样式覆盖 */
@@ -176,9 +186,9 @@
 .header-main {
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 0;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
   padding-left: 12px;
   position: relative;
 }
@@ -201,6 +211,19 @@
   background: linear-gradient(180deg, rgba(99, 102, 241, 0.95) 0%, rgba(45, 212, 191, 0.92) 100%);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.28), 0 4px 10px rgba(99, 102, 241, 0.26);
   opacity: 0.88;
+}
+
+.header-collapse-btn {
+  color: #cbd5e1 !important;
+  border-radius: 8px !important;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+}
+
+.header-collapse-btn:hover {
+  color: #ffffff !important;
+  background: rgba(99, 102, 241, 0.2) !important;
 }
 
 .header-title {

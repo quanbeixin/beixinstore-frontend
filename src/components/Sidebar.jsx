@@ -60,7 +60,7 @@ function buildMenuItems() {
   return result
 }
 
-function Sidebar() {
+function Sidebar({ collapsed = false }) {
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -73,6 +73,7 @@ function Sidebar() {
   return (
     <Menu
       mode="inline"
+      inlineCollapsed={collapsed}
       selectedKeys={[selectedKey]}
       items={menuItems}
       onClick={({ key }) => {

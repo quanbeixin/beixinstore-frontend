@@ -73,6 +73,12 @@ function getTaskSourceColor(source) {
   return 'default'
 }
 
+function getSuggestedAssignStatusByStartDate(expectedStartDate) {
+  const today = getBeijingTodayDateString()
+  const startDate = String(expectedStartDate || '').trim() || today
+  return startDate > today ? 'TODO' : 'IN_PROGRESS'
+}
+
 function OwnerWorkbench() {
   const [loading, setLoading] = useState(false)
   const [savingEstimate, setSavingEstimate] = useState(false)
@@ -86,6 +92,7 @@ function OwnerWorkbench() {
   const [batchModalOpen, setBatchModalOpen] = useState(false)
   const [assignModalOpen, setAssignModalOpen] = useState(false)
   const [assignSaving, setAssignSaving] = useState(false)
+  const [assignStatusManuallyChanged, setAssignStatusManuallyChanged] = useState(false)
 
   const [keyword, setKeyword] = useState('')
   const [memberFilter, setMemberFilter] = useState()
@@ -181,7 +188,6 @@ function OwnerWorkbench() {
   }, [loadAssignBase])
 
   const overview = data.team_overview || {}
-  const dataScope = data.data_scope || {}
   const teamSize = toNumber(overview.team_size, 0)
   const scheduledUsers = toNumber(overview.scheduled_users_today, 0)
   const filledUsers = toNumber(overview.filled_users_today, 0)
@@ -374,18 +380,21 @@ function OwnerWorkbench() {
   }
 
   const openAssignModal = () => {
+    const today = getBeijingTodayDateString()
     assignForm.resetFields()
     assignForm.setFieldsValue({
-      log_status: 'TODO',
+      log_status: getSuggestedAssignStatusByStartDate(today),
       owner_estimate_hours: 1,
-      expected_start_date: getBeijingTodayDateString(),
-      log_date: getBeijingTodayDateString(),
+      expected_start_date: today,
+      log_date: today,
     })
+    setAssignStatusManuallyChanged(false)
     setAssignModalOpen(true)
   }
 
   const closeAssignModal = () => {
     setAssignModalOpen(false)
+    setAssignStatusManuallyChanged(false)
     assignForm.resetFields()
   }
 
@@ -403,6 +412,7 @@ function OwnerWorkbench() {
       }
 
       setAssignSaving(true)
+      const resolvedExpectedStartDate = values.expected_start_date || getBeijingTodayDateString()
       const payload = {
         assignee_user_id: values.assignee_user_id,
         item_type_id: values.item_type_id,
@@ -410,9 +420,9 @@ function OwnerWorkbench() {
         phase_key: values.demand_id ? values.phase_key : null,
         description: values.description,
         owner_estimate_hours: values.owner_estimate_hours,
-        expected_start_date: values.expected_start_date || getBeijingTodayDateString(),
+        expected_start_date: resolvedExpectedStartDate,
         expected_completion_date: values.expected_completion_date || null,
-        log_status: values.log_status || 'TODO',
+        log_status: values.log_status || getSuggestedAssignStatusByStartDate(resolvedExpectedStartDate),
         log_date: values.log_date || getBeijingTodayDateString(),
       }
 
@@ -669,7 +679,7 @@ function OwnerWorkbench() {
           </Col>
           <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
             <Card variant="borderless" style={metricCardStyle}>
-              <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <Space orientation="vertical" size={6} style={{ width: '100%' }}>
                 <Space>
                   <WarningOutlined />
                   <Text type="secondary">待填报名单</Text>
@@ -998,6 +1008,7 @@ function OwnerWorkbench() {
                 rules={[{ required: true, message: '请选择状态' }]}
               >
                 <Select
+                  onChange={() => setAssignStatusManuallyChanged(true)}
                   options={[
                     { label: '待开始', value: 'TODO' },
                     { label: '进行中', value: 'IN_PROGRESS' },
@@ -1015,7 +1026,15 @@ function OwnerWorkbench() {
                 name="expected_start_date"
                 rules={[{ required: true, message: '请选择预计开始日期' }]}
               >
-                <Input type="date" />
+                <Input
+                  type="date"
+                  onChange={(event) => {
+                    const nextDate = event?.target?.value || ''
+                    if (!assignStatusManuallyChanged) {
+                      assignForm.setFieldValue('log_status', getSuggestedAssignStatusByStartDate(nextDate))
+                    }
+                  }}
+                />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -1039,4 +1058,3 @@ function OwnerWorkbench() {
 }
 
 export default OwnerWorkbench
-

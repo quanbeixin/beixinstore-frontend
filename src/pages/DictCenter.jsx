@@ -2,6 +2,7 @@
   DatabaseOutlined,
   DeleteOutlined,
   EditOutlined,
+  HolderOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
@@ -104,6 +105,31 @@ function getOwnerEstimateRequiredValue(raw) {
   return false
 }
 
+function normalizeItemExtraJson(raw) {
+  if (raw === null || raw === undefined || raw === '') return null
+  if (typeof raw === 'string') {
+    const text = raw.trim()
+    return text || null
+  }
+  if (typeof raw === 'object') {
+    try {
+      return JSON.stringify(raw)
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+function moveItem(list, fromIndex, toIndex) {
+  if (!Array.isArray(list) || fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return list
+  const next = [...list]
+  const [moved] = next.splice(fromIndex, 1)
+  if (!moved) return list
+  next.splice(toIndex, 0, moved)
+  return next
+}
+
 function DictCenter() {
   const [types, setTypes] = useState([])
   const [typesLoading, setTypesLoading] = useState(false)
@@ -112,6 +138,8 @@ function DictCenter() {
 
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
+  const [itemOrderSaving, setItemOrderSaving] = useState(false)
+  const [draggingItemId, setDraggingItemId] = useState(null)
   const [departments, setDepartments] = useState([])
 
   const [typeModalOpen, setTypeModalOpen] = useState(false)
@@ -454,6 +482,78 @@ function DictCenter() {
     }
   }
 
+  const persistItemOrder = useCallback(
+    async (nextItems) => {
+      if (!selectedTypeKey || !Array.isArray(nextItems) || nextItems.length === 0) return
+
+      const previousSortMap = new Map(
+        (items || []).map((item) => [Number(item.id), Number(item.sort_order)]),
+      )
+      const withNextSort = nextItems.map((item, index) => ({
+        ...item,
+        sort_order: (index + 1) * 10,
+      }))
+      const changedRows = withNextSort.filter(
+        (item) => Number(item.sort_order) !== Number(previousSortMap.get(Number(item.id))),
+      )
+
+      if (changedRows.length === 0) {
+        setItems(withNextSort)
+        return
+      }
+
+      setItems(withNextSort)
+      setItemOrderSaving(true)
+
+      try {
+        const results = await Promise.all(
+          changedRows.map((item) =>
+            updateDictItemApi(item.id, {
+              itemName: item.item_name,
+              sortOrder: item.sort_order,
+              enabled: Boolean(item.enabled),
+              color: item.color || null,
+              remark: item.remark || null,
+              extraJson: normalizeItemExtraJson(item.extra_json),
+            }),
+          ),
+        )
+        const failed = results.find((result) => !result?.success)
+        if (failed) {
+          message.error(failed?.message || '拖拽排序保存失败')
+          fetchItems(selectedTypeKey)
+          return
+        }
+        message.success('排序已更新')
+      } catch (error) {
+        message.error(error?.message || '拖拽排序保存失败')
+        fetchItems(selectedTypeKey)
+      } finally {
+        setItemOrderSaving(false)
+      }
+    },
+    [fetchItems, items, selectedTypeKey],
+  )
+
+  const handleDropItemRow = useCallback(
+    async (targetItemId) => {
+      const fromId = Number(draggingItemId)
+      const toId = Number(targetItemId)
+      setDraggingItemId(null)
+
+      if (!Number.isInteger(fromId) || !Number.isInteger(toId) || fromId <= 0 || toId <= 0) return
+      if (fromId === toId || itemOrderSaving || itemsLoading) return
+
+      const fromIndex = items.findIndex((item) => Number(item.id) === fromId)
+      const toIndex = items.findIndex((item) => Number(item.id) === toId)
+      if (fromIndex < 0 || toIndex < 0) return
+
+      const nextItems = moveItem(items, fromIndex, toIndex)
+      await persistItemOrder(nextItems)
+    },
+    [draggingItemId, itemOrderSaving, items, itemsLoading, persistItemOrder],
+  )
+
   const typeColumns = [
     {
       title: '类型标识',
@@ -504,11 +604,15 @@ function DictCenter() {
 
   const itemColumns = [
     {
-      title: '编码',
-      dataIndex: 'item_code',
-      key: 'item_code',
-      width: 140,
-      render: (value) => <Text code>{value}</Text>,
+      title: '',
+      key: 'drag',
+      width: 52,
+      align: 'center',
+      render: () => (
+        <span style={{ cursor: 'grab', color: '#98a2b3' }} title="拖拽调整顺序">
+          <HolderOutlined />
+        </span>
+      ),
     },
     {
       title: '名称',
@@ -677,15 +781,31 @@ function DictCenter() {
               </Button>
             }
           >
+            <div className="dict-center-toolbar">
+              <Text type="secondary">
+                拖动行可调整顺序{itemOrderSaving ? '（正在保存...）' : ''}
+              </Text>
+            </div>
             <div className="dict-center-table-wrap">
               <Table
                 rowKey="id"
-                loading={itemsLoading}
+                loading={itemsLoading || itemOrderSaving}
                 columns={itemColumns}
                 dataSource={items}
                 size="small"
                 pagination={false}
                 scroll={{ x: 980 }}
+                onRow={(record) => ({
+                  draggable: !itemOrderSaving && !itemsLoading,
+                  onDragStart: () => setDraggingItemId(record.id),
+                  onDragOver: (event) => {
+                    event.preventDefault()
+                  },
+                  onDrop: () => {
+                    handleDropItemRow(record.id)
+                  },
+                  onDragEnd: () => setDraggingItemId(null),
+                })}
               />
             </div>
           </Card>
@@ -834,4 +954,3 @@ function DictCenter() {
 }
 
 export default DictCenter
-
