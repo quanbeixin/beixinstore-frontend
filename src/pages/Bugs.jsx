@@ -23,7 +23,7 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 import { createBugApi, deleteBugApi, getBugsApi, updateBugApi } from '../api/bugs'
 import { getProjectsApi } from '../api/projects'
-import { getRequirementsApi } from '../api/requirements'
+import { getWorkDemandsApi } from '../api/work'
 import { getUsersApi } from '../api/users'
 import './ProjectManagement.css'
 
@@ -66,11 +66,16 @@ function getStatusColor(status) {
   return 'warning'
 }
 
+function normalizeBugCodeInput(value) {
+  const next = String(value || '').trim().toUpperCase()
+  return next || null
+}
+
 function Bugs() {
   const [form] = Form.useForm()
   const [bugs, setBugs] = useState([])
   const [projects, setProjects] = useState([])
-  const [requirements, setRequirements] = useState([])
+  const [demands, setDemands] = useState([])
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -88,11 +93,11 @@ function Bugs() {
     try {
       const [projectResult, requirementResult, userResult] = await Promise.all([
         getProjectsApi({ page: 1, pageSize: 200 }),
-        getRequirementsApi({ page: 1, pageSize: 200 }),
+        getWorkDemandsApi({ page: 1, pageSize: 200 }),
         getUsersApi({ page: 1, pageSize: 200 }),
       ])
       if (projectResult?.success) setProjects(projectResult.data?.list || [])
-      if (requirementResult?.success) setRequirements(requirementResult.data?.list || [])
+      if (requirementResult?.success) setDemands(requirementResult.data?.list || [])
       if (userResult?.success) setUsers(userResult.data?.list || [])
     } catch (error) {
       console.error('Load bug options failed:', error)
@@ -137,6 +142,7 @@ function Bugs() {
     setEditingRecord(null)
     form.resetFields()
     form.setFieldsValue({
+      bug_code: undefined,
       severity: 'MEDIUM',
       status: 'OPEN',
       stage: 'DEVELOPMENT',
@@ -150,8 +156,9 @@ function Bugs() {
     setEditingRecord(record)
     form.resetFields()
     form.setFieldsValue({
+      bug_code: record.bug_code || undefined,
       project_id: record.project_id,
-      requirement_id: record.requirement_id || undefined,
+      demand_id: record.demand_id || undefined,
       title: record.title,
       description: record.description || '',
       reproduce_steps: record.reproduce_steps || '',
@@ -178,7 +185,8 @@ function Bugs() {
       setSubmitting(true)
       const payload = {
         ...values,
-        requirement_id: values.requirement_id || null,
+        bug_code: normalizeBugCodeInput(values.bug_code),
+        demand_id: values.demand_id || null,
         description: values.description || null,
         reproduce_steps: values.reproduce_steps || null,
         assignee_user_id: values.assignee_user_id || null,
@@ -220,12 +228,19 @@ function Bugs() {
   }
 
   const columns = [
+    {
+      title: '缺陷ID',
+      dataIndex: 'bug_code',
+      key: 'bug_code',
+      width: 120,
+      render: (value) => (value ? <Tag color="blue">{value}</Tag> : '-'),
+    },
     { title: '标题', dataIndex: 'title', key: 'title', width: 220 },
     { title: '业务线', dataIndex: 'project_name', key: 'project_name', width: 180 },
     {
       title: '关联需求',
-      dataIndex: 'requirement_title',
-      key: 'requirement_title',
+      dataIndex: 'demand_name',
+      key: 'demand_name',
       width: 180,
       render: (value) => value || '-',
     },
@@ -291,7 +306,7 @@ function Bugs() {
 
   return (
     <div className="pm-page">
-      <Card className="pm-hero" variant="borderless">
+      <Card className="pm-hero" variant="borderless" style={{ display: 'none' }}>
         <div className="pm-hero-head">
           <div>
             <h1 className="pm-hero-title">缺陷管理</h1>
@@ -303,9 +318,33 @@ function Bugs() {
         </div>
       </Card>
 
-      <Card className="pm-panel" variant="borderless">
-        <div className="pm-toolbar">
-          <div className="pm-toolbar-left">
+      <Card
+        className="pm-panel"
+        variant="borderless"
+        extra={
+          <Space>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => {
+                setKeyword('')
+                setProjectId(undefined)
+                setSeverity('')
+                setStatus('')
+                setPage(1)
+                loadBugs()
+              }}
+            >
+              刷新
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+              新建 Bug
+            </Button>
+          </Space>
+        }
+      >
+        <div style={{ borderTop: '1px solid var(--border-color)', margin: '0 -24px', padding: '18px 24px 0' }}>
+          <div className="pm-toolbar">
+            <div className="pm-toolbar-left">
             <Input.Search
               placeholder="搜索 Bug 标题"
               allowClear
@@ -354,8 +393,8 @@ function Bugs() {
                 setPage(1)
               }}
             />
-          </div>
-          <div className="pm-toolbar-right">
+            </div>
+            <div className="pm-toolbar-right" style={{ display: 'none' }}>
             <Button
               icon={<ReloadOutlined />}
               onClick={() => {
@@ -369,6 +408,7 @@ function Bugs() {
             >
               刷新
             </Button>
+            </div>
           </div>
         </div>
       </Card>
@@ -404,6 +444,19 @@ function Bugs() {
         destroyOnHidden
       >
         <Form form={form} layout="vertical">
+          <Form.Item
+            label="缺陷ID"
+            name="bug_code"
+            tooltip="可选，留空时系统自动生成（例如 BUG001）"
+            rules={[
+              {
+                pattern: /^$|^BUG\d{3,}$/,
+                message: '缺陷ID 格式应为 BUG001',
+              },
+            ]}
+          >
+            <Input maxLength={20} placeholder="可选，例如 BUG001" />
+          </Form.Item>
           <Row gutter={12}>
             <Col span={12}>
               <Form.Item label="所属业务线" name="project_id" rules={[{ required: true, message: '请选择业务线' }]}>
@@ -418,14 +471,14 @@ function Bugs() {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="关联需求" name="requirement_id">
+              <Form.Item label="关联需求池" name="demand_id">
                 <Select
                   allowClear
                   showSearch
                   optionFilterProp="label"
-                  options={requirements.map((item) => ({
+                  options={demands.map((item) => ({
                     value: item.id,
-                    label: item.title,
+                    label: `${item.id} - ${item.name}`,
                   }))}
                 />
               </Form.Item>

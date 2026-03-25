@@ -224,6 +224,32 @@
   max-width: min(50vw, 680px);
 }
 
+.header-business-line {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-business-line-label {
+  color: rgba(148, 163, 184, 0.95) !important;
+  font-size: 12px;
+}
+
+.header-business-line-select {
+  min-width: 170px;
+}
+
+.header-business-line-select .ant-select-selector {
+  border-radius: 999px !important;
+  background: rgba(15, 23, 42, 0.38) !important;
+  border: 1px solid rgba(148, 163, 184, 0.38) !important;
+}
+
+.header-business-line-select .ant-select-selection-item {
+  color: #e2e8f0 !important;
+}
+
 .header-user {
   display: flex;
   align-items: center;
@@ -444,6 +470,18 @@
 
   .header-subtitle {
     display: none;
+  }
+
+  .header-business-line {
+    margin-top: 0;
+  }
+
+  .header-business-line-label {
+    display: none;
+  }
+
+  .header-business-line-select {
+    min-width: 130px;
   }
 
   .header-user {

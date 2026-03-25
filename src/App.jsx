@@ -1,8 +1,15 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { getAccessApi } from './api/auth'
 import { getMyMenuVisibilityApi } from './api/rbac'
 import { PRIVATE_ROUTES, PUBLIC_ROUTES } from './config/route.config'
-import { canAccessRoute, getToken, setMenuVisibilityAccessMap } from './utils/access'
+import {
+  canAccessRoute,
+  getToken,
+  setActiveBusinessLineId,
+  setAuthStorage,
+  setMenuVisibilityAccessMap,
+} from './utils/access'
 import './App.css'
 
 const AdminLayout = lazy(() => import('./layouts/AdminLayout'))
@@ -117,6 +124,24 @@ function App() {
       }
 
       try {
+        try {
+          const accessResult = await getAccessApi()
+          if (accessResult?.success) {
+            setAuthStorage({ access: accessResult.data || null })
+          }
+        } catch (accessError) {
+          // Handle stale local business line context by clearing it and retrying once.
+          if (Number(accessError?.status) === 400) {
+            setActiveBusinessLineId(null)
+            const retryResult = await getAccessApi()
+            if (retryResult?.success) {
+              setAuthStorage({ access: retryResult.data || null })
+            }
+          } else {
+            throw accessError
+          }
+        }
+
         const result = await getMyMenuVisibilityApi()
         if (result?.success) {
           setMenuVisibilityAccessMap(result?.data?.menu_access_map || {})

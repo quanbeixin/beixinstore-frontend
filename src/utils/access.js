@@ -12,6 +12,7 @@ function readJsonStorage(key) {
 const MENU_VISIBILITY_RULES_KEY = 'menu_visibility_rules'
 const MENU_VISIBILITY_ACCESS_KEY = 'menu_visibility_access'
 const USER_PREFERENCES_KEY = 'user_preferences'
+const ACTIVE_BUSINESS_LINE_ID_KEY = 'active_business_line_id'
 
 const MENU_SCOPE_TYPES = {
   ALL: 'ALL',
@@ -44,6 +45,11 @@ function normalizeDepartmentIds(value) {
 function normalizeScopeType(value) {
   const scopeType = String(value || MENU_SCOPE_TYPES.ALL).trim().toUpperCase()
   return MENU_SCOPE_TYPES[scopeType] || MENU_SCOPE_TYPES.ALL
+}
+
+function normalizeBusinessLineId(value) {
+  const num = Number(value)
+  return Number.isInteger(num) && num > 0 ? num : null
 }
 
 function normalizeMenuRule(rule) {
@@ -116,6 +122,44 @@ export function getPreferredHomePath() {
 
 export function getAccessSnapshot() {
   return readJsonStorage('access')
+}
+
+export function getActiveBusinessLineId() {
+  return normalizeBusinessLineId(localStorage.getItem(ACTIVE_BUSINESS_LINE_ID_KEY))
+}
+
+export function setActiveBusinessLineId(value) {
+  const normalized = normalizeBusinessLineId(value)
+  if (!normalized) {
+    localStorage.removeItem(ACTIVE_BUSINESS_LINE_ID_KEY)
+    return null
+  }
+  localStorage.setItem(ACTIVE_BUSINESS_LINE_ID_KEY, String(normalized))
+  return normalized
+}
+
+export function getAvailableBusinessLines(access = getAccessSnapshot()) {
+  const list = Array.isArray(access?.available_business_lines) ? access.available_business_lines : []
+  return list
+    .map((item) => ({
+      id: normalizeBusinessLineId(item?.id),
+      name: String(item?.name || '').trim(),
+      code: String(item?.code || '').trim(),
+      status: String(item?.status || '').trim(),
+    }))
+    .filter((item) => item.id)
+}
+
+export function resolveCurrentBusinessLineId(access = getAccessSnapshot()) {
+  const available = getAvailableBusinessLines(access)
+  const availableIds = new Set(available.map((item) => item.id))
+  const storedId = getActiveBusinessLineId()
+  if (storedId && availableIds.has(storedId)) return storedId
+
+  const currentId = normalizeBusinessLineId(access?.current_business_line_id)
+  if (currentId && availableIds.has(currentId)) return currentId
+
+  return available[0]?.id || null
 }
 
 function getRoleKeys(access) {
@@ -290,6 +334,8 @@ export function setAuthStorage({ token, user, access }) {
 
   if (access) {
     localStorage.setItem('access', JSON.stringify(access))
+    const nextBusinessLineId = resolveCurrentBusinessLineId(access)
+    setActiveBusinessLineId(nextBusinessLineId)
   }
 }
 
@@ -300,4 +346,5 @@ export function clearAuthStorage() {
   localStorage.removeItem(MENU_VISIBILITY_RULES_KEY)
   localStorage.removeItem(MENU_VISIBILITY_ACCESS_KEY)
   localStorage.removeItem(USER_PREFERENCES_KEY)
+  localStorage.removeItem(ACTIVE_BUSINESS_LINE_ID_KEY)
 }

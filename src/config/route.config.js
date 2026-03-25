@@ -29,15 +29,15 @@ export const PRIVATE_ROUTES = [
   },
   {
     path: '/pm/requirements',
-    componentKey: 'requirements',
-    requiredPermission: 'requirement.view',
+    componentKey: 'workDemands',
+    requiredPermission: 'demand.view',
     page: {
-      title: '需求管理',
-      subtitle: '维护需求标题、优先级、负责人、阶段和工时。',
+      title: '需求池',
+      subtitle: '统一维护需求信息，支持筛选、创建、流程与关联工时。',
     },
     menu: {
       section: 'projectManagement',
-      label: '需求管理',
+      label: '需求池',
       icon: 'tool',
     },
   },
@@ -162,11 +162,6 @@ export const PRIVATE_ROUTES = [
     page: {
       title: '需求池',
       subtitle: '统一维护需求信息，支持筛选、创建与编辑需求。',
-    },
-    menu: {
-      section: 'main',
-      label: '需求池',
-      icon: 'tool',
     },
   },
   {

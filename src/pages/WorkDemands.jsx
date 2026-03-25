@@ -23,6 +23,7 @@ import {
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { getBugsApi } from '../api/bugs'
 import { getDictItemsApi } from '../api/configDict'
 import { getUsersApi } from '../api/users'
 import {
@@ -58,6 +59,26 @@ const PRIORITY_OPTIONS = [
   { label: 'P3', value: 'P3' },
 ]
 
+const BUG_SEVERITY_OPTIONS = [
+  { label: '低', value: 'LOW' },
+  { label: '中', value: 'MEDIUM' },
+  { label: '高', value: 'HIGH' },
+  { label: '严重', value: 'CRITICAL' },
+]
+
+const BUG_STATUS_OPTIONS = [
+  { label: '待修复', value: 'OPEN' },
+  { label: '修复中', value: 'FIXING' },
+  { label: '已验证', value: 'VERIFIED' },
+  { label: '已关闭', value: 'CLOSED' },
+]
+
+const BUG_STAGE_OPTIONS = [
+  { label: '开发', value: 'DEVELOPMENT' },
+  { label: '测试', value: 'TEST' },
+  { label: '发布', value: 'RELEASE' },
+]
+
 const DETAIL_LOG_FILTER_OPTIONS = [
   { label: '全部', value: 'ALL' },
   { label: '未完成', value: 'PENDING' },
@@ -81,6 +102,25 @@ function getPriorityColor(priority) {
   if (priority === 'P1') return 'orange'
   if (priority === 'P2') return 'blue'
   return 'default'
+}
+
+function getBugOptionLabel(options, value) {
+  const target = options.find((item) => item.value === value)
+  return target?.label || value || '-'
+}
+
+function getBugSeverityColor(severity) {
+  if (severity === 'CRITICAL') return 'red'
+  if (severity === 'HIGH') return 'orange'
+  if (severity === 'MEDIUM') return 'blue'
+  return 'default'
+}
+
+function getBugStatusColor(status) {
+  if (status === 'CLOSED') return 'success'
+  if (status === 'VERIFIED') return 'cyan'
+  if (status === 'FIXING') return 'processing'
+  return 'warning'
 }
 
 function toNumber(value, fallback = 0) {
@@ -113,6 +153,7 @@ function WorkDemands() {
   const canTransferOwner = hasPermission('demand.transfer_owner') || hasRole('ADMIN')
   const canViewSelfLogs = hasPermission('worklog.view.self')
   const canViewTeamLogs = hasPermission('worklog.view.team')
+  const canViewBugs = hasPermission('bug.view')
   const canViewWorkflow = hasPermission('demand.workflow.view') || hasPermission('demand.view')
   const canManageWorkflow = hasPermission('demand.workflow.manage') || hasPermission('demand.manage')
   const currentUser = getCurrentUser()
@@ -148,6 +189,8 @@ function WorkDemands() {
 
   const [detailPageLoading, setDetailPageLoading] = useState(false)
   const [detailDemand, setDetailDemand] = useState(null)
+  const [detailBugs, setDetailBugs] = useState([])
+  const [detailBugsLoading, setDetailBugsLoading] = useState(false)
   const [detailLogs, setDetailLogs] = useState([])
   const [detailLogsLoading, setDetailLogsLoading] = useState(false)
   const [detailSaving, setDetailSaving] = useState(false)
@@ -488,6 +531,34 @@ function WorkDemands() {
     [canManageWorkflow, canViewWorkflow],
   )
 
+  const fetchDemandRelatedBugs = useCallback(
+    async (demandId) => {
+      if (!demandId || !canViewBugs) {
+        setDetailBugs([])
+        return
+      }
+
+      setDetailBugsLoading(true)
+      try {
+        const result = await getBugsApi({
+          page: 1,
+          pageSize: 50,
+          demand_id: demandId,
+        })
+        if (result?.success) {
+          setDetailBugs(result.data?.list || [])
+        } else {
+          setDetailBugs([])
+        }
+      } catch {
+        setDetailBugs([])
+      } finally {
+        setDetailBugsLoading(false)
+      }
+    },
+    [canViewBugs],
+  )
+
   const openDetailDrawer = useCallback(
     (record) => {
       if (!record?.id) return
@@ -498,6 +569,7 @@ function WorkDemands() {
 
   const closeDetailDrawer = () => {
     setDetailDemand(null)
+    setDetailBugs([])
     setDetailLogs([])
     setDetailLogFilter('ALL')
     setWorkflowData(null)
@@ -527,6 +599,7 @@ function WorkDemands() {
 
         const demand = result.data
         setDetailDemand(demand)
+        fetchDemandRelatedBugs(demand.id)
         fetchDemandRelatedLogs(demand.id)
         loadDemandWorkflow(demand.id)
       } catch (error) {
@@ -546,6 +619,7 @@ function WorkDemands() {
     isDetailPage,
     routeDemandId,
     canEditDemandRecord,
+    fetchDemandRelatedBugs,
     fetchDemandRelatedLogs,
     loadDemandWorkflow,
     navigate,
@@ -555,6 +629,7 @@ function WorkDemands() {
     if (isDetailPage) return
     setDetailPageLoading(false)
     setDetailDemand(null)
+    setDetailBugs([])
     setDetailLogs([])
     setDetailLogFilter('ALL')
     setWorkflowData(null)
@@ -600,6 +675,7 @@ function WorkDemands() {
       ...(nextDetail || {}),
     }
     setDetailDemand(mergedDetail)
+    fetchDemandRelatedBugs(mergedDetail.id)
     fetchDemandRelatedLogs(mergedDetail.id)
     loadDemandWorkflow(mergedDetail.id)
   }
@@ -1279,6 +1355,67 @@ function WorkDemands() {
               </Card>
             )}
 
+            <Divider titlePlacement="start">关联 Bug</Divider>
+            <Table
+              rowKey="id"
+              size="small"
+              loading={detailBugsLoading}
+              dataSource={detailBugs}
+              pagination={false}
+              locale={{
+                emptyText: canViewBugs ? '暂无关联 Bug' : '当前账号无 Bug 查看权限',
+              }}
+              scroll={{ x: 980 }}
+              style={{ marginBottom: 12 }}
+              columns={[
+                {
+                  title: '标题',
+                  dataIndex: 'title',
+                  key: 'title',
+                  width: 240,
+                  render: (value) => value || '-',
+                },
+                {
+                  title: '严重程度',
+                  dataIndex: 'severity',
+                  key: 'severity',
+                  width: 120,
+                  render: (value) => (
+                    <Tag color={getBugSeverityColor(value)}>{getBugOptionLabel(BUG_SEVERITY_OPTIONS, value)}</Tag>
+                  ),
+                },
+                {
+                  title: '状态',
+                  dataIndex: 'status',
+                  key: 'status',
+                  width: 120,
+                  render: (value) => (
+                    <Tag color={getBugStatusColor(value)}>{getBugOptionLabel(BUG_STATUS_OPTIONS, value)}</Tag>
+                  ),
+                },
+                {
+                  title: '阶段',
+                  dataIndex: 'stage',
+                  key: 'stage',
+                  width: 120,
+                  render: (value) => getBugOptionLabel(BUG_STAGE_OPTIONS, value),
+                },
+                {
+                  title: '负责人',
+                  dataIndex: 'assignee_name',
+                  key: 'assignee_name',
+                  width: 140,
+                  render: (value) => value || '-',
+                },
+                {
+                  title: '更新时间',
+                  dataIndex: 'updated_at',
+                  key: 'updated_at',
+                  width: 180,
+                  render: (value) => formatBeijingDateTime(value),
+                },
+              ]}
+            />
             <Divider titlePlacement="start">最近关联事项</Divider>
             <div
               style={{

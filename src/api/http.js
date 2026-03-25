@@ -1,5 +1,5 @@
 ﻿import axios from 'axios'
-import { clearAuthStorage } from '../utils/access'
+import { clearAuthStorage, getActiveBusinessLineId } from '../utils/access'
 
 const instance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
@@ -17,6 +17,12 @@ instance.interceptors.request.use(
     if (token) {
       config.headers = config.headers || {}
       config.headers.Authorization = `Bearer ${token}`
+    }
+
+    const activeBusinessLineId = getActiveBusinessLineId()
+    if (activeBusinessLineId) {
+      config.headers = config.headers || {}
+      config.headers['X-Business-Line-Id'] = String(activeBusinessLineId)
     }
 
     return config
