@@ -18,7 +18,7 @@ import {
   Tag,
   message,
 } from 'antd'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getDictItemsApi } from '../api/configDict'
 import { getDepartmentsApi } from '../api/org'
 import { getOptionsApi } from '../api/options'
@@ -29,8 +29,10 @@ import {
   getUsersApi,
   updateUserApi,
 } from '../api/users'
+import { getCurrentUser } from '../utils/access'
 
 const { Search } = Input
+const USERS_FULL_LIST_PAGE_SIZE = 5000
 
 function highlightText(text, keyword) {
   const source = String(text || '')
@@ -66,9 +68,6 @@ function highlightText(text, keyword) {
 function Users() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(false)
-  const [total, setTotal] = useState(0)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
   const [keyword, setKeyword] = useState('')
   const [sortBy, setSortBy] = useState('real_name')
   const [sortOrder, setSortOrder] = useState('asc')
@@ -86,23 +85,16 @@ function Users() {
   const [form] = Form.useForm()
 
   const getCurrentUserId = () => {
-    const userStr = localStorage.getItem('user')
-    if (!userStr) return null
-
-    try {
-      const user = JSON.parse(userStr)
-      return user.id
-    } catch {
-      return null
-    }
+    const user = getCurrentUser()
+    return user?.id || null
   }
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
     try {
       const result = await getUsersApi({
-        page: currentPage,
-        pageSize,
+        page: 1,
+        pageSize: USERS_FULL_LIST_PAGE_SIZE,
         ...(keyword ? { keyword } : {}),
         sort_by: sortBy,
         sort_order: sortOrder,
@@ -110,7 +102,6 @@ function Users() {
 
       if (result.success) {
         setUsers(result.data.list)
-        setTotal(result.data.total)
       } else {
         message.error(result.message || '获取用户列表失败')
       }
@@ -120,7 +111,7 @@ function Users() {
     } finally {
       setLoading(false)
     }
-  }, [currentPage, pageSize, keyword, sortBy, sortOrder])
+  }, [keyword, sortBy, sortOrder])
 
   const fetchOptions = useCallback(async () => {
     try {
@@ -165,12 +156,9 @@ function Users() {
 
   const handleSearch = (value) => {
     setKeyword(value)
-    setCurrentPage(1)
   }
 
-  const handleTableChange = (pagination, _filters, sorter) => {
-    setCurrentPage(pagination.current || 1)
-    setPageSize(pagination.pageSize || 10)
+  const handleTableChange = (_pagination, _filters, sorter) => {
     const nextSorter = Array.isArray(sorter) ? sorter[0] : sorter
     const nextColumnKey = String(nextSorter?.columnKey || '')
     if ((nextColumnKey === 'username' || nextColumnKey === 'real_name') && nextSorter?.order) {
@@ -183,12 +171,7 @@ function Users() {
   }
 
   const refreshUsersAfterMutation = () => {
-    if (currentPage === 1) {
-      fetchUsers()
-      return
-    }
-
-    setCurrentPage(1)
+    fetchUsers()
   }
 
   const handleCreate = () => {
@@ -301,9 +284,67 @@ function Users() {
     setKeyword('')
     setSortBy('real_name')
     setSortOrder('asc')
-    setCurrentPage(1)
     fetchUsers()
   }
+
+  const groupedUsers = useMemo(() => {
+    const deptMetaMap = new Map(
+      departments.map((dept, index) => [
+        Number(dept.id),
+        { name: dept.name || `部门#${dept.id}`, sortIndex: index },
+      ]),
+    )
+    const groups = new Map()
+
+    const getOrCreateGroup = (groupKey, groupName, departmentId, sortIndex) => {
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
+          key: groupKey,
+          row_type: 'department_group',
+          department_id: departmentId,
+          department_name: groupName,
+          user_count: 0,
+          __sort_index: sortIndex,
+          children: [],
+        })
+      }
+      return groups.get(groupKey)
+    }
+
+    ;(users || []).forEach((user) => {
+      const deptId = Number(user.department_id)
+      const hasDepartment = Number.isInteger(deptId) && deptId > 0
+      const groupKey = hasDepartment ? `dept-${deptId}` : 'dept-unassigned'
+      const deptMeta = hasDepartment ? deptMetaMap.get(deptId) : null
+      const groupName = hasDepartment
+        ? String(user.department_name || deptMeta?.name || `部门#${deptId}`)
+        : '未分配'
+      const sortIndex = hasDepartment ? Number(deptMeta?.sortIndex ?? 9999) : Number.MAX_SAFE_INTEGER
+      const group = getOrCreateGroup(groupKey, groupName, hasDepartment ? deptId : null, sortIndex)
+
+      group.children.push({
+        ...user,
+        key: `user-${user.id}`,
+        row_type: 'user',
+      })
+      group.user_count += 1
+    })
+
+    return Array.from(groups.values())
+      .sort((a, b) => {
+        if (a.__sort_index !== b.__sort_index) return a.__sort_index - b.__sort_index
+        return String(a.department_name || '').localeCompare(String(b.department_name || ''), 'zh-Hans-CN')
+      })
+      .map((group) => {
+        const sortedChildren = [...group.children].sort((a, b) =>
+          String(a.real_name || a.username || '').localeCompare(String(b.real_name || b.username || ''), 'zh-Hans-CN'),
+        )
+        return {
+          ...group,
+          children: sortedChildren,
+        }
+      })
+  }, [users, departments])
 
   const columns = [
     {
@@ -311,6 +352,7 @@ function Users() {
       dataIndex: 'id',
       key: 'id',
       width: 80,
+      render: (value, record) => (record?.row_type === 'department_group' ? <Tag color="blue">部门</Tag> : value),
     },
     {
       title: '用户名',
@@ -319,7 +361,15 @@ function Users() {
       width: 150,
       sorter: true,
       sortOrder: sortBy === 'username' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
-      render: (value) => highlightText(value, keyword),
+      render: (value, record) =>
+        record?.row_type === 'department_group' ? (
+          <Space size={8}>
+            <span style={{ fontWeight: 600 }}>{record.department_name || '-'}</span>
+            <Tag>{`${Number(record.user_count || 0)} 人`}</Tag>
+          </Space>
+        ) : (
+          highlightText(value, keyword)
+        ),
     },
     {
       title: '真实姓名',
@@ -328,27 +378,33 @@ function Users() {
       width: 160,
       sorter: true,
       sortOrder: sortBy === 'real_name' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
-      render: (value, record) => highlightText(value || record.username || '-', keyword),
+      render: (value, record) =>
+        record?.row_type === 'department_group' ? '-' : highlightText(value || record.username || '-', keyword),
     },
     {
       title: '邮箱',
       dataIndex: 'email',
       key: 'email',
       width: 200,
-      render: (value) => highlightText(value, keyword),
+      render: (value, record) => (record?.row_type === 'department_group' ? '-' : highlightText(value, keyword)),
     },
     {
       title: '部门',
       dataIndex: 'department_name',
       key: 'department_name',
       width: 120,
+      render: (value, record) =>
+        record?.row_type === 'department_group' ? record.department_name || '-' : value || '未分配',
     },
     {
       title: '角色',
       dataIndex: 'role_names',
       key: 'role_names',
       width: 200,
-      render: (roleNames) => (
+      render: (roleNames, record) =>
+        record?.row_type === 'department_group' ? (
+          '-'
+        ) : (
         <>
           {roleNames?.split(',').map((role, index) => (
             <Tag color="blue" key={index}>
@@ -356,13 +412,14 @@ function Users() {
             </Tag>
           ))}
         </>
-      ),
+        ),
     },
     {
       title: '状态',
       key: 'status',
       width: 100,
       render: (_, record) => {
+        if (record?.row_type === 'department_group') return '-'
         const option = statusOptions.find((item) => item.item_code === record.status_code)
         const label = option?.item_name || record.status_code || '未知'
         const color = option?.color || 'default'
@@ -373,38 +430,41 @@ function Users() {
       title: '纳入考核',
       key: 'include_in_metrics',
       width: 110,
-      render: (_, record) =>
-        Number(record.include_in_metrics ?? 1) === 1 ? <Tag color="green">纳入</Tag> : <Tag>不纳入</Tag>,
+      render: (_, record) => {
+        if (record?.row_type === 'department_group') return '-'
+        return Number(record.include_in_metrics ?? 1) === 1 ? <Tag color="green">纳入</Tag> : <Tag>不纳入</Tag>
+      },
     },
     {
       title: '操作',
       key: 'action',
       width: 180,
       fixed: 'right',
-      render: (_, record) => (
-        <Space size="small">
-          <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
-            编辑
-          </Button>
-          <Popconfirm
-            title="确认删除"
-            description={`确定要删除用户 "${record.real_name || record.username}" 吗？`}
-            onConfirm={() => handleDelete(record)}
-            okText="确定"
-            cancelText="取消"
-            disabled={record.id === currentUserId}
-          >
-            <Button
-              type="link"
-              danger
-              icon={<DeleteOutlined />}
+      render: (_, record) =>
+        record?.row_type === 'department_group' ? null : (
+          <Space size="small">
+            <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
+              编辑
+            </Button>
+            <Popconfirm
+              title="确认删除"
+              description={`确定要删除用户 "${record.real_name || record.username}" 吗？`}
+              onConfirm={() => handleDelete(record)}
+              okText="确定"
+              cancelText="取消"
               disabled={record.id === currentUserId}
             >
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
+              <Button
+                type="link"
+                danger
+                icon={<DeleteOutlined />}
+                disabled={record.id === currentUserId}
+              >
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
     },
   ]
 
@@ -437,18 +497,11 @@ function Users() {
 
       <Table
         columns={columns}
-        dataSource={users}
-        rowKey="id"
+        dataSource={groupedUsers}
+        rowKey={(record) => record.key || String(record.id)}
         loading={loading}
-        pagination={{
-          current: currentPage,
-          pageSize,
-          total,
-          showSizeChanger: true,
-          showQuickJumper: true,
-          showTotal: (currentTotal) => `共 ${currentTotal} 条`,
-          pageSizeOptions: ['10', '20', '50', '100'],
-        }}
+        expandable={{ defaultExpandAllRows: true }}
+        pagination={false}
         onChange={handleTableChange}
         scroll={{ x: 1200 }}
       />

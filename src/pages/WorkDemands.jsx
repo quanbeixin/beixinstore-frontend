@@ -30,6 +30,7 @@ import {
   createWorkDemandApi,
   deleteWorkDemandApi,
   getDemandWorkflowApi,
+  getWorkflowAssigneesApi,
   getWorkDemandByIdApi,
   getWorkDemandsApi,
   getWorkLogsApi,
@@ -44,6 +45,8 @@ import { formatBeijingDate, formatBeijingDateTime, getBeijingTodayDateString } f
 const { Search } = Input
 const { Text } = Typography
 const { RangePicker } = DatePicker
+const WORKFLOW_ASSIGNEE_PAGE_SIZE = 500
+const WORKFLOW_ASSIGNEE_MAX_PAGES = 50
 
 const STATUS_OPTIONS = [
   { label: '待开始', value: 'TODO' },
@@ -140,6 +143,7 @@ function WorkDemands() {
 
   const [demands, setDemands] = useState([])
   const [users, setUsers] = useState([])
+  const [workflowAssignees, setWorkflowAssignees] = useState([])
   const [businessGroups, setBusinessGroups] = useState([])
 
   const [page, setPage] = useState(1)
@@ -256,6 +260,40 @@ function WorkDemands() {
     return Array.from(map.values()).sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-CN'))
   }, [users, demands, currentUser])
 
+  const workflowAssigneeOptions = useMemo(() => {
+    const map = new Map()
+    ;(workflowAssignees || []).forEach((user) => {
+      const userId = Number(user?.id)
+      if (!Number.isInteger(userId) || userId <= 0) return
+      const displayName = String(user?.real_name || user?.username || `用户${userId}`).trim()
+      if (!map.has(userId)) {
+        map.set(userId, {
+          value: userId,
+          label: displayName || `用户${userId}`,
+        })
+      }
+    })
+
+    ;(workflowData?.nodes || []).forEach((node) => {
+      const userId = Number(node?.assignee_user_id)
+      if (!Number.isInteger(userId) || userId <= 0 || map.has(userId)) return
+      map.set(userId, {
+        value: userId,
+        label: String(node?.assignee_name || `用户${userId}`).trim() || `用户${userId}`,
+      })
+    })
+
+    const currentUserId = Number(currentUser?.id)
+    if (Number.isInteger(currentUserId) && currentUserId > 0 && !map.has(currentUserId)) {
+      map.set(currentUserId, {
+        value: currentUserId,
+        label: String(currentUser?.real_name || currentUser?.username || '当前用户').trim() || `用户${currentUserId}`,
+      })
+    }
+
+    return Array.from(map.values()).sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-CN'))
+  }, [workflowAssignees, workflowData, currentUser])
+
   const businessGroupOptions = useMemo(
     () =>
       businessGroups.map((item) => ({
@@ -272,14 +310,58 @@ function WorkDemands() {
     }
 
     try {
-      const result = await getUsersApi({ page: 1, pageSize: 200 })
-      if (result?.success) {
-        setUsers(result.data?.list || [])
+      const usersMap = new Map()
+      let currentPage = 1
+      let total = 0
+
+      while (currentPage <= WORKFLOW_ASSIGNEE_MAX_PAGES) {
+        const result = await getUsersApi({
+          page: currentPage,
+          pageSize: WORKFLOW_ASSIGNEE_PAGE_SIZE,
+          sort_by: 'real_name',
+          sort_order: 'asc',
+        })
+        if (!result?.success) break
+
+        const list = Array.isArray(result.data?.list) ? result.data.list : []
+        total = Number(result.data?.total || 0)
+        list.forEach((item) => {
+          const userId = Number(item?.id)
+          if (!Number.isInteger(userId) || userId <= 0 || usersMap.has(userId)) return
+          usersMap.set(userId, item)
+        })
+
+        if (list.length < WORKFLOW_ASSIGNEE_PAGE_SIZE) break
+        if (total > 0 && usersMap.size >= total) break
+        currentPage += 1
+      }
+
+      if (usersMap.size > 0) {
+        setUsers(Array.from(usersMap.values()))
       }
     } catch {
       // fallback to current user only
     }
   }, [canView, canViewUsers])
+
+  const loadWorkflowAssignees = useCallback(async () => {
+    if (!canManageWorkflow) {
+      setWorkflowAssignees([])
+      return
+    }
+
+    try {
+      const result = await getWorkflowAssigneesApi()
+      if (!result?.success) {
+        setWorkflowAssignees([])
+        return
+      }
+      const list = Array.isArray(result.data) ? result.data : []
+      setWorkflowAssignees(list)
+    } catch {
+      setWorkflowAssignees([])
+    }
+  }, [canManageWorkflow])
 
   const loadBusinessGroups = useCallback(async () => {
     try {
@@ -345,6 +427,10 @@ function WorkDemands() {
   useEffect(() => {
     loadUsers()
   }, [loadUsers])
+
+  useEffect(() => {
+    loadWorkflowAssignees()
+  }, [loadWorkflowAssignees])
 
   useEffect(() => {
     loadBusinessGroups()
@@ -1276,7 +1362,7 @@ function WorkDemands() {
                           optionFilterProp="label"
                           style={{ width: 220 }}
                           value={workflowAssignee}
-                          options={ownerOptions}
+                          options={workflowAssigneeOptions}
                           placeholder="选择节点负责人"
                           disabled={!canAssignSelectedWorkflowNode}
                           onChange={(value) => setWorkflowAssignee(value)}

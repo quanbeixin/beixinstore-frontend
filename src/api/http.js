@@ -1,5 +1,5 @@
 ﻿import axios from 'axios'
-import { clearAuthStorage } from '../utils/access'
+import { clearAuthStorage, getToken } from '../utils/access'
 
 const instance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
@@ -12,7 +12,7 @@ const instance = axios.create({
 
 instance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token')
+    const token = getToken()
 
     if (token) {
       config.headers = config.headers || {}

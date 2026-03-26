@@ -27,6 +27,7 @@ function Login() {
       })
 
       if (result?.success) {
+        const remember = Boolean(values?.remember)
         const token = result?.data?.token || result?.token || result?.data?.data?.token || ''
         const user = result?.data?.user || result?.user || result?.data?.data?.user || null
 
@@ -39,6 +40,7 @@ function Login() {
         setAuthStorage({
           token,
           user,
+          remember,
         })
 
         const userId = Number(user?.id) > 0 ? Number(user.id) : null
@@ -119,6 +121,7 @@ function Login() {
             autoComplete="off"
             layout="vertical"
             className="login-form"
+            initialValues={{ remember: true }}
           >
             <Form.Item
               name="username"

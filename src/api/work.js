@@ -50,6 +50,10 @@ export function getDemandWorkflowApi(demandId) {
   return request.get(`/work/demands/${demandId}/workflow`)
 }
 
+export function getWorkflowAssigneesApi(params) {
+  return request.get('/work/workflow/assignees', { params })
+}
+
 export function assignDemandWorkflowCurrentNodeApi(demandId, payload) {
   return request.post(`/work/demands/${demandId}/workflow/current/assign`, payload)
 }

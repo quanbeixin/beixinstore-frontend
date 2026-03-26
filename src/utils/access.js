@@ -9,6 +9,41 @@ function readJsonStorage(key) {
   }
 }
 
+function readJsonByStorage(storage, key) {
+  const raw = storage.getItem(key)
+  if (!raw) return null
+
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function readAuthStorageRaw(key) {
+  return sessionStorage.getItem(key) || localStorage.getItem(key) || ''
+}
+
+function readAuthStorageJson(key) {
+  return readJsonByStorage(sessionStorage, key) || readJsonByStorage(localStorage, key)
+}
+
+function clearAuthStorageCore() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+  localStorage.removeItem('access')
+  sessionStorage.removeItem('token')
+  sessionStorage.removeItem('user')
+  sessionStorage.removeItem('access')
+}
+
+function resolveAuthStorageByRemember(remember) {
+  if (remember === true) return localStorage
+  if (remember === false) return sessionStorage
+  if (sessionStorage.getItem('token')) return sessionStorage
+  return localStorage
+}
+
 const MENU_VISIBILITY_RULES_KEY = 'menu_visibility_rules'
 const MENU_VISIBILITY_ACCESS_KEY = 'menu_visibility_access'
 const USER_PREFERENCES_KEY = 'user_preferences'
@@ -62,7 +97,7 @@ function toBooleanMap(value) {
 }
 
 function getCurrentUserId() {
-  const user = readJsonStorage('user')
+  const user = readAuthStorageJson('user')
   return toPositiveInt(user?.id)
 }
 
@@ -110,11 +145,11 @@ function normalizeMenuRule(rule) {
 }
 
 export function getToken() {
-  return localStorage.getItem('token') || ''
+  return readAuthStorageRaw('token')
 }
 
 export function getCurrentUser() {
-  return readJsonStorage('user')
+  return readAuthStorageJson('user')
 }
 
 function normalizeUserPreferences(value) {
@@ -154,13 +189,14 @@ export function getPreferredHomePath() {
 }
 
 export function getAccessSnapshot() {
-  const access = readJsonStorage('access')
+  const access = readAuthStorageJson('access')
   if (!access || typeof access !== 'object') return null
 
   const currentUserId = getCurrentUserId()
   const accessUserId = toPositiveInt(access.user_id)
   if (currentUserId && accessUserId && currentUserId !== accessUserId) {
     localStorage.removeItem('access')
+    sessionStorage.removeItem('access')
     return null
   }
 
@@ -342,41 +378,41 @@ export function canAccessRoute(route) {
   return canAccessRouteByCachedRule(route, menuKey)
 }
 
-export function setAuthStorage({ token, user, access }) {
+export function setAuthStorage({ token, user, access, remember }) {
   const previousUserId = getCurrentUserId()
   const nextUserId = user === undefined ? previousUserId : toPositiveInt(user?.id)
+  const authStorage = resolveAuthStorageByRemember(remember)
 
   if (previousUserId && nextUserId && previousUserId !== nextUserId) {
     localStorage.removeItem('access')
+    sessionStorage.removeItem('access')
     localStorage.removeItem(MENU_VISIBILITY_ACCESS_KEY)
     localStorage.removeItem(USER_PREFERENCES_KEY)
   }
 
-  if (token) {
-    localStorage.setItem('token', token)
-  } else if (token === null) {
+  if (token !== undefined) {
     localStorage.removeItem('token')
+    sessionStorage.removeItem('token')
+    if (token) authStorage.setItem('token', token)
   }
 
-  if (user) {
-    localStorage.setItem('user', JSON.stringify(user))
-  } else if (user === null) {
+  if (user !== undefined) {
     localStorage.removeItem('user')
+    sessionStorage.removeItem('user')
+    if (user) authStorage.setItem('user', JSON.stringify(user))
   }
 
-  if (access) {
-    localStorage.setItem('access', JSON.stringify(access))
-  } else if (access === null) {
+  if (access !== undefined) {
     localStorage.removeItem('access')
+    sessionStorage.removeItem('access')
+    if (access) authStorage.setItem('access', JSON.stringify(access))
   }
 
   emitAuthStorageUpdated()
 }
 
 export function clearAuthStorage() {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('access')
+  clearAuthStorageCore()
   localStorage.removeItem(MENU_VISIBILITY_RULES_KEY)
   localStorage.removeItem(MENU_VISIBILITY_ACCESS_KEY)
   localStorage.removeItem(USER_PREFERENCES_KEY)

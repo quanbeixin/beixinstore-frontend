@@ -28,7 +28,7 @@ import {
   Typography,
   message,
 } from 'antd'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createWorkLogApi,
   createLogDailyEntryApi,
@@ -43,7 +43,7 @@ import {
   getWorkLogsApi,
   updateWorkLogApi,
 } from '../api/work'
-import { hasPermission } from '../utils/access'
+import { getCurrentUser, hasPermission } from '../utils/access'
 import { formatBeijingDate, getBeijingTodayDateString } from '../utils/datetime'
 
 const { Text } = Typography
@@ -146,6 +146,38 @@ function isDemandFollowupItem(item) {
   const typeName = String(item?.item_type_name || '').replace(/\s+/g, '')
   if (typeKey.includes('DEMAND') && typeKey.includes('FOLLOW')) return true
   return typeName.includes('需求跟进')
+}
+
+function isDemandFollowupItemType(itemType) {
+  const typeKey = String(itemType?.type_key || '')
+    .trim()
+    .toUpperCase()
+  const typeName = String(itemType?.name || '').replace(/\s+/g, '')
+  if (typeKey.includes('DEMAND') && typeKey.includes('FOLLOW')) return true
+  return typeName.includes('需求跟进')
+}
+
+function toPositiveInt(value) {
+  const num = Number(value)
+  return Number.isInteger(num) && num > 0 ? num : null
+}
+
+function splitHoursAcrossCount(totalHours, count) {
+  const total = Math.max(0, Number(toNumber(totalHours, 0)))
+  const safeCount = Math.max(1, Number(count || 1))
+  const totalTicks = Math.round(total * 10)
+  const baseTicks = Math.floor(totalTicks / safeCount)
+  const remainderTicks = Math.max(0, totalTicks - baseTicks * safeCount)
+  return Array.from({ length: safeCount }).map((_, index) => {
+    const ticks = baseTicks + (index < remainderTicks ? 1 : 0)
+    return Number((ticks / 10).toFixed(1))
+  })
+}
+
+function isPhaseVisibleForDepartment(phaseItem, userDepartmentId) {
+  const ownerDepartmentId = toPositiveInt(phaseItem?.owner_department_id)
+  if (!ownerDepartmentId) return true
+  return ownerDepartmentId === toPositiveInt(userDepartmentId)
 }
 
 function openDemandDetailInNewTab(demandId) {
@@ -320,6 +352,8 @@ function WorkLogs() {
   const [weeklyRange, setWeeklyRange] = useState(() => getDefaultWeeklyRange())
   const [weeklyReport, setWeeklyReport] = useState(null)
   const [logStatusFilter, setLogStatusFilter] = useState('ALL')
+  const [isQuickCompletionDateTouched, setIsQuickCompletionDateTouched] = useState(false)
+  const quickCompletionDateAutoSyncRef = useRef(false)
 
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -327,8 +361,10 @@ function WorkLogs() {
 
   const selectedTypeId = Form.useWatch('item_type_id', form)
   const selectedDemandId = Form.useWatch('demand_id', form)
+  const selectedQuickPhaseValue = Form.useWatch('phase_key', form)
   const selectedActualTypeId = Form.useWatch('item_type_id', actualForm)
   const selectedActualDemandId = Form.useWatch('demand_id', actualForm)
+  const selectedActualPhaseKey = Form.useWatch('phase_key', actualForm)
 
   const selectedItemType = useMemo(
     () => itemTypes.find((item) => Number(item.id) === Number(selectedTypeId)) || null,
@@ -361,10 +397,72 @@ function WorkLogs() {
     () =>
       phaseDictItems.map((item) => ({
         value: item.phase_key,
-        label: `${item.phase_name} (${item.phase_key})`,
+        label: item.phase_name || item.phase_key,
+        owner_department_id: item.owner_department_id || null,
       })),
     [phaseDictItems],
   )
+
+  const currentUser = useMemo(() => getCurrentUser(), [])
+  const currentUserDepartmentId = useMemo(() => {
+    const fromWorkbench = toPositiveInt(workbench?.current_user?.department_id)
+    if (fromWorkbench) return fromWorkbench
+    return toPositiveInt(currentUser?.department_id)
+  }, [workbench?.current_user?.department_id, currentUser?.department_id])
+
+  const shouldFilterQuickPhaseByDepartment = isDemandFollowupItemType(selectedItemType)
+  const shouldFilterActualPhaseByDepartment = isDemandFollowupItemType(selectedActualItemType)
+  const isQuickBatchPhaseMode = Boolean(selectedDemandId) && shouldFilterQuickPhaseByDepartment
+  const normalizedSelectedQuickPhaseKeys = useMemo(() => {
+    const rawValues = Array.isArray(selectedQuickPhaseValue)
+      ? selectedQuickPhaseValue
+      : selectedQuickPhaseValue
+        ? [selectedQuickPhaseValue]
+        : []
+    const unique = []
+    const seen = new Set()
+    rawValues.forEach((item) => {
+      const normalized = String(item || '').trim().toUpperCase()
+      if (!normalized || seen.has(normalized)) return
+      seen.add(normalized)
+      unique.push(normalized)
+    })
+    return unique
+  }, [selectedQuickPhaseValue])
+
+  const quickPhaseOptions = useMemo(() => {
+    if (!shouldFilterQuickPhaseByDepartment) return phaseOptions
+    return phaseOptions.filter((item) => isPhaseVisibleForDepartment(item, currentUserDepartmentId))
+  }, [phaseOptions, shouldFilterQuickPhaseByDepartment, currentUserDepartmentId])
+
+  const actualPhaseOptions = useMemo(() => {
+    if (!shouldFilterActualPhaseByDepartment) return phaseOptions
+    return phaseOptions.filter((item) => isPhaseVisibleForDepartment(item, currentUserDepartmentId))
+  }, [phaseOptions, shouldFilterActualPhaseByDepartment, currentUserDepartmentId])
+
+  const quickPhaseOptionsWithSelected = useMemo(() => {
+    if (normalizedSelectedQuickPhaseKeys.length === 0) return quickPhaseOptions
+    const merged = [...quickPhaseOptions]
+    const existingSet = new Set(merged.map((item) => String(item.value || '').toUpperCase()))
+    normalizedSelectedQuickPhaseKeys.forEach((selected) => {
+      if (existingSet.has(selected)) return
+      const fallback = phaseOptions.find((item) => String(item.value || '').toUpperCase() === selected)
+      if (!fallback) return
+      merged.push({ ...fallback, label: `${fallback.label}（非本部门）` })
+      existingSet.add(selected)
+    })
+    return merged
+  }, [quickPhaseOptions, phaseOptions, normalizedSelectedQuickPhaseKeys])
+
+  const actualPhaseOptionsWithSelected = useMemo(() => {
+    if (!selectedActualPhaseKey) return actualPhaseOptions
+    const selected = String(selectedActualPhaseKey).trim().toUpperCase()
+    if (!selected) return actualPhaseOptions
+    if (actualPhaseOptions.some((item) => String(item.value || '').toUpperCase() === selected)) return actualPhaseOptions
+    const fallback = phaseOptions.find((item) => String(item.value || '').toUpperCase() === selected)
+    if (!fallback) return actualPhaseOptions
+    return [...actualPhaseOptions, { ...fallback, label: `${fallback.label}（非本部门）` }]
+  }, [actualPhaseOptions, phaseOptions, selectedActualPhaseKey])
 
   const activeItems = useMemo(() => {
     const rows = Array.isArray(workbench?.active_items) ? workbench.active_items : []
@@ -515,6 +613,7 @@ function WorkLogs() {
         (phaseResult.data || []).map((item) => ({
           phase_key: item.phase_key,
           phase_name: item.phase_name,
+          owner_department_id: toPositiveInt(item.owner_department_id),
         })),
       )
       setWorkbench(benchResult.data || {})
@@ -645,14 +744,41 @@ function WorkLogs() {
     form.setFieldsValue({
       log_date: getTodayDateString(),
       expected_start_date: getTodayDateString(),
+      expected_completion_date: getTodayDateString(),
       personal_estimate_hours: 1,
     })
+    setIsQuickCompletionDateTouched(false)
     loadBase()
   }, [form, loadBase])
 
   useEffect(() => {
     loadLogs()
   }, [loadLogs])
+
+  useEffect(() => {
+    if (!selectedDemandId || normalizedSelectedQuickPhaseKeys.length === 0) return
+    const visibleSet = new Set(quickPhaseOptions.map((item) => String(item.value || '').toUpperCase()))
+    const rawValue = form.getFieldValue('phase_key')
+    if (Array.isArray(rawValue)) {
+      const next = rawValue.filter((item) => visibleSet.has(String(item || '').trim().toUpperCase()))
+      if (next.length !== rawValue.length) {
+        form.setFieldValue('phase_key', next.length > 0 ? next : undefined)
+      }
+      return
+    }
+
+    const selected = normalizedSelectedQuickPhaseKeys[0]
+    if (!visibleSet.has(selected)) {
+      form.setFieldValue('phase_key', undefined)
+    }
+  }, [selectedDemandId, normalizedSelectedQuickPhaseKeys, quickPhaseOptions, form])
+
+  useEffect(() => {
+    if (isQuickBatchPhaseMode) return
+    const rawValue = form.getFieldValue('phase_key')
+    if (!Array.isArray(rawValue)) return
+    form.setFieldValue('phase_key', rawValue[0] || undefined)
+  }, [isQuickBatchPhaseMode, form])
 
   useEffect(() => {
     if (!actualModalOpen || !editingLog) return
@@ -682,35 +808,73 @@ function WorkLogs() {
       return
     }
 
-    if (values.demand_id && !values.phase_key) {
+    const rawPhaseValue = values.phase_key
+    const selectedPhaseKeys = (Array.isArray(rawPhaseValue) ? rawPhaseValue : rawPhaseValue ? [rawPhaseValue] : [])
+      .map((item) => String(item || '').trim())
+      .filter((item) => item)
+    const uniquePhaseKeys = [...new Set(selectedPhaseKeys)]
+
+    if (values.demand_id && uniquePhaseKeys.length === 0) {
       message.warning('关联需求时必须选择需求任务')
       return
     }
 
+    const phaseKeysForCreate = values.demand_id ? (isQuickBatchPhaseMode ? uniquePhaseKeys : [uniquePhaseKeys[0]]) : [null]
+
     try {
       setSubmitting(true)
-      const result = await createWorkLogApi({
+      const totalEstimateHours = toNumber(values.personal_estimate_hours, 0)
+      const estimateHoursList =
+        phaseKeysForCreate.length > 1
+          ? splitHoursAcrossCount(totalEstimateHours, phaseKeysForCreate.length)
+          : [totalEstimateHours]
+      const basePayload = {
         log_date: values.log_date,
         item_type_id: values.item_type_id,
         demand_id: values.demand_id || null,
-        phase_key: values.demand_id ? values.phase_key : null,
         expected_start_date: values.expected_start_date || values.log_date || getTodayDateString(),
         expected_completion_date: values.expected_completion_date || null,
         description: values.description,
-        personal_estimate_hours: values.personal_estimate_hours,
-      })
+      }
+      let successCount = 0
+      let failedMessage = ''
 
-      if (!result?.success) {
-        message.error(result?.message || '提交失败')
+      for (let index = 0; index < phaseKeysForCreate.length; index += 1) {
+        const phaseKey = phaseKeysForCreate[index]
+        const result = await createWorkLogApi({
+          ...basePayload,
+          phase_key: phaseKey || null,
+          personal_estimate_hours: estimateHoursList[index] ?? totalEstimateHours,
+        })
+        if (!result?.success) {
+          failedMessage = result?.message || '提交失败'
+          break
+        }
+        successCount += 1
+      }
+
+      if (successCount === 0) {
+        message.error(failedMessage || '提交失败')
         return
       }
 
-      message.success('工作记录已提交')
+      if (phaseKeysForCreate.length > 1) {
+        if (successCount === phaseKeysForCreate.length) {
+          message.success(`已批量创建 ${successCount} 条事项`)
+        } else {
+          message.warning(`已创建 ${successCount}/${phaseKeysForCreate.length} 条，剩余创建失败：${failedMessage || '请重试'}`)
+        }
+      } else {
+        message.success('工作记录已提交')
+      }
+
       form.setFieldsValue({
         description: '',
         expected_start_date: getTodayDateString(),
+        expected_completion_date: getTodayDateString(),
         personal_estimate_hours: 1,
       })
+      setIsQuickCompletionDateTouched(false)
       await Promise.all([loadBase(), loadLogs()])
     } catch (error) {
       message.error(error?.message || '提交失败')
@@ -733,7 +897,7 @@ function WorkLogs() {
     setOperatingLog(record)
     dailyEntryForm.setFieldsValue({
       entry_date: getTodayDateString(),
-      actual_hours: toNumber(record?.today_planned_hours, 0) > 0 ? toNumber(record.today_planned_hours, 0) : 1,
+      actual_hours: toNumber(record?.today_planned_hours, 0) > 0 ? toNumber(record.today_planned_hours, 0) : 0,
       description: '',
     })
     setDailyEntryModalOpen(true)
@@ -997,7 +1161,7 @@ function WorkLogs() {
       ellipsis: true,
     },
     {
-      title: '预计用时(h)',
+      title: '预计整体用时(h)',
       dataIndex: 'personal_estimate_hours',
       key: 'personal_estimate_hours',
       width: 140,
@@ -1275,11 +1439,33 @@ function WorkLogs() {
             style={{ width: '100%', height: '100%' }}
             extra={
               <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={loadingBase || loadingLogs}>
-                刷新
+                重置
               </Button>
             }
           >
-            <Form form={form} layout="vertical" onFinish={handleCreateLog} disabled={!canCreate || loadingBase}>
+            <Form
+              form={form}
+              layout="vertical"
+              onFinish={handleCreateLog}
+              onValuesChange={(changedValues) => {
+                if (Object.prototype.hasOwnProperty.call(changedValues, 'expected_completion_date')) {
+                  if (quickCompletionDateAutoSyncRef.current) {
+                    quickCompletionDateAutoSyncRef.current = false
+                  } else {
+                    setIsQuickCompletionDateTouched(true)
+                  }
+                }
+
+                if (
+                  Object.prototype.hasOwnProperty.call(changedValues, 'expected_start_date') &&
+                  !isQuickCompletionDateTouched
+                ) {
+                  quickCompletionDateAutoSyncRef.current = true
+                  form.setFieldValue('expected_completion_date', changedValues.expected_start_date || undefined)
+                }
+              }}
+              disabled={!canCreate || loadingBase}
+            >
               <Row gutter={12}>
                 <Col xs={24} md={12}>
                   <Form.Item label="填报日期" name="log_date" rules={[{ required: true, message: '请选择日期' }]}>
@@ -1327,14 +1513,17 @@ function WorkLogs() {
                     label="需求任务"
                     name="phase_key"
                     rules={selectedDemandId ? [{ required: true, message: '请选择需求任务' }] : []}
+                    extra={isQuickBatchPhaseMode ? '可多选；提交时会按预计整体用时平均拆分为多条事项' : undefined}
                   >
                     <Select
                       allowClear
                       showSearch
-                      options={phaseOptions}
+                      mode={isQuickBatchPhaseMode ? 'multiple' : undefined}
+                      options={quickPhaseOptionsWithSelected}
                       placeholder={selectedDemandId ? '请选择需求任务' : '请先选择关联需求'}
                       optionFilterProp="label"
                       disabled={!selectedDemandId}
+                      maxTagCount="responsive"
                     />
                   </Form.Item>
                 </Col>
@@ -1361,9 +1550,9 @@ function WorkLogs() {
 
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label="预计用时(h)"
+                    label="预计整体用时(h)"
                     name="personal_estimate_hours"
-                    rules={[{ required: true, message: '请输入预计用时' }]}
+                    rules={[{ required: true, message: '请输入预计整体用时' }]}
                   >
                     <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
                   </Form.Item>
@@ -1471,10 +1660,8 @@ function WorkLogs() {
                         const disableStatusActions = !canUpdate || isStatusSubmitting
                         const demandId = String(item?.demand_id || '').trim()
                         const followupNodeLabel = demandId ? String(workflowNodeByDemandId.get(demandId) || '').trim() : ''
-                        const activePhaseLabel =
-                          isDemandFollowupItem(item) && followupNodeLabel
-                            ? followupNodeLabel
-                            : String(item?.phase_name || item?.phase_key || '').trim()
+                        const logPhaseLabel = String(item?.phase_name || item?.phase_key || '').trim()
+                        const activePhaseLabel = logPhaseLabel || (isDemandFollowupItem(item) ? followupNodeLabel : '')
                         const statusPanelStyle =
                           currentStatus === 'DONE'
                             ? { borderColor: '#d9f7be', background: '#f6ffed' }
@@ -1596,7 +1783,7 @@ function WorkLogs() {
                             </div>
                             <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '5px 7px', background: '#f8fafc' }}>
                               <div style={{ fontSize: 11, color: '#667085' }}>
-                                <Tooltip title="剩余工作量 = 预计用时 - 累积已完成（最低为 0）">
+                                <Tooltip title="剩余工作量 = 预计整体用时 - 累积已完成（最低为 0）">
                                   <span style={{ cursor: 'help', textDecoration: 'underline dotted' }}>剩余工作量</span>
                                 </Tooltip>
                               </div>
@@ -2045,7 +2232,7 @@ function WorkLogs() {
                 <Select
                   allowClear
                   showSearch
-                  options={phaseOptions}
+                  options={actualPhaseOptionsWithSelected}
                   placeholder={selectedActualDemandId ? '请选择需求任务' : '请先选择关联需求'}
                   optionFilterProp="label"
                   disabled={!selectedActualDemandId}
@@ -2075,9 +2262,9 @@ function WorkLogs() {
 
             <Col xs={24} md={12}>
               <Form.Item
-                label="预计用时(h)"
+                label="预计整体用时(h)"
                 name="personal_estimate_hours"
-                rules={[{ required: true, message: '请输入预计用时' }]}
+                rules={[{ required: true, message: '请输入预计整体用时' }]}
               >
                 <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
               </Form.Item>
@@ -2087,7 +2274,7 @@ function WorkLogs() {
               <Form.Item
                 label="实际用时(h)"
                 name="actual_hours"
-                extra="默认 0.0；仅当状态为“已完成”且实际用时为 0.0 时，保存后会自动与预计用时一致"
+                extra="默认 0.0；仅当状态为“已完成”且实际用时为 0.0 时，保存后会自动与预计整体用时一致"
               >
                 <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
               </Form.Item>
@@ -2130,7 +2317,7 @@ function WorkLogs() {
             rules={[{ required: true, message: '请输入实际用时' }]}
             extra="同一事项在同一天重复填报时，以最后一次提交为准（不会累加）"
           >
-            <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
+            <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item label="工作描述" name="description">
             <Input.TextArea rows={3} maxLength={2000} placeholder="可填写今天具体做了什么（选填）" />
