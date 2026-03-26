@@ -1,192 +1,192 @@
 .login-page {
+  --login-cyan: #22d3ee;
+  --login-sky: #38bdf8;
+  --login-deep: #0b1426;
+  --login-deep-soft: #111e34;
+  --login-panel-border: rgba(125, 211, 252, 0.26);
+  --login-panel-shadow: 0 18px 48px rgba(3, 8, 18, 0.34);
+
   display: flex;
   min-height: 100vh;
-  background: var(--bg-white);
+  background:
+    radial-gradient(1000px 420px at -8% -8%, rgba(34, 211, 238, 0.16), transparent 58%),
+    radial-gradient(900px 420px at 110% 0%, rgba(56, 189, 248, 0.14), transparent 58%),
+    #f2f7fc;
 }
 
-/* ── 左侧品牌区 ── */
+/* 左侧品牌区 */
 .login-brand {
   position: relative;
-  width: 48%;
-  background: var(--primary-dark);
+  width: 50%;
+  background:
+    linear-gradient(160deg, rgba(9, 20, 38, 0.98) 0%, rgba(6, 14, 28, 1) 100%),
+    linear-gradient(140deg, rgba(6, 182, 212, 0.16) 0%, transparent 55%);
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 60px;
+  padding: 64px;
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
 }
 
-/* 背景光晕 */
+.login-brand::before {
+  content: '';
+  position: absolute;
+  inset: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  pointer-events: none;
+}
+
 .brand-bg-orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
+  filter: blur(84px);
   pointer-events: none;
 }
 
 .orb-1 {
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(102, 126, 234, 0.25) 0%, transparent 70%);
-  top: -100px;
-  right: -80px;
-  animation: orbFloat 8s ease-in-out infinite;
+  width: 420px;
+  height: 420px;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.3) 0%, transparent 70%);
+  top: -110px;
+  right: -90px;
+  animation: orbFloat 9s ease-in-out infinite;
 }
 
 .orb-2 {
   width: 300px;
   height: 300px;
-  background: radial-gradient(circle, rgba(118, 75, 162, 0.2) 0%, transparent 70%);
-  bottom: -60px;
-  left: -60px;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.22) 0%, transparent 70%);
+  bottom: -70px;
+  left: -70px;
   animation: orbFloat 10s ease-in-out infinite reverse;
 }
 
-/* 网格背景 */
 .brand-grid {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(rgba(125, 211, 252, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(125, 211, 252, 0.07) 1px, transparent 1px);
+  background-size: 44px 44px;
 }
 
 .brand-content {
   position: relative;
   z-index: 1;
-  animation: slideInLeft 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: slideInLeft 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 520px;
 }
 
 .brand-logo {
-  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(125, 211, 252, 0.34);
+  background: rgba(15, 23, 42, 0.5);
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 4px;
-  background: var(--accent-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: 48px;
+  letter-spacing: 2.6px;
+  color: #dff7ff;
+  margin-bottom: 40px;
   font-family: 'JetBrains Mono', monospace;
 }
 
 .brand-headline {
-  font-size: 52px;
+  font-size: clamp(42px, 4vw, 56px);
   font-weight: 700;
-  color: #ffffff;
-  line-height: 1.15;
-  letter-spacing: -2px;
-  margin-bottom: 20px;
+  color: #f8fcff;
+  line-height: 1.12;
+  letter-spacing: -1.4px;
+  margin-bottom: 18px;
   font-family: 'DM Sans', sans-serif;
 }
 
 .brand-headline-accent {
-  background: var(--accent-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--login-cyan);
+  text-shadow: 0 0 24px rgba(34, 211, 238, 0.36);
 }
 
 .brand-desc {
   font-size: 16px;
-  color: rgba(255, 255, 255, 0.5);
-  line-height: 1.8;
-  margin-bottom: 56px;
-  font-weight: 400;
+  color: rgba(226, 232, 240, 0.72);
+  line-height: 1.75;
+  margin-bottom: 0;
+  max-width: 460px;
 }
 
-.brand-stats {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-}
-
-.brand-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.brand-stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: #ffffff;
-  font-family: 'JetBrains Mono', monospace;
-  letter-spacing: -0.5px;
-}
-
-.brand-stat-label {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
-  letter-spacing: 0.5px;
-}
-
-.brand-stat-divider {
-  width: 1px;
-  height: 36px;
-  background: rgba(255, 255, 255, 0.12);
-}
-
-/* ── 右侧表单区 ── */
+/* 右侧表单区 */
 .login-form-area {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 60px 40px;
-  background: var(--bg-light);
+  padding: 64px 40px;
+  background:
+    radial-gradient(620px 260px at 50% -8%, rgba(56, 189, 248, 0.08), transparent 68%),
+    linear-gradient(180deg, #f4f8fd 0%, #f3f8fc 100%);
 }
 
 .login-form-card {
   width: 100%;
-  max-width: 400px;
-  animation: fadeInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.2s both;
+  max-width: 430px;
+  padding: 30px 28px 24px;
+  border-radius: 18px;
+  border: 1px solid var(--login-panel-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 252, 255, 0.92) 100%),
+    radial-gradient(180px 60px at 0% 0%, rgba(56, 189, 248, 0.12), transparent 80%);
+  box-shadow: var(--login-panel-shadow);
+  backdrop-filter: blur(10px);
+  animation: fadeInUp 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.14s both;
 }
 
 .form-header {
-  margin-bottom: 40px;
+  margin-bottom: 30px;
 }
 
 .form-title {
-  font-size: 36px;
+  font-size: 34px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #0f172a;
   letter-spacing: -1px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   font-family: 'DM Sans', sans-serif;
 }
 
 .form-subtitle {
-  font-size: 15px;
-  color: var(--text-secondary);
-  font-weight: 400;
+  font-size: 14px;
+  color: #475569;
+  font-weight: 500;
 }
 
-/* 表单输入框 */
 .login-form .ant-form-item {
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .login-input.ant-input-affix-wrapper,
 .login-input.ant-input-affix-wrapper-lg {
   border-radius: 12px !important;
-  border: 1.5px solid var(--border-color) !important;
-  background: var(--bg-white) !important;
-  padding: 12px 16px !important;
-  box-shadow: var(--shadow-sm) !important;
-  transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  border: 1.5px solid rgba(148, 163, 184, 0.44) !important;
+  background: rgba(255, 255, 255, 0.86) !important;
+  padding: 12px 15px !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06) !important;
+  transition: all 220ms cubic-bezier(0.16, 1, 0.3, 1) !important;
   font-family: 'DM Sans', sans-serif;
 }
 
 .login-input.ant-input-affix-wrapper:hover {
-  border-color: var(--accent-purple) !important;
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.08) !important;
+  border-color: rgba(14, 165, 233, 0.56) !important;
 }
 
 .login-input.ant-input-affix-wrapper-focused,
 .login-input.ant-input-affix-wrapper:focus-within {
-  border-color: var(--accent-purple) !important;
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12) !important;
+  border-color: rgba(14, 165, 233, 0.78) !important;
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.13) !important;
 }
 
 .login-input .ant-input {
@@ -196,52 +196,52 @@
 }
 
 .input-icon {
-  color: var(--text-light);
+  color: #64748b;
   font-size: 16px;
   margin-right: 4px;
 }
 
-/* 记住我 & 忘记密码 */
 .form-options {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .remember-check {
   font-size: 14px;
-  color: var(--text-secondary);
+  color: #475569;
 }
 
 .remember-check .ant-checkbox-checked .ant-checkbox-inner {
-  background: var(--accent-purple);
-  border-color: var(--accent-purple);
+  background: #0891b2;
+  border-color: #0891b2;
 }
 
 .forgot-link {
   font-size: 14px;
-  color: var(--accent-purple);
+  color: #0369a1;
   text-decoration: none;
-  font-weight: 500;
-  transition: opacity var(--transition-fast);
+  font-weight: 600;
+  transition: opacity 160ms ease;
 }
 
 .forgot-link:hover {
-  opacity: 0.75;
+  opacity: 0.78;
 }
 
-/* 登录按钮 */
 .login-btn.ant-btn-primary {
   height: 52px !important;
   border-radius: 12px !important;
-  background: var(--accent-gradient) !important;
+  background: linear-gradient(120deg, #0891b2 0%, #0ea5e9 55%, #22d3ee 100%) !important;
   border: none !important;
   font-size: 16px !important;
   font-weight: 600 !important;
-  letter-spacing: 0.3px;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4) !important;
-  transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  letter-spacing: 0.24px;
+  box-shadow:
+    0 10px 24px rgba(2, 132, 199, 0.28),
+    0 1px 0 rgba(255, 255, 255, 0.24) inset !important;
+  transition: all 240ms cubic-bezier(0.16, 1, 0.3, 1) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -250,9 +250,10 @@
 }
 
 .login-btn.ant-btn-primary:hover {
-  transform: translateY(-2px) !important;
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.5) !important;
-  opacity: 0.95;
+  transform: translateY(-1px) !important;
+  box-shadow:
+    0 14px 30px rgba(2, 132, 199, 0.34),
+    0 1px 0 rgba(255, 255, 255, 0.28) inset !important;
 }
 
 .login-btn.ant-btn-primary:active {
@@ -261,60 +262,39 @@
 
 .btn-arrow {
   font-size: 14px;
-  transition: transform var(--transition-fast);
+  transition: transform 160ms ease;
 }
 
 .login-btn:hover .btn-arrow {
-  transform: translateX(4px);
+  transform: translateX(3px);
 }
 
-/* 底部装饰点 */
 .form-footer {
   display: flex;
   justify-content: center;
   gap: 8px;
-  margin-top: 40px;
+  margin-top: 32px;
 }
 
 .footer-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--border-color);
-  transition: all var(--transition-base);
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition: all 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .footer-dot.active {
-  width: 20px;
-  border-radius: 3px;
-  background: var(--accent-gradient);
+  width: 22px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0ea5e9, #22d3ee);
 }
 
-/* 注册链接 */
-.form-register-link {
-  text-align: center;
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin-top: 20px;
-}
-
-.form-register-link a {
-  color: var(--accent-purple);
-  text-decoration: none;
-  font-weight: 600;
-  transition: opacity var(--transition-fast);
-}
-
-.form-register-link a:hover {
-  opacity: 0.75;
-}
-
-/* 分割线 */
 .form-divider {
   text-align: center;
-  margin: 32px 0 20px;
+  margin: 28px 0 16px;
   font-size: 14px;
-  color: var(--text-secondary);
+  color: #64748b;
   position: relative;
 }
 
@@ -323,9 +303,9 @@
   content: '';
   position: absolute;
   top: 50%;
-  width: 35%;
+  width: 34%;
   height: 1px;
-  background: var(--border-color);
+  background: rgba(148, 163, 184, 0.4);
 }
 
 .form-divider::before {
@@ -336,7 +316,6 @@
   right: 0;
 }
 
-/* 注册按钮 */
 .register-btn-link {
   text-decoration: none;
 }
@@ -344,50 +323,87 @@
 .register-btn.ant-btn-default {
   height: 48px !important;
   border-radius: 12px !important;
-  border: 1.5px solid var(--border-color) !important;
-  background: var(--bg-white) !important;
+  border: 1.5px solid rgba(14, 165, 233, 0.36) !important;
+  background: rgba(255, 255, 255, 0.86) !important;
   font-size: 15px !important;
   font-weight: 600 !important;
-  color: var(--accent-purple) !important;
-  letter-spacing: 0.3px;
-  transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  color: #0369a1 !important;
+  letter-spacing: 0.2px;
+  transition: all 240ms cubic-bezier(0.16, 1, 0.3, 1) !important;
   font-family: 'DM Sans', sans-serif;
 }
 
 .register-btn.ant-btn-default:hover {
-  border-color: var(--accent-purple) !important;
-  background: rgba(139, 92, 246, 0.04) !important;
-  transform: translateY(-2px) !important;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15) !important;
+  border-color: rgba(14, 165, 233, 0.56) !important;
+  background: rgba(240, 249, 255, 0.95) !important;
+  box-shadow: 0 8px 18px rgba(14, 165, 233, 0.16) !important;
+  transform: translateY(-1px) !important;
 }
 
 .register-btn.ant-btn-default:active {
   transform: translateY(0) !important;
 }
 
-/* 动画 */
-@keyframes orbFloat {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-20px) scale(1.05); }
+.login-btn:focus-visible,
+.register-btn:focus-visible,
+.forgot-link:focus-visible {
+  outline: 2px solid rgba(14, 165, 233, 0.7);
+  outline-offset: 2px;
 }
 
-/* 响应式 */
-@media (max-width: 900px) {
+@keyframes orbFloat {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-16px) scale(1.05);
+  }
+}
+
+@media (max-width: 960px) {
   .login-brand {
     display: none;
   }
 
   .login-form-area {
-    background: var(--bg-white);
+    padding: 40px 24px;
+    background:
+      radial-gradient(560px 240px at 50% -6%, rgba(56, 189, 248, 0.1), transparent 70%),
+      #f4f8fc;
+  }
+
+  .login-form-card {
+    max-width: 470px;
   }
 }
 
 @media (max-width: 480px) {
   .login-form-area {
-    padding: 40px 24px;
+    padding: 26px 16px;
+  }
+
+  .login-form-card {
+    padding: 24px 18px 18px;
+    border-radius: 14px;
   }
 
   .form-title {
     font-size: 28px;
+  }
+
+  .form-subtitle {
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-bg-orb,
+  .brand-content,
+  .login-form-card,
+  .login-btn.ant-btn-primary,
+  .register-btn.ant-btn-default {
+    animation: none !important;
+    transition: none !important;
   }
 }
