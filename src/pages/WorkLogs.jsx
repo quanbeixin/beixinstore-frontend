@@ -65,6 +65,36 @@ const LOG_STATUS_FILTER_OPTIONS = [
   { label: '全部状态', value: 'ALL' },
   ...ITEM_STATUS_OPTIONS,
 ]
+const MUTED_TEXT_COLOR = '#667085'
+const SURFACE_TEXT_COLOR = '#475467'
+const SURFACE_CARD_STYLE = {
+  border: '1px solid #e4e7ec',
+  borderRadius: 8,
+  padding: '8px 10px',
+  background: '#f8fafc',
+}
+const SURFACE_CARD_COMPACT_STYLE = {
+  border: '1px solid #e4e7ec',
+  borderRadius: 8,
+  padding: '5px 7px',
+  background: '#f8fafc',
+}
+const WARNING_SURFACE_CARD_STYLE = {
+  border: '1px solid #ffe7ba',
+  borderRadius: 8,
+  padding: 8,
+  background: '#fff7e6',
+}
+const SURFACE_LABEL_STYLE = { fontSize: 12, color: MUTED_TEXT_COLOR }
+const SURFACE_VALUE_STYLE = { fontSize: 18, fontWeight: 700 }
+const COMPACT_SURFACE_LABEL_STYLE = { fontSize: 11, color: MUTED_TEXT_COLOR }
+const ACTION_TRANSITION = 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)'
+const ACTIVE_CARD_BASE_STYLE = {
+  borderRadius: 10,
+  padding: 12,
+  transition: ACTION_TRANSITION,
+  boxShadow: '0 1px 2px rgba(16, 24, 40, 0.06)',
+}
 
 function getTodayDateString() {
   return getBeijingTodayDateString()
@@ -251,6 +281,53 @@ function getStatusActionButtonStyle(status, isCurrent) {
     color: '#595959',
     background: '#fafafa',
   }
+}
+
+function getActiveCardStatusPanelStyle(status) {
+  if (status === 'DONE') return { borderColor: '#d9f7be', background: '#f6ffed' }
+  if (status === 'IN_PROGRESS') return { borderColor: '#bae0ff', background: '#f0f5ff' }
+  return { borderColor: '#d9d9d9', background: '#fafafa' }
+}
+
+function getActiveCardAccentColor(status) {
+  if (status === 'DONE') return '#52c41a'
+  if (status === 'IN_PROGRESS') return '#1677ff'
+  return '#8c8c8c'
+}
+
+function getActiveCardContainerStyle(item, currentStatus) {
+  const overdue = isOverdueDate(item?.expected_completion_date)
+  return {
+    ...ACTIVE_CARD_BASE_STYLE,
+    border: overdue ? '1px solid #ffd591' : '1px solid #e4e7ec',
+    borderLeft: `4px solid ${getActiveCardAccentColor(currentStatus)}`,
+    background: overdue ? '#fffaf0' : '#fff',
+    boxShadow: overdue ? '0 1px 2px rgba(212, 107, 8, 0.14)' : ACTIVE_CARD_BASE_STYLE.boxShadow,
+  }
+}
+
+function DemandTagButton({ demandId, label }) {
+  return (
+    <button
+      type="button"
+      aria-label={`查看需求 ${label}`}
+      style={{
+        border: 'none',
+        background: 'transparent',
+        padding: 0,
+        cursor: 'pointer',
+        color: 'inherit',
+        textDecoration: 'underline dotted',
+        lineHeight: 1.3,
+      }}
+      onClick={(event) => {
+        event.stopPropagation()
+        openDemandDetailInNewTab(demandId)
+      }}
+    >
+      {label}
+    </button>
+  )
 }
 
 function buildDailyTimeline(plans = [], entries = []) {
@@ -1375,7 +1452,7 @@ function WorkLogs() {
     <div style={{ padding: 12, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} sm={12} lg={4}>
-          <Card variant="borderless">
+          <Card variant="borderless" style={{ height: '100%' }}>
             <Space>
               <UnorderedListOutlined />
               <Text type="secondary">今日应完成事项</Text>
@@ -1386,7 +1463,7 @@ function WorkLogs() {
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={4}>
-          <Card variant="borderless">
+          <Card variant="borderless" style={{ height: '100%' }}>
             <Space>
               <CheckCircleOutlined />
               <Text type="secondary">今日已填报事项</Text>
@@ -1397,7 +1474,7 @@ function WorkLogs() {
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={5}>
-          <Card variant="borderless">
+          <Card variant="borderless" style={{ height: '100%' }}>
             <Space>
               <ClockCircleOutlined />
               <Text type="secondary">今日计划用时(h)</Text>
@@ -1408,7 +1485,7 @@ function WorkLogs() {
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={5}>
-          <Card variant="borderless">
+          <Card variant="borderless" style={{ height: '100%' }}>
             <Space>
               <FileTextOutlined />
               <Text type="secondary">今日实际用时(h)</Text>
@@ -1419,12 +1496,12 @@ function WorkLogs() {
           </Card>
         </Col>
         <Col xs={24} sm={24} lg={6}>
-          <Card variant="borderless">
+          <Card variant="borderless" style={{ height: '100%' }}>
             <Space>
               <ClockCircleOutlined />
               <Text type="secondary">今日可指派用时(h)</Text>
             </Space>
-            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#1677ff' }}>
+            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#0958d9' }}>
               {toNumber(workbench?.today?.assignable_hours_today, 0).toFixed(1)}
             </div>
           </Card>
@@ -1609,37 +1686,44 @@ function WorkLogs() {
                     gap: 8,
                   }}
                 >
-                  <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: 8, background: '#f8fafc' }}>
-                    <div style={{ fontSize: 12, color: '#667085' }}>待开始</div>
-                    <div style={{ fontSize: 18, fontWeight: 700 }}>{activeItemSummary.todo}</div>
+                  <div style={SURFACE_CARD_STYLE}>
+                    <div style={SURFACE_LABEL_STYLE}>待开始</div>
+                    <div style={SURFACE_VALUE_STYLE}>{activeItemSummary.todo}</div>
                   </div>
-                  <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: 8, background: '#f8fafc' }}>
-                    <div style={{ fontSize: 12, color: '#667085' }}>进行中</div>
-                    <div style={{ fontSize: 18, fontWeight: 700 }}>{activeItemSummary.inProgress}</div>
+                  <div style={SURFACE_CARD_STYLE}>
+                    <div style={SURFACE_LABEL_STYLE}>进行中</div>
+                    <div style={SURFACE_VALUE_STYLE}>{activeItemSummary.inProgress}</div>
                   </div>
-                  <div style={{ border: '1px solid #ffe7ba', borderRadius: 8, padding: 8, background: '#fff7e6' }}>
+                  <div style={WARNING_SURFACE_CARD_STYLE}>
                     <div style={{ fontSize: 12, color: '#d46b08' }}>已超期</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: '#d46b08' }}>{activeItemSummary.overdue}</div>
+                    <div style={{ ...SURFACE_VALUE_STYLE, color: '#d46b08' }}>{activeItemSummary.overdue}</div>
                   </div>
-                  <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: 8, background: '#f8fafc' }}>
-                    <div style={{ fontSize: 12, color: '#667085' }}>未设截止日</div>
-                    <div style={{ fontSize: 18, fontWeight: 700 }}>{activeItemSummary.noDeadline}</div>
+                  <div style={SURFACE_CARD_STYLE}>
+                    <div style={SURFACE_LABEL_STYLE}>未设截止日</div>
+                    <div style={SURFACE_VALUE_STYLE}>{activeItemSummary.noDeadline}</div>
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 8 }}>
-                  <Input
-                    allowClear
-                    placeholder="搜索事项类型 / 需求ID / 需求任务 / 描述"
-                    value={activeItemKeyword}
-                    onChange={(e) => setActiveItemKeyword(e.target.value)}
-                  />
-                  <Select
-                    value={activeItemStatusFilter}
-                    options={ACTIVE_ITEM_STATUS_FILTER_OPTIONS}
-                    onChange={(next) => setActiveItemStatusFilter(next)}
-                  />
-                </div>
+                <Row gutter={[8, 8]}>
+                  <Col xs={24} sm={15}>
+                    <Input
+                      allowClear
+                      aria-label="搜索进行中事项"
+                      placeholder="搜索事项类型 / 需求ID / 需求任务 / 描述"
+                      value={activeItemKeyword}
+                      onChange={(e) => setActiveItemKeyword(e.target.value)}
+                    />
+                  </Col>
+                  <Col xs={24} sm={9}>
+                    <Select
+                      style={{ width: '100%' }}
+                      aria-label="按状态筛选进行中事项"
+                      value={activeItemStatusFilter}
+                      options={ACTIVE_ITEM_STATUS_FILTER_OPTIONS}
+                      onChange={(next) => setActiveItemStatusFilter(next)}
+                    />
+                  </Col>
+                </Row>
 
                 <div
                   style={{
@@ -1648,6 +1732,7 @@ function WorkLogs() {
                     minHeight: 0,
                     overflowY: 'auto',
                     paddingRight: 4,
+                    overscrollBehavior: 'contain',
                   }}
                 >
                   {filteredActiveItems.length === 0 ? (
@@ -1662,27 +1747,16 @@ function WorkLogs() {
                         const followupNodeLabel = demandId ? String(workflowNodeByDemandId.get(demandId) || '').trim() : ''
                         const logPhaseLabel = String(item?.phase_name || item?.phase_key || '').trim()
                         const activePhaseLabel = logPhaseLabel || (isDemandFollowupItem(item) ? followupNodeLabel : '')
-                        const statusPanelStyle =
-                          currentStatus === 'DONE'
-                            ? { borderColor: '#d9f7be', background: '#f6ffed' }
-                            : currentStatus === 'IN_PROGRESS'
-                              ? { borderColor: '#bae0ff', background: '#f0f5ff' }
-                              : { borderColor: '#d9d9d9', background: '#fafafa' }
+                        const statusPanelStyle = getActiveCardStatusPanelStyle(currentStatus)
+                        const demandFullName = String(item.demand_name || item.demand_id || '').trim()
+                        const demandShortName = truncateText(demandFullName, 20)
+                        const demandTagLabel = demandShortName || String(item.demand_id || '').trim()
+                        const hasDemandTooltip = demandTagLabel && demandTagLabel !== demandFullName
 
                         return (
                           <div
                             key={item.id}
-                            style={{
-                              border: isOverdueDate(item.expected_completion_date)
-                                ? '1px solid #ffd591'
-                                : '1px solid #e4e7ec',
-                              borderLeft: `4px solid ${
-                                item.log_status === 'TODO' ? '#8c8c8c' : item.log_status === 'IN_PROGRESS' ? '#1677ff' : '#52c41a'
-                              }`,
-                              borderRadius: 10,
-                              padding: 12,
-                              background: isOverdueDate(item.expected_completion_date) ? '#fffaf0' : '#fff',
-                            }}
+                            style={getActiveCardContainerStyle(item, currentStatus)}
                           >
                           <div
                             style={{
@@ -1705,37 +1779,20 @@ function WorkLogs() {
                             </Space>
                             <Space wrap>
                               {item.demand_id ? (
-                                (() => {
-                                  const demandFullName = String(item.demand_name || item.demand_id || '').trim()
-                                  const demandShortName = truncateText(demandFullName, 20)
-                                  const clickableDemandLabel = (labelText) => (
-                                    <span
-                                      role="button"
-                                      tabIndex={0}
-                                      style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
-                                      onClick={(event) => {
-                                        event.stopPropagation()
-                                        openDemandDetailInNewTab(item.demand_id)
-                                      }}
-                                      onKeyDown={(event) => {
-                                        if (event.key === 'Enter' || event.key === ' ') {
-                                          event.preventDefault()
-                                          event.stopPropagation()
-                                          openDemandDetailInNewTab(item.demand_id)
-                                        }
-                                      }}
-                                    >
-                                      {labelText}
-                                    </span>
-                                  )
-                                  if (!demandShortName) return <Tag>{clickableDemandLabel(item.demand_id)}</Tag>
-                                  if (demandShortName === demandFullName) return <Tag>{clickableDemandLabel(demandShortName)}</Tag>
-                                  return (
-                                    <Tooltip title={demandFullName}>
-                                      <Tag>{clickableDemandLabel(demandShortName)}</Tag>
-                                    </Tooltip>
-                                  )
-                                })()
+                                hasDemandTooltip ? (
+                                  <Tooltip title={demandFullName}>
+                                    <Tag>
+                                      <DemandTagButton demandId={item.demand_id} label={demandTagLabel} />
+                                    </Tag>
+                                  </Tooltip>
+                                ) : (
+                                  <Tag>
+                                    <DemandTagButton
+                                      demandId={item.demand_id}
+                                      label={demandTagLabel || String(item.demand_id || '').trim()}
+                                    />
+                                  </Tag>
+                                )
                               ) : (
                                 <Tag>无需求</Tag>
                               )}
@@ -1750,13 +1807,13 @@ function WorkLogs() {
                               gap: 8,
                               marginBottom: 8,
                               fontSize: 13,
-                              color: '#667085',
+                              color: MUTED_TEXT_COLOR,
                             }}
                           >
                             <div>填报日期: {formatDateOnly(item.log_date)}</div>
                             <div>指派人: {item.assigned_by_name || '-'}</div>
                             <div>预计开始: {formatDateOnly(item.expected_start_date)}</div>
-                            <div style={{ color: isOverdueDate(item.expected_completion_date) ? '#d46b08' : '#667085' }}>
+                            <div style={{ color: isOverdueDate(item.expected_completion_date) ? '#d46b08' : MUTED_TEXT_COLOR }}>
                               预计完成: {formatDateOnly(item.expected_completion_date)}
                             </div>
                           </div>
@@ -1769,20 +1826,20 @@ function WorkLogs() {
                               marginBottom: 8,
                             }}
                           >
-                            <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '5px 7px', background: '#f8fafc' }}>
-                              <div style={{ fontSize: 11, color: '#667085' }}>今日应完成</div>
+                            <div style={SURFACE_CARD_COMPACT_STYLE}>
+                              <div style={COMPACT_SURFACE_LABEL_STYLE}>今日应完成</div>
                               <div style={{ fontSize: 15, fontWeight: 600 }}>{toNumber(item.today_planned_hours, 0).toFixed(1)}h</div>
                             </div>
-                            <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '5px 7px', background: '#f8fafc' }}>
-                              <div style={{ fontSize: 11, color: '#667085' }}>今日已填报</div>
+                            <div style={SURFACE_CARD_COMPACT_STYLE}>
+                              <div style={COMPACT_SURFACE_LABEL_STYLE}>今日已填报</div>
                               <div style={{ fontSize: 15, fontWeight: 600 }}>{toNumber(item.today_actual_hours, 0).toFixed(1)}h</div>
                             </div>
-                            <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '5px 7px', background: '#f8fafc' }}>
-                              <div style={{ fontSize: 11, color: '#667085' }}>累计实际</div>
+                            <div style={SURFACE_CARD_COMPACT_STYLE}>
+                              <div style={COMPACT_SURFACE_LABEL_STYLE}>累计实际</div>
                               <div style={{ fontSize: 15, fontWeight: 600 }}>{toNumber(item.cumulative_actual_hours, 0).toFixed(1)}h</div>
                             </div>
-                            <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '5px 7px', background: '#f8fafc' }}>
-                              <div style={{ fontSize: 11, color: '#667085' }}>
+                            <div style={SURFACE_CARD_COMPACT_STYLE}>
+                              <div style={COMPACT_SURFACE_LABEL_STYLE}>
                                 <Tooltip title="剩余工作量 = 预计整体用时 - 累积已完成（最低为 0）">
                                   <span style={{ cursor: 'help', textDecoration: 'underline dotted' }}>剩余工作量</span>
                                 </Tooltip>
@@ -1793,7 +1850,7 @@ function WorkLogs() {
 
                           <div
                             style={{
-                              color: '#475467',
+                              color: SURFACE_TEXT_COLOR,
                               fontSize: 13,
                               marginBottom: 10,
                               background: '#f8fafc',
@@ -1810,17 +1867,17 @@ function WorkLogs() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                               <Space wrap>
                               <Button
-                                size="small"
                                 type="default"
                                 onClick={() => openDetailModal(item)}
+                                style={{ minHeight: 34 }}
                               >
                                 查看日明细
                               </Button>
                               <Button
-                                size="small"
                                 type="primary"
                                 onClick={() => openDailyEntryModal(item)}
                                 disabled={!canUpdate}
+                                style={{ minHeight: 34 }}
                               >
                                 填报今日投入
                               </Button>
@@ -1860,7 +1917,7 @@ function WorkLogs() {
                                             size="small"
                                             type={isCurrent ? 'primary' : 'default'}
                                             disabled={disableStatusActions || isCurrent}
-                                            style={buttonStyle}
+                                            style={{ ...buttonStyle, transition: ACTION_TRANSITION }}
                                           >
                                             {option.label}
                                           </Button>
@@ -1875,7 +1932,7 @@ function WorkLogs() {
                                         type={isCurrent ? 'primary' : 'default'}
                                         disabled={disableStatusActions || isCurrent}
                                         onClick={() => handleUpdateItemStatus(item, option.value)}
-                                        style={buttonStyle}
+                                        style={{ ...buttonStyle, transition: ACTION_TRANSITION }}
                                       >
                                         {option.label}
                                       </Button>
@@ -1907,10 +1964,11 @@ function WorkLogs() {
             title="我的工作记录"
             variant="borderless"
             extra={
-              <Space size={8}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
                 <Text type="secondary">状态筛选</Text>
                 <Select
-                  style={{ width: 180 }}
+                  style={{ width: 180, minWidth: 140 }}
+                  aria-label="按状态筛选工作记录"
                   value={logStatusFilter}
                   options={LOG_STATUS_FILTER_OPTIONS}
                   onChange={handleLogStatusFilterChange}
@@ -1918,7 +1976,7 @@ function WorkLogs() {
                 <Button onClick={openWeeklyModal} loading={weeklyLoading && weeklyModalOpen}>
                   周报
                 </Button>
-              </Space>
+              </div>
             }
           >
             <div style={{ width: '100%', overflowX: 'auto' }}>
@@ -1983,7 +2041,7 @@ function WorkLogs() {
               onChange={(e) => handleWeeklyRangeChange('end_date', e.target.value)}
             />
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <Button type="primary" loading={weeklyLoading} onClick={() => fetchWeeklyReport(weeklyRange)}>
               生成周报
             </Button>
@@ -2004,38 +2062,38 @@ function WorkLogs() {
             marginBottom: 12,
           }}
         >
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>事项总数</div>
+          <div style={SURFACE_CARD_STYLE}>
+            <div style={SURFACE_LABEL_STYLE}>事项总数</div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>{toNumber(weeklySummary.item_count, 0)}</div>
           </div>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>待开始</div>
+          <div style={SURFACE_CARD_STYLE}>
+            <div style={SURFACE_LABEL_STYLE}>待开始</div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>{toNumber(weeklySummary.todo_count, 0)}</div>
           </div>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>进行中</div>
+          <div style={SURFACE_CARD_STYLE}>
+            <div style={SURFACE_LABEL_STYLE}>进行中</div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>{toNumber(weeklySummary.in_progress_count, 0)}</div>
           </div>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>已完成</div>
+          <div style={SURFACE_CARD_STYLE}>
+            <div style={SURFACE_LABEL_STYLE}>已完成</div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>{toNumber(weeklySummary.done_count, 0)}</div>
           </div>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>计划用时(h)</div>
+          <div style={SURFACE_CARD_STYLE}>
+            <div style={SURFACE_LABEL_STYLE}>计划用时(h)</div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>{toNumber(weeklySummary.planned_hours, 0).toFixed(1)}</div>
           </div>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>实际用时(h)</div>
+          <div style={SURFACE_CARD_STYLE}>
+            <div style={SURFACE_LABEL_STYLE}>实际用时(h)</div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>{toNumber(weeklySummary.actual_hours, 0).toFixed(1)}</div>
           </div>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>偏差(h)</div>
+          <div style={SURFACE_CARD_STYLE}>
+            <div style={SURFACE_LABEL_STYLE}>偏差(h)</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: toNumber(weeklySummary.variance_hours, 0) > 0 ? '#d4380d' : '#389e0d' }}>
               {toNumber(weeklySummary.variance_hours, 0).toFixed(1)}
             </div>
           </div>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>偏差率</div>
+          <div style={SURFACE_CARD_STYLE}>
+            <div style={SURFACE_LABEL_STYLE}>偏差率</div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>{formatRateText(weeklySummary.variance_rate)}</div>
           </div>
         </div>
@@ -2050,7 +2108,7 @@ function WorkLogs() {
           }}
         >
           <Text strong>周报文案预览</Text>
-          <div style={{ marginTop: 8, whiteSpace: 'pre-wrap', color: '#344054', lineHeight: 1.7 }}>
+          <div style={{ marginTop: 8, whiteSpace: 'pre-wrap', color: SURFACE_TEXT_COLOR, lineHeight: 1.7 }}>
             {weeklySummaryText || '暂无可展示内容'}
           </div>
         </div>
@@ -2093,22 +2151,22 @@ function WorkLogs() {
         width={900}
         destroyOnHidden
       >
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginBottom: 12 }}>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>覆盖天数</div>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>{detailSummary.days}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 12 }}>
+          <div style={SURFACE_CARD_STYLE}>
+            <div style={SURFACE_LABEL_STYLE}>覆盖天数</div>
+            <div style={SURFACE_VALUE_STYLE}>{detailSummary.days}</div>
           </div>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>累计计划(h)</div>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>{toNumber(detailSummary.totalPlanned, 0).toFixed(1)}</div>
+          <div style={SURFACE_CARD_STYLE}>
+            <div style={SURFACE_LABEL_STYLE}>累计计划(h)</div>
+            <div style={SURFACE_VALUE_STYLE}>{toNumber(detailSummary.totalPlanned, 0).toFixed(1)}</div>
           </div>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>累计实际(h)</div>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>{toNumber(detailSummary.totalActual, 0).toFixed(1)}</div>
+          <div style={SURFACE_CARD_STYLE}>
+            <div style={SURFACE_LABEL_STYLE}>累计实际(h)</div>
+            <div style={SURFACE_VALUE_STYLE}>{toNumber(detailSummary.totalActual, 0).toFixed(1)}</div>
           </div>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '8px 10px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>投入记录数</div>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>{detailSummary.totalEntries}</div>
+          <div style={SURFACE_CARD_STYLE}>
+            <div style={SURFACE_LABEL_STYLE}>投入记录数</div>
+            <div style={SURFACE_VALUE_STYLE}>{detailSummary.totalEntries}</div>
           </div>
         </div>
 
@@ -2120,7 +2178,7 @@ function WorkLogs() {
               background: '#fcfcfd',
               padding: '8px 10px',
               marginBottom: 12,
-              color: '#475467',
+              color: SURFACE_TEXT_COLOR,
               fontSize: 13,
             }}
           >
@@ -2150,7 +2208,7 @@ function WorkLogs() {
         ) : null}
 
         {detailLoading ? (
-          <div style={{ padding: '16px 0', textAlign: 'center', color: '#667085' }}>正在加载日明细...</div>
+          <div style={{ padding: '16px 0', textAlign: 'center', color: MUTED_TEXT_COLOR }}>正在加载日明细...</div>
         ) : detailTimeline.length === 0 ? (
           <Empty description="暂无日计划/日投入数据" />
         ) : (

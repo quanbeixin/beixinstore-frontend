@@ -1,16 +1,21 @@
 /* 主布局样式 */
 .app-layout {
   height: 100vh;
-  background: #0f1422;
+  background:
+    radial-gradient(1280px 560px at -16% -12%, rgba(6, 182, 212, 0.13), transparent 58%),
+    radial-gradient(1040px 520px at 118% -4%, rgba(56, 189, 248, 0.1), transparent 58%),
+    #070f1b;
   overflow: hidden;
 }
 
 /* 侧边栏样式 */
 .app-sider {
-  background: linear-gradient(165deg, #1b2031 0%, #151a2a 45%, #121726 100%) !important;
+  background:
+    linear-gradient(180deg, rgba(8, 16, 30, 0.96) 0%, rgba(6, 13, 25, 0.98) 100%),
+    linear-gradient(145deg, rgba(8, 145, 178, 0.18) 0%, transparent 56%) !important;
   box-shadow:
-    12px 0 28px rgba(9, 12, 20, 0.36),
-    1px 0 0 rgba(255, 255, 255, 0.05) inset;
+    12px 0 36px rgba(2, 6, 14, 0.5),
+    1px 0 0 rgba(125, 211, 252, 0.15) inset;
   position: sticky;
   top: 0;
   height: 100vh;
@@ -34,34 +39,66 @@
   right: 0;
   bottom: 0;
   background:
-    radial-gradient(560px 260px at -10% -15%, rgba(79, 70, 229, 0.22), transparent 62%),
-    radial-gradient(460px 220px at 105% 10%, rgba(20, 184, 166, 0.16), transparent 58%);
+    radial-gradient(540px 260px at -10% -8%, rgba(34, 211, 238, 0.22), transparent 64%),
+    radial-gradient(480px 220px at 110% 2%, rgba(14, 165, 233, 0.16), transparent 60%),
+    linear-gradient(180deg, rgba(56, 189, 248, 0.05) 0%, transparent 26%);
   opacity: 1;
+  pointer-events: none;
+}
+
+.app-sider::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 78px;
+  bottom: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.2), rgba(15, 23, 42, 0)),
+    repeating-linear-gradient(
+      180deg,
+      rgba(125, 211, 252, 0.03) 0,
+      rgba(125, 211, 252, 0.03) 1px,
+      transparent 1px,
+      transparent 14px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(56, 189, 248, 0.018) 0,
+      rgba(56, 189, 248, 0.018) 1px,
+      transparent 1px,
+      transparent 16px
+    );
   pointer-events: none;
 }
 
 /* Logo 区域 */
 .logo-container {
-  height: 80px;
+  height: 78px;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   position: relative;
+  z-index: 1;
   animation: slideInLeft 0.6s var(--transition-base);
 }
 
 .logo-text {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(125deg, #f0f9ff 0%, #7dd3fc 40%, #22d3ee 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  letter-spacing: -0.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
   font-family: 'DM Sans', sans-serif;
   transition: all var(--transition-base);
+  text-shadow: 0 0 24px rgba(34, 211, 238, 0.3);
 }
 
 .app-sider.ant-layout-sider-collapsed .logo-container {
@@ -69,15 +106,15 @@
 }
 
 .app-sider.ant-layout-sider-collapsed .logo-text {
-  font-size: 18px;
-  letter-spacing: 0;
+  font-size: 16px;
+  letter-spacing: 0.4px;
 }
 
 /* 侧边栏菜单样式覆盖 */
 .app-sider .ant-menu {
   background: transparent !important;
   border: none !important;
-  padding: 16px 12px 24px;
+  padding: 14px 12px 22px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -98,59 +135,67 @@
   flex-direction: column;
   overflow: hidden;
   background:
-    linear-gradient(180deg, #151a2a 0, #151a2a 80px, #f4f6fb 80px, #f6f8fc 100%),
-    radial-gradient(860px 260px at 6% 84px, rgba(59, 130, 246, 0.08), transparent 60%);
+    linear-gradient(180deg, #0f1a2e 0, #0f1a2e 76px, #f4f8fc 76px, #f5f8fc 100%),
+    radial-gradient(880px 260px at 10% 86px, rgba(14, 165, 233, 0.1), transparent 62%);
 }
 
 .app-sider .ant-menu-item {
-  color: rgba(255, 255, 255, 0.7) !important;
-  border-radius: 8px !important;
-  margin: 4px 0 !important;
-  height: 48px !important;
-  line-height: 48px !important;
-  font-weight: 500;
+  color: rgba(224, 242, 254, 0.84) !important;
+  border-radius: 12px !important;
+  margin: 6px 0 !important;
+  height: 44px !important;
+  line-height: 44px !important;
+  font-weight: 540;
+  border: 1px solid rgba(125, 211, 252, 0);
   transition: all var(--transition-base) !important;
 }
 
 .app-sider .ant-menu-item:hover {
   color: #ffffff !important;
-  background: rgba(255, 255, 255, 0.1) !important;
-  transform: translateX(4px);
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.22) 0%, rgba(14, 165, 233, 0.14) 100%) !important;
+  border-color: rgba(125, 211, 252, 0.3);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.12) inset;
+  transform: translateX(2px);
 }
 
 .app-sider .ant-menu-item-selected {
-  background: var(--accent-gradient) !important;
+  background: linear-gradient(92deg, rgba(8, 145, 178, 0.92) 0%, rgba(2, 132, 199, 0.94) 100%) !important;
   color: #ffffff !important;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  border-color: rgba(125, 211, 252, 0.5);
+  box-shadow:
+    0 8px 18px rgba(2, 132, 199, 0.26),
+    0 0 20px rgba(6, 182, 212, 0.2);
 }
 
 .app-sider .ant-menu-item-icon {
-  font-size: 18px;
+  font-size: 17px;
 }
 
 /* 子菜单标题样式 */
 .app-sider .ant-menu-submenu-title {
-  color: rgba(255, 255, 255, 0.7) !important;
-  border-radius: 8px !important;
-  margin: 4px 0 !important;
-  height: 48px !important;
-  line-height: 48px !important;
-  font-weight: 500;
+  color: rgba(224, 242, 254, 0.78) !important;
+  border-radius: 12px !important;
+  margin: 6px 0 !important;
+  height: 44px !important;
+  line-height: 44px !important;
+  font-weight: 540;
+  border: 1px solid rgba(125, 211, 252, 0);
   transition: all var(--transition-base) !important;
 }
 
 .app-sider .ant-menu-submenu-title:hover {
   color: #ffffff !important;
-  background: rgba(255, 255, 255, 0.1) !important;
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.16) 0%, rgba(14, 165, 233, 0.1) 100%) !important;
+  border-color: rgba(125, 211, 252, 0.26);
 }
 
 /* 子菜单展开箭头颜色 */
 .app-sider .ant-menu-submenu-arrow {
-  color: rgba(255, 255, 255, 0.5) !important;
+  color: rgba(148, 163, 184, 0.85) !important;
 }
 
 .app-sider .ant-menu-submenu-title:hover .ant-menu-submenu-arrow {
-  color: #ffffff !important;
+  color: #e2e8f0 !important;
 }
 
 /* 子菜单展开后的背景 */
@@ -160,27 +205,47 @@
 
 /* 子菜单项缩进样式 */
 .app-sider .ant-menu-sub .ant-menu-item {
-  padding-left: 48px !important;
+  padding-left: 44px !important;
+}
+
+.app-sider .ant-menu-item:focus-visible,
+.app-sider .ant-menu-submenu-title:focus-visible {
+  outline: 2px solid rgba(125, 211, 252, 0.7);
+  outline-offset: 1px;
 }
 
 /* Header 样式 */
 .app-header {
   background:
-    radial-gradient(760px 200px at -5% -55%, rgba(99, 102, 241, 0.2), transparent 58%),
-    radial-gradient(640px 180px at 105% -60%, rgba(45, 212, 191, 0.14), transparent 60%),
-    linear-gradient(165deg, #1b2031 0%, #151a2a 45%, #121726 100%) !important;
-  padding: 0 20px !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    radial-gradient(700px 210px at -4% -75%, rgba(34, 211, 238, 0.28), transparent 60%),
+    radial-gradient(620px 220px at 108% -78%, rgba(14, 165, 233, 0.18), transparent 64%),
+    linear-gradient(160deg, rgba(10, 20, 35, 0.96) 0%, rgba(10, 18, 31, 0.98) 100%) !important;
+  padding: 0 22px !important;
+  border-bottom: 1px solid rgba(125, 211, 252, 0.26);
   box-shadow:
-    0 10px 28px rgba(9, 12, 20, 0.3),
+    0 10px 28px rgba(4, 8, 16, 0.3),
     0 1px 0 rgba(255, 255, 255, 0.05) inset;
   backdrop-filter: saturate(135%) blur(8px);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: 80px !important;
+  height: 76px !important;
   animation: fadeInUp 0.6s var(--transition-base);
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 18;
+}
+
+.app-header::after {
+  content: '';
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(56, 189, 248, 0.55) 26%, rgba(34, 211, 238, 0.55) 74%, transparent 100%);
+  pointer-events: none;
 }
 
 .header-main {
@@ -204,40 +269,49 @@
   content: '';
   position: absolute;
   left: 0;
-  top: 12px;
-  bottom: 12px;
+  top: 11px;
+  bottom: 11px;
   width: 2px;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(99, 102, 241, 0.95) 0%, rgba(45, 212, 191, 0.92) 100%);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.28), 0 4px 10px rgba(99, 102, 241, 0.26);
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.98) 0%, rgba(34, 211, 238, 0.92) 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2), 0 4px 10px rgba(34, 211, 238, 0.28);
   opacity: 0.88;
 }
 
 .header-collapse-btn {
-  color: #cbd5e1 !important;
-  border-radius: 8px !important;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
+  color: #dbeafe !important;
+  border-radius: 10px !important;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border: 1px solid rgba(125, 211, 252, 0.3) !important;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.48), rgba(15, 23, 42, 0.3)),
+    rgba(15, 23, 42, 0.2) !important;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.08) inset;
 }
 
 .header-collapse-btn:hover {
   color: #ffffff !important;
-  background: rgba(99, 102, 241, 0.2) !important;
+  border-color: rgba(125, 211, 252, 0.55) !important;
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.32) 0%, rgba(14, 165, 233, 0.24) 100%) !important;
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.25) inset,
+    0 0 16px rgba(14, 165, 233, 0.2);
 }
 
 .header-title {
   margin: 0 !important;
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 680;
-  color: #f8fafc;
-  letter-spacing: -0.25px;
+  color: #f1f5f9;
+  letter-spacing: -0.2px;
   line-height: 1.25;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
 }
 
 .header-subtitle {
-  color: rgba(203, 213, 225, 0.9);
+  color: rgba(186, 230, 253, 0.86);
   font-size: 12px;
   line-height: 1.25;
   display: inline-block;
@@ -253,10 +327,10 @@
   gap: 10px;
   padding: 6px 10px 6px 12px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(125, 211, 252, 0.32);
   background:
-    linear-gradient(180deg, rgba(30, 41, 59, 0.78) 0%, rgba(15, 23, 42, 0.68) 100%),
-    radial-gradient(180px 56px at 0% 50%, rgba(99, 102, 241, 0.22), transparent 70%);
+    linear-gradient(180deg, rgba(15, 23, 42, 0.74) 0%, rgba(12, 20, 34, 0.78) 100%),
+    radial-gradient(180px 56px at 0% 50%, rgba(6, 182, 212, 0.2), transparent 70%);
   box-shadow:
     0 4px 14px rgba(9, 12, 20, 0.24),
     0 1px 0 rgba(255, 255, 255, 0.06) inset;
@@ -264,27 +338,27 @@
 }
 
 .header-user:hover {
-  border-color: rgba(129, 140, 248, 0.42);
+  border-color: rgba(34, 211, 238, 0.6);
   box-shadow:
-    0 8px 20px rgba(99, 102, 241, 0.22),
+    0 8px 20px rgba(6, 182, 212, 0.24),
     0 1px 0 rgba(255, 255, 255, 0.08) inset;
   transform: translateY(-1px);
 }
 
 .header-user .ant-avatar {
-  background: linear-gradient(135deg, #6366f1 0%, #22c55e 100%);
-  box-shadow: 0 8px 16px rgba(99, 102, 241, 0.28);
+  background: linear-gradient(135deg, #0ea5e9 0%, #14b8a6 100%);
+  box-shadow: 0 8px 16px rgba(14, 165, 233, 0.28);
 }
 
 .header-username {
-  color: #e2e8f0 !important;
+  color: #e0f2fe !important;
   font-weight: 600;
   font-size: 13px;
 }
 
 .header-logout-btn {
   border-radius: 999px !important;
-  color: #cbd5e1 !important;
+  color: #bae6fd !important;
   font-weight: 600;
   height: 28px !important;
   padding: 0 9px !important;
@@ -292,7 +366,13 @@
 
 .header-logout-btn:hover {
   color: #ffffff !important;
-  background: linear-gradient(180deg, rgba(99, 102, 241, 0.28) 0%, rgba(45, 212, 191, 0.22) 100%) !important;
+  background: linear-gradient(180deg, rgba(6, 182, 212, 0.32) 0%, rgba(14, 165, 233, 0.24) 100%) !important;
+}
+
+.header-collapse-btn:focus-visible,
+.header-logout-btn:focus-visible {
+  outline: 2px solid rgba(125, 211, 252, 0.7);
+  outline-offset: 2px;
 }
 
 /* Content 区域 */
@@ -448,7 +528,7 @@
 @media (max-width: 768px) {
   .app-header {
     padding: 0 16px !important;
-    height: 64px !important;
+    height: 66px !important;
   }
 
   .header-main {
@@ -456,8 +536,8 @@
   }
 
   .header-main::before {
-    top: 11px;
-    bottom: 11px;
+    top: 10px;
+    bottom: 10px;
     width: 2px;
   }
 
@@ -488,6 +568,12 @@
     display: none;
   }
 
+  .app-sider {
+    box-shadow:
+      8px 0 24px rgba(4, 8, 16, 0.42),
+      1px 0 0 rgba(255, 255, 255, 0.05) inset;
+  }
+
   .dashboard-container {
     padding: 16px;
   }
@@ -498,6 +584,16 @@
 
   .stat-card {
     padding: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sider .ant-menu-item,
+  .app-sider .ant-menu-submenu-title,
+  .header-user,
+  .header-collapse-btn,
+  .header-logout-btn {
+    transition: none !important;
   }
 }
 /* Menu Visibility */
