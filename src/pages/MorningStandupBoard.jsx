@@ -85,7 +85,73 @@ function getGroupYesterdayCheckResult(stats) {
 
 function getPhaseDisplayName(record) {
   const text = String(record?.phase_name || record?.phase_key || '').trim()
-  return text || '其他事项'
+  if (!text || text === '-' || text === '未分阶段') return '其他事项'
+  return text
+}
+
+function sortPhaseGroups(entries = []) {
+  return [...entries].sort((a, b) => {
+    const aLabel = String(a?.[0] || '').trim()
+    const bLabel = String(b?.[0] || '').trim()
+    const aIsOther = aLabel === '其他事项'
+    const bIsOther = bLabel === '其他事项'
+    if (aIsOther && !bIsOther) return 1
+    if (!aIsOther && bIsOther) return -1
+    return 0
+  })
+}
+
+function sortInProgressChildItems(items = []) {
+  const getBucket = (item) => {
+    if (item?.progress_risk) return 0
+    const focusLevel = String(item?.focus_level || '').trim().toUpperCase()
+    if (focusLevel === 'OVERDUE') return 1
+    if (focusLevel === 'DUE_TODAY') return 2
+    return 3
+  }
+
+  return [...items].sort((a, b) => {
+    const bucketDiff = getBucket(a) - getBucket(b)
+    if (bucketDiff !== 0) return bucketDiff
+
+    const progressA = Number.isFinite(Number(a?.progress_percent)) ? Number(a.progress_percent) : -1
+    const progressB = Number.isFinite(Number(b?.progress_percent)) ? Number(b.progress_percent) : -1
+    if (progressA !== progressB) return progressB - progressA
+
+    const dueA = String(a?.expected_completion_date || '9999-12-31')
+    const dueB = String(b?.expected_completion_date || '9999-12-31')
+    if (dueA !== dueB) return dueA.localeCompare(dueB)
+
+    return Number(b?.id || 0) - Number(a?.id || 0)
+  })
+}
+
+function sortYesterdayDueChildItems(items = []) {
+  const checkRank = {
+    NOT_DONE: 0,
+    LATE_DONE: 1,
+    ON_TIME: 2,
+  }
+  const priorityRank = {
+    P0: 0,
+    P1: 1,
+    P2: 2,
+    P3: 3,
+  }
+
+  return [...items].sort((a, b) => {
+    const resultA = String(a?.check_result || '').trim().toUpperCase()
+    const resultB = String(b?.check_result || '').trim().toUpperCase()
+    const checkDiff = (checkRank[resultA] ?? 9) - (checkRank[resultB] ?? 9)
+    if (checkDiff !== 0) return checkDiff
+
+    const demandPriorityA = String(a?.demand_priority || '').trim().toUpperCase()
+    const demandPriorityB = String(b?.demand_priority || '').trim().toUpperCase()
+    const priorityDiff = (priorityRank[demandPriorityA] ?? 99) - (priorityRank[demandPriorityB] ?? 99)
+    if (priorityDiff !== 0) return priorityDiff
+
+    return Number(b?.id || 0) - Number(a?.id || 0)
+  })
 }
 
 function getStartHintTag(daysToStart) {
@@ -379,11 +445,12 @@ function MorningStandupBoard() {
     })
 
     let index = 0
-    return Array.from(groups.entries()).map(([phaseLabel, group]) => {
+    return sortPhaseGroups(Array.from(groups.entries())).map(([phaseLabel, group]) => {
       const itemCount = group.items.length || 1
       const avgProgress = Number((group.progress_sum / itemCount).toFixed(1))
       const avgExpected = Number((group.expected_sum / itemCount).toFixed(1))
 
+      const sortedChildren = sortInProgressChildItems(group.items)
       return {
         key: `phase-group-${index++}`,
         row_type: 'phase_group',
@@ -397,7 +464,7 @@ function MorningStandupBoard() {
         risk_count: group.risk_count,
         overdue_count: group.overdue_count,
         normal_count: group.normal_count,
-        children: group.items,
+        children: sortedChildren,
       }
     })
   }, [inProgressDataSource])
@@ -531,9 +598,10 @@ function MorningStandupBoard() {
     })
 
     let index = 0
-    return Array.from(groups.entries()).map(([phaseLabel, group]) => {
+    return sortPhaseGroups(Array.from(groups.entries())).map(([phaseLabel, group]) => {
       const itemCount = group.items.length
       const mergedResult = getGroupYesterdayCheckResult(group)
+      const sortedChildren = sortYesterdayDueChildItems(group.items)
       return {
         key: `y-phase-group-${index++}`,
         row_type: 'phase_group',
@@ -544,7 +612,7 @@ function MorningStandupBoard() {
         not_done_count: group.not_done_count,
         late_done_count: group.late_done_count,
         on_time_count: group.on_time_count,
-        children: group.items,
+        children: sortedChildren,
       }
     })
   }, [yesterdayDueDataSource])
