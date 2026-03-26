@@ -864,6 +864,7 @@ function WorkLogs() {
       demand_id: editingLog.demand_id || undefined,
       phase_key: editingLog.phase_key || undefined,
       log_status: editingLog.log_status || 'IN_PROGRESS',
+      description: String(editingLog.description || ''),
       personal_estimate_hours: toNumber(editingLog.personal_estimate_hours, 0),
       actual_hours: toNumber(editingLog.actual_hours, 0),
       expected_start_date: toDateInputValue(editingLog.expected_start_date),
@@ -1083,6 +1084,7 @@ function WorkLogs() {
         demand_id: values.demand_id || null,
         phase_key: values.demand_id ? values.phase_key : null,
         log_status: selectedStatus,
+        description: values.description,
         personal_estimate_hours: values.personal_estimate_hours,
         actual_hours: resolvedActualHours,
         expected_start_date: values.expected_start_date || null,
@@ -2348,6 +2350,18 @@ function WorkLogs() {
               </Form.Item>
             </Col>
           </Row>
+
+          <Form.Item
+            label="工作描述"
+            name="description"
+            rules={[{ required: true, message: '请填写工作描述' }]}
+          >
+            <Input.TextArea
+              rows={3}
+              maxLength={2000}
+              placeholder="建议写清楚：做了什么、产出了什么、是否有风险"
+            />
+          </Form.Item>
         </Form>
       </Modal>
 

@@ -35,8 +35,10 @@ import {
   updateWorkLogOwnerEstimateApi,
 } from '../api/work'
 import { formatBeijingDate, formatBeijingDateTime, getBeijingTodayDateString } from '../utils/datetime'
+import './OwnerWorkbench.css'
 
 const { Text } = Typography
+const EMPTY_ARRAY = []
 
 function toNumber(value, fallback = 0) {
   const num = Number(value)
@@ -195,9 +197,37 @@ function OwnerWorkbench() {
   const unscheduledUsers = toNumber(overview.unscheduled_users_today, 0)
   const scheduledFillRate =
     scheduledUsers > 0 ? Math.min(100, Math.max(0, (filledUsers / scheduledUsers) * 100)) : 100
-  const noFillMembers = Array.isArray(data.no_fill_members) ? data.no_fill_members : []
-  const teamMembers = Array.isArray(data.team_members) ? data.team_members : []
-  const ownerEstimateItems = Array.isArray(data.owner_estimate_items) ? data.owner_estimate_items : []
+  const noFillMembers = useMemo(
+    () => (Array.isArray(data.no_fill_members) ? data.no_fill_members : EMPTY_ARRAY),
+    [data.no_fill_members],
+  )
+  const teamMembers = useMemo(
+    () => (Array.isArray(data.team_members) ? data.team_members : EMPTY_ARRAY),
+    [data.team_members],
+  )
+  const sortedTeamMembers = useMemo(() => {
+    const getStatusRank = (item) => {
+      const todayScheduled = Boolean(item?.today_scheduled)
+      const todayFilled = Boolean(item?.today_filled)
+      if (!todayScheduled) return 0 // 未安排
+      if (!todayFilled) return 1 // 待填报
+      return 2 // 已填报
+    }
+
+    return [...teamMembers].sort((a, b) => {
+      const rankDiff = getStatusRank(a) - getStatusRank(b)
+      if (rankDiff !== 0) return rankDiff
+
+      const assignableDiff = toNumber(b?.assignable_hours, 0) - toNumber(a?.assignable_hours, 0)
+      if (assignableDiff !== 0) return assignableDiff
+
+      return String(a?.username || '').localeCompare(String(b?.username || ''), 'zh-Hans-CN')
+    })
+  }, [teamMembers])
+  const ownerEstimateItems = useMemo(
+    () => (Array.isArray(data.owner_estimate_items) ? data.owner_estimate_items : EMPTY_ARRAY),
+    [data.owner_estimate_items],
+  )
   const pendingOwnerEstimateCount = toNumber(data.owner_estimate_pending_count, 0)
   const assignItemTypeId = Form.useWatch('item_type_id', assignForm)
 
@@ -583,14 +613,14 @@ function OwnerWorkbench() {
       dataIndex: 'assignable_hours',
       key: 'assignable_hours',
       width: 120,
-      render: (value) => <Text style={{ color: '#1677ff' }}>{toNumber(value, 0).toFixed(1)}</Text>,
+      render: (value) => <span className="owner-inline-accent">{toNumber(value, 0).toFixed(1)}</span>,
     },
   ]
 
   if (noAccess) {
     return (
-      <div style={{ padding: 12 }}>
-        <Card variant="borderless">
+      <div className="owner-workbench-page owner-workbench-page--no-access">
+        <Card variant="borderless" className="owner-shell-card owner-no-access-card">
           <Result
             status="403"
             title="暂无访问权限"
@@ -606,16 +636,17 @@ function OwnerWorkbench() {
     )
   }
 
-  const metricCardStyle = { height: 168, width: '100%' }
-
   return (
-    <div style={{ padding: 12, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
+    <div className="owner-workbench-page">
+      <div className="owner-workbench-layout">
       <Card
         variant="borderless"
-        style={{ marginBottom: 16 }}
+        className="owner-shell-card owner-overview-shell"
         extra={
           <Space wrap>
-            <Text type="secondary">最近刷新：{formatBeijingDateTime(lastLoadedAt)}</Text>
+            <Text type="secondary" className="owner-refresh-text">
+              最近刷新：{formatBeijingDateTime(lastLoadedAt)}
+            </Text>
             <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading}>
               刷新
             </Button>
@@ -623,73 +654,73 @@ function OwnerWorkbench() {
         }
       >
         <Row gutter={[16, 16]}>
-          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
-            <Card variant="borderless" style={metricCardStyle}>
+          <Col xs={24} md={8} lg={6} xl={3} className="owner-metric-col">
+            <Card variant="borderless" className="owner-metric-card">
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">团队人数</Text>
               </Space>
-              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{teamSize}</div>
+              <div className="owner-metric-value">{teamSize}</div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
-            <Card variant="borderless" style={metricCardStyle}>
+          <Col xs={24} md={8} lg={6} xl={3} className="owner-metric-col">
+            <Card variant="borderless" className="owner-metric-card">
               <Space>
                 <AlertOutlined />
                 <Text type="secondary">今日有安排</Text>
               </Space>
-              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{scheduledUsers}</div>
+              <div className="owner-metric-value">{scheduledUsers}</div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
-            <Card variant="borderless" style={metricCardStyle}>
+          <Col xs={24} md={8} lg={6} xl={3} className="owner-metric-col">
+            <Card variant="borderless" className="owner-metric-card">
               <Space>
                 <AlertOutlined />
                 <Text type="secondary">有安排已填报</Text>
               </Space>
-              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#389e0d' }}>{filledUsers}</div>
+              <div className="owner-metric-value owner-metric-value--success">{filledUsers}</div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
-            <Card variant="borderless" style={metricCardStyle}>
+          <Col xs={24} md={8} lg={6} xl={3} className="owner-metric-col">
+            <Card variant="borderless" className="owner-metric-card">
               <Space>
                 <WarningOutlined />
                 <Text type="secondary">有安排待填报</Text>
               </Space>
-              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#d4380d' }}>{unfilledUsers}</div>
+              <div className="owner-metric-value owner-metric-value--danger">{unfilledUsers}</div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
-            <Card variant="borderless" style={metricCardStyle}>
+          <Col xs={24} md={8} lg={6} xl={3} className="owner-metric-col">
+            <Card variant="borderless" className="owner-metric-card">
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">今日未安排</Text>
               </Space>
-              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{unscheduledUsers}</div>
+              <div className="owner-metric-value">{unscheduledUsers}</div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
-            <Card variant="borderless" style={metricCardStyle}>
+          <Col xs={24} md={8} lg={6} xl={3} className="owner-metric-col">
+            <Card variant="borderless" className="owner-metric-card">
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">安排填报率</Text>
               </Space>
-              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>{`${scheduledFillRate.toFixed(1)}%`}</div>
+              <div className="owner-metric-value">{`${scheduledFillRate.toFixed(1)}%`}</div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
-            <Card variant="borderless" style={metricCardStyle}>
-              <Space orientation="vertical" size={6} style={{ width: '100%' }}>
+          <Col xs={24} md={8} lg={6} xl={3} className="owner-metric-col">
+            <Card variant="borderless" className="owner-metric-card owner-metric-card--waitlist">
+              <Space orientation="vertical" size={6} className="owner-metric-stack">
                 <Space>
                   <WarningOutlined />
                   <Text type="secondary">待填报名单</Text>
                 </Space>
                 {noFillMembers.length === 0 ? (
-                  <Text type="secondary" style={{ fontSize: 12 }}>
+                  <Text type="secondary" className="owner-metric-note">
                     今日有安排成员已填报
                   </Text>
                 ) : (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 96, overflowY: 'auto' }}>
+                  <div className="owner-waitlist-tags">
                     {noFillMembers.map((member) => (
                       <Tag color="error" key={member.id}>
                         {member.username || `用户${member.id}`}
@@ -700,35 +731,35 @@ function OwnerWorkbench() {
               </Space>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
-            <Card variant="borderless" style={metricCardStyle}>
+          <Col xs={24} md={8} lg={6} xl={3} className="owner-metric-col">
+            <Card variant="borderless" className="owner-metric-card">
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">团队今日计划(h)</Text>
               </Space>
-              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
+              <div className="owner-metric-value">
                 {toNumber(overview.total_personal_estimate_hours_today, 0).toFixed(1)}
               </div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
-            <Card variant="borderless" style={metricCardStyle}>
+          <Col xs={24} md={8} lg={6} xl={3} className="owner-metric-col">
+            <Card variant="borderless" className="owner-metric-card">
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">团队今日实际(h)</Text>
               </Space>
-              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
+              <div className="owner-metric-value">
                 {toNumber(overview.total_actual_hours_today, 0).toFixed(1)}
               </div>
             </Card>
           </Col>
-          <Col xs={24} md={8} lg={6} xl={3} style={{ display: 'flex' }}>
-            <Card variant="borderless" style={metricCardStyle}>
+          <Col xs={24} md={8} lg={6} xl={3} className="owner-metric-col">
+            <Card variant="borderless" className="owner-metric-card">
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">可指派(h)</Text>
               </Space>
-              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#1677ff' }}>
+              <div className="owner-metric-value owner-metric-value--accent">
                 {toNumber(overview.total_assignable_hours_today, 0).toFixed(1)}
               </div>
             </Card>
@@ -739,20 +770,21 @@ function OwnerWorkbench() {
       <Card
         title="成员当日负载"
         variant="borderless"
-        style={{ marginBottom: 16 }}
-        extra={<Tag>{`成员 ${teamMembers.length}`}</Tag>}
+        className="owner-section-card owner-member-section"
+        extra={<Tag>{`成员 ${sortedTeamMembers.length}`}</Tag>}
       >
-        {teamMembers.length === 0 ? (
+        {sortedTeamMembers.length === 0 ? (
           <Empty description="当前范围暂无成员数据" />
         ) : (
-          <div style={{ width: '100%', overflowX: 'auto' }}>
+          <div className="owner-table-wrap">
             <Table
               rowKey="id"
               size="small"
               pagination={false}
               columns={teamCapacityColumns}
-              dataSource={teamMembers}
+              dataSource={sortedTeamMembers}
               scroll={{ x: 680 }}
+              className="owner-workbench-table"
             />
           </div>
         )}
@@ -761,6 +793,7 @@ function OwnerWorkbench() {
       <Card
         title="事项 Owner 评估维护"
         variant="borderless"
+        className="owner-section-card owner-estimate-section"
         extra={
           <Space wrap>
             <Tag color={pendingOwnerEstimateCount > 0 ? 'orange' : 'green'}>{`待评估 ${pendingOwnerEstimateCount}`}</Tag>
@@ -772,13 +805,13 @@ function OwnerWorkbench() {
           </Space>
         }
       >
-        <Space wrap style={{ marginBottom: 12 }}>
+        <Space wrap className="owner-filter-toolbar">
           <Input
             allowClear
             placeholder="搜索成员/需求/阶段/描述"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            style={{ width: 260 }}
+            className="owner-filter-input owner-filter-input--keyword"
           />
           <Select
             allowClear
@@ -786,7 +819,7 @@ function OwnerWorkbench() {
             options={memberOptions}
             value={memberFilter}
             onChange={setMemberFilter}
-            style={{ width: 180 }}
+            className="owner-filter-input owner-filter-input--member"
           />
           <Select
             allowClear
@@ -794,9 +827,9 @@ function OwnerWorkbench() {
             options={phaseOptions}
             value={phaseFilter}
             onChange={setPhaseFilter}
-            style={{ width: 220 }}
+            className="owner-filter-input owner-filter-input--phase"
           />
-          <Space>
+          <Space className="owner-toggle-group">
             <Text type="secondary">仅看待评估</Text>
             <Switch checked={pendingOnly} onChange={setPendingOnly} />
           </Space>
@@ -809,7 +842,7 @@ function OwnerWorkbench() {
         {filteredOwnerEstimateItems.length === 0 ? (
           <Empty description="当前筛选下暂无可维护事项" />
         ) : (
-          <div style={{ width: '100%', overflowX: 'auto' }}>
+          <div className="owner-table-wrap">
             <Table
               rowKey="id"
               loading={loading}
@@ -817,6 +850,7 @@ function OwnerWorkbench() {
               dataSource={filteredOwnerEstimateItems}
               size="small"
               scroll={{ x: 1860 }}
+              className="owner-workbench-table"
               rowSelection={{
                 selectedRowKeys,
                 onChange: (keys) => setSelectedRowKeys(keys),
@@ -843,16 +877,16 @@ function OwnerWorkbench() {
         forceRender
         destroyOnHidden
       >
-        <Form form={estimateForm} layout="vertical" style={{ marginTop: 8 }}>
+        <Form form={estimateForm} layout="vertical" className="owner-modal-form">
           <Form.Item
             label="Owner评估(h)"
             name="owner_estimate_hours"
             rules={[{ required: true, message: '请输入 Owner 评估用时' }]}
           >
-            <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+            <InputNumber min={0} step={0.5} className="owner-input-number-full" />
           </Form.Item>
           {editingItem ? (
-            <div style={{ color: '#667085', fontSize: 12 }}>
+            <div className="owner-modal-note">
               事项: {editingItem.item_type_name || '-'} / 成员: {editingItem.username || '-'}
             </div>
           ) : null}
@@ -870,13 +904,13 @@ function OwnerWorkbench() {
         forceRender
         destroyOnHidden
       >
-        <Form form={batchForm} layout="vertical" style={{ marginTop: 8 }}>
+        <Form form={batchForm} layout="vertical" className="owner-modal-form">
           <Form.Item
             label="统一 Owner评估(h)"
             name="owner_estimate_hours"
             rules={[{ required: true, message: '请输入评估用时' }]}
           >
-            <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+            <InputNumber min={0} step={0.5} className="owner-input-number-full" />
           </Form.Item>
           <Text type="secondary">将对当前筛选结果中已勾选事项统一设置该评估值。</Text>
         </Form>
@@ -896,7 +930,7 @@ function OwnerWorkbench() {
         <Form
           form={assignForm}
           layout="vertical"
-          style={{ marginTop: 8 }}
+          className="owner-modal-form"
           onValuesChange={(changedValues) => {
             if (Object.prototype.hasOwnProperty.call(changedValues, 'item_type_id')) {
               const nextItemType = itemTypes.find((item) => Number(item.id) === Number(changedValues.item_type_id))
@@ -998,7 +1032,7 @@ function OwnerWorkbench() {
                 name="owner_estimate_hours"
                 rules={[{ required: true, message: '请输入Owner评估用时' }]}
               >
-                <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
+                <InputNumber min={0.5} step={0.5} className="owner-input-number-full" />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -1048,11 +1082,12 @@ function OwnerWorkbench() {
             <Input type="date" />
           </Form.Item>
 
-          <Text type="secondary">
+          <Text type="secondary" className="owner-modal-note">
             指派事项会同步出现在被指派人的“我进行中的事项”中，并标记来源为“Owner指派”。
           </Text>
         </Form>
       </Modal>
+      </div>
     </div>
   )
 }

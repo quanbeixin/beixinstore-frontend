@@ -5,7 +5,7 @@
   TeamOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
-import { Card, Col, Empty, Progress, Row, Segmented, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
+import { Card, Col, Empty, Modal, Progress, Row, Segmented, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getMorningStandupBoardApi } from '../api/work'
 import { getCurrentUser } from '../utils/access'
@@ -13,6 +13,8 @@ import { formatBeijingDate, getBeijingTodayDateString } from '../utils/datetime'
 import './MorningStandupBoard.css'
 
 const { Text } = Typography
+const EMPTY_ARRAY = []
+const EMPTY_OBJECT = {}
 
 function toNumber(value, fallback = 0) {
   const num = Number(value)
@@ -53,11 +55,11 @@ function renderDemandNameWithLimit(value, maxLength = 30) {
   if (!fullText) return '-'
   const shortText = truncateText(fullText, maxLength)
   if (shortText === fullText) {
-    return <span style={{ whiteSpace: 'nowrap' }}>{fullText}</span>
+    return <span className="morning-nowrap-text">{fullText}</span>
   }
   return (
     <Tooltip title={fullText}>
-      <span style={{ whiteSpace: 'nowrap' }}>{shortText}</span>
+      <span className="morning-nowrap-text">{shortText}</span>
     </Tooltip>
   )
 }
@@ -167,6 +169,12 @@ function clampPercent(value) {
   return Math.max(0, Math.min(100, num))
 }
 
+function getMemberItemClassName(overdue, dueToday) {
+  if (overdue) return 'morning-member-item morning-member-item--overdue'
+  if (dueToday) return 'morning-member-item morning-member-item--due'
+  return 'morning-member-item'
+}
+
 function MorningStandupBoard() {
   const currentUser = useMemo(() => getCurrentUser(), [])
   const [loading, setLoading] = useState(false)
@@ -174,6 +182,7 @@ function MorningStandupBoard() {
   const [activeAlignmentTab, setActiveAlignmentTab] = useState('in_progress')
   const [inProgressViewMode, setInProgressViewMode] = useState('tree')
   const [yesterdayDueViewMode, setYesterdayDueViewMode] = useState('tree')
+  const [unscheduledModalOpen, setUnscheduledModalOpen] = useState(false)
   const [data, setData] = useState({
     tabs: [],
     default_tab_key: '',
@@ -205,11 +214,13 @@ function MorningStandupBoard() {
       yesterday_due_not_done_count: 0,
       yesterday_due_late_done_count: 0,
       in_progress_count: 0,
+      done_today_count: 0,
       todo_pending_count: 0,
     },
     focus_items: [],
     focus_yesterday_due_items: [],
     focus_in_progress_items: [],
+    focus_done_today_items: [],
     focus_todo_items: [],
     members: [],
     no_fill_members: [],
@@ -251,19 +262,39 @@ function MorningStandupBoard() {
     loadBoard()
   }, [loadBoard])
 
-  const tabs = Array.isArray(data.tabs) ? data.tabs : []
-  const members = Array.isArray(data.members) ? data.members : []
-  const noFillMembers = Array.isArray(data.no_fill_members) ? data.no_fill_members : []
-  const summary = data.summary || {}
-  const focusSummary = data.focus_summary || {}
-  const focusYesterdayDueItems = Array.isArray(data.focus_yesterday_due_items)
-    ? data.focus_yesterday_due_items
-    : []
-  const focusInProgressItems = Array.isArray(data.focus_in_progress_items)
-    ? data.focus_in_progress_items
-    : []
-  const focusTodoItems = Array.isArray(data.focus_todo_items) ? data.focus_todo_items : []
+  const tabs = useMemo(() => (Array.isArray(data.tabs) ? data.tabs : EMPTY_ARRAY), [data.tabs])
+  const members = useMemo(() => (Array.isArray(data.members) ? data.members : EMPTY_ARRAY), [data.members])
+  const noFillMembers = useMemo(
+    () => (Array.isArray(data.no_fill_members) ? data.no_fill_members : EMPTY_ARRAY),
+    [data.no_fill_members],
+  )
+  const unscheduledMembers = useMemo(
+    () => members.filter((item) => !item?.today_scheduled),
+    [members],
+  )
+  const summary = useMemo(() => (data.summary && typeof data.summary === 'object' ? data.summary : EMPTY_OBJECT), [data.summary])
+  const focusSummary = useMemo(
+    () => (data.focus_summary && typeof data.focus_summary === 'object' ? data.focus_summary : EMPTY_OBJECT),
+    [data.focus_summary],
+  )
+  const focusYesterdayDueItems = useMemo(
+    () => (Array.isArray(data.focus_yesterday_due_items) ? data.focus_yesterday_due_items : EMPTY_ARRAY),
+    [data.focus_yesterday_due_items],
+  )
+  const focusInProgressItems = useMemo(
+    () => (Array.isArray(data.focus_in_progress_items) ? data.focus_in_progress_items : EMPTY_ARRAY),
+    [data.focus_in_progress_items],
+  )
+  const focusDoneTodayItems = useMemo(
+    () => (Array.isArray(data.focus_done_today_items) ? data.focus_done_today_items : EMPTY_ARRAY),
+    [data.focus_done_today_items],
+  )
+  const focusTodoItems = useMemo(
+    () => (Array.isArray(data.focus_todo_items) ? data.focus_todo_items : EMPTY_ARRAY),
+    [data.focus_todo_items],
+  )
   const todayDate = getBeijingTodayDateString()
+  const teamPlannedCapacityHours = useMemo(() => toNumber(summary.team_size, 0) * 8.5, [summary.team_size])
 
   const sortedMembers = useMemo(() => {
     const currentUserId = Number(currentUser?.id)
@@ -358,7 +389,7 @@ function MorningStandupBoard() {
 
           return (
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <div className="morning-progress-head">
                 <Text strong>{`${progressPercent.toFixed(0)}%`}</Text>
                 {risky ? <Tag color="warning">风险</Tag> : null}
               </div>
@@ -368,7 +399,7 @@ function MorningStandupBoard() {
                 showInfo={false}
                 strokeColor={risky ? '#faad14' : '#1677ff'}
               />
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text type="secondary" className="morning-progress-hint">
                 {`应达 ${expectedPercent.toFixed(0)}%`}
               </Text>
             </div>
@@ -402,12 +433,36 @@ function MorningStandupBoard() {
         render: (value) => {
           const fullText = String(value || '').trim()
           if (!fullText) return '-'
-          return <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{fullText}</span>
+          return <span className="morning-prewrap-text">{fullText}</span>
         },
       },
     ],
     [],
   )
+
+  const doneTodayColumns = useMemo(() => {
+    const actualHoursColumn = {
+      title: '实际用时',
+      dataIndex: 'cumulative_actual_hours',
+      key: 'cumulative_actual_hours',
+      width: 110,
+      render: (value, record) =>
+        record?.row_type === 'phase_group' ? (
+          <Text type="secondary">-</Text>
+        ) : (
+          `${toNumber(value, 0).toFixed(1)}h`
+        ),
+    }
+
+    const statusIndex = inProgressColumns.findIndex((column) => column?.key === 'log_status')
+    if (statusIndex < 0) {
+      return [...inProgressColumns, actualHoursColumn]
+    }
+
+    const nextColumns = [...inProgressColumns]
+    nextColumns.splice(statusIndex, 0, actualHoursColumn)
+    return nextColumns
+  }, [inProgressColumns])
 
   const inProgressDataSource = useMemo(
     () =>
@@ -468,6 +523,66 @@ function MorningStandupBoard() {
       }
     })
   }, [inProgressDataSource])
+
+  const doneTodayDataSource = useMemo(
+    () =>
+      focusDoneTodayItems.map((item) => ({
+        ...item,
+        row_type: 'item',
+        key: `d-${item.id}-${item.user_id}`,
+      })),
+    [focusDoneTodayItems],
+  )
+
+  const doneTodayTreeDataSource = useMemo(() => {
+    const groups = new Map()
+
+    doneTodayDataSource.forEach((item) => {
+      const phaseLabel = getPhaseDisplayName(item)
+      if (!groups.has(phaseLabel)) {
+        groups.set(phaseLabel, {
+          items: [],
+          risk_count: 0,
+          overdue_count: 0,
+          normal_count: 0,
+          progress_sum: 0,
+          expected_sum: 0,
+        })
+      }
+      const group = groups.get(phaseLabel)
+      group.items.push(item)
+      if (item?.progress_risk) group.risk_count += 1
+      const isOverdue = String(item?.focus_level || '').toUpperCase() === 'OVERDUE'
+      if (isOverdue) group.overdue_count += 1
+      if (!item?.progress_risk && !isOverdue) group.normal_count += 1
+      group.progress_sum += toNumber(item?.progress_percent, 0)
+      group.expected_sum += toNumber(item?.expected_progress_percent, 0)
+    })
+
+    let index = 0
+    return sortPhaseGroups(Array.from(groups.entries())).map(([phaseLabel, group]) => {
+      const itemCount = group.items.length || 1
+      const avgProgress = Number((group.progress_sum / itemCount).toFixed(1))
+      const avgExpected = Number((group.expected_sum / itemCount).toFixed(1))
+      const sortedChildren = sortInProgressChildItems(group.items)
+
+      return {
+        key: `done-phase-group-${index++}`,
+        row_type: 'phase_group',
+        phase_name: phaseLabel,
+        username: `共 ${itemCount} 项`,
+        demand_name: `共 ${itemCount} 项，风险 ${group.risk_count} 项`,
+        progress_show: true,
+        progress_percent: avgProgress,
+        expected_progress_percent: avgExpected,
+        progress_risk: group.risk_count > 0,
+        risk_count: group.risk_count,
+        overdue_count: group.overdue_count,
+        normal_count: group.normal_count,
+        children: sortedChildren,
+      }
+    })
+  }, [doneTodayDataSource])
 
   const yesterdayDueColumns = useMemo(
     () => [
@@ -695,6 +810,10 @@ function MorningStandupBoard() {
         label: `进行中事项 (${toNumber(focusSummary.in_progress_count)})`,
       },
       {
+        key: 'done_today',
+        label: `今日已完成事项 (${toNumber(focusSummary.done_today_count)})`,
+      },
+      {
         key: 'yesterday_due',
         label: `昨日应完成检查 (${toNumber(focusSummary.yesterday_due_total)})`,
       },
@@ -728,6 +847,15 @@ function MorningStandupBoard() {
         treeMode: yesterdayDueViewMode === 'tree',
       }
     }
+    if (activeAlignmentTab === 'done_today') {
+      return {
+        columns: doneTodayColumns,
+        dataSource: inProgressViewMode === 'tree' ? doneTodayTreeDataSource : doneTodayDataSource,
+        emptyText: '暂无今日已完成事项',
+        scrollX: 'max-content',
+        treeMode: inProgressViewMode === 'tree',
+      }
+    }
     if (activeAlignmentTab === 'todo_pending') {
       return {
         columns: todoColumns,
@@ -752,8 +880,11 @@ function MorningStandupBoard() {
     todoColumns,
     todoDataSource,
     inProgressColumns,
+    doneTodayColumns,
     inProgressDataSource,
     inProgressTreeDataSource,
+    doneTodayDataSource,
+    doneTodayTreeDataSource,
     inProgressViewMode,
   ])
 
@@ -788,6 +919,7 @@ function MorningStandupBoard() {
       <Card
         key={member.user_id}
         size="small"
+        className="morning-member-card"
         title={
           <Space size={8}>
             <Text strong>{member.username}</Text>
@@ -797,32 +929,25 @@ function MorningStandupBoard() {
           </Space>
         }
       >
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
-            gap: 6,
-            marginBottom: 10,
-          }}
-        >
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>今日安排</div>
-            <div style={{ fontSize: 15, fontWeight: 600 }}>{todayPlannedHours.toFixed(1)}h</div>
+        <div className="morning-member-stats">
+          <div className="morning-member-stat">
+            <div className="morning-member-stat-label">今日安排</div>
+            <div className="morning-member-stat-value">{todayPlannedHours.toFixed(1)}h</div>
           </div>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>今日已填</div>
-            <div style={{ fontSize: 15, fontWeight: 600 }}>{todayActualHours.toFixed(1)}h</div>
+          <div className="morning-member-stat">
+            <div className="morning-member-stat-label">今日已填</div>
+            <div className="morning-member-stat-value">{todayActualHours.toFixed(1)}h</div>
           </div>
-          <div style={{ border: '1px solid #e4e7ec', borderRadius: 8, padding: '6px 8px', background: '#f8fafc' }}>
-            <div style={{ fontSize: 12, color: '#667085' }}>可指派</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#1677ff' }}>{assignableHours.toFixed(1)}h</div>
+          <div className="morning-member-stat">
+            <div className="morning-member-stat-label">可指派</div>
+            <div className="morning-member-stat-value morning-member-stat-value--accent">{assignableHours.toFixed(1)}h</div>
           </div>
         </div>
 
         {activeItems.length === 0 ? (
           <Text type="secondary">暂无进行中事项</Text>
         ) : (
-          <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={8} className="morning-member-item-list">
             {activeItems.map((item) => {
               const expectedDate = formatBeijingDate(item.expected_completion_date, '')
               const overdue = expectedDate && expectedDate < todayDate
@@ -831,14 +956,9 @@ function MorningStandupBoard() {
               return (
                 <div
                   key={item.id}
-                  style={{
-                    border: overdue ? '1px solid #ffccc7' : dueToday ? '1px solid #ffe58f' : '1px solid #e4e7ec',
-                    borderRadius: 8,
-                    padding: 10,
-                    background: overdue ? '#fff1f0' : dueToday ? '#fffbe6' : '#fff',
-                  }}
+                  className={getMemberItemClassName(overdue, dueToday)}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                  <div className="morning-member-item-head">
                     <Space size={6} wrap>
                       <Tag color="blue">#{item.id}</Tag>
                       <Tag color={getStatusTagColor(item.log_status)}>{getStatusLabel(item.log_status)}</Tag>
@@ -849,20 +969,28 @@ function MorningStandupBoard() {
                       {item.phase_name ? <Tag color="geekblue">{item.phase_name}</Tag> : null}
                     </Space>
                   </div>
-                  <div style={{ marginTop: 6, color: '#667085', fontSize: 13 }}>
+                  <div className="morning-member-item-meta">
                     预计开始:
-                    <span style={{ color: '#344054' }}>
+                    <span className="morning-member-item-date">
                       {formatBeijingDate(item.expected_start_date)}
                     </span>
                   </div>
-                  <div style={{ marginTop: 6, color: '#667085', fontSize: 13 }}>
+                  <div className="morning-member-item-meta">
                     预计完成:
-                    <span style={{ color: overdue ? '#cf1322' : dueToday ? '#d48806' : '#344054' }}>
+                    <span
+                      className={
+                        overdue
+                          ? 'morning-member-item-date morning-member-item-date--overdue'
+                          : dueToday
+                            ? 'morning-member-item-date morning-member-item-date--due'
+                            : 'morning-member-item-date'
+                      }
+                    >
                       {formatBeijingDate(item.expected_completion_date)}
                     </span>
                     {overdue ? '（逾期）' : dueToday ? '（今日到期）' : ''}
                   </div>
-                  <div style={{ marginTop: 6, color: '#475467', fontSize: 13, whiteSpace: 'pre-wrap' }}>
+                  <div className="morning-member-item-desc">
                     {item.description || '-'}
                   </div>
                 </div>
@@ -875,22 +1003,14 @@ function MorningStandupBoard() {
   }
 
   return (
-    <div
-      style={{
-        padding: 12,
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
+    <div className="morning-standup-page morning-standup-layout">
       <Card
         variant="borderless"
-        style={{ marginBottom: 16 }}
+        className="morning-board-section-card morning-board-shell-card morning-section-gap"
         extra={
           <Tag
+            className={`morning-board-refresh-tag ${loading ? 'morning-board-refresh-tag--loading' : ''}`}
             icon={<ReloadOutlined />}
-            style={{ cursor: loading ? 'not-allowed' : 'pointer' }}
             onClick={() => {
               if (!loading) loadBoard(activeTabKey)
             }}
@@ -900,94 +1020,103 @@ function MorningStandupBoard() {
         }
       >
         {tabItems.length > 0 ? (
-          <Tabs activeKey={activeTabKey || tabItems[0]?.key} items={tabItems} onChange={handleTabChange} />
+          <Tabs
+            className="morning-board-tabs"
+            activeKey={activeTabKey || tabItems[0]?.key}
+            items={tabItems}
+            onChange={handleTabChange}
+          />
         ) : (
           <Empty description="暂无可用部门数据" />
         )}
 
-        <Row gutter={[12, 12]} style={{ marginTop: 8 }}>
+        <Row gutter={[12, 12]} className="morning-summary-row morning-summary-row--top">
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>
-            <Card size="small">
+            <Card size="small" className="morning-summary-card">
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">团队人数</Text>
               </Space>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>{toNumber(summary.team_size)}</div>
+              <div className="morning-summary-value">{toNumber(summary.team_size)}</div>
             </Card>
           </Col>
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>
-            <Card size="small">
+            <Card size="small" className="morning-summary-card">
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">今日有安排</Text>
               </Space>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
+              <div className="morning-summary-value">
                 {toNumber(summary.scheduled_users_today)}
               </div>
             </Card>
           </Col>
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>
-            <Card size="small">
+            <Card size="small" className="morning-summary-card">
               <Space>
                 <CheckCircleOutlined />
                 <Text type="secondary">有安排已填报</Text>
               </Space>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6, color: '#389e0d' }}>
+              <div className="morning-summary-value morning-summary-value--success">
                 {toNumber(summary.filled_users_today)}
               </div>
             </Card>
           </Col>
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>
-            <Card size="small">
+            <Card size="small" className="morning-summary-card">
               <Space>
                 <WarningOutlined />
                 <Text type="secondary">有安排待填报</Text>
               </Space>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6, color: '#d4380d' }}>
+              <div className="morning-summary-value morning-summary-value--warning">
                 {toNumber(summary.unfilled_users_today)}
               </div>
             </Card>
           </Col>
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>
-            <Card size="small">
+            <Card
+              size="small"
+              className="morning-summary-card morning-summary-card--clickable"
+              onClick={() => setUnscheduledModalOpen(true)}
+            >
               <Space>
                 <TeamOutlined />
                 <Text type="secondary">今日未安排</Text>
               </Space>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
+              <div className="morning-summary-value morning-summary-value--danger">
                 {toNumber(summary.unscheduled_users_today)}
               </div>
             </Card>
           </Col>
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>
-            <Card size="small">
+            <Card size="small" className="morning-summary-card">
               <Space>
                 <ClockCircleOutlined />
-                <Text type="secondary">计划用时(h)</Text>
+                <Text type="secondary">{`计划用时(h/${teamPlannedCapacityHours.toFixed(1)})`}</Text>
               </Space>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
+              <div className="morning-summary-value">
                 {toNumber(summary.total_planned_hours_today).toFixed(1)}
               </div>
             </Card>
           </Col>
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>
-            <Card size="small">
+            <Card size="small" className="morning-summary-card">
               <Space>
                 <ClockCircleOutlined />
                 <Text type="secondary">实际用时(h)</Text>
               </Space>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
+              <div className="morning-summary-value">
                 {toNumber(summary.total_actual_hours_today).toFixed(1)}
               </div>
             </Card>
           </Col>
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>
-            <Card size="small">
+            <Card size="small" className="morning-summary-card">
               <Space>
                 <ClockCircleOutlined />
                 <Text type="secondary">进行中事项</Text>
               </Space>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
+              <div className="morning-summary-value">
                 {toNumber(summary.active_item_count)}
               </div>
             </Card>
@@ -995,9 +1124,14 @@ function MorningStandupBoard() {
         </Row>
       </Card>
 
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+      <Row gutter={[12, 12]} className="morning-section-gap">
         <Col span={24}>
-          <Card size="small" title="有安排待填报名单" variant="borderless" styles={{ body: { paddingTop: 8 } }}>
+          <Card
+            size="small"
+            title="有安排待填报名单"
+            variant="borderless"
+            className="morning-board-section-card morning-waitlist-card"
+          >
             {noFillMembers.length === 0 ? (
               <Text type="secondary">今天有安排成员均已填报</Text>
             ) : (
@@ -1013,14 +1147,13 @@ function MorningStandupBoard() {
         </Col>
       </Row>
 
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+      <Row gutter={[12, 12]} className="morning-section-gap">
         <Col span={24}>
           <Card
             size="small"
             title="今日事项对齐"
             variant="borderless"
-            style={{ width: '100%' }}
-            styles={{ body: { paddingTop: 8, display: 'flex', flexDirection: 'column', minHeight: 0 } }}
+            className="morning-board-section-card morning-focus-ultra morning-alignment-card"
             extra={
               <Space size={6} wrap>
                 <Tag color="error">{`昨日未完成 ${toNumber(focusSummary.yesterday_due_not_done_count)}`}</Tag>
@@ -1029,12 +1162,13 @@ function MorningStandupBoard() {
             }
           >
             <Tabs
+              className="morning-alignment-tabs"
               activeKey={activeAlignmentTab}
               onChange={setActiveAlignmentTab}
               items={alignmentTabItems}
               size="small"
             />
-            <div style={{ marginTop: 6, width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'auto' }}>
+            <div className="morning-align-content-wrap">
               {activeAlignmentTab === 'members' ? (
                 members.length === 0 ? (
                   <Empty description="当前范围暂无成员" />
@@ -1051,19 +1185,21 @@ function MorningStandupBoard() {
                 <Empty description={alignmentView.emptyText} />
               ) : (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
+                  <div className="morning-align-toolbar">
                     <div>
-                      {activeAlignmentTab === 'in_progress' || activeAlignmentTab === 'yesterday_due' ? (
+                      {activeAlignmentTab === 'in_progress' ||
+                      activeAlignmentTab === 'done_today' ||
+                      activeAlignmentTab === 'yesterday_due' ? (
                         <Space size={6} wrap>
-                          <Text type="secondary" style={{ fontSize: 12 }}>
+                          <Text type="secondary" className="morning-toolbar-note">
                             视图模式
                           </Text>
                           <Segmented
                             size="small"
-                            value={activeAlignmentTab === 'in_progress' ? inProgressViewMode : yesterdayDueViewMode}
+                            value={activeAlignmentTab === 'yesterday_due' ? yesterdayDueViewMode : inProgressViewMode}
                             onChange={(value) => {
                               const nextMode = String(value)
-                              if (activeAlignmentTab === 'in_progress') {
+                              if (activeAlignmentTab === 'in_progress' || activeAlignmentTab === 'done_today') {
                                 setInProgressViewMode(nextMode)
                               } else if (activeAlignmentTab === 'yesterday_due') {
                                 setYesterdayDueViewMode(nextMode)
@@ -1077,7 +1213,7 @@ function MorningStandupBoard() {
                         </Space>
                       ) : null}
                     </div>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" className="morning-toolbar-note">
                       可左右滑动查看更多列
                     </Text>
                   </div>
@@ -1087,7 +1223,7 @@ function MorningStandupBoard() {
                     dataSource={alignmentView.dataSource}
                     pagination={false}
                     bordered={false}
-                    className="morning-focus-table-ultra"
+                    className="morning-focus-table-ultra morning-board-table"
                     scroll={alignmentView.scrollX ? { x: alignmentView.scrollX } : undefined}
                     sticky
                     expandable={alignmentView.treeMode ? { defaultExpandAllRows: true } : undefined}
@@ -1098,6 +1234,30 @@ function MorningStandupBoard() {
           </Card>
         </Col>
       </Row>
+
+      <Modal
+        title={`今日未安排成员（${unscheduledMembers.length}）`}
+        open={unscheduledModalOpen}
+        onCancel={() => setUnscheduledModalOpen(false)}
+        onOk={() => setUnscheduledModalOpen(false)}
+        okText="关闭"
+        cancelButtonProps={{ style: { display: 'none' } }}
+      >
+        {unscheduledMembers.length === 0 ? (
+          <Empty description="今日暂无未安排成员" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <Space wrap size={[8, 8]}>
+            {unscheduledMembers.map((member) => {
+              const displayName = String(member?.username || '').trim() || `用户${Number(member?.user_id) || ''}`
+              return (
+                <Tag key={member.user_id} color="blue">
+                  {displayName}
+                </Tag>
+              )
+            })}
+          </Space>
+        )}
+      </Modal>
 
     </div>
   )

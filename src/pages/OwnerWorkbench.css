@@ -1,0 +1,209 @@
+.owner-workbench-page {
+  --owner-sky: #38bdf8;
+  --owner-cyan: #22d3ee;
+  --owner-ink: #0f172a;
+  --owner-muted: #64748b;
+  --owner-shell-border: rgba(125, 211, 252, 0.3);
+  --owner-shell-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(246, 251, 255, 0.96) 100%);
+
+  position: relative;
+  padding: 12px;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+.owner-workbench-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(860px 240px at 6% -8%, rgba(34, 211, 238, 0.1), transparent 64%),
+    radial-gradient(900px 260px at 98% 0%, rgba(56, 189, 248, 0.1), transparent 64%);
+}
+
+.owner-workbench-layout {
+  position: relative;
+  z-index: 1;
+}
+
+.owner-shell-card,
+.owner-section-card {
+  border-radius: 14px !important;
+  border: 1px solid var(--owner-shell-border) !important;
+  background: var(--owner-shell-bg) !important;
+  box-shadow:
+    0 16px 32px rgba(2, 8, 20, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.45) inset;
+}
+
+.owner-shell-card .ant-card-head,
+.owner-section-card .ant-card-head {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.owner-overview-shell {
+  margin-bottom: 16px;
+}
+
+.owner-member-section {
+  margin-bottom: 16px;
+}
+
+.owner-no-access-card .ant-result {
+  padding-top: 32px;
+  padding-bottom: 24px;
+}
+
+.owner-refresh-text.ant-typography {
+  color: #52637b;
+}
+
+.owner-metric-col {
+  display: flex;
+}
+
+.owner-metric-col .ant-card {
+  width: 100%;
+}
+
+.owner-metric-card {
+  height: 168px;
+  border-radius: 12px !important;
+  border: 1px solid rgba(148, 163, 184, 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(246, 251, 255, 0.96)),
+    radial-gradient(180px 60px at 0% 0%, rgba(56, 189, 248, 0.12), transparent 78%) !important;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.owner-metric-card .ant-card-body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.owner-metric-value {
+  margin-top: 8px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.3px;
+  color: var(--owner-ink);
+}
+
+.owner-metric-value--success {
+  color: #15803d;
+}
+
+.owner-metric-value--danger {
+  color: #c2410c;
+}
+
+.owner-metric-value--accent {
+  color: #0369a1;
+}
+
+.owner-metric-card--waitlist .ant-card-body {
+  padding-bottom: 10px;
+}
+
+.owner-metric-stack {
+  width: 100%;
+}
+
+.owner-metric-note.ant-typography {
+  font-size: 12px;
+}
+
+.owner-waitlist-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.owner-inline-accent {
+  color: #0369a1;
+  font-weight: 600;
+}
+
+.owner-filter-toolbar {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(248, 252, 255, 0.9), rgba(240, 249, 255, 0.95));
+}
+
+.owner-filter-input--keyword {
+  width: 260px;
+}
+
+.owner-filter-input--member {
+  width: 180px;
+}
+
+.owner-filter-input--phase {
+  width: 220px;
+}
+
+.owner-toggle-group {
+  padding: 0 2px;
+}
+
+.owner-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.owner-workbench-table .ant-table {
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.owner-workbench-table .ant-table-thead > tr > th {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 600;
+  background: linear-gradient(180deg, rgba(240, 249, 255, 0.94), rgba(224, 242, 254, 0.84));
+  border-bottom: 1px solid rgba(125, 211, 252, 0.35);
+}
+
+.owner-workbench-table .ant-table-tbody > tr > td {
+  color: #334155;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.82);
+}
+
+.owner-workbench-table .ant-table-tbody > tr:hover > td {
+  background: rgba(240, 249, 255, 0.78) !important;
+}
+
+.owner-modal-form {
+  margin-top: 8px;
+}
+
+.owner-input-number-full {
+  width: 100%;
+}
+
+.owner-modal-note {
+  color: #667085;
+  font-size: 12px;
+}
+
+@media (max-width: 1199px) {
+  .owner-filter-input--keyword,
+  .owner-filter-input--member,
+  .owner-filter-input--phase {
+    width: 100%;
+  }
+
+  .owner-filter-toolbar {
+    padding: 8px;
+  }
+}
