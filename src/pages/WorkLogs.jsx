@@ -2108,7 +2108,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {reminderStats.overdueCount > 0 && (
                           <Alert
-                            message={`有 ${reminderStats.overdueCount} 项工作已超期`}
+                            title={`有 ${reminderStats.overdueCount} 项工作已超期`}
                             type="error"
                             showIcon
                             closable
@@ -2116,7 +2116,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                         )}
                         {reminderStats.dueSoonCount > 0 && (
                           <Alert
-                            message={`有 ${reminderStats.dueSoonCount} 项工作即将到期`}
+                            title={`有 ${reminderStats.dueSoonCount} 项工作即将到期`}
                             type="warning"
                             showIcon
                             closable
@@ -2124,7 +2124,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                         )}
                         {reminderStats.missingActualCount > 0 && (
                           <Alert
-                            message={`有 ${reminderStats.missingActualCount} 项工作今日有计划但未记录实际用时`}
+                            title={`有 ${reminderStats.missingActualCount} 项工作今日有计划但未记录实际用时`}
                             type="info"
                             showIcon
                             closable
