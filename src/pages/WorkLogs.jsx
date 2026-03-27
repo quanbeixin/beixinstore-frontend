@@ -1164,6 +1164,21 @@ function WorkLogs({ mode = 'dashboard' }) {
     })
   }, [actualForm, actualModalOpen, editingLog])
 
+  useEffect(() => {
+    if (!dailyEntryModalOpen || !operatingLog) return
+    const hasTodayActual = Number.isFinite(Number(operatingLog?.today_actual_hours))
+    const defaultActualHours = hasTodayActual
+      ? toNumber(operatingLog?.today_actual_hours, 0)
+      : toNumber(operatingLog?.today_planned_hours, 0) > 0
+        ? toNumber(operatingLog?.today_planned_hours, 0)
+        : 0
+    dailyEntryForm.setFieldsValue({
+      entry_date: getTodayDateString(),
+      actual_hours: defaultActualHours,
+      description: '',
+    })
+  }, [dailyEntryForm, dailyEntryModalOpen, operatingLog])
+
   const reloadCurrentPageData = useCallback(async () => {
     if (isHistoryPage) {
       await Promise.all([loadBase(), loadLogs()])
@@ -1284,19 +1299,7 @@ function WorkLogs({ mode = 'dashboard' }) {
   }
 
   const openDailyEntryModal = (record) => {
-    const hasTodayActual = Number.isFinite(Number(record?.today_actual_hours))
-    const defaultActualHours = hasTodayActual
-      ? toNumber(record?.today_actual_hours, 0)
-      : toNumber(record?.today_planned_hours, 0) > 0
-        ? toNumber(record?.today_planned_hours, 0)
-        : 0
-
     setOperatingLog(record)
-    dailyEntryForm.setFieldsValue({
-      entry_date: getTodayDateString(),
-      actual_hours: defaultActualHours,
-      description: '',
-    })
     setDailyEntryModalOpen(true)
   }
 

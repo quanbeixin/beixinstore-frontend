@@ -758,17 +758,15 @@ function OwnerWorkbench() {
                   <Text type="secondary">待填报名单</Text>
                 </Space>
                 {noFillMembers.length === 0 ? (
-                  <Text type="secondary" className="owner-metric-note">
-                    今日有安排成员已填报
-                  </Text>
+                  <Text type="secondary">今日有安排成员均已填报</Text>
                 ) : (
-                  <div className="owner-waitlist-tags">
+                  <Space wrap>
                     {noFillMembers.map((member) => (
-                      <Tag color="error" key={member.id}>
+                      <Tag color="orange" key={member.id}>
                         {member.username || `用户${member.id}`}
                       </Tag>
                     ))}
-                  </div>
+                  </Space>
                 )}
               </Space>
             </Card>

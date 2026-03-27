@@ -1,11 +1,14 @@
 import { request } from './http'
+import { cachedRequest, clearCache } from '../utils/requestCache'
 
 export function getWorkItemTypesApi(params) {
-  return request.get('/work/item-types', { params })
+  const key = `item-types-${JSON.stringify(params)}`
+  return cachedRequest(key, () => request.get('/work/item-types', { params }))
 }
 
 export function getWorkPhaseTypesApi(params) {
-  return request.get('/work/phase-types', { params })
+  const key = `phase-types-${JSON.stringify(params)}`
+  return cachedRequest(key, () => request.get('/work/phase-types', { params }))
 }
 
 export function createWorkItemTypeApi(payload) {
@@ -13,7 +16,8 @@ export function createWorkItemTypeApi(payload) {
 }
 
 export function getWorkDemandsApi(params) {
-  return request.get('/work/demands', { params })
+  const key = `demands-${JSON.stringify(params)}`
+  return cachedRequest(key, () => request.get('/work/demands', { params }))
 }
 
 export function getWorkDemandByIdApi(demandId) {
@@ -21,14 +25,17 @@ export function getWorkDemandByIdApi(demandId) {
 }
 
 export function createWorkDemandApi(payload) {
+  clearCache()
   return request.post('/work/demands', payload)
 }
 
 export function updateWorkDemandApi(demandId, payload) {
+  clearCache()
   return request.put(`/work/demands/${demandId}`, payload)
 }
 
 export function deleteWorkDemandApi(demandId) {
+  clearCache()
   return request.delete(`/work/demands/${demandId}`)
 }
 
@@ -71,10 +78,12 @@ export function replaceDemandWorkflowLatestApi(demandId, payload = {}) {
 }
 
 export function getWorkLogsApi(params) {
-  return request.get('/work/logs', { params })
+  const key = `logs-${JSON.stringify(params)}`
+  return cachedRequest(key, () => request.get('/work/logs', { params }), 3000)
 }
 
 export function createWorkLogApi(payload) {
+  clearCache('workbench-me')
   return request.post('/work/logs', payload)
 }
 
@@ -83,10 +92,12 @@ export function createOwnerAssignedLogApi(payload) {
 }
 
 export function updateWorkLogApi(logId, payload) {
+  clearCache('workbench-me')
   return request.put(`/work/logs/${logId}`, payload)
 }
 
 export function deleteWorkLogApi(logId) {
+  clearCache('workbench-me')
   return request.delete(`/work/logs/${logId}`)
 }
 
@@ -111,7 +122,7 @@ export function updateWorkLogOwnerEstimateApi(logId, payload) {
 }
 
 export function getMyWorkbenchApi() {
-  return request.get('/work/workbench/me')
+  return cachedRequest('workbench-me', () => request.get('/work/workbench/me'))
 }
 
 export function getMyWeeklyReportApi(params) {
