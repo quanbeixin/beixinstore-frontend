@@ -732,6 +732,38 @@ function WorkLogs({ mode = 'dashboard' }) {
     )
   }, [activeItems])
 
+  // 提醒统计
+  const reminderStats = useMemo(() => {
+    const today = getTodayDateString()
+    const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD')
+
+    let overdueCount = 0
+    let dueSoonCount = 0
+    let missingActualCount = 0
+
+    activeItems.forEach(item => {
+      const completionDate = item?.expected_completion_date
+      const status = item?.log_status || 'IN_PROGRESS'
+
+      // 已超期
+      if (completionDate && completionDate < today && status !== 'DONE') {
+        overdueCount++
+      }
+      // 即将到期
+      if (completionDate && (completionDate === today || completionDate === tomorrow) && status !== 'DONE') {
+        dueSoonCount++
+      }
+      // 今日有计划但未记录实际
+      const todayPlanned = toNumber(item?.today_planned_hours, 0)
+      const todayActual = toNumber(item?.today_actual_hours, 0)
+      if (todayPlanned > 0 && todayActual === 0) {
+        missingActualCount++
+      }
+    })
+
+    return { overdueCount, dueSoonCount, missingActualCount }
+  }, [activeItems])
+
   const activeSummaryQuickFilterValues = useMemo(
     () => ({
       todo: makeLifecycleFilterValue('TODO'),
@@ -2069,6 +2101,36 @@ function WorkLogs({ mode = 'dashboard' }) {
                   <Empty description="暂无未完成事项" />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+                    {/* 提醒区域 */}
+                    {(reminderStats.overdueCount > 0 || reminderStats.dueSoonCount > 0 || reminderStats.missingActualCount > 0) && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {reminderStats.overdueCount > 0 && (
+                          <Alert
+                            message={`有 ${reminderStats.overdueCount} 项工作已超期`}
+                            type="error"
+                            showIcon
+                            closable
+                          />
+                        )}
+                        {reminderStats.dueSoonCount > 0 && (
+                          <Alert
+                            message={`有 ${reminderStats.dueSoonCount} 项工作即将到期`}
+                            type="warning"
+                            showIcon
+                            closable
+                          />
+                        )}
+                        {reminderStats.missingActualCount > 0 && (
+                          <Alert
+                            message={`有 ${reminderStats.missingActualCount} 项工作今日有计划但未记录实际用时`}
+                            type="info"
+                            showIcon
+                            closable
+                          />
+                        )}
+                      </div>
+                    )}
+
                     <div
                       style={{
                         display: 'grid',
