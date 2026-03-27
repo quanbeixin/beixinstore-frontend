@@ -19,6 +19,7 @@ const DemandInsightBoard = lazy(() => import('./pages/DemandInsightBoard'))
 const MemberRhythmBoard = lazy(() => import('./pages/MemberRhythmBoard'))
 const WorkDemands = lazy(() => import('./pages/WorkDemands'))
 const WorkLogs = lazy(() => import('./pages/WorkLogs'))
+const WorkLogHistory = lazy(() => import('./pages/WorkLogHistory'))
 const MorningStandupBoard = lazy(() => import('./pages/MorningStandupBoard'))
 const OwnerWorkbench = lazy(() => import('./pages/OwnerWorkbench'))
 const PersonalSettings = lazy(() => import('./pages/PersonalSettings'))
@@ -45,6 +46,7 @@ const PAGE_COMPONENTS = {
   rolePermissions: RolePermissions,
   workDemands: WorkDemands,
   workLogs: WorkLogs,
+  workLogHistory: WorkLogHistory,
   userDepartments: UserDepartments,
   users: Users,
 }
@@ -181,4 +183,3 @@ function App() {
 }
 
 export default App
-

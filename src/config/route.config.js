@@ -58,6 +58,15 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/work-log-history',
+    componentKey: 'workLogHistory',
+    requiredPermission: 'worklog.view.self',
+    page: {
+      title: '历史工作记录',
+      subtitle: '集中查看、筛选、维护个人历史工作记录。',
+    },
+  },
+  {
     path: '/morning-standup',
     componentKey: 'morningStandupBoard',
     requiredPermission: null,

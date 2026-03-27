@@ -1,8 +1,10 @@
 ﻿import {
+  ArrowRightOutlined,
   EditOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   FileTextOutlined,
+  LeftOutlined,
   ReloadOutlined,
   SaveOutlined,
   UnorderedListOutlined,
@@ -29,6 +31,7 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   createWorkLogApi,
   createLogDailyEntryApi,
@@ -101,6 +104,15 @@ const ACTIVE_ITEM_VISIBLE_COUNT = 2
 const ACTIVE_ITEM_CARD_ESTIMATED_HEIGHT = 330
 const ACTIVE_ITEM_CARD_GAP = 12
 const ACTIVE_ITEM_LIST_VIEW_HEIGHT = `calc(${ACTIVE_ITEM_VISIBLE_COUNT} * ${ACTIVE_ITEM_CARD_ESTIMATED_HEIGHT}px + ${(ACTIVE_ITEM_VISIBLE_COUNT - 1) * ACTIVE_ITEM_CARD_GAP}px)`
+const HISTORY_VIEW_STATE_KEY = 'work_log_history_view_state'
+const HISTORY_DATE_PRESET_OPTIONS = [
+  { label: '全部时间', value: 'ALL' },
+  { label: '近7天', value: 'LAST_7_DAYS' },
+  { label: '近30天', value: 'LAST_30_DAYS' },
+  { label: '本周', value: 'THIS_WEEK' },
+  { label: '本月', value: 'THIS_MONTH' },
+  { label: '自定义', value: 'CUSTOM' },
+]
 const LOG_STATUS_FILTER_OPTIONS = [
   { label: '全部状态', value: 'ALL' },
   ...ITEM_STATUS_OPTIONS.map((item) => ({
@@ -141,9 +153,15 @@ const COMPACT_SURFACE_LABEL_STYLE = { fontSize: 11, color: MUTED_TEXT_COLOR }
 const ACTION_TRANSITION = 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)'
 const ACTIVE_CARD_BASE_STYLE = {
   borderRadius: 10,
-  padding: 12,
+  padding: 10,
   transition: ACTION_TRANSITION,
   boxShadow: '0 1px 2px rgba(16, 24, 40, 0.06)',
+}
+const HISTORY_HEADER_CARD_STYLE = {
+  border: '1px solid #dbe7ff',
+  borderRadius: 14,
+  background: 'linear-gradient(135deg, #f8fbff 0%, #eef4ff 100%)',
+  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
 }
 
 function getTodayDateString() {
@@ -161,6 +179,55 @@ function formatDateInput(date) {
   const mm = String(date.getMonth() + 1).padStart(2, '0')
   const dd = String(date.getDate()).padStart(2, '0')
   return `${yyyy}-${mm}-${dd}`
+}
+
+function startOfWeek(date) {
+  const source = new Date(date)
+  const weekday = source.getDay()
+  const offsetToMonday = weekday === 0 ? 6 : weekday - 1
+  return addDays(source, -offsetToMonday)
+}
+
+function startOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+function resolveHistoryDatePresetRange(preset) {
+  const today = new Date()
+  const normalizedPreset = String(preset || 'ALL').trim().toUpperCase()
+
+  if (normalizedPreset === 'LAST_7_DAYS') {
+    return {
+      startDate: formatDateInput(addDays(today, -6)),
+      endDate: formatDateInput(today),
+    }
+  }
+
+  if (normalizedPreset === 'LAST_30_DAYS') {
+    return {
+      startDate: formatDateInput(addDays(today, -29)),
+      endDate: formatDateInput(today),
+    }
+  }
+
+  if (normalizedPreset === 'THIS_WEEK') {
+    return {
+      startDate: formatDateInput(startOfWeek(today)),
+      endDate: formatDateInput(today),
+    }
+  }
+
+  if (normalizedPreset === 'THIS_MONTH') {
+    return {
+      startDate: formatDateInput(startOfMonth(today)),
+      endDate: formatDateInput(today),
+    }
+  }
+
+  return {
+    startDate: '',
+    endDate: '',
+  }
 }
 
 function getDefaultWeeklyRange() {
@@ -271,12 +338,6 @@ function getDisplayStatusMeta(record) {
   return getUnifiedStatusMeta(record)
 }
 
-function getTaskSourceLabel(source) {
-  if (source === 'OWNER_ASSIGN') return 'Owner指派'
-  if (source === 'WORKFLOW_AUTO') return '流程待办'
-  return '自主填报'
-}
-
 function isOverdueDate(value) {
   const date = formatDateOnly(value)
   if (!date || date === '-') return false
@@ -301,6 +362,62 @@ function calcRemainingWorkload(item) {
   const estimate = toNumber(item?.personal_estimate_hours, 0)
   const completed = toNumber(item?.cumulative_actual_hours, 0)
   return Math.max(estimate - completed, 0)
+}
+
+function readHistoryViewState() {
+  if (typeof window === 'undefined') {
+    return {
+      page: 1,
+      pageSize: 10,
+      logStatusFilter: 'ALL',
+      datePreset: 'ALL',
+      customStartDate: '',
+      customEndDate: '',
+    }
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(HISTORY_VIEW_STATE_KEY)
+    if (!rawValue) {
+      return {
+        page: 1,
+        pageSize: 10,
+        logStatusFilter: 'ALL',
+        datePreset: 'ALL',
+        customStartDate: '',
+        customEndDate: '',
+      }
+    }
+
+    const parsed = JSON.parse(rawValue)
+    return {
+      page: Math.max(1, Number(parsed?.page) || 1),
+      pageSize: Math.max(1, Number(parsed?.pageSize) || 10),
+      logStatusFilter: String(parsed?.logStatusFilter || 'ALL'),
+      datePreset: String(parsed?.datePreset || 'ALL'),
+      customStartDate: String(parsed?.customStartDate || ''),
+      customEndDate: String(parsed?.customEndDate || ''),
+    }
+  } catch {
+    return {
+      page: 1,
+      pageSize: 10,
+      logStatusFilter: 'ALL',
+      datePreset: 'ALL',
+      customStartDate: '',
+      customEndDate: '',
+    }
+  }
+}
+
+function writeHistoryViewState(nextState) {
+  if (typeof window === 'undefined') return
+
+  try {
+    window.sessionStorage.setItem(HISTORY_VIEW_STATE_KEY, JSON.stringify(nextState))
+  } catch {
+    // noop
+  }
 }
 
 function getStatusActionButtonStyle(status, isCurrent) {
@@ -427,7 +544,10 @@ function buildDailyTimeline(plans = [], entries = []) {
     .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
 }
 
-function WorkLogs() {
+function WorkLogs({ mode = 'dashboard' }) {
+  const navigate = useNavigate()
+  const isHistoryPage = mode === 'history'
+  const initialHistoryViewState = useMemo(() => readHistoryViewState(), [])
   const canCreate = hasPermission('worklog.create')
   const canView = hasPermission('worklog.view.self')
   const canUpdate = hasPermission('worklog.update.self')
@@ -472,12 +592,23 @@ function WorkLogs() {
   const [weeklyLoading, setWeeklyLoading] = useState(false)
   const [weeklyRange, setWeeklyRange] = useState(() => getDefaultWeeklyRange())
   const [weeklyReport, setWeeklyReport] = useState(null)
-  const [logStatusFilter, setLogStatusFilter] = useState('ALL')
+  const [historyDatePreset, setHistoryDatePreset] = useState(() =>
+    isHistoryPage ? initialHistoryViewState.datePreset : 'ALL',
+  )
+  const [historyCustomStartDate, setHistoryCustomStartDate] = useState(() =>
+    isHistoryPage ? initialHistoryViewState.customStartDate : '',
+  )
+  const [historyCustomEndDate, setHistoryCustomEndDate] = useState(() =>
+    isHistoryPage ? initialHistoryViewState.customEndDate : '',
+  )
+  const [logStatusFilter, setLogStatusFilter] = useState(() =>
+    isHistoryPage ? initialHistoryViewState.logStatusFilter : 'ALL',
+  )
   const [isQuickCompletionDateTouched, setIsQuickCompletionDateTouched] = useState(false)
   const quickCompletionDateAutoSyncRef = useRef(false)
 
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(() => (isHistoryPage ? initialHistoryViewState.page : 1))
+  const [pageSize, setPageSize] = useState(() => (isHistoryPage ? initialHistoryViewState.pageSize : 10))
   const [total, setTotal] = useState(0)
 
   const selectedTypeId = Form.useWatch('item_type_id', form)
@@ -511,6 +642,20 @@ function WorkLogs() {
         value: item.id,
         label: item.name || item.id,
       })),
+    [demands],
+  )
+
+  const quickDemandOptions = useMemo(
+    () =>
+      demands.map((item) => {
+        const fullLabel = String(item?.name || item?.id || '').trim()
+        const shortLabel = truncateText(fullLabel, 28)
+        return {
+          value: item.id,
+          fullLabel,
+          label: shortLabel === fullLabel ? fullLabel : <span title={fullLabel}>{shortLabel}</span>,
+        }
+      }),
     [demands],
   )
 
@@ -587,6 +732,15 @@ function WorkLogs() {
     )
   }, [activeItems])
 
+  const activeSummaryQuickFilterValues = useMemo(
+    () => ({
+      todo: makeLifecycleFilterValue('TODO'),
+      inProgress: makeLifecycleFilterValue('IN_PROGRESS'),
+      overdue: makeUnifiedFilterValue('OVERDUE'),
+    }),
+    [],
+  )
+
   const workflowNodeByDemandId = useMemo(() => {
     const todos = Array.isArray(workbench?.workflow_todos) ? workbench.workflow_todos : []
     const map = new Map()
@@ -646,6 +800,36 @@ function WorkLogs() {
     () => (Array.isArray(weeklyReport?.daily_breakdown) ? weeklyReport.daily_breakdown : []),
     [weeklyReport],
   )
+  const historyDateRange = useMemo(() => {
+    if (String(historyDatePreset || '').trim().toUpperCase() === 'CUSTOM') {
+      return {
+        startDate: String(historyCustomStartDate || '').trim(),
+        endDate: String(historyCustomEndDate || '').trim(),
+      }
+    }
+    return resolveHistoryDatePresetRange(historyDatePreset)
+  }, [historyCustomEndDate, historyCustomStartDate, historyDatePreset])
+  const currentHistoryFilterLabel = useMemo(() => {
+    const matched = LOG_STATUS_FILTER_OPTIONS.find((item) => item.value === logStatusFilter)
+    return matched?.label || '全部状态'
+  }, [logStatusFilter])
+  const currentHistoryDatePresetLabel = useMemo(() => {
+    const matched = HISTORY_DATE_PRESET_OPTIONS.find((item) => item.value === historyDatePreset)
+    return matched?.label || '全部时间'
+  }, [historyDatePreset])
+  const currentHistoryDateRangeText = useMemo(() => {
+    if (historyDateRange.startDate && !historyDateRange.endDate) return `${historyDateRange.startDate} ~ 至今`
+    if (!historyDateRange.startDate && historyDateRange.endDate) return `最早 ~ ${historyDateRange.endDate}`
+    if (!historyDateRange.startDate && !historyDateRange.endDate) return '全部时间'
+    return `${historyDateRange.startDate} ~ ${historyDateRange.endDate}`
+  }, [historyDateRange.endDate, historyDateRange.startDate])
+  const isHistoryDateRangeInvalid = useMemo(() => {
+    return (
+      Boolean(historyDateRange.startDate) &&
+      Boolean(historyDateRange.endDate) &&
+      historyDateRange.startDate > historyDateRange.endDate
+    )
+  }, [historyDateRange.endDate, historyDateRange.startDate])
 
   const weeklySummaryText = useMemo(() => {
     if (!weeklyReport) return ''
@@ -685,12 +869,16 @@ function WorkLogs() {
   const loadBase = useCallback(async () => {
     setLoadingBase(true)
     try {
-      const [typeResult, demandResult, phaseResult, benchResult] = await Promise.all([
+      const requests = [
         getWorkItemTypesApi({ enabled_only: 1 }),
         getWorkDemandsApi({ page: 1, pageSize: 1000 }),
         getWorkPhaseTypesApi({ enabled_only: 1 }),
-        getMyWorkbenchApi(),
-      ])
+      ]
+      if (!isHistoryPage) {
+        requests.push(getMyWorkbenchApi())
+      }
+
+      const [typeResult, demandResult, phaseResult, benchResult] = await Promise.all(requests)
 
       if (!typeResult?.success) {
         message.error(typeResult?.message || '获取事项类型失败')
@@ -707,7 +895,7 @@ function WorkLogs() {
         return
       }
 
-      if (!benchResult?.success) {
+      if (!isHistoryPage && !benchResult?.success) {
         message.error(benchResult?.message || '获取工作台数据失败')
         return
       }
@@ -720,16 +908,24 @@ function WorkLogs() {
           phase_name: item.phase_name,
         })),
       )
-      setWorkbench(benchResult.data || {})
+      if (!isHistoryPage) {
+        setWorkbench(benchResult?.data || {})
+      }
     } catch (error) {
       message.error(error?.message || '加载基础数据失败')
     } finally {
       setLoadingBase(false)
     }
-  }, [])
+  }, [isHistoryPage])
 
   const loadLogs = useCallback(async () => {
-    if (!canView) return
+    if (!canView || !isHistoryPage) return
+    if (isHistoryDateRangeInvalid) {
+      message.warning('开始日期不能晚于结束日期')
+      setLogs([])
+      setTotal(0)
+      return
+    }
 
     setLoadingLogs(true)
     try {
@@ -737,6 +933,8 @@ function WorkLogs() {
       const result = await getWorkLogsApi({
         page,
         pageSize,
+        ...(historyDateRange.startDate ? { start_date: historyDateRange.startDate } : {}),
+        ...(historyDateRange.endDate ? { end_date: historyDateRange.endDate } : {}),
         ...(statusFilter.kind === 'lifecycle' ? { log_status: statusFilter.value } : {}),
         ...(statusFilter.kind === 'unified' ? { unified_status: statusFilter.value } : {}),
       })
@@ -752,7 +950,16 @@ function WorkLogs() {
     } finally {
       setLoadingLogs(false)
     }
-  }, [canView, page, pageSize, logStatusFilter])
+  }, [
+    canView,
+    historyDateRange.endDate,
+    historyDateRange.startDate,
+    isHistoryDateRangeInvalid,
+    isHistoryPage,
+    page,
+    pageSize,
+    logStatusFilter,
+  ])
 
   const fetchWeeklyReport = useCallback(
     async (rangeInput = weeklyRange) => {
@@ -858,8 +1065,29 @@ function WorkLogs() {
   }, [form, loadBase])
 
   useEffect(() => {
+    if (!isHistoryPage) return
     loadLogs()
-  }, [loadLogs])
+  }, [isHistoryPage, loadLogs])
+
+  useEffect(() => {
+    if (!isHistoryPage) return
+    writeHistoryViewState({
+      page,
+      pageSize,
+      logStatusFilter,
+      datePreset: historyDatePreset,
+      customStartDate: historyCustomStartDate,
+      customEndDate: historyCustomEndDate,
+    })
+  }, [
+    historyCustomEndDate,
+    historyCustomStartDate,
+    historyDatePreset,
+    isHistoryPage,
+    logStatusFilter,
+    page,
+    pageSize,
+  ])
 
   useEffect(() => {
     if (!selectedDemandId || normalizedSelectedQuickPhaseKeys.length === 0) return
@@ -902,8 +1130,16 @@ function WorkLogs() {
     })
   }, [actualForm, actualModalOpen, editingLog])
 
+  const reloadCurrentPageData = useCallback(async () => {
+    if (isHistoryPage) {
+      await Promise.all([loadBase(), loadLogs()])
+      return
+    }
+    await loadBase()
+  }, [isHistoryPage, loadBase, loadLogs])
+
   const handleRefresh = async () => {
-    await Promise.all([loadBase(), loadLogs()])
+    await reloadCurrentPageData()
   }
 
   const handleCreateLog = async (values) => {
@@ -982,13 +1218,26 @@ function WorkLogs() {
         personal_estimate_hours: 1,
       })
       setIsQuickCompletionDateTouched(false)
-      await Promise.all([loadBase(), loadLogs()])
+      await reloadCurrentPageData()
     } catch (error) {
       message.error(error?.message || '提交失败')
     } finally {
       setSubmitting(false)
     }
   }
+
+  const openHistoryPage = () => {
+    navigate('/work-log-history')
+  }
+
+  const backToWorkbench = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      navigate(-1)
+      return
+    }
+    navigate('/work-logs')
+  }
+
   const openActualModal = (record) => {
     setEditingLog(record)
     setActualModalOpen(true)
@@ -1001,10 +1250,17 @@ function WorkLogs() {
   }
 
   const openDailyEntryModal = (record) => {
+    const hasTodayActual = Number.isFinite(Number(record?.today_actual_hours))
+    const defaultActualHours = hasTodayActual
+      ? toNumber(record?.today_actual_hours, 0)
+      : toNumber(record?.today_planned_hours, 0) > 0
+        ? toNumber(record?.today_planned_hours, 0)
+        : 0
+
     setOperatingLog(record)
     dailyEntryForm.setFieldsValue({
       entry_date: getTodayDateString(),
-      actual_hours: toNumber(record?.today_planned_hours, 0) > 0 ? toNumber(record.today_planned_hours, 0) : 0,
+      actual_hours: defaultActualHours,
       description: '',
     })
     setDailyEntryModalOpen(true)
@@ -1069,9 +1325,15 @@ function WorkLogs() {
         return
       }
 
-      message.success('今日投入已登记')
+      const savedEntryDate = String(values.entry_date || getTodayDateString()).trim()
+      const todayDate = getTodayDateString()
+      if (savedEntryDate && savedEntryDate !== todayDate) {
+        message.success('投入已登记（仅填报日期为今天时会联动今日汇总）')
+      } else {
+        message.success('今日投入已登记')
+      }
       closeDailyEntryModal()
-      await Promise.all([loadBase(), loadLogs()])
+      await reloadCurrentPageData()
     } catch (error) {
       if (!error?.errorFields) {
         message.error(error?.message || '登记今日投入失败')
@@ -1132,7 +1394,7 @@ function WorkLogs() {
 
       message.success('事项进展已更新')
       closeActualModal()
-      await Promise.all([loadBase(), loadLogs()])
+      await reloadCurrentPageData()
     } catch (error) {
       if (error?.errorFields) {
         message.error('请检查实际用时表单输入')
@@ -1160,7 +1422,7 @@ function WorkLogs() {
       }
 
       message.success('事项状态已更新')
-      await Promise.all([loadBase(), loadLogs()])
+      await reloadCurrentPageData()
     } catch (error) {
       message.error(error?.message || '更新事项状态失败')
     } finally {
@@ -1180,7 +1442,7 @@ function WorkLogs() {
       }
 
       message.success('工作记录已删除')
-      await Promise.all([loadBase(), loadLogs()])
+      await reloadCurrentPageData()
     } catch (error) {
       message.error(error?.message || '删除工作记录失败')
     } finally {
@@ -1190,6 +1452,48 @@ function WorkLogs() {
 
   const handleLogStatusFilterChange = (next) => {
     setLogStatusFilter(next)
+    if (page !== 1) {
+      setPage(1)
+    }
+  }
+
+  const handleSummaryQuickFilterClick = (nextFilterValue) => {
+    setActiveItemStatusFilter((prev) => (prev === nextFilterValue ? 'ALL' : nextFilterValue))
+  }
+
+  const handleHistoryDatePresetChange = (next) => {
+    setHistoryDatePreset(next)
+    const normalizedNext = String(next || '').trim().toUpperCase()
+    if (normalizedNext === 'CUSTOM') {
+      // 保留当前输入，便于继续调整
+    } else {
+      const nextRange = resolveHistoryDatePresetRange(normalizedNext)
+      setHistoryCustomStartDate(nextRange.startDate || '')
+      setHistoryCustomEndDate(nextRange.endDate || '')
+    }
+    if (page !== 1) {
+      setPage(1)
+    }
+  }
+
+  const handleHistoryCustomDateChange = (field, value) => {
+    setHistoryDatePreset('CUSTOM')
+    if (field === 'start_date') {
+      setHistoryCustomStartDate(value || '')
+    }
+    if (field === 'end_date') {
+      setHistoryCustomEndDate(value || '')
+    }
+    if (page !== 1) {
+      setPage(1)
+    }
+  }
+
+  const handleResetHistoryFilters = () => {
+    setLogStatusFilter('ALL')
+    setHistoryDatePreset('ALL')
+    setHistoryCustomStartDate('')
+    setHistoryCustomEndDate('')
     if (page !== 1) {
       setPage(1)
     }
@@ -1242,6 +1546,24 @@ function WorkLogs() {
       width: 140,
     },
     {
+      title: '描述',
+      dataIndex: 'description',
+      key: 'description',
+      width: 260,
+      ellipsis: {
+        showTitle: false,
+      },
+      render: (value) => {
+        const text = String(value || '').trim()
+        if (!text) return '-'
+        return (
+          <Tooltip title={text}>
+            <span style={{ fontWeight: 600, color: '#101828' }}>{text}</span>
+          </Tooltip>
+        )
+      },
+    },
+    {
       title: '关联需求',
       dataIndex: 'demand_id',
       key: 'demand_id',
@@ -1275,24 +1597,6 @@ function WorkLogs() {
       key: 'log_completed_at',
       width: 130,
       render: (value) => formatDateOnly(value),
-    },
-    {
-      title: '描述',
-      dataIndex: 'description',
-      key: 'description',
-      width: 260,
-      ellipsis: {
-        showTitle: false,
-      },
-      render: (value) => {
-        const text = String(value || '').trim()
-        if (!text) return '-'
-        return (
-          <Tooltip title={text}>
-            <span>{text}</span>
-          </Tooltip>
-        )
-      },
     },
     {
       title: '预计整体用时(h)',
@@ -1510,569 +1814,691 @@ function WorkLogs() {
 
   return (
     <div style={{ padding: 12, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={12} lg={4}>
-          <Card variant="borderless" style={{ height: '100%' }}>
-            <Space>
-              <UnorderedListOutlined />
-              <Text type="secondary">今日应完成事项</Text>
-            </Space>
-            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
-              {toNumber(workbench?.today?.scheduled_item_count_today, 0)}
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={4}>
-          <Card variant="borderless" style={{ height: '100%' }}>
-            <Space>
-              <CheckCircleOutlined />
-              <Text type="secondary">今日已填报事项</Text>
-            </Space>
-            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
-              {toNumber(workbench?.today?.filled_item_count_today, 0)}
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={5}>
-          <Card variant="borderless" style={{ height: '100%' }}>
-            <Space>
-              <ClockCircleOutlined />
-              <Text type="secondary">今日计划用时(h)</Text>
-            </Space>
-            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
-              {toNumber(workbench?.today?.planned_hours_today, 0).toFixed(1)}
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={5}>
-          <Card variant="borderless" style={{ height: '100%' }}>
-            <Space>
-              <FileTextOutlined />
-              <Text type="secondary">今日实际用时(h)</Text>
-            </Space>
-            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
-              {toNumber(workbench?.today?.actual_hours_today, 0).toFixed(1)}
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={24} lg={6}>
-          <Card variant="borderless" style={{ height: '100%' }}>
-            <Space>
-              <ClockCircleOutlined />
-              <Text type="secondary">今日可指派用时(h)</Text>
-            </Space>
-            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#0958d9' }}>
-              {toNumber(workbench?.today?.assignable_hours_today, 0).toFixed(1)}
-            </div>
-          </Card>
-        </Col>
-      </Row>
-
-      <Row gutter={[16, 16]} style={{ alignItems: 'stretch' }}>
-        <Col xs={24} lg={10} style={{ display: 'flex' }}>
-          <Card
-            title="快速填报"
-            variant="borderless"
-            style={{ width: '100%', height: '100%' }}
-            extra={
-              <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={loadingBase || loadingLogs}>
-                重置
-              </Button>
-            }
-          >
-            <Form
-              form={form}
-              layout="vertical"
-              onFinish={handleCreateLog}
-              onValuesChange={(changedValues) => {
-                if (Object.prototype.hasOwnProperty.call(changedValues, 'expected_completion_date')) {
-                  if (quickCompletionDateAutoSyncRef.current) {
-                    quickCompletionDateAutoSyncRef.current = false
-                  } else {
-                    setIsQuickCompletionDateTouched(true)
-                  }
-                }
-
-                if (
-                  Object.prototype.hasOwnProperty.call(changedValues, 'expected_start_date') &&
-                  !isQuickCompletionDateTouched
-                ) {
-                  quickCompletionDateAutoSyncRef.current = true
-                  form.setFieldValue('expected_completion_date', changedValues.expected_start_date || undefined)
-                }
-              }}
-              disabled={!canCreate || loadingBase}
-            >
-              <Row gutter={12}>
-                <Col xs={24} md={12}>
-                  <Form.Item label="填报日期" name="log_date" rules={[{ required: true, message: '请选择日期' }]}>
-                    <Input type="date" />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    label="事项类型"
-                    name="item_type_id"
-                    rules={[{ required: true, message: '请选择事项类型' }]}
-                  >
-                    <Select options={itemTypeOptions} placeholder="请选择事项类型" />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    label="关联需求"
-                    name="demand_id"
-                    rules={
-                      Number(selectedItemType?.require_demand) === 1
-                        ? [{ required: true, message: '当前事项类型需关联需求' }]
-                        : []
-                    }
-                  >
-                    <Select
-                      allowClear
-                      showSearch
-                      options={demandOptions}
-                      placeholder="请选择需求池中的需求（可选）"
-                      optionFilterProp="label"
-                      onChange={(next) => {
-                        if (!next) {
-                          form.setFieldValue('phase_key', undefined)
-                        }
-                      }}
-                    />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    label="需求任务"
-                    name="phase_key"
-                    rules={selectedDemandId ? [{ required: true, message: '请选择需求任务' }] : []}
-                    extra={isQuickBatchPhaseMode ? '可多选；提交时会按预计整体用时平均拆分为多条事项' : undefined}
-                  >
-                    <Select
-                      allowClear
-                      showSearch
-                      mode={isQuickBatchPhaseMode ? 'multiple' : undefined}
-                      options={quickPhaseOptionsWithSelected}
-                      placeholder={selectedDemandId ? '请选择需求任务' : '请先选择关联需求'}
-                      optionFilterProp="label"
-                      disabled={!selectedDemandId}
-                      maxTagCount="responsive"
-                    />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    label="预计开始日期"
-                    name="expected_start_date"
-                    rules={[{ required: true, message: '请选择预计开始日期' }]}
-                  >
-                    <Input type="date" />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    label="预计完成日期"
-                    name="expected_completion_date"
-                    rules={[{ required: true, message: '请选择预计完成日期' }]}
-                  >
-                    <Input type="date" />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    label="预计整体用时(h)"
-                    name="personal_estimate_hours"
-                    rules={[{ required: true, message: '请输入预计整体用时' }]}
-                  >
-                    <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
-                  </Form.Item>
-                </Col>
-              </Row>
-
-              <Form.Item
-                label="工作描述"
-                name="description"
-                rules={[{ required: true, message: '请填写工作描述' }]}
-              >
-                <Input.TextArea
-                  rows={3}
-                  maxLength={2000}
-                  placeholder="建议写清楚：做了什么、产出了什么、是否有风险"
-                />
-              </Form.Item>
-
-              <Button
-                type="primary"
-                htmlType="submit"
-                icon={<SaveOutlined />}
-                loading={submitting}
-                disabled={!canCreate}
-              >
-                提交记录
-              </Button>
-            </Form>
-          </Card>
-        </Col>
-
-        <Col xs={24} lg={14} style={{ display: 'flex' }}>
-          <Card
-            title="我的进行中事项"
-            variant="borderless"
-            style={{ width: '100%' }}
-            styles={{
-              body: {
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
-                paddingTop: 10,
-              },
-            }}
-          >
-            {activeItems.length === 0 ? (
-              <Empty description="暂无未完成事项" />
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                    gap: 8,
-                  }}
-                >
-                  <div style={SURFACE_CARD_STYLE}>
-                    <div style={SURFACE_LABEL_STYLE}>待开始</div>
-                    <div style={SURFACE_VALUE_STYLE}>{activeItemSummary.todo}</div>
-                  </div>
-                  <div style={SURFACE_CARD_STYLE}>
-                    <div style={SURFACE_LABEL_STYLE}>进行中</div>
-                    <div style={SURFACE_VALUE_STYLE}>{activeItemSummary.inProgress}</div>
-                  </div>
-                  <div style={WARNING_SURFACE_CARD_STYLE}>
-                    <div style={{ fontSize: 12, color: WARNING_TEXT_COLOR }}>已超期</div>
-                    <div style={{ ...SURFACE_VALUE_STYLE, color: WARNING_TEXT_COLOR }}>{activeItemSummary.overdue}</div>
-                  </div>
-                  <div style={SURFACE_CARD_STYLE}>
-                    <div style={SURFACE_LABEL_STYLE}>未设截止日</div>
-                    <div style={SURFACE_VALUE_STYLE}>{activeItemSummary.noDeadline}</div>
-                  </div>
+      {!isHistoryPage ? (
+        <>
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+            <Col xs={24} sm={12} lg={4}>
+              <Card variant="borderless" style={{ height: '100%' }}>
+                <Space>
+                  <UnorderedListOutlined />
+                  <Text type="secondary">今日应完成事项</Text>
+                </Space>
+                <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
+                  {toNumber(workbench?.today?.scheduled_item_count_today, 0)}
                 </div>
+              </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={4}>
+              <Card variant="borderless" style={{ height: '100%' }}>
+                <Space>
+                  <CheckCircleOutlined />
+                  <Text type="secondary">今日已填报事项</Text>
+                </Space>
+                <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
+                  {toNumber(workbench?.today?.filled_item_count_today, 0)}
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={5}>
+              <Card variant="borderless" style={{ height: '100%' }}>
+                <Space>
+                  <ClockCircleOutlined />
+                  <Text type="secondary">今日计划用时(h)</Text>
+                </Space>
+                <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
+                  {toNumber(workbench?.today?.planned_hours_today, 0).toFixed(1)}
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={5}>
+              <Card variant="borderless" style={{ height: '100%' }}>
+                <Space>
+                  <FileTextOutlined />
+                  <Text type="secondary">今日实际用时(h)</Text>
+                </Space>
+                <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8 }}>
+                  {toNumber(workbench?.today?.actual_hours_today, 0).toFixed(1)}
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} sm={24} lg={6}>
+              <Card variant="borderless" style={{ height: '100%' }}>
+                <Space>
+                  <ClockCircleOutlined />
+                  <Text type="secondary">今日可指派用时(h)</Text>
+                </Space>
+                <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#0958d9' }}>
+                  {toNumber(workbench?.today?.assignable_hours_today, 0).toFixed(1)}
+                </div>
+              </Card>
+            </Col>
+          </Row>
 
-                <Row gutter={[8, 8]}>
-                  <Col xs={24} sm={15}>
-                    <Input
-                      allowClear
-                      aria-label="搜索进行中事项"
-                      placeholder="搜索事项类型 / 需求ID / 需求任务 / 描述"
-                      value={activeItemKeyword}
-                      onChange={(e) => setActiveItemKeyword(e.target.value)}
-                    />
-                  </Col>
-                  <Col xs={24} sm={9}>
-                    <Select
-                      style={{ width: '100%' }}
-                      aria-label="按状态筛选进行中事项"
-                      value={activeItemStatusFilter}
-                      options={ACTIVE_ITEM_STATUS_FILTER_OPTIONS}
-                      onChange={(next) => setActiveItemStatusFilter(next)}
-                    />
-                  </Col>
-                </Row>
+          <Row gutter={[16, 16]} style={{ alignItems: 'stretch' }}>
+            <Col xs={24} lg={10} style={{ display: 'flex' }}>
+              <Card
+                title="快速填报"
+                variant="borderless"
+                style={{ width: '100%', height: '100%' }}
+                extra={
+                  <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={loadingBase || loadingLogs}>
+                    重置
+                  </Button>
+                }
+              >
+                <Form
+                  form={form}
+                  layout="vertical"
+                  onFinish={handleCreateLog}
+                  onValuesChange={(changedValues) => {
+                    if (Object.prototype.hasOwnProperty.call(changedValues, 'expected_completion_date')) {
+                      if (quickCompletionDateAutoSyncRef.current) {
+                        quickCompletionDateAutoSyncRef.current = false
+                      } else {
+                        setIsQuickCompletionDateTouched(true)
+                      }
+                    }
 
-                <div
-                  style={{
-                    flex: '0 0 auto',
-                    maxHeight: ACTIVE_ITEM_LIST_VIEW_HEIGHT,
-                    minHeight: 0,
-                    overflowY: 'auto',
-                    paddingRight: 4,
-                    overscrollBehavior: 'contain',
+                    if (
+                      Object.prototype.hasOwnProperty.call(changedValues, 'expected_start_date') &&
+                      !isQuickCompletionDateTouched
+                    ) {
+                      quickCompletionDateAutoSyncRef.current = true
+                      form.setFieldValue('expected_completion_date', changedValues.expected_start_date || undefined)
+                    }
                   }}
+                  disabled={!canCreate || loadingBase}
                 >
-                  {filteredActiveItems.length === 0 ? (
-                    <Empty description="没有匹配的进行中事项" />
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {filteredActiveItems.map((item) => {
-                        const currentStatus = item.log_status || 'IN_PROGRESS'
-                        const isStatusSubmitting = statusSubmittingId === item.id
-                        const disableStatusActions = !canUpdate || isStatusSubmitting
-                        const demandId = String(item?.demand_id || '').trim()
-                        const followupNodeLabel = demandId ? String(workflowNodeByDemandId.get(demandId) || '').trim() : ''
-                        const logPhaseLabel = String(item?.phase_name || item?.phase_key || '').trim()
-                        const activePhaseLabel = logPhaseLabel || (isDemandFollowupItem(item) ? followupNodeLabel : '')
-                        const statusPanelStyle = getActiveCardStatusPanelStyle(currentStatus)
-                        const demandFullName = String(item.demand_name || item.demand_id || '').trim()
-                        const demandShortName = truncateText(demandFullName, 20)
-                        const demandTagLabel = demandShortName || String(item.demand_id || '').trim()
-                        const hasDemandTooltip = demandTagLabel && demandTagLabel !== demandFullName
+                  <Row gutter={12}>
+                    <Col xs={24} md={12}>
+                      <Form.Item label="填报日期" name="log_date" rules={[{ required: true, message: '请选择日期' }]}>
+                        <Input type="date" />
+                      </Form.Item>
+                    </Col>
 
-                        return (
-                          <div
-                            key={item.id}
-                            style={getActiveCardContainerStyle(item, currentStatus)}
-                          >
-                          <div
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              gap: 8,
-                              flexWrap: 'wrap',
-                              marginBottom: 8,
-                            }}
-                          >
-                            <Space wrap>
-                              <Tag color="blue">#{item.id}</Tag>
-                              {(() => {
-                                const meta = getDisplayStatusMeta(item)
-                                return <Tag color={meta.color}>{meta.label}</Tag>
-                              })()}
-                              <Tag color={getItemStatusColor(item.log_status)}>
-                                {getItemStatusLabel(currentStatus)}
-                              </Tag>
-                              <Tag>{getTaskSourceLabel(item.task_source)}</Tag>
-                              <Text strong style={{ wordBreak: 'break-all' }}>
-                                {activePhaseLabel || item.item_type_name || '事项'}
-                              </Text>
-                            </Space>
-                            <Space wrap>
-                              {item.demand_id ? (
-                                hasDemandTooltip ? (
-                                  <Tooltip title={demandFullName}>
-                                    <Tag>
-                                      <DemandTagButton demandId={item.demand_id} label={demandTagLabel} />
-                                    </Tag>
-                                  </Tooltip>
-                                ) : (
-                                  <Tag>
-                                    <DemandTagButton
-                                      demandId={item.demand_id}
-                                      label={demandTagLabel || String(item.demand_id || '').trim()}
-                                    />
-                                  </Tag>
-                                )
-                              ) : (
-                                <Tag>无需求</Tag>
-                              )}
-                              <Tag color="geekblue">{item.item_type_name || '事项'}</Tag>
-                            </Space>
-                          </div>
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label="事项类型"
+                        name="item_type_id"
+                        rules={[{ required: true, message: '请选择事项类型' }]}
+                      >
+                        <Select options={itemTypeOptions} placeholder="请选择事项类型" />
+                      </Form.Item>
+                    </Col>
 
-                          <div
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                              gap: 8,
-                              marginBottom: 8,
-                              fontSize: 13,
-                              color: MUTED_TEXT_COLOR,
-                            }}
-                          >
-                            <div>填报日期: {formatDateOnly(item.log_date)}</div>
-                            <div>指派人: {item.assigned_by_name || '-'}</div>
-                            <div>预计开始: {formatDateOnly(item.expected_start_date)}</div>
-                            <div
-                              style={{
-                                color: isOverdueDate(item.expected_completion_date) ? WARNING_TEXT_COLOR : MUTED_TEXT_COLOR,
-                              }}
-                            >
-                              预计完成: {formatDateOnly(item.expected_completion_date)}
-                            </div>
-                          </div>
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label="关联需求"
+                        name="demand_id"
+                        rules={
+                          Number(selectedItemType?.require_demand) === 1
+                            ? [{ required: true, message: '当前事项类型需关联需求' }]
+                            : []
+                        }
+                      >
+                        <Select
+                          allowClear
+                          showSearch
+                          options={quickDemandOptions}
+                          placeholder="请选择需求池中的需求（可选）"
+                          optionFilterProp="fullLabel"
+                          onChange={(next) => {
+                            if (!next) {
+                              form.setFieldValue('phase_key', undefined)
+                            }
+                          }}
+                        />
+                      </Form.Item>
+                    </Col>
 
-                          <div
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                              gap: 6,
-                              marginBottom: 8,
-                            }}
-                          >
-                            <div style={SURFACE_CARD_COMPACT_STYLE}>
-                              <div style={COMPACT_SURFACE_LABEL_STYLE}>今日应完成</div>
-                              <div style={{ fontSize: 15, fontWeight: 600 }}>{toNumber(item.today_planned_hours, 0).toFixed(1)}h</div>
-                            </div>
-                            <div style={SURFACE_CARD_COMPACT_STYLE}>
-                              <div style={COMPACT_SURFACE_LABEL_STYLE}>今日已填报</div>
-                              <div style={{ fontSize: 15, fontWeight: 600 }}>{toNumber(item.today_actual_hours, 0).toFixed(1)}h</div>
-                            </div>
-                            <div style={SURFACE_CARD_COMPACT_STYLE}>
-                              <div style={COMPACT_SURFACE_LABEL_STYLE}>累计实际</div>
-                              <div style={{ fontSize: 15, fontWeight: 600 }}>{toNumber(item.cumulative_actual_hours, 0).toFixed(1)}h</div>
-                            </div>
-                            <div style={SURFACE_CARD_COMPACT_STYLE}>
-                              <div style={COMPACT_SURFACE_LABEL_STYLE}>
-                                <Tooltip title="剩余工作量 = 预计整体用时 - 累积已完成（最低为 0）">
-                                  <span style={{ cursor: 'help', textDecoration: 'underline dotted' }}>剩余工作量</span>
-                                </Tooltip>
-                              </div>
-                              <div style={{ fontSize: 15, fontWeight: 600 }}>{calcRemainingWorkload(item).toFixed(1)}h</div>
-                            </div>
-                          </div>
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label="需求任务"
+                        name="phase_key"
+                        rules={selectedDemandId ? [{ required: true, message: '请选择需求任务' }] : []}
+                        extra={isQuickBatchPhaseMode ? '可多选；提交时会按预计整体用时平均拆分为多条事项' : undefined}
+                      >
+                        <Select
+                          allowClear
+                          showSearch
+                          mode={isQuickBatchPhaseMode ? 'multiple' : undefined}
+                          options={quickPhaseOptionsWithSelected}
+                          placeholder={selectedDemandId ? '请选择需求任务' : '请先选择关联需求'}
+                          optionFilterProp="label"
+                          disabled={!selectedDemandId}
+                          maxTagCount="responsive"
+                        />
+                      </Form.Item>
+                    </Col>
 
-                          <div
-                            style={{
-                              color: SURFACE_TEXT_COLOR,
-                              fontSize: 13,
-                              marginBottom: 10,
-                              background: '#f8fafc',
-                              border: '1px solid #eef2f6',
-                              borderRadius: 8,
-                              padding: '8px 10px',
-                              whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-word',
-                            }}
-                          >
-                            {item.description || '-'}
-                          </div>
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label="预计开始日期"
+                        name="expected_start_date"
+                        rules={[{ required: true, message: '请选择预计开始日期' }]}
+                      >
+                        <Input type="date" />
+                      </Form.Item>
+                    </Col>
 
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                              <Space wrap>
-                              <Button
-                                type="default"
-                                onClick={() => openDetailModal(item)}
-                                style={{ minHeight: 34 }}
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label="预计完成日期"
+                        name="expected_completion_date"
+                        rules={[{ required: true, message: '请选择预计完成日期' }]}
+                      >
+                        <Input type="date" />
+                      </Form.Item>
+                    </Col>
+
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label="预计整体用时(h)"
+                        name="personal_estimate_hours"
+                        rules={[{ required: true, message: '请输入预计整体用时' }]}
+                      >
+                        <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Form.Item
+                    label="工作描述"
+                    name="description"
+                    rules={[{ required: true, message: '请填写工作描述' }]}
+                  >
+                    <Input.TextArea
+                      rows={3}
+                      maxLength={2000}
+                      placeholder="建议写清楚：做了什么、产出了什么、是否有风险"
+                    />
+                  </Form.Item>
+
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    icon={<SaveOutlined />}
+                    loading={submitting}
+                    disabled={!canCreate}
+                  >
+                    提交记录
+                  </Button>
+                </Form>
+              </Card>
+            </Col>
+
+            <Col xs={24} lg={14} style={{ display: 'flex' }}>
+              <Card
+                title="我的进行中事项"
+                variant="borderless"
+                style={{ width: '100%' }}
+                extra={
+                  <Button
+                    type="default"
+                    icon={<ArrowRightOutlined />}
+                    onClick={openHistoryPage}
+                    style={{
+                      borderColor: '#c7d7fe',
+                      color: '#1d4ed8',
+                      background: '#eff6ff',
+                      fontWeight: 600,
+                    }}
+                  >
+                    查看历史记录
+                  </Button>
+                }
+                styles={{
+                  body: {
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minHeight: 0,
+                    paddingTop: 10,
+                  },
+                }}
+              >
+                {activeItems.length === 0 ? (
+                  <Empty description="暂无未完成事项" />
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                        gap: 8,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleSummaryQuickFilterClick(activeSummaryQuickFilterValues.todo)}
+                        style={{
+                          ...SURFACE_CARD_STYLE,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          border:
+                            activeItemStatusFilter === activeSummaryQuickFilterValues.todo
+                              ? '1px solid #91caff'
+                              : SURFACE_CARD_STYLE.border,
+                          background:
+                            activeItemStatusFilter === activeSummaryQuickFilterValues.todo ? '#e6f4ff' : SURFACE_CARD_STYLE.background,
+                        }}
+                      >
+                        <div style={SURFACE_LABEL_STYLE}>待开始</div>
+                        <div style={SURFACE_VALUE_STYLE}>{activeItemSummary.todo}</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSummaryQuickFilterClick(activeSummaryQuickFilterValues.inProgress)}
+                        style={{
+                          ...SURFACE_CARD_STYLE,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          border:
+                            activeItemStatusFilter === activeSummaryQuickFilterValues.inProgress
+                              ? '1px solid #91caff'
+                              : SURFACE_CARD_STYLE.border,
+                          background:
+                            activeItemStatusFilter === activeSummaryQuickFilterValues.inProgress
+                              ? '#e6f4ff'
+                              : SURFACE_CARD_STYLE.background,
+                        }}
+                      >
+                        <div style={SURFACE_LABEL_STYLE}>进行中</div>
+                        <div style={SURFACE_VALUE_STYLE}>{activeItemSummary.inProgress}</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSummaryQuickFilterClick(activeSummaryQuickFilterValues.overdue)}
+                        style={{
+                          ...WARNING_SURFACE_CARD_STYLE,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          border:
+                            activeItemStatusFilter === activeSummaryQuickFilterValues.overdue
+                              ? '1px solid #ff4d4f'
+                              : WARNING_SURFACE_CARD_STYLE.border,
+                          boxShadow:
+                            activeItemStatusFilter === activeSummaryQuickFilterValues.overdue
+                              ? '0 0 0 2px rgba(255, 77, 79, 0.15)'
+                              : 'none',
+                        }}
+                      >
+                        <div style={{ fontSize: 12, color: WARNING_TEXT_COLOR }}>已超期</div>
+                        <div style={{ ...SURFACE_VALUE_STYLE, color: WARNING_TEXT_COLOR }}>{activeItemSummary.overdue}</div>
+                      </button>
+                      <div style={SURFACE_CARD_STYLE}>
+                        <div style={SURFACE_LABEL_STYLE}>未设截止日</div>
+                        <div style={SURFACE_VALUE_STYLE}>{activeItemSummary.noDeadline}</div>
+                      </div>
+                    </div>
+
+                    <Row gutter={[8, 8]}>
+                      <Col xs={24} sm={15}>
+                        <Input
+                          allowClear
+                          aria-label="搜索进行中事项"
+                          placeholder="搜索事项类型 / 需求ID / 需求任务 / 描述"
+                          value={activeItemKeyword}
+                          onChange={(e) => setActiveItemKeyword(e.target.value)}
+                        />
+                      </Col>
+                      <Col xs={24} sm={9}>
+                        <Select
+                          style={{ width: '100%' }}
+                          aria-label="按状态筛选进行中事项"
+                          value={activeItemStatusFilter}
+                          options={ACTIVE_ITEM_STATUS_FILTER_OPTIONS}
+                          onChange={(next) => setActiveItemStatusFilter(next)}
+                        />
+                      </Col>
+                    </Row>
+
+                    <div
+                      style={{
+                        flex: '0 0 auto',
+                        maxHeight: ACTIVE_ITEM_LIST_VIEW_HEIGHT,
+                        minHeight: 0,
+                        overflowY: 'auto',
+                        paddingRight: 4,
+                        overscrollBehavior: 'contain',
+                      }}
+                    >
+                      {filteredActiveItems.length === 0 ? (
+                        <Empty description="没有匹配的进行中事项" />
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          {filteredActiveItems.map((item) => {
+                            const currentStatus = item.log_status || 'IN_PROGRESS'
+                            const isStatusSubmitting = statusSubmittingId === item.id
+                            const disableStatusActions = !canUpdate || isStatusSubmitting
+                            const demandId = String(item?.demand_id || '').trim()
+                            const followupNodeLabel = demandId ? String(workflowNodeByDemandId.get(demandId) || '').trim() : ''
+                            const logPhaseLabel = String(item?.phase_name || item?.phase_key || '').trim()
+                            const activePhaseLabel = logPhaseLabel || (isDemandFollowupItem(item) ? followupNodeLabel : '')
+                            const statusPanelStyle = getActiveCardStatusPanelStyle(currentStatus)
+                            const demandFullName = String(item.demand_name || item.demand_id || '').trim()
+                            const demandTagLabel = item?.demand_id ? `需求#${item.demand_id}` : ''
+                            const cardTopic = activePhaseLabel || item.item_type_name || '事项'
+                            const isOverdue = isOverdueDate(item.expected_completion_date)
+                            const remainingWorkload = calcRemainingWorkload(item)
+
+                            return (
+                              <div
+                                key={item.id}
+                                style={getActiveCardContainerStyle(item, currentStatus)}
                               >
-                                查看日明细
-                              </Button>
-                              <Button
-                                type="primary"
-                                onClick={() => openDailyEntryModal(item)}
-                                disabled={!canUpdate}
-                                style={{ minHeight: 34 }}
-                              >
-                                填报今日投入
-                              </Button>
-                              </Space>
-                              <Space wrap size={6} align="center">
                                 <div
                                   style={{
                                     display: 'flex',
-                                    flexWrap: 'wrap',
+                                    justifyContent: 'space-between',
                                     alignItems: 'center',
-                                    gap: 6,
-                                    padding: '6px 8px',
-                                    borderRadius: 8,
-                                    border: `1px solid ${statusPanelStyle.borderColor}`,
-                                    background: statusPanelStyle.background,
+                                    gap: 8,
+                                    flexWrap: 'wrap',
+                                    marginBottom: 12,
                                   }}
                                 >
-                                  <Text style={{ fontSize: 12, fontWeight: 600, color: '#1d39c4' }}>
-                                    状态调整
-                                  </Text>
-                                  {ITEM_STATUS_OPTIONS.map((option) => {
-                                    const isCurrent = option.value === currentStatus
-                                    const buttonStyle = getStatusActionButtonStyle(option.value, isCurrent)
+                                  <Space wrap size={[6, 6]}>
+                                    <Tag color="blue">#{item.id}</Tag>
+                                    {(() => {
+                                      const meta = getDisplayStatusMeta(item)
+                                      return <Tag color={meta.color}>{meta.label}</Tag>
+                                    })()}
+                                    <Tag color="geekblue">{item.item_type_name || '事项'}</Tag>
+                                    {item.demand_id ? (
+                                      <Tooltip title={demandFullName || demandTagLabel}>
+                                        <Tag color="gold">
+                                          <DemandTagButton demandId={item.demand_id} label={demandTagLabel} />
+                                        </Tag>
+                                      </Tooltip>
+                                    ) : null}
+                                  </Space>
+                                  <Space size={6} wrap>
+                                    <Tag color={isOverdue ? 'error' : 'default'}>
+                                      截止：{formatDateOnly(item.expected_completion_date)}
+                                    </Tag>
+                                    <Tag color={remainingWorkload > 0 ? 'processing' : 'success'}>
+                                      {`剩余 ${remainingWorkload.toFixed(1)}h`}
+                                    </Tag>
+                                  </Space>
+                                </div>
 
-                                    if (option.value === 'DONE' && currentStatus !== 'DONE') {
-                                      return (
-                                        <Popconfirm
-                                          key={option.value}
-                                          title="确认标记为已完成？"
-                                          description="后续如有需要，仍可再改回待开始或进行中。"
-                                          okText="确认"
-                                          cancelText="取消"
-                                          onConfirm={() => handleUpdateItemStatus(item, option.value)}
-                                          disabled={disableStatusActions}
-                                        >
+                                <div
+                                  style={{
+                                    marginBottom: 12,
+                                    borderRadius: 10,
+                                    border: `1px solid ${isOverdue ? WARNING_BORDER_COLOR : '#dbeafe'}`,
+                                    background: isOverdue
+                                      ? 'linear-gradient(180deg, #fff5f5 0%, #fff1f0 100%)'
+                                      : 'linear-gradient(180deg, #f8fbff 0%, #f4f8ff 100%)',
+                                    padding: '10px 12px 12px',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontSize: 12,
+                                      marginBottom: 6,
+                                      color: isOverdue ? '#b42318' : '#3662d8',
+                                      fontWeight: 700,
+                                      letterSpacing: '0.03em',
+                                    }}
+                                  >
+                                    {cardTopic}
+                                  </div>
+                                  <div
+                                    style={{
+                                      color: '#0f172a',
+                                      fontSize: 16,
+                                      lineHeight: 1.7,
+                                      fontWeight: 700,
+                                      whiteSpace: 'pre-wrap',
+                                      wordBreak: 'break-word',
+                                    }}
+                                  >
+                                    {item.description || '（暂无工作描述）'}
+                                  </div>
+                                </div>
+
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    gap: 10,
+                                    flexWrap: 'wrap',
+                                  }}
+                                >
+                                  <Space wrap>
+                                    <Button
+                                      type="default"
+                                      onClick={() => openDetailModal(item)}
+                                      style={{ minHeight: 34 }}
+                                    >
+                                      查看日明细
+                                    </Button>
+                                    <Button
+                                      type="primary"
+                                      onClick={() => openDailyEntryModal(item)}
+                                      disabled={!canUpdate}
+                                      style={{ minHeight: 34 }}
+                                    >
+                                      填报今日投入
+                                    </Button>
+                                  </Space>
+                                  <Space wrap size={6} align="center">
+                                    <div
+                                      style={{
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                        padding: '6px 8px',
+                                        borderRadius: 8,
+                                        border: `1px solid ${statusPanelStyle.borderColor}`,
+                                        background: statusPanelStyle.background,
+                                      }}
+                                    >
+                                      <Text style={{ fontSize: 12, fontWeight: 600, color: '#1d39c4' }}>
+                                        状态调整
+                                      </Text>
+                                      {ITEM_STATUS_OPTIONS.map((option) => {
+                                        const isCurrent = option.value === currentStatus
+                                        const buttonStyle = getStatusActionButtonStyle(option.value, isCurrent)
+
+                                        if (option.value === 'DONE' && currentStatus !== 'DONE') {
+                                          return (
+                                            <Popconfirm
+                                              key={option.value}
+                                              title="确认标记为已完成？"
+                                              description="后续如有需要，仍可再改回待开始或进行中。"
+                                              okText="确认"
+                                              cancelText="取消"
+                                              onConfirm={() => handleUpdateItemStatus(item, option.value)}
+                                              disabled={disableStatusActions}
+                                            >
+                                              <Button
+                                                size="small"
+                                                type={isCurrent ? 'primary' : 'default'}
+                                                disabled={disableStatusActions || isCurrent}
+                                                style={{ ...buttonStyle, transition: ACTION_TRANSITION }}
+                                              >
+                                                {option.label}
+                                              </Button>
+                                            </Popconfirm>
+                                          )
+                                        }
+
+                                        return (
                                           <Button
+                                            key={option.value}
                                             size="small"
                                             type={isCurrent ? 'primary' : 'default'}
                                             disabled={disableStatusActions || isCurrent}
+                                            onClick={() => handleUpdateItemStatus(item, option.value)}
                                             style={{ ...buttonStyle, transition: ACTION_TRANSITION }}
                                           >
                                             {option.label}
                                           </Button>
-                                        </Popconfirm>
-                                      )
-                                    }
-
-                                    return (
-                                      <Button
-                                        key={option.value}
-                                        size="small"
-                                        type={isCurrent ? 'primary' : 'default'}
-                                        disabled={disableStatusActions || isCurrent}
-                                        onClick={() => handleUpdateItemStatus(item, option.value)}
-                                        style={{ ...buttonStyle, transition: ACTION_TRANSITION }}
-                                      >
-                                        {option.label}
-                                      </Button>
-                                    )
-                                  })}
-                                  {isStatusSubmitting ? (
-                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                      更新中...
-                                    </Text>
-                                  ) : null}
+                                        )
+                                      })}
+                                      {isStatusSubmitting ? (
+                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                          更新中...
+                                        </Text>
+                                      ) : null}
+                                    </div>
+                                  </Space>
                                 </div>
-                              </Space>
-                            </div>
-                          </div>
-                        )
-                      })}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
+                )}
+              </Card>
+            </Col>
+          </Row>
+        </>
+      ) : null}
+
+      {isHistoryPage ? (
+        <>
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+            <Col span={24}>
+              <Card variant="borderless" style={HISTORY_HEADER_CARD_STYLE}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    gap: 16,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 24, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>
+                        历史工作记录
+                      </div>
+                      <Text style={{ color: '#475467', fontSize: 14 }}>
+                        集中查看、筛选、维护个人历史记录，也可以直接在这里生成周报。
+                      </Text>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Tag color="blue">当前筛选：{currentHistoryFilterLabel}</Tag>
+                      <Tag color="purple">时间：{currentHistoryDatePresetLabel}</Tag>
+                      <Tag>{currentHistoryDateRangeText}</Tag>
+                      <Tag color="cyan">共 {total} 条</Tag>
+                      <Tag color="geekblue">第 {page} 页</Tag>
+                      <Tag>每页 {pageSize} 条</Tag>
+                    </div>
+                  </div>
+
+                  <Space wrap>
+                    <Button icon={<LeftOutlined />} onClick={backToWorkbench}>
+                      返回个人工作台
+                    </Button>
+                    <Button type="primary" onClick={openWeeklyModal} loading={weeklyLoading && weeklyModalOpen}>
+                      周报
+                    </Button>
+                  </Space>
                 </div>
-              </div>
-            )}
-          </Card>
-        </Col>
-      </Row>
+              </Card>
+            </Col>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col span={24}>
-          <Card
-            title="我的工作记录"
-            variant="borderless"
-            extra={
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-                <Text type="secondary">状态筛选</Text>
-                <Select
-                  style={{ width: 180, minWidth: 140 }}
-                  aria-label="按状态筛选工作记录"
-                  value={logStatusFilter}
-                  options={LOG_STATUS_FILTER_OPTIONS}
-                  onChange={handleLogStatusFilterChange}
-                />
-                <Button onClick={openWeeklyModal} loading={weeklyLoading && weeklyModalOpen}>
-                  周报
-                </Button>
-              </div>
-            }
-          >
-            <div style={{ width: '100%', overflowX: 'auto' }}>
-              <Table
-                rowKey="id"
-                loading={loadingLogs}
-                columns={logColumns}
-                dataSource={logs}
-                size="middle"
-                scroll={{ x: 1280 }}
-                pagination={{
-                  current: page,
-                  pageSize,
-                  total,
-                  showSizeChanger: true,
-                  showTotal: (t) => `共 ${t} 条`,
-                }}
-                onChange={(pagination) => {
-                  setPage(pagination.current || 1)
-                  setPageSize(pagination.pageSize || 10)
-                }}
-              />
-            </div>
-          </Card>
-        </Col>
-      </Row>
+            <Col span={24}>
+              <Card
+                variant="borderless"
+                style={{ borderRadius: 12, border: '1px solid #eef2f6' }}
+                styles={{ body: { padding: 14 } }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <Space wrap size={10}>
+                    <Text type="secondary">时间范围</Text>
+                    <Select
+                      style={{ width: 160, minWidth: 140 }}
+                      aria-label="按时间范围筛选工作记录"
+                      value={historyDatePreset}
+                      options={HISTORY_DATE_PRESET_OPTIONS}
+                      onChange={handleHistoryDatePresetChange}
+                    />
+                    <Input
+                      type="date"
+                      value={historyCustomStartDate}
+                      onChange={(e) => handleHistoryCustomDateChange('start_date', e.target.value)}
+                      style={{ width: 150 }}
+                      aria-label="工作记录开始日期"
+                      placeholder="开始日期"
+                    />
+                    <Input
+                      type="date"
+                      value={historyCustomEndDate}
+                      onChange={(e) => handleHistoryCustomDateChange('end_date', e.target.value)}
+                      style={{ width: 150 }}
+                      aria-label="工作记录结束日期"
+                      placeholder="结束日期"
+                    />
+                    <Text type="secondary">状态筛选</Text>
+                    <Select
+                      style={{ width: 180, minWidth: 140 }}
+                      aria-label="按状态筛选工作记录"
+                      value={logStatusFilter}
+                      options={LOG_STATUS_FILTER_OPTIONS}
+                      onChange={handleLogStatusFilterChange}
+                    />
+                  </Space>
 
-      <Modal
+                  <Space wrap size={10}>
+                    <Text type="secondary">已自动保留上一次筛选和分页状态</Text>
+                    {isHistoryDateRangeInvalid ? <Text type="danger">开始日期不能晚于结束日期</Text> : null}
+                    <Button onClick={handleResetHistoryFilters}>清空筛选</Button>
+                    <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={loadingBase || loadingLogs}>
+                      刷新
+                    </Button>
+                  </Space>
+                </div>
+              </Card>
+            </Col>
+
+            <Col span={24}>
+              <Card variant="borderless">
+                <div style={{ width: '100%', overflowX: 'auto' }}>
+                  <Table
+                    rowKey="id"
+                    loading={loadingLogs}
+                    columns={logColumns}
+                    dataSource={logs}
+                    size="middle"
+                    scroll={{ x: 1280 }}
+                    pagination={{
+                      current: page,
+                      pageSize,
+                      total,
+                      showSizeChanger: true,
+                      showTotal: (t) => `共 ${t} 条`,
+                    }}
+                    onChange={(pagination) => {
+                      setPage(pagination.current || 1)
+                      setPageSize(pagination.pageSize || 10)
+                    }}
+                  />
+                </div>
+              </Card>
+            </Col>
+          </Row>
+        </>
+      ) : null}
+
+      {isHistoryPage ? (
+        <Modal
         title="个人周报（V1）"
         open={weeklyModalOpen}
         onCancel={closeWeeklyModal}
@@ -2209,7 +2635,8 @@ function WorkLogs() {
             </Card>
           </Col>
         </Row>
-      </Modal>
+        </Modal>
+      ) : null}
 
       <Modal
         title={detailLog ? `事项详情与日明细：#${detailLog.id}` : '事项详情与日明细'}
@@ -2291,7 +2718,8 @@ function WorkLogs() {
         )}
       </Modal>
 
-      <Modal
+      {isHistoryPage ? (
+        <Modal
         title={editingLog ? `修改记录：#${editingLog.id}` : '修改记录'}
         open={actualModalOpen}
         onCancel={closeActualModal}
@@ -2429,7 +2857,8 @@ function WorkLogs() {
             />
           </Form.Item>
         </Form>
-      </Modal>
+        </Modal>
+      ) : null}
 
       <Modal
         title={operatingLog ? `填报今日投入：#${operatingLog.id}` : '填报今日投入'}

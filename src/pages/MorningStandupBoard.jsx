@@ -597,7 +597,7 @@ function MorningStandupBoard() {
         title: '检查结果',
         dataIndex: 'check_result',
         key: 'check_result',
-        width: 100,
+        width: 140,
         render: (value, record) =>
           record?.row_type === 'phase_group' ? (
             <Text strong>{getPhaseDisplayName(record)}</Text>
