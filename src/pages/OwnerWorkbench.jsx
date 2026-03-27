@@ -35,6 +35,7 @@ import {
   updateWorkLogOwnerEstimateApi,
 } from '../api/work'
 import { formatBeijingDate, formatBeijingDateTime, getBeijingTodayDateString } from '../utils/datetime'
+import { getUnifiedStatusMeta } from '../utils/workStatus'
 import './OwnerWorkbench.css'
 
 const { Text } = Typography
@@ -511,6 +512,15 @@ function OwnerWorkbench() {
       key: 'task_source',
       width: 110,
       render: (_, row) => <Tag color={getTaskSourceColor(row.task_source)}>{getTaskSourceLabel(row.task_source)}</Tag>,
+    },
+    {
+      title: '综合状态',
+      key: 'unified_status',
+      width: 110,
+      render: (_, row) => {
+        const meta = getUnifiedStatusMeta(row)
+        return <Tag color={meta.color}>{meta.label}</Tag>
+      },
     },
     {
       title: '指派人',

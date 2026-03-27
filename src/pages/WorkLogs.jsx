@@ -45,6 +45,7 @@ import {
 } from '../api/work'
 import { hasPermission } from '../utils/access'
 import { formatBeijingDate, getBeijingTodayDateString } from '../utils/datetime'
+import { getUnifiedStatusMeta } from '../utils/workStatus'
 
 const { Text } = Typography
 const ITEM_STATUS_OPTIONS = [
@@ -52,10 +53,49 @@ const ITEM_STATUS_OPTIONS = [
   { label: '进行中', value: 'IN_PROGRESS' },
   { label: '已完成', value: 'DONE' },
 ]
+const UNIFIED_STATUS_OPTIONS = [
+  { label: '风险', value: 'RISK' },
+  { label: '逾期', value: 'OVERDUE' },
+  { label: '今日到期', value: 'DUE_TODAY' },
+  { label: '逾期完成', value: 'LATE_DONE' },
+  { label: '按期完成', value: 'ON_TIME_DONE' },
+  { label: '正常', value: 'NORMAL' },
+]
+const STATUS_FILTER_VALUE_PREFIX = {
+  LIFECYCLE: 'LIFECYCLE:',
+  UNIFIED: 'UNIFIED:',
+}
+function makeLifecycleFilterValue(status) {
+  return `${STATUS_FILTER_VALUE_PREFIX.LIFECYCLE}${String(status || '').trim().toUpperCase()}`
+}
+function makeUnifiedFilterValue(status) {
+  return `${STATUS_FILTER_VALUE_PREFIX.UNIFIED}${String(status || '').trim().toUpperCase()}`
+}
+function parseStatusFilterValue(rawValue) {
+  const value = String(rawValue || '').trim()
+  if (!value || value === 'ALL') return { kind: 'all', value: '' }
+  if (value.startsWith(STATUS_FILTER_VALUE_PREFIX.LIFECYCLE)) {
+    return {
+      kind: 'lifecycle',
+      value: value.slice(STATUS_FILTER_VALUE_PREFIX.LIFECYCLE.length).toUpperCase(),
+    }
+  }
+  if (value.startsWith(STATUS_FILTER_VALUE_PREFIX.UNIFIED)) {
+    return {
+      kind: 'unified',
+      value: value.slice(STATUS_FILTER_VALUE_PREFIX.UNIFIED.length).toUpperCase(),
+    }
+  }
+  return { kind: 'all', value: '' }
+}
 const ACTIVE_ITEM_STATUS_FILTER_OPTIONS = [
   { label: '全部状态', value: 'ALL' },
-  { label: '待开始', value: 'TODO' },
-  { label: '进行中', value: 'IN_PROGRESS' },
+  { label: '待开始', value: makeLifecycleFilterValue('TODO') },
+  { label: '进行中', value: makeLifecycleFilterValue('IN_PROGRESS') },
+  { label: '风险', value: makeUnifiedFilterValue('RISK') },
+  { label: '逾期', value: makeUnifiedFilterValue('OVERDUE') },
+  { label: '今日到期', value: makeUnifiedFilterValue('DUE_TODAY') },
+  { label: '正常', value: makeUnifiedFilterValue('NORMAL') },
 ]
 const ACTIVE_ITEM_VISIBLE_COUNT = 2
 const ACTIVE_ITEM_CARD_ESTIMATED_HEIGHT = 330
@@ -63,9 +103,19 @@ const ACTIVE_ITEM_CARD_GAP = 12
 const ACTIVE_ITEM_LIST_VIEW_HEIGHT = `calc(${ACTIVE_ITEM_VISIBLE_COUNT} * ${ACTIVE_ITEM_CARD_ESTIMATED_HEIGHT}px + ${(ACTIVE_ITEM_VISIBLE_COUNT - 1) * ACTIVE_ITEM_CARD_GAP}px)`
 const LOG_STATUS_FILTER_OPTIONS = [
   { label: '全部状态', value: 'ALL' },
-  ...ITEM_STATUS_OPTIONS,
+  ...ITEM_STATUS_OPTIONS.map((item) => ({
+    label: item.label,
+    value: makeLifecycleFilterValue(item.value),
+  })),
+  ...UNIFIED_STATUS_OPTIONS.map((item) => ({
+    label: item.label,
+    value: makeUnifiedFilterValue(item.value),
+  })),
 ]
 const MUTED_TEXT_COLOR = '#667085'
+const WARNING_TEXT_COLOR = '#dc2626'
+const WARNING_BORDER_COLOR = '#ffccc7'
+const WARNING_BG_COLOR = '#fff1f0'
 const SURFACE_TEXT_COLOR = '#475467'
 const SURFACE_CARD_STYLE = {
   border: '1px solid #e4e7ec',
@@ -80,10 +130,10 @@ const SURFACE_CARD_COMPACT_STYLE = {
   background: '#f8fafc',
 }
 const WARNING_SURFACE_CARD_STYLE = {
-  border: '1px solid #ffe7ba',
+  border: `1px solid ${WARNING_BORDER_COLOR}`,
   borderRadius: 8,
   padding: 8,
-  background: '#fff7e6',
+  background: WARNING_BG_COLOR,
 }
 const SURFACE_LABEL_STYLE = { fontSize: 12, color: MUTED_TEXT_COLOR }
 const SURFACE_VALUE_STYLE = { fontSize: 18, fontWeight: 700 }
@@ -217,6 +267,10 @@ function getItemStatusLabel(status) {
   return matched?.label || status || '进行中'
 }
 
+function getDisplayStatusMeta(record) {
+  return getUnifiedStatusMeta(record)
+}
+
 function getTaskSourceLabel(source) {
   if (source === 'OWNER_ASSIGN') return 'Owner指派'
   if (source === 'WORKFLOW_AUTO') return '流程待办'
@@ -286,12 +340,13 @@ function getActiveCardAccentColor(status) {
 
 function getActiveCardContainerStyle(item, currentStatus) {
   const overdue = isOverdueDate(item?.expected_completion_date)
+  const leftAccentColor = overdue ? WARNING_TEXT_COLOR : getActiveCardAccentColor(currentStatus)
   return {
     ...ACTIVE_CARD_BASE_STYLE,
-    border: overdue ? '1px solid #ffd591' : '1px solid #e4e7ec',
-    borderLeft: `4px solid ${getActiveCardAccentColor(currentStatus)}`,
-    background: overdue ? '#fffaf0' : '#fff',
-    boxShadow: overdue ? '0 1px 2px rgba(212, 107, 8, 0.14)' : ACTIVE_CARD_BASE_STYLE.boxShadow,
+    border: overdue ? `1px solid ${WARNING_BORDER_COLOR}` : '1px solid #e4e7ec',
+    borderLeft: `4px solid ${leftAccentColor}`,
+    background: overdue ? WARNING_BG_COLOR : '#fff',
+    boxShadow: overdue ? '0 2px 8px rgba(220, 38, 38, 0.14)' : ACTIVE_CARD_BASE_STYLE.boxShadow,
   }
 }
 
@@ -547,11 +602,12 @@ function WorkLogs() {
 
   const filteredActiveItems = useMemo(() => {
     const keyword = activeItemKeyword.trim().toLowerCase()
-    const statusFilter = activeItemStatusFilter
+    const statusFilter = parseStatusFilterValue(activeItemStatusFilter)
 
     const list = activeItems
       .filter((item) => {
-        if (statusFilter !== 'ALL' && (item?.log_status || 'IN_PROGRESS') !== statusFilter) return false
+        if (statusFilter.kind === 'lifecycle' && (item?.log_status || 'IN_PROGRESS') !== statusFilter.value) return false
+        if (statusFilter.kind === 'unified' && getDisplayStatusMeta(item).code !== statusFilter.value) return false
         if (!keyword) return true
         const demandId = String(item?.demand_id || '').trim()
         const workflowNodeName = demandId ? workflowNodeByDemandId.get(demandId) || '' : ''
@@ -677,10 +733,12 @@ function WorkLogs() {
 
     setLoadingLogs(true)
     try {
+      const statusFilter = parseStatusFilterValue(logStatusFilter)
       const result = await getWorkLogsApi({
         page,
         pageSize,
-        ...(logStatusFilter !== 'ALL' ? { log_status: logStatusFilter } : {}),
+        ...(statusFilter.kind === 'lifecycle' ? { log_status: statusFilter.value } : {}),
+        ...(statusFilter.kind === 'unified' ? { unified_status: statusFilter.value } : {}),
       })
       if (!result?.success) {
         message.error(result?.message || '获取工作记录失败')
@@ -1150,6 +1208,20 @@ function WorkLogs() {
       dataIndex: 'log_status',
       key: 'log_status',
       width: 120,
+      render: (_, record) => {
+        const meta = getDisplayStatusMeta(record)
+        return (
+          <Tag color={meta.color}>
+            {meta.label}
+          </Tag>
+        )
+      },
+    },
+    {
+      title: '生命周期',
+      dataIndex: 'log_status',
+      key: 'log_status_lifecycle',
+      width: 120,
       render: (value) => (
         <Tag color={getItemStatusColor(value)}>
           {getItemStatusLabel(value)}
@@ -1208,7 +1280,19 @@ function WorkLogs() {
       title: '描述',
       dataIndex: 'description',
       key: 'description',
-      ellipsis: true,
+      width: 260,
+      ellipsis: {
+        showTitle: false,
+      },
+      render: (value) => {
+        const text = String(value || '').trim()
+        if (!text) return '-'
+        return (
+          <Tooltip title={text}>
+            <span>{text}</span>
+          </Tooltip>
+        )
+      },
     },
     {
       title: '预计整体用时(h)',
@@ -1367,7 +1451,10 @@ function WorkLogs() {
       dataIndex: 'log_status',
       key: 'log_status',
       width: 90,
-      render: (value) => <Tag color={getItemStatusColor(value)}>{getItemStatusLabel(value)}</Tag>,
+      render: (_, record) => {
+        const meta = getDisplayStatusMeta(record)
+        return <Tag color={meta.color}>{meta.label}</Tag>
+      },
     },
     {
       title: '事项类型',
@@ -1668,8 +1755,8 @@ function WorkLogs() {
                     <div style={SURFACE_VALUE_STYLE}>{activeItemSummary.inProgress}</div>
                   </div>
                   <div style={WARNING_SURFACE_CARD_STYLE}>
-                    <div style={{ fontSize: 12, color: '#d46b08' }}>已超期</div>
-                    <div style={{ ...SURFACE_VALUE_STYLE, color: '#d46b08' }}>{activeItemSummary.overdue}</div>
+                    <div style={{ fontSize: 12, color: WARNING_TEXT_COLOR }}>已超期</div>
+                    <div style={{ ...SURFACE_VALUE_STYLE, color: WARNING_TEXT_COLOR }}>{activeItemSummary.overdue}</div>
                   </div>
                   <div style={SURFACE_CARD_STYLE}>
                     <div style={SURFACE_LABEL_STYLE}>未设截止日</div>
@@ -1742,6 +1829,10 @@ function WorkLogs() {
                           >
                             <Space wrap>
                               <Tag color="blue">#{item.id}</Tag>
+                              {(() => {
+                                const meta = getDisplayStatusMeta(item)
+                                return <Tag color={meta.color}>{meta.label}</Tag>
+                              })()}
                               <Tag color={getItemStatusColor(item.log_status)}>
                                 {getItemStatusLabel(currentStatus)}
                               </Tag>
@@ -1786,7 +1877,11 @@ function WorkLogs() {
                             <div>填报日期: {formatDateOnly(item.log_date)}</div>
                             <div>指派人: {item.assigned_by_name || '-'}</div>
                             <div>预计开始: {formatDateOnly(item.expected_start_date)}</div>
-                            <div style={{ color: isOverdueDate(item.expected_completion_date) ? '#d46b08' : MUTED_TEXT_COLOR }}>
+                            <div
+                              style={{
+                                color: isOverdueDate(item.expected_completion_date) ? WARNING_TEXT_COLOR : MUTED_TEXT_COLOR,
+                              }}
+                            >
                               预计完成: {formatDateOnly(item.expected_completion_date)}
                             </div>
                           </div>

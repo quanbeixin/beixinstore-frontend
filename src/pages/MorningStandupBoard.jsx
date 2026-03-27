@@ -9,7 +9,8 @@ import { Card, Col, Empty, Modal, Progress, Row, Segmented, Space, Table, Tabs, 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getMorningStandupBoardApi } from '../api/work'
 import { getCurrentUser } from '../utils/access'
-import { formatBeijingDate, getBeijingTodayDateString } from '../utils/datetime'
+import { formatBeijingDate } from '../utils/datetime'
+import { UNIFIED_WORK_STATUS, getUnifiedStatusMeta } from '../utils/workStatus'
 import './MorningStandupBoard.css'
 
 const { Text } = Typography
@@ -64,17 +65,9 @@ function renderDemandNameWithLimit(value, maxLength = 30) {
   )
 }
 
-function getFocusLevelTag(level) {
-  if (level === 'OVERDUE') return <Tag color="error">逾期</Tag>
-  if (level === 'DUE_TODAY') return <Tag color="warning">今日到期</Tag>
-  return <Tag>普通</Tag>
-}
-
-function getYesterdayCheckTag(checkResult) {
-  if (checkResult === 'NOT_DONE') return <Tag color="error">未完成</Tag>
-  if (checkResult === 'LATE_DONE') return <Tag color="warning">延迟完成</Tag>
-  if (checkResult === 'ON_TIME') return <Tag color="success">按期完成</Tag>
-  return <Tag>待检查</Tag>
+function getUnifiedStatusTag(record) {
+  const meta = getUnifiedStatusMeta(record)
+  return <Tag color={meta.color}>{meta.label}</Tag>
 }
 
 function getGroupYesterdayCheckResult(stats) {
@@ -104,12 +97,18 @@ function sortPhaseGroups(entries = []) {
 }
 
 function sortInProgressChildItems(items = []) {
+  const rankMap = {
+    [UNIFIED_WORK_STATUS.RISK]: 0,
+    [UNIFIED_WORK_STATUS.OVERDUE]: 1,
+    [UNIFIED_WORK_STATUS.DUE_TODAY]: 2,
+    [UNIFIED_WORK_STATUS.NORMAL]: 3,
+    [UNIFIED_WORK_STATUS.ON_TIME_DONE]: 4,
+    [UNIFIED_WORK_STATUS.LATE_DONE]: 5,
+  }
+
   const getBucket = (item) => {
-    if (item?.progress_risk) return 0
-    const focusLevel = String(item?.focus_level || '').trim().toUpperCase()
-    if (focusLevel === 'OVERDUE') return 1
-    if (focusLevel === 'DUE_TODAY') return 2
-    return 3
+    const code = getUnifiedStatusMeta(item).code
+    return rankMap[code] ?? 9
   }
 
   return [...items].sort((a, b) => {
@@ -129,10 +128,11 @@ function sortInProgressChildItems(items = []) {
 }
 
 function sortYesterdayDueChildItems(items = []) {
-  const checkRank = {
-    NOT_DONE: 0,
-    LATE_DONE: 1,
-    ON_TIME: 2,
+  const statusRank = {
+    [UNIFIED_WORK_STATUS.OVERDUE]: 0,
+    [UNIFIED_WORK_STATUS.LATE_DONE]: 1,
+    [UNIFIED_WORK_STATUS.ON_TIME_DONE]: 2,
+    [UNIFIED_WORK_STATUS.NORMAL]: 3,
   }
   const priorityRank = {
     P0: 0,
@@ -142,9 +142,9 @@ function sortYesterdayDueChildItems(items = []) {
   }
 
   return [...items].sort((a, b) => {
-    const resultA = String(a?.check_result || '').trim().toUpperCase()
-    const resultB = String(b?.check_result || '').trim().toUpperCase()
-    const checkDiff = (checkRank[resultA] ?? 9) - (checkRank[resultB] ?? 9)
+    const codeA = getUnifiedStatusMeta(a).code
+    const codeB = getUnifiedStatusMeta(b).code
+    const checkDiff = (statusRank[codeA] ?? 9) - (statusRank[codeB] ?? 9)
     if (checkDiff !== 0) return checkDiff
 
     const demandPriorityA = String(a?.demand_priority || '').trim().toUpperCase()
@@ -293,7 +293,6 @@ function MorningStandupBoard() {
     () => (Array.isArray(data.focus_todo_items) ? data.focus_todo_items : EMPTY_ARRAY),
     [data.focus_todo_items],
   )
-  const todayDate = getBeijingTodayDateString()
   const teamPlannedCapacityHours = useMemo(() => toNumber(summary.team_size, 0) * 8.5, [summary.team_size])
 
   const sortedMembers = useMemo(() => {
@@ -320,7 +319,7 @@ function MorningStandupBoard() {
           if (record?.row_type === 'phase_group') {
             return <Text strong>{getPhaseDisplayName(record)}</Text>
           }
-          return getFocusLevelTag(value)
+          return getUnifiedStatusTag(record)
         },
       },
       {
@@ -349,11 +348,19 @@ function MorningStandupBoard() {
         width: 280,
         render: (value, record) =>
           record?.row_type === 'phase_group' ? (
-            <Space size={6} wrap>
-              <Tag color="error">{`风险 ${toNumber(record?.risk_count, 0)}`}</Tag>
-              <Tag color="warning">{`逾期 ${toNumber(record?.overdue_count, 0)}`}</Tag>
-              <Tag color="success">{`正常 ${toNumber(record?.normal_count, 0)}`}</Tag>
-            </Space>
+            toNumber(record?.late_done_count, 0) > 0 || toNumber(record?.on_time_done_count, 0) > 0 ? (
+              <Space size={6} wrap>
+                <Tag color="volcano">{`逾期完成 ${toNumber(record?.late_done_count, 0)}`}</Tag>
+                <Tag color="success">{`按期完成 ${toNumber(record?.on_time_done_count, 0)}`}</Tag>
+                <Tag>{`其他 ${toNumber(record?.normal_count, 0)}`}</Tag>
+              </Space>
+            ) : (
+              <Space size={6} wrap>
+                <Tag color="warning">{`风险 ${toNumber(record?.risk_count, 0)}`}</Tag>
+                <Tag color="error">{`逾期 ${toNumber(record?.overdue_count, 0)}`}</Tag>
+                <Tag color="success">{`正常 ${toNumber(record?.normal_count, 0)}`}</Tag>
+              </Space>
+            )
           ) : (
             <Space size={4} wrap={false}>
               {record?.demand_priority ? <Tag color="volcano">{record.demand_priority}</Tag> : null}
@@ -491,10 +498,10 @@ function MorningStandupBoard() {
       }
       const group = groups.get(phaseLabel)
       group.items.push(item)
-      if (item?.progress_risk) group.risk_count += 1
-      const isOverdue = String(item?.focus_level || '').toUpperCase() === 'OVERDUE'
-      if (isOverdue) group.overdue_count += 1
-      if (!item?.progress_risk && !isOverdue) group.normal_count += 1
+      const unifiedCode = getUnifiedStatusMeta(item).code
+      if (unifiedCode === UNIFIED_WORK_STATUS.RISK) group.risk_count += 1
+      else if (unifiedCode === UNIFIED_WORK_STATUS.OVERDUE) group.overdue_count += 1
+      else group.normal_count += 1
       group.progress_sum += toNumber(item?.progress_percent, 0)
       group.expected_sum += toNumber(item?.expected_progress_percent, 0)
     })
@@ -542,8 +549,8 @@ function MorningStandupBoard() {
       if (!groups.has(phaseLabel)) {
         groups.set(phaseLabel, {
           items: [],
-          risk_count: 0,
-          overdue_count: 0,
+          late_done_count: 0,
+          on_time_done_count: 0,
           normal_count: 0,
           progress_sum: 0,
           expected_sum: 0,
@@ -551,10 +558,10 @@ function MorningStandupBoard() {
       }
       const group = groups.get(phaseLabel)
       group.items.push(item)
-      if (item?.progress_risk) group.risk_count += 1
-      const isOverdue = String(item?.focus_level || '').toUpperCase() === 'OVERDUE'
-      if (isOverdue) group.overdue_count += 1
-      if (!item?.progress_risk && !isOverdue) group.normal_count += 1
+      const unifiedCode = getUnifiedStatusMeta(item).code
+      if (unifiedCode === UNIFIED_WORK_STATUS.LATE_DONE) group.late_done_count += 1
+      else if (unifiedCode === UNIFIED_WORK_STATUS.ON_TIME_DONE) group.on_time_done_count += 1
+      else group.normal_count += 1
       group.progress_sum += toNumber(item?.progress_percent, 0)
       group.expected_sum += toNumber(item?.expected_progress_percent, 0)
     })
@@ -571,13 +578,13 @@ function MorningStandupBoard() {
         row_type: 'phase_group',
         phase_name: phaseLabel,
         username: `共 ${itemCount} 项`,
-        demand_name: `共 ${itemCount} 项，风险 ${group.risk_count} 项`,
+        demand_name: `共 ${itemCount} 项，逾期完成 ${group.late_done_count} 项`,
         progress_show: true,
         progress_percent: avgProgress,
         expected_progress_percent: avgExpected,
-        progress_risk: group.risk_count > 0,
-        risk_count: group.risk_count,
-        overdue_count: group.overdue_count,
+        progress_risk: group.late_done_count > 0,
+        late_done_count: group.late_done_count,
+        on_time_done_count: group.on_time_done_count,
         normal_count: group.normal_count,
         children: sortedChildren,
       }
@@ -595,7 +602,7 @@ function MorningStandupBoard() {
           record?.row_type === 'phase_group' ? (
             <Text strong>{getPhaseDisplayName(record)}</Text>
           ) : (
-            getYesterdayCheckTag(value)
+            getUnifiedStatusTag(record)
           ),
       },
       {
@@ -949,9 +956,9 @@ function MorningStandupBoard() {
         ) : (
           <Space orientation="vertical" size={8} className="morning-member-item-list">
             {activeItems.map((item) => {
-              const expectedDate = formatBeijingDate(item.expected_completion_date, '')
-              const overdue = expectedDate && expectedDate < todayDate
-              const dueToday = expectedDate && expectedDate === todayDate
+              const unifiedMeta = getUnifiedStatusMeta(item)
+              const overdue = unifiedMeta.code === UNIFIED_WORK_STATUS.OVERDUE
+              const dueToday = unifiedMeta.code === UNIFIED_WORK_STATUS.DUE_TODAY
 
               return (
                 <div
@@ -961,6 +968,7 @@ function MorningStandupBoard() {
                   <div className="morning-member-item-head">
                     <Space size={6} wrap>
                       <Tag color="blue">#{item.id}</Tag>
+                      <Tag color={unifiedMeta.color}>{unifiedMeta.label}</Tag>
                       <Tag color={getStatusTagColor(item.log_status)}>{getStatusLabel(item.log_status)}</Tag>
                       <Text strong>{item.item_type_name || '-'}</Text>
                     </Space>
