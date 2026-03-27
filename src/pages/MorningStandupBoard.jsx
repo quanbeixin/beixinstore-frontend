@@ -414,6 +414,18 @@ function MorningStandupBoard() {
         },
       },
       {
+        title: '个人预估(h)',
+        dataIndex: 'personal_estimate_hours',
+        key: 'personal_estimate_hours',
+        width: 110,
+        render: (value, record) =>
+          record?.row_type === 'phase_group' ? (
+            <Text type="secondary">-</Text>
+          ) : (
+            `${toNumber(value, 0).toFixed(1)}h`
+          ),
+      },
+      {
         title: '状态',
         dataIndex: 'log_status',
         key: 'log_status',
