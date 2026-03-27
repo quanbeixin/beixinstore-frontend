@@ -354,6 +354,30 @@
   word-break: break-word;
 }
 
+.morning-board-table .ant-table-tbody > tr.row-overdue > td {
+  background: #fff1f0 !important;
+}
+
+.morning-board-table .ant-table-tbody > tr.row-risk > td {
+  background: #fffbe6 !important;
+}
+
+.morning-board-table .ant-table-tbody > tr.row-due-today > td {
+  background: #e6f7ff !important;
+}
+
+.morning-board-table .ant-table-tbody > tr.row-overdue:hover > td {
+  background: #ffccc7 !important;
+}
+
+.morning-board-table .ant-table-tbody > tr.row-risk:hover > td {
+  background: #fff1b8 !important;
+}
+
+.morning-board-table .ant-table-tbody > tr.row-due-today:hover > td {
+  background: #bae7ff !important;
+}
+
 .morning-progress-head {
   display: flex;
   justify-content: space-between;
