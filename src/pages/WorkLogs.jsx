@@ -1359,6 +1359,15 @@ function WorkLogs({ mode = 'dashboard' }) {
         return
       }
       const selectedStatus = String(values.log_status || editingLog.log_status || 'IN_PROGRESS').toUpperCase()
+
+      // 状态转换验证：TODO → IN_PROGRESS 需要填写个人预估
+      const previousStatus = String(editingLog.log_status || 'TODO').toUpperCase()
+      if (previousStatus === 'TODO' && selectedStatus === 'IN_PROGRESS') {
+        if (!values.personal_estimate_hours || values.personal_estimate_hours <= 0) {
+          message.error('开始工作前必须填写个人预估用时')
+          return
+        }
+      }
       let nextCompletedAt = values.log_completed_at || null
 
       if (selectedStatus === 'DONE' && !nextCompletedAt) {
