@@ -7,6 +7,7 @@
   WarningOutlined,
 } from '@ant-design/icons'
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -25,6 +26,7 @@ import {
   Typography,
   message,
 } from 'antd'
+import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createOwnerAssignedLogApi,
@@ -313,6 +315,36 @@ function OwnerWorkbench() {
       return true
     })
   }, [ownerEstimateItems, keyword, memberFilter, phaseFilter, pendingOnly])
+
+  // Owner工作台提醒统计
+  const ownerReminderStats = useMemo(() => {
+    const today = getBeijingTodayDateString()
+
+    let pendingEstimateCount = 0
+    let overdueCount = 0
+    let abnormalActualCount = 0
+
+    ownerEstimateItems.forEach(item => {
+      // 待评估工作
+      if (item.owner_estimate_hours === null || item.owner_estimate_hours === undefined) {
+        pendingEstimateCount++
+      }
+      // 团队成员工作超期
+      const completionDate = item?.expected_completion_date
+      const status = item?.log_status || 'IN_PROGRESS'
+      if (completionDate && completionDate < today && status !== 'DONE') {
+        overdueCount++
+      }
+      // 今日实际异常
+      const todayPlanned = toNumber(item?.today_planned_hours, 0)
+      const todayActual = toNumber(item?.today_actual_hours, 0)
+      if (todayPlanned > 0 && todayActual > todayPlanned * 1.5) {
+        abnormalActualCount++
+      }
+    })
+
+    return { pendingEstimateCount, overdueCount, abnormalActualCount }
+  }, [ownerEstimateItems])
 
   const openEstimateModal = (item) => {
     setEditingItem(item)
@@ -815,6 +847,36 @@ function OwnerWorkbench() {
           </Space>
         }
       >
+        {/* Owner提醒区域 */}
+        {(ownerReminderStats.pendingEstimateCount > 0 || ownerReminderStats.overdueCount > 0 || ownerReminderStats.abnormalActualCount > 0) && (
+          <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {ownerReminderStats.pendingEstimateCount > 0 && (
+              <Alert
+                title={`有 ${ownerReminderStats.pendingEstimateCount} 项工作待Owner评估`}
+                type="info"
+                showIcon
+                closable
+              />
+            )}
+            {ownerReminderStats.overdueCount > 0 && (
+              <Alert
+                title={`有 ${ownerReminderStats.overdueCount} 项团队成员工作已超期`}
+                type="error"
+                showIcon
+                closable
+              />
+            )}
+            {ownerReminderStats.abnormalActualCount > 0 && (
+              <Alert
+                title={`有 ${ownerReminderStats.abnormalActualCount} 项工作今日实际用时异常（超出计划50%以上）`}
+                type="warning"
+                showIcon
+                closable
+              />
+            )}
+          </div>
+        )}
+
         <Space wrap className="owner-filter-toolbar">
           <Input
             allowClear
