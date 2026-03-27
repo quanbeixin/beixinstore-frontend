@@ -43,7 +43,7 @@ import {
   getWorkLogsApi,
   updateWorkLogApi,
 } from '../api/work'
-import { getCurrentUser, hasPermission } from '../utils/access'
+import { hasPermission } from '../utils/access'
 import { formatBeijingDate, getBeijingTodayDateString } from '../utils/datetime'
 
 const { Text } = Typography
@@ -187,11 +187,6 @@ function isDemandFollowupItemType(itemType) {
   return typeName.includes('需求跟进')
 }
 
-function toPositiveInt(value) {
-  const num = Number(value)
-  return Number.isInteger(num) && num > 0 ? num : null
-}
-
 function splitHoursAcrossCount(totalHours, count) {
   const total = Math.max(0, Number(toNumber(totalHours, 0)))
   const safeCount = Math.max(1, Number(count || 1))
@@ -202,12 +197,6 @@ function splitHoursAcrossCount(totalHours, count) {
     const ticks = baseTicks + (index < remainderTicks ? 1 : 0)
     return Number((ticks / 10).toFixed(1))
   })
-}
-
-function isPhaseVisibleForDepartment(phaseItem, userDepartmentId) {
-  const ownerDepartmentId = toPositiveInt(phaseItem?.owner_department_id)
-  if (!ownerDepartmentId) return true
-  return ownerDepartmentId === toPositiveInt(userDepartmentId)
 }
 
 function openDemandDetailInNewTab(demandId) {
@@ -475,21 +464,11 @@ function WorkLogs() {
       phaseDictItems.map((item) => ({
         value: item.phase_key,
         label: item.phase_name || item.phase_key,
-        owner_department_id: item.owner_department_id || null,
       })),
     [phaseDictItems],
   )
 
-  const currentUser = useMemo(() => getCurrentUser(), [])
-  const currentUserDepartmentId = useMemo(() => {
-    const fromWorkbench = toPositiveInt(workbench?.current_user?.department_id)
-    if (fromWorkbench) return fromWorkbench
-    return toPositiveInt(currentUser?.department_id)
-  }, [workbench?.current_user?.department_id, currentUser?.department_id])
-
-  const shouldFilterQuickPhaseByDepartment = isDemandFollowupItemType(selectedItemType)
-  const shouldFilterActualPhaseByDepartment = isDemandFollowupItemType(selectedActualItemType)
-  const isQuickBatchPhaseMode = Boolean(selectedDemandId) && shouldFilterQuickPhaseByDepartment
+  const isQuickBatchPhaseMode = Boolean(selectedDemandId) && isDemandFollowupItemType(selectedItemType)
   const normalizedSelectedQuickPhaseKeys = useMemo(() => {
     const rawValues = Array.isArray(selectedQuickPhaseValue)
       ? selectedQuickPhaseValue
@@ -507,15 +486,8 @@ function WorkLogs() {
     return unique
   }, [selectedQuickPhaseValue])
 
-  const quickPhaseOptions = useMemo(() => {
-    if (!shouldFilterQuickPhaseByDepartment) return phaseOptions
-    return phaseOptions.filter((item) => isPhaseVisibleForDepartment(item, currentUserDepartmentId))
-  }, [phaseOptions, shouldFilterQuickPhaseByDepartment, currentUserDepartmentId])
-
-  const actualPhaseOptions = useMemo(() => {
-    if (!shouldFilterActualPhaseByDepartment) return phaseOptions
-    return phaseOptions.filter((item) => isPhaseVisibleForDepartment(item, currentUserDepartmentId))
-  }, [phaseOptions, shouldFilterActualPhaseByDepartment, currentUserDepartmentId])
+  const quickPhaseOptions = phaseOptions
+  const actualPhaseOptions = phaseOptions
 
   const quickPhaseOptionsWithSelected = useMemo(() => {
     if (normalizedSelectedQuickPhaseKeys.length === 0) return quickPhaseOptions
@@ -690,7 +662,6 @@ function WorkLogs() {
         (phaseResult.data || []).map((item) => ({
           phase_key: item.phase_key,
           phase_name: item.phase_name,
-          owner_department_id: toPositiveInt(item.owner_department_id),
         })),
       )
       setWorkbench(benchResult.data || {})

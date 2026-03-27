@@ -27,7 +27,6 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getDepartmentsApi } from '../api/org'
 import {
   createDictItemApi,
   createDictTypeApi,
@@ -88,21 +87,22 @@ function getOwnerEstimateRuleValue(raw) {
   return 'NONE'
 }
 
-function getOwnerDepartmentIdValue(raw) {
-  const obj = parseJsonObject(raw)
-  if (!obj) return null
-  const value = obj.owner_department_id ?? obj.ownerDepartmentId
-  const id = Number(value)
-  return Number.isInteger(id) && id > 0 ? id : null
-}
-
-function getOwnerEstimateRequiredValue(raw) {
+function getDemandPhaseOwnerEstimateRequiredValue(raw) {
   const obj = parseJsonObject(raw)
   if (!obj) return false
   const value = obj.owner_estimate_required ?? obj.ownerEstimateRequired
   if (value === true || value === 1 || value === '1') return true
   if (typeof value === 'string' && value.trim().toLowerCase() === 'true') return true
   return false
+}
+
+function stripDemandPhaseLegacyDepartmentFields(raw) {
+  const obj = parseJsonObject(raw)
+  if (!obj) return toExtraJsonText(raw)
+  const next = { ...obj }
+  delete next.owner_department_id
+  delete next.ownerDepartmentId
+  return Object.keys(next).length > 0 ? JSON.stringify(next, null, 2) : ''
 }
 
 function normalizeItemExtraJson(raw) {
@@ -140,7 +140,7 @@ function DictCenter() {
   const [itemsLoading, setItemsLoading] = useState(false)
   const [itemOrderSaving, setItemOrderSaving] = useState(false)
   const [draggingItemId, setDraggingItemId] = useState(null)
-  const [departments, setDepartments] = useState([])
+  const [phaseOwnerEstimateSavingById, setPhaseOwnerEstimateSavingById] = useState({})
 
   const [typeModalOpen, setTypeModalOpen] = useState(false)
   const [editingType, setEditingType] = useState(null)
@@ -160,22 +160,6 @@ function DictCenter() {
   const itemModalTypeKey = editingItem?.type_key || selectedTypeKey
   const isIssueTypeItem = itemModalTypeKey === 'issue_type'
   const isDemandPhaseTypeItem = itemModalTypeKey === 'demand_phase_type'
-
-  const departmentOptions = useMemo(
-    () =>
-      (departments || []).map((item) => ({
-        value: item.id,
-        label: item.name ? item.name : `部门${item.id}`,
-      })),
-    [departments],
-  )
-  const departmentNameMap = useMemo(() => {
-    const map = new Map()
-    ;(departments || []).forEach((item) => {
-      if (item?.id) map.set(Number(item.id), item.name || `部门#${item.id}`)
-    })
-    return map
-  }, [departments])
 
   const filteredTypes = useMemo(() => {
     const q = typeKeyword.trim().toLowerCase()
@@ -231,32 +215,16 @@ function DictCenter() {
     }
   }, [])
 
-  const fetchDepartments = useCallback(async () => {
-    try {
-      const result = await getDepartmentsApi({ mode: 'flat' })
-      if (!result?.success) return
-      const rows = Array.isArray(result.data) ? result.data : []
-      const enabledOnly = rows.filter((item) => Number(item.enabled ?? 1) === 1)
-      setDepartments(enabledOnly)
-    } catch {
-      setDepartments([])
-    }
-  }, [])
-
   useEffect(() => {
     fetchTypes()
   }, [fetchTypes])
-
-  useEffect(() => {
-    fetchDepartments()
-  }, [fetchDepartments])
 
   useEffect(() => {
     fetchItems(selectedTypeKey)
   }, [selectedTypeKey, fetchItems])
 
   const handleRefresh = async () => {
-    await Promise.all([fetchTypes(), fetchItems(selectedTypeKey), fetchDepartments()])
+    await Promise.all([fetchTypes(), fetchItems(selectedTypeKey)])
   }
 
   const openCreateType = () => {
@@ -351,8 +319,6 @@ function DictCenter() {
       sortOrder: 0,
       requireDemand: false,
       ownerEstimateRule: 'NONE',
-      ownerDepartmentId: undefined,
-      ownerEstimateRequired: false,
       extraJson: '',
     })
     setItemModalOpen(true)
@@ -366,11 +332,12 @@ function DictCenter() {
       enabled: Boolean(record.enabled),
       color: record.color,
       remark: record.remark,
-      extraJson: toExtraJsonText(record.extra_json),
+      extraJson:
+        record.type_key === 'demand_phase_type'
+          ? stripDemandPhaseLegacyDepartmentFields(record.extra_json)
+          : toExtraJsonText(record.extra_json),
       requireDemand: getRequireDemandValue(record.extra_json),
       ownerEstimateRule: getOwnerEstimateRuleValue(record.extra_json),
-      ownerDepartmentId: getOwnerDepartmentIdValue(record.extra_json) || undefined,
-      ownerEstimateRequired: getOwnerEstimateRequiredValue(record.extra_json),
     })
     setItemModalOpen(true)
   }
@@ -414,15 +381,9 @@ function DictCenter() {
       }
 
       if (isDemandPhaseTypeItem && baseObj) {
-        const ownerDepartmentId = Number(values.ownerDepartmentId)
-        if (Number.isInteger(ownerDepartmentId) && ownerDepartmentId > 0) {
-          baseObj.owner_department_id = ownerDepartmentId
-        } else {
-          delete baseObj.owner_department_id
-          delete baseObj.ownerDepartmentId
-        }
-        baseObj.owner_estimate_required = Boolean(values.ownerEstimateRequired)
-        finalExtraJson = JSON.stringify(baseObj)
+        delete baseObj.owner_department_id
+        delete baseObj.ownerDepartmentId
+        finalExtraJson = Object.keys(baseObj).length > 0 ? JSON.stringify(baseObj) : null
       }
 
       let result
@@ -479,6 +440,55 @@ function DictCenter() {
       fetchItems(selectedTypeKey)
     } catch (error) {
       message.error(error?.message || '删除失败')
+    }
+  }
+
+  const updateDemandPhaseOwnerEstimateRequired = async (record, nextChecked) => {
+    if (!record?.id || selectedTypeKey !== 'demand_phase_type') return
+
+    const id = Number(record.id)
+    const parsed = parseJsonObject(record.extra_json) || {}
+    const nextExtraObj = { ...parsed }
+    delete nextExtraObj.owner_department_id
+    delete nextExtraObj.ownerDepartmentId
+    nextExtraObj.owner_estimate_required = Boolean(nextChecked)
+    delete nextExtraObj.ownerEstimateRequired
+    const nextExtraJson = JSON.stringify(nextExtraObj)
+
+    setPhaseOwnerEstimateSavingById((prev) => ({ ...prev, [id]: true }))
+    try {
+      const result = await updateDictItemApi(id, {
+        itemName: record.item_name,
+        sortOrder: record.sort_order,
+        enabled: Boolean(record.enabled),
+        color: record.color || null,
+        remark: record.remark || null,
+        extraJson: nextExtraJson,
+      })
+      if (!result?.success) {
+        message.error(result?.message || 'Owner评估配置更新失败')
+        return
+      }
+
+      setItems((prev) =>
+        (prev || []).map((item) =>
+          Number(item.id) === id
+            ? {
+                ...item,
+                extra_json: nextExtraJson,
+              }
+            : item,
+        ),
+      )
+      message.success(`Owner评估已${nextChecked ? '开启' : '关闭'}`)
+    } catch (error) {
+      message.error(error?.message || 'Owner评估配置更新失败')
+    } finally {
+      setPhaseOwnerEstimateSavingById((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
     }
   }
 
@@ -648,14 +658,19 @@ function DictCenter() {
         }
 
         if (selectedTypeKey === 'demand_phase_type') {
-          const deptId = getOwnerDepartmentIdValue(record.extra_json)
-          const deptName = deptId ? departmentNameMap.get(Number(deptId)) || `部门#${deptId}` : '未设置责任部门'
-          const required = getOwnerEstimateRequiredValue(record.extra_json)
+          const checked = getDemandPhaseOwnerEstimateRequiredValue(record.extra_json)
+          const loading = Boolean(phaseOwnerEstimateSavingById[Number(record.id)])
           return (
-            <Space size={4} wrap>
-              <Tag color={deptId ? 'blue' : 'default'}>{deptName}</Tag>
-              <Tag color={required ? 'red' : 'default'}>{required ? '必须评估' : '非必须'}</Tag>
-            </Space>
+            <Switch
+              checked={checked}
+              loading={loading}
+              disabled={itemsLoading || itemOrderSaving}
+              checkedChildren="开启"
+              unCheckedChildren="关闭"
+              onChange={(nextChecked) => {
+                updateDemandPhaseOwnerEstimateRequired(record, nextChecked)
+              }}
+            />
           )
         }
 
@@ -918,28 +933,6 @@ function DictCenter() {
                     { value: 'REQUIRED', label: '负责人必须评估' },
                   ]}
                 />
-              </Form.Item>
-            </>
-          ) : null}
-
-          {isDemandPhaseTypeItem ? (
-            <>
-              <Form.Item label="责任部门（负责人）" name="ownerDepartmentId">
-                <Select
-                  allowClear
-                  placeholder="请选择负责评估该阶段的部门"
-                  options={departmentOptions}
-                  showSearch
-                  optionFilterProp="label"
-                />
-              </Form.Item>
-              <Form.Item
-                label="该阶段是否必须负责人评估"
-                name="ownerEstimateRequired"
-                valuePropName="checked"
-                initialValue={false}
-              >
-                <Switch checkedChildren="必须" unCheckedChildren="非必须" />
               </Form.Item>
             </>
           ) : null}
