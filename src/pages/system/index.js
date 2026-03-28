@@ -1,0 +1,7 @@
+export { default as DepartmentsPage } from './DepartmentsPage'
+export { default as DictCenterPage } from './DictCenterPage'
+export { default as MenuVisibilityPage } from './MenuVisibilityPage'
+export { default as OptionsPage } from './OptionsPage'
+export { default as RolePermissionsPage } from './RolePermissionsPage'
+export { default as UserDepartmentsPage } from './UserDepartmentsPage'
+export { default as UsersPage } from './UsersPage'

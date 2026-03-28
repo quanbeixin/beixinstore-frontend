@@ -2,8 +2,8 @@
 import { Button, Card, Divider, Form, Input, message } from 'antd'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { registerApi } from '../api/auth'
-import './Register.css'
+import { registerApi } from '../../api/auth'
+import './RegisterPage.css'
 
 function Register() {
   const navigate = useNavigate()

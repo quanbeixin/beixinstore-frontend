@@ -2,11 +2,12 @@
 
 const SECTION_META = {
   main: { key: 'main' },
+  project: { key: 'project', label: '项目管理', icon: 'tool' },
   efficiency: { key: 'efficiency', label: '效能总览', icon: 'dashboard' },
   system: { key: 'system', label: '系统设置', icon: 'setting' },
 }
 
-const SECTION_ORDER = ['main', 'efficiency', 'system']
+const SECTION_ORDER = ['main', 'project', 'efficiency', 'system']
 
 function buildMenuSectionsFromRoutes() {
   const sectionMap = {}

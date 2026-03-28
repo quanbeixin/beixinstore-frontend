@@ -2,15 +2,15 @@
 import { Button, Checkbox, Form, Input, message } from 'antd'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { getAccessApi, getPreferencesApi, loginApi } from '../api/auth'
-import { getMyMenuVisibilityApi } from '../api/rbac'
-import { setAuthStorage, setMenuVisibilityAccessMap, setUserPreferences } from '../utils/access'
-import './Login.css'
+import { getAccessApi, getPreferencesApi, loginApi } from '../../api/auth'
+import { getMyMenuVisibilityApi } from '../../api/rbac'
+import { setAuthStorage, setMenuVisibilityAccessMap, setUserPreferences } from '../../utils/access'
+import './LoginPage.css'
 
 async function warmupWorkbenchPage() {
   await Promise.allSettled([
-    import('../layouts/AdminLayout'),
-    import('./WorkLogs'),
+    import('../../layouts/AdminLayout'),
+    import('../workbench/WorkLogsPage'),
   ])
 }
 

@@ -11,9 +11,9 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getDepartmentsApi, getUserDepartmentsApi, setUserDepartmentsApi } from '../api/org'
-import { getUsersApi } from '../api/users'
-import { hasPermission } from '../utils/access'
+import { getDepartmentsApi, getUserDepartmentsApi, setUserDepartmentsApi } from '../../api/org'
+import { getUsersApi } from '../../api/users'
+import { hasPermission } from '../../utils/access'
 
 const { Search } = Input
 

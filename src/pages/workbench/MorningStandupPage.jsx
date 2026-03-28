@@ -7,11 +7,11 @@
 } from '@ant-design/icons'
 import { Card, Col, Empty, Modal, Progress, Row, Segmented, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getMorningStandupBoardApi } from '../api/work'
-import { getCurrentUser } from '../utils/access'
-import { formatBeijingDate } from '../utils/datetime'
-import { UNIFIED_WORK_STATUS, getUnifiedStatusMeta } from '../utils/workStatus'
-import './MorningStandupBoard.css'
+import { getMorningStandupBoardApi } from '../../api/work'
+import { getCurrentUser } from '../../utils/access'
+import { formatBeijingDate } from '../../utils/datetime'
+import { UNIFIED_WORK_STATUS, getUnifiedStatusMeta } from '../../utils/workStatus'
+import './MorningStandupPage.css'
 
 const { Text } = Typography
 const EMPTY_ARRAY = []

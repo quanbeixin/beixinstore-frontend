@@ -10,7 +10,7 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
-import { createOptionApi, deleteOptionApi, getOptionsApi, updateOptionApi } from '../api/options'
+import { createOptionApi, deleteOptionApi, getOptionsApi, updateOptionApi } from '../../api/options'
 
 const OPTION_TYPE = 'roles'
 

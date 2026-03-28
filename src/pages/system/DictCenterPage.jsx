@@ -36,7 +36,7 @@ import {
   getDictTypesApi,
   updateDictItemApi,
   updateDictTypeApi,
-} from '../api/configDict'
+} from '../../api/configDict'
 
 const { Search } = Input
 const { Text } = Typography

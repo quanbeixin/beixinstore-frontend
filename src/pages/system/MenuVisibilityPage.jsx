@@ -16,9 +16,13 @@ import {
   getMyMenuVisibilityApi,
   getRbacRolesApi,
   updateMenuVisibilityRuleApi,
-} from '../api/rbac'
-import { PRIVATE_ROUTES } from '../config/route.config'
-import { hasPermission, setMenuVisibilityAccessMap, setMenuVisibilityRules } from '../utils/access'
+} from '../../api/rbac'
+import { PRIVATE_ROUTES } from '../../config/route.config'
+import {
+  hasPermission,
+  setMenuVisibilityAccessMap,
+  setMenuVisibilityRules,
+} from '../../utils/access'
 
 const { Text } = Typography
 
@@ -38,6 +42,7 @@ const SCOPE_META = {
 
 const SECTION_LABELS = {
   main: '主导航',
+  project: '项目管理',
   system: '系统设置',
 }
 
@@ -205,7 +210,7 @@ function MenuVisibility() {
 
     const sections = Object.values(sectionMap).filter((section) => section.items.length > 0)
     const orderedSections = []
-    const preferredOrder = ['main', 'system']
+    const preferredOrder = ['main', 'project', 'system']
 
     preferredOrder.forEach((key) => {
       const section = sections.find((item) => item.key === key)

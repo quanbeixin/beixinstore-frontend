@@ -19,8 +19,8 @@ import {
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { getDemandInsightApi, getInsightFilterOptionsApi } from '../api/work'
-import { formatBeijingDate } from '../utils/datetime'
+import { getDemandInsightApi, getInsightFilterOptionsApi } from '../../api/work'
+import { formatBeijingDate } from '../../utils/datetime'
 
 const { RangePicker } = DatePicker
 const { Text } = Typography
@@ -828,4 +828,3 @@ function DemandInsightBoard() {
 }
 
 export default DemandInsightBoard
-

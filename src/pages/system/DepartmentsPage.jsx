@@ -19,14 +19,14 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getUserByIdApi, getUsersApi } from '../api/users'
+import { getUserByIdApi, getUsersApi } from '../../api/users'
 import {
   createDepartmentApi,
   deleteDepartmentApi,
   getDepartmentsApi,
   updateDepartmentApi,
-} from '../api/org'
-import { hasPermission } from '../utils/access'
+} from '../../api/org'
+import { hasPermission } from '../../utils/access'
 
 function flattenDepartments(tree = [], acc = []) {
   tree.forEach((node) => {

@@ -1,4 +1,4 @@
-import { DeleteOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
+import { DeleteOutlined, ReloadOutlined, RollbackOutlined, SearchOutlined } from '@ant-design/icons'
 import {
   Button,
   Card,
@@ -6,6 +6,7 @@ import {
   Empty,
   Input,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Table,
@@ -14,18 +15,35 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getUsersApi } from '../api/users'
-import { getArchivedDemandsApi, purgeArchivedDemandApi } from '../api/work'
-import { hasPermission } from '../utils/access'
-import { formatBeijingDateTime } from '../utils/datetime'
+import { getUsersApi } from '../../api/users'
+import {
+  getArchivedDemandsApi,
+  purgeArchivedDemandApi,
+  restoreArchivedDemandApi,
+} from '../../api/work'
+import { hasPermission } from '../../utils/access'
+import { formatBeijingDateTime } from '../../utils/datetime'
 
 const { RangePicker } = DatePicker
 const { Text } = Typography
+
+function getHealthTagColor(healthStatus) {
+  if (healthStatus === 'red') return 'error'
+  if (healthStatus === 'yellow') return 'warning'
+  return 'success'
+}
+
+function getHealthLabel(healthStatus) {
+  if (healthStatus === 'red') return '风险'
+  if (healthStatus === 'yellow') return '预警'
+  return '健康'
+}
 
 function ArchiveDemands() {
   const canManage = hasPermission('archive.manage')
   const [loading, setLoading] = useState(false)
   const [purging, setPurging] = useState(false)
+  const [restoringDemandId, setRestoringDemandId] = useState('')
 
   const [keywordInput, setKeywordInput] = useState('')
   const [keyword, setKeyword] = useState('')
@@ -140,6 +158,29 @@ function ArchiveDemands() {
     }
   }
 
+  const handleRestore = async (record) => {
+    if (!record?.id || !canManage) return
+    setRestoringDemandId(String(record.id))
+    try {
+      const result = await restoreArchivedDemandApi(record.id)
+      if (!result?.success) {
+        message.error(result?.message || '恢复归档需求失败')
+        return
+      }
+
+      message.success(result?.message || `需求 ${record.id} 已恢复`)
+      if (list.length === 1 && page > 1) {
+        setPage((prev) => Math.max(prev - 1, 1))
+      } else {
+        await loadData()
+      }
+    } catch (error) {
+      message.error(error?.message || '恢复归档需求失败')
+    } finally {
+      setRestoringDemandId('')
+    }
+  }
+
   const columns = [
     {
       title: '需求ID',
@@ -160,6 +201,35 @@ function ArchiveDemands() {
       key: 'owner_name',
       width: 120,
       render: (value) => value || '-',
+    },
+    {
+      title: '项目负责人',
+      dataIndex: 'project_manager_name',
+      key: 'project_manager_name',
+      width: 120,
+      render: (value) => value || '-',
+    },
+    {
+      title: '健康度',
+      dataIndex: 'health_status',
+      key: 'health_status',
+      width: 100,
+      render: (value) => <Tag color={getHealthTagColor(value)}>{getHealthLabel(value)}</Tag>,
+    },
+    {
+      title: '模板',
+      dataIndex: 'template_name',
+      key: 'template_name',
+      width: 180,
+      render: (_, record) =>
+        record.template_name ? `${record.template_name} (#${record.template_id})` : '-',
+    },
+    {
+      title: '成员数',
+      dataIndex: 'member_count',
+      key: 'member_count',
+      width: 100,
+      render: (value) => Number(value || 0),
     },
     {
       title: '归档时间',
@@ -185,17 +255,35 @@ function ArchiveDemands() {
     {
       title: '操作',
       key: 'action',
-      width: 140,
+      width: 250,
       fixed: 'right',
       render: (_, record) => (
-        <Button
-          danger
-          icon={<DeleteOutlined />}
-          disabled={!canManage}
-          onClick={() => openPurgeConfirm(record)}
-        >
-          彻底删除
-        </Button>
+        <Space>
+          <Popconfirm
+            title={`确认恢复需求 ${record.id}？`}
+            description="恢复后需求将重新回到工作列表，并可继续流程推进。"
+            okText="确认恢复"
+            cancelText="取消"
+            onConfirm={() => handleRestore(record)}
+            disabled={!canManage}
+          >
+            <Button
+              icon={<RollbackOutlined />}
+              disabled={!canManage}
+              loading={restoringDemandId === String(record.id)}
+            >
+              恢复
+            </Button>
+          </Popconfirm>
+          <Button
+            danger
+            icon={<DeleteOutlined />}
+            disabled={!canManage || restoringDemandId === String(record.id)}
+            onClick={() => openPurgeConfirm(record)}
+          >
+            彻底删除
+          </Button>
+        </Space>
       ),
     },
   ]
@@ -275,7 +363,7 @@ function ArchiveDemands() {
               loading={loading}
               columns={columns}
               dataSource={list}
-              scroll={{ x: 980 }}
+              scroll={{ x: 1360 }}
               pagination={{
                 current: page,
                 pageSize,

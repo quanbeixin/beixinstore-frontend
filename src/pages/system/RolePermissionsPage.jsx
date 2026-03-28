@@ -17,8 +17,8 @@ import {
   getRbacRolesApi,
   getRolePermissionsApi,
   updateRolePermissionsApi,
-} from '../api/rbac'
-import { hasPermission } from '../utils/access'
+} from '../../api/rbac'
+import { hasPermission } from '../../utils/access'
 
 const { Text } = Typography
 

@@ -6,9 +6,9 @@ import {
   updatePasswordApi,
   updatePreferencesApi,
   updateProfileApi,
-} from '../api/auth'
-import { setUserPreferences } from '../utils/access'
-import { formatBeijingDateTime } from '../utils/datetime'
+} from '../../api/auth'
+import { setUserPreferences } from '../../utils/access'
+import { formatBeijingDateTime } from '../../utils/datetime'
 
 const { Text } = Typography
 
@@ -322,4 +322,3 @@ function PersonalSettings() {
 }
 
 export default PersonalSettings
-

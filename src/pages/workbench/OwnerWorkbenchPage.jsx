@@ -26,7 +26,6 @@ import {
   Typography,
   message,
 } from 'antd'
-import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createOwnerAssignedLogApi,
@@ -35,10 +34,14 @@ import {
   getWorkItemTypesApi,
   getWorkPhaseTypesApi,
   updateWorkLogOwnerEstimateApi,
-} from '../api/work'
-import { formatBeijingDate, formatBeijingDateTime, getBeijingTodayDateString } from '../utils/datetime'
-import { getUnifiedStatusMeta } from '../utils/workStatus'
-import './OwnerWorkbench.css'
+} from '../../api/work'
+import {
+  formatBeijingDate,
+  formatBeijingDateTime,
+  getBeijingTodayDateString,
+} from '../../utils/datetime'
+import { getUnifiedStatusMeta } from '../../utils/workStatus'
+import './OwnerWorkbenchPage.css'
 
 const { Text } = Typography
 const EMPTY_ARRAY = []
@@ -196,8 +199,6 @@ function OwnerWorkbench() {
   const teamSize = toNumber(overview.team_size, 0)
   const scheduledUsers = toNumber(overview.scheduled_users_today, 0)
   const filledUsers = toNumber(overview.filled_users_today, 0)
-  const unfilledUsers = toNumber(overview.unfilled_users_today, 0)
-  const unscheduledUsers = toNumber(overview.unscheduled_users_today, 0)
   const scheduledFillRate =
     scheduledUsers > 0 ? Math.min(100, Math.max(0, (filledUsers / scheduledUsers) * 100)) : 100
   const noFillMembers = useMemo(

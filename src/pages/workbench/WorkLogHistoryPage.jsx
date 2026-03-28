@@ -1,4 +1,4 @@
-import WorkLogs from './WorkLogs'
+import WorkLogs from './WorkLogsPage'
 
 function WorkLogHistory() {
   return <WorkLogs mode="history" />

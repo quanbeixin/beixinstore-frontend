@@ -103,9 +103,37 @@ export const PRIVATE_ROUTES = [
       subtitle: '统一维护需求信息，支持筛选、创建与编辑需求。',
     },
     menu: {
-      section: 'main',
+      section: 'project',
       label: '需求池',
       icon: 'tool',
+    },
+  },
+  {
+    path: '/project-templates',
+    componentKey: 'projectTemplates',
+    requiredPermission: 'project.template.view',
+    page: {
+      title: '项目模板',
+      subtitle: '维护项目流程模板配置，供项目模式复用。',
+    },
+    menu: {
+      section: 'project',
+      label: '项目模板',
+      icon: 'tool',
+    },
+  },
+  {
+    path: '/notification-config',
+    componentKey: 'notificationConfig',
+    requiredPermission: 'notification.config.view',
+    page: {
+      title: '通知配置',
+      subtitle: '维护项目管理关键场景的通知规则与接收角色。',
+    },
+    menu: {
+      section: 'system',
+      label: '通知配置',
+      icon: 'setting',
     },
   },
   {

@@ -11,24 +11,26 @@ import {
 import './App.css'
 
 const AdminLayout = lazy(() => import('./layouts/AdminLayout'))
-const Users = lazy(() => import('./pages/Users'))
-const Departments = lazy(() => import('./pages/Departments'))
-const UserDepartments = lazy(() => import('./pages/UserDepartments'))
-const Options = lazy(() => import('./pages/Options'))
-const DemandInsightBoard = lazy(() => import('./pages/DemandInsightBoard'))
-const MemberRhythmBoard = lazy(() => import('./pages/MemberRhythmBoard'))
-const WorkDemands = lazy(() => import('./pages/WorkDemands'))
-const WorkLogs = lazy(() => import('./pages/WorkLogs'))
-const WorkLogHistory = lazy(() => import('./pages/WorkLogHistory'))
-const MorningStandupBoard = lazy(() => import('./pages/MorningStandupBoard'))
-const OwnerWorkbench = lazy(() => import('./pages/OwnerWorkbench'))
-const PersonalSettings = lazy(() => import('./pages/PersonalSettings'))
-const RolePermissions = lazy(() => import('./pages/RolePermissions'))
-const MenuVisibility = lazy(() => import('./pages/MenuVisibility'))
-const ArchiveDemands = lazy(() => import('./pages/ArchiveDemands'))
-const DictCenter = lazy(() => import('./pages/DictCenter'))
-const Login = lazy(() => import('./pages/Login'))
-const Register = lazy(() => import('./pages/Register'))
+const Users = lazy(() => import('./pages/system/UsersPage'))
+const Departments = lazy(() => import('./pages/system/DepartmentsPage'))
+const UserDepartments = lazy(() => import('./pages/system/UserDepartmentsPage'))
+const Options = lazy(() => import('./pages/system/OptionsPage'))
+const DemandInsightBoard = lazy(() => import('./pages/insight/DemandInsightBoardPage'))
+const MemberRhythmBoard = lazy(() => import('./pages/insight/MemberRhythmBoardPage'))
+const WorkDemands = lazy(() => import('./pages/project/WorkDemandsPage'))
+const ProjectTemplates = lazy(() => import('./pages/project/ProjectTemplatesPage'))
+const NotificationConfig = lazy(() => import('./pages/project/NotificationConfigPage'))
+const WorkLogs = lazy(() => import('./pages/workbench/WorkLogsPage'))
+const WorkLogHistory = lazy(() => import('./pages/workbench/WorkLogHistoryPage'))
+const MorningStandupBoard = lazy(() => import('./pages/workbench/MorningStandupPage'))
+const OwnerWorkbench = lazy(() => import('./pages/workbench/OwnerWorkbenchPage'))
+const PersonalSettings = lazy(() => import('./pages/workbench/PersonalSettingsPage'))
+const RolePermissions = lazy(() => import('./pages/system/RolePermissionsPage'))
+const MenuVisibility = lazy(() => import('./pages/system/MenuVisibilityPage'))
+const ArchiveDemands = lazy(() => import('./pages/project/ArchiveDemandsPage'))
+const DictCenter = lazy(() => import('./pages/system/DictCenterPage'))
+const Login = lazy(() => import('./pages/auth/LoginPage'))
+const Register = lazy(() => import('./pages/auth/RegisterPage'))
 
 const PAGE_COMPONENTS = {
   departments: Departments,
@@ -42,6 +44,8 @@ const PAGE_COMPONENTS = {
   personalSettings: PersonalSettings,
   demandInsightBoard: DemandInsightBoard,
   memberRhythmBoard: MemberRhythmBoard,
+  projectTemplates: ProjectTemplates,
+  notificationConfig: NotificationConfig,
   register: Register,
   rolePermissions: RolePermissions,
   workDemands: WorkDemands,

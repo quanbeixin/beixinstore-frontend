@@ -15,6 +15,30 @@ export function createWorkItemTypeApi(payload) {
   return request.post('/work/item-types', payload)
 }
 
+export function getProjectTemplatesApi(params) {
+  return request.get('/work/project-templates', { params })
+}
+
+export function getProjectTemplateByIdApi(templateId) {
+  return request.get(`/work/project-templates/${templateId}`)
+}
+
+export function createProjectTemplateApi(payload) {
+  return request.post('/work/project-templates', payload)
+}
+
+export function updateProjectTemplateApi(templateId, payload) {
+  return request.put(`/work/project-templates/${templateId}`, payload)
+}
+
+export function getNotificationConfigsApi() {
+  return request.get('/work/notification-configs')
+}
+
+export function updateNotificationConfigApi(scene, payload) {
+  return request.put(`/work/notification-configs/${scene}`, payload)
+}
+
 export function getWorkDemandsApi(params) {
   const key = `demands-${JSON.stringify(params)}`
   return cachedRequest(key, () => request.get('/work/demands', { params }))
@@ -22,6 +46,18 @@ export function getWorkDemandsApi(params) {
 
 export function getWorkDemandByIdApi(demandId) {
   return request.get(`/work/demands/${demandId}`)
+}
+
+export function getDemandMembersApi(demandId) {
+  return request.get(`/work/demands/${demandId}/members`)
+}
+
+export function addDemandMemberApi(demandId, payload) {
+  return request.post(`/work/demands/${demandId}/members`, payload)
+}
+
+export function removeDemandMemberApi(demandId, userId) {
+  return request.delete(`/work/demands/${demandId}/members/${userId}`)
 }
 
 export function createWorkDemandApi(payload) {
@@ -49,6 +85,10 @@ export function purgeArchivedDemandApi(demandId, payload) {
   })
 }
 
+export function restoreArchivedDemandApi(demandId) {
+  return request.post(`/work/archive/demands/${demandId}/restore`)
+}
+
 export function initDemandWorkflowApi(demandId) {
   return request.post(`/work/demands/${demandId}/workflow/init`)
 }
@@ -71,6 +111,36 @@ export function assignDemandWorkflowNodeApi(demandId, nodeKey, payload) {
 
 export function submitDemandWorkflowCurrentNodeApi(demandId, payload = {}) {
   return request.post(`/work/demands/${demandId}/workflow/current/submit`, payload)
+}
+
+export function rejectDemandWorkflowCurrentNodeApi(demandId, payload = {}) {
+  return request.post(`/work/demands/${demandId}/workflow/current/reject`, payload)
+}
+
+export function forceCompleteDemandWorkflowCurrentNodeApi(demandId, payload = {}) {
+  return request.post(`/work/demands/${demandId}/workflow/current/force-complete`, payload)
+}
+
+export function updateDemandWorkflowNodeHoursApi(demandId, nodeKey, payload) {
+  return request.put(`/work/demands/${demandId}/workflow/nodes/${nodeKey}/hours`, payload)
+}
+
+export function updateDemandWorkflowTaskHoursApi(demandId, taskId, payload) {
+  return request.put(`/work/demands/${demandId}/workflow/tasks/${taskId}/hours`, payload)
+}
+
+export function getDemandWorkflowTaskCollaboratorsApi(demandId, taskId) {
+  return request.get(`/work/demands/${demandId}/workflow/tasks/${taskId}/collaborators`)
+}
+
+export function addDemandWorkflowTaskCollaboratorApi(demandId, taskId, payload) {
+  return request.post(`/work/demands/${demandId}/workflow/tasks/${taskId}/collaborators`, payload)
+}
+
+export function removeDemandWorkflowTaskCollaboratorApi(demandId, taskId, userId, payload = {}) {
+  return request.delete(`/work/demands/${demandId}/workflow/tasks/${taskId}/collaborators/${userId}`, {
+    data: payload,
+  })
 }
 
 export function replaceDemandWorkflowLatestApi(demandId, payload = {}) {

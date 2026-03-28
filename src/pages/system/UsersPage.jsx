@@ -19,17 +19,17 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getDictItemsApi } from '../api/configDict'
-import { getDepartmentsApi } from '../api/org'
-import { getOptionsApi } from '../api/options'
+import { getDictItemsApi } from '../../api/configDict'
+import { getDepartmentsApi } from '../../api/org'
+import { getOptionsApi } from '../../api/options'
 import {
   createUserApi,
   deleteUserApi,
   getUserByIdApi,
   getUsersApi,
   updateUserApi,
-} from '../api/users'
-import { getCurrentUser } from '../utils/access'
+} from '../../api/users'
+import { getCurrentUser } from '../../utils/access'
 
 const { Search } = Input
 const USERS_FULL_LIST_PAGE_SIZE = 5000
