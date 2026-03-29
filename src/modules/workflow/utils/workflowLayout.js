@@ -119,8 +119,8 @@ function findClosestAvailableLane(preferredLane, occupiedLanes) {
 
 function estimateNodeWidth(title) {
   const text = String(title || '').trim()
-  const count = Math.max(text.length, 4)
-  return clamp(88 + count * 18, 148, 220)
+  const count = Math.max(text.length, 2)
+  return clamp(34 + count * 14, 82, 208)
 }
 
 function buildNodePositions(topologicalOrder, nodeMap, incomingMap, outgoingMap) {
@@ -191,29 +191,46 @@ function buildNodePositions(topologicalOrder, nodeMap, incomingMap, outgoingMap)
       level: Number(levelMap.get(nodeKey) || 0),
       lane: Number(laneMap.get(nodeKey) || 0) - minLane,
       width,
-      height: 46,
+      height: 40,
     }
   })
 }
 
 export function buildWorkflowDagLayout(nodes, options = {}) {
+  const horizontalGap = Number(options.horizontalGap || options.columnGap || 38)
+  const verticalGap = Number(options.verticalGap || options.rowGap || 18)
   const config = {
-    columnGap: Number(options.columnGap || 224),
-    rowGap: Number(options.rowGap || 108),
+    horizontalGap,
+    verticalGap,
     paddingX: Number(options.paddingX || 52),
-    paddingY: Number(options.paddingY || 36),
+    paddingY: Number(options.paddingY || 24),
   }
 
   const { ordered, nodeMap, incomingMap, outgoingMap } = buildGraphMaps(nodes)
   const topologicalOrder = buildTopologicalOrder(ordered, nodeMap, incomingMap, outgoingMap)
   const positions = buildNodePositions(topologicalOrder, nodeMap, incomingMap, outgoingMap)
   const positionMap = new Map()
+  const levelWidthMap = new Map()
+
+  positions.forEach((item) => {
+    const level = Number(item.level || 0)
+    const currentWidth = Number(levelWidthMap.get(level) || 0)
+    levelWidthMap.set(level, Math.max(currentWidth, Number(item.width || 0)))
+  })
+
+  const levelOffsetMap = new Map()
+  const maxLevel = positions.length > 0 ? Math.max(...positions.map((item) => Number(item.level || 0))) : 0
+  let runningX = config.paddingX
+  for (let level = 0; level <= maxLevel; level += 1) {
+    levelOffsetMap.set(level, runningX)
+    runningX += Number(levelWidthMap.get(level) || 0) + config.horizontalGap
+  }
 
   positions.forEach((item) => {
     positionMap.set(item.key, {
       ...item,
-      x: config.paddingX + item.level * config.columnGap,
-      y: config.paddingY + item.lane * config.rowGap,
+      x: Number(levelOffsetMap.get(Number(item.level || 0)) || config.paddingX),
+      y: config.paddingY + item.lane * (item.height + config.verticalGap),
     })
   })
 
@@ -228,8 +245,8 @@ export function buildWorkflowDagLayout(nodes, options = {}) {
         to: target.key,
         path: [
           `M ${source.x + source.width} ${source.y + source.height / 2}`,
-          `C ${source.x + source.width + 42} ${source.y + source.height / 2},`,
-          `${target.x - 42} ${target.y + target.height / 2},`,
+          `C ${source.x + source.width + Math.max(12, config.horizontalGap * 0.45)} ${source.y + source.height / 2},`,
+          `${target.x - Math.max(12, config.horizontalGap * 0.45)} ${target.y + target.height / 2},`,
           `${target.x} ${target.y + target.height / 2}`,
         ].join(' '),
       })
@@ -238,18 +255,20 @@ export function buildWorkflowDagLayout(nodes, options = {}) {
 
   const width =
     positions.length > 0
-      ? Math.max(...positions.map((item) => config.paddingX + item.level * config.columnGap + item.width)) + config.paddingX
+      ? Math.max(...positions.map((item) => (levelOffsetMap.get(Number(item.level || 0)) || config.paddingX) + item.width)) +
+        config.paddingX
       : config.paddingX * 2
   const height =
     positions.length > 0
-      ? Math.max(...positions.map((item) => config.paddingY + item.lane * config.rowGap + item.height)) + config.paddingY
+      ? Math.max(...positions.map((item) => config.paddingY + item.lane * (item.height + config.verticalGap) + item.height)) +
+        config.paddingY
       : config.paddingY * 2
 
   return {
     nodes: positions.map((item) => ({
       ...item,
-      x: config.paddingX + item.level * config.columnGap,
-      y: config.paddingY + item.lane * config.rowGap,
+      x: Number(levelOffsetMap.get(Number(item.level || 0)) || config.paddingX),
+      y: config.paddingY + item.lane * (item.height + config.verticalGap),
     })),
     edges,
     width,

@@ -318,10 +318,13 @@ function splitHoursAcrossCount(totalHours, count) {
   })
 }
 
-function openDemandDetailInNewTab(demandId) {
+function openDemandDetailInNewTab(demandId, nodeKey = '') {
   const normalizedDemandId = String(demandId || '').trim()
   if (!normalizedDemandId) return
-  const nextUrl = `/work-demands/${encodeURIComponent(normalizedDemandId)}`
+  const normalizedNodeKey = String(nodeKey || '').trim()
+  const nextUrl = normalizedNodeKey
+    ? `/work-demands/${encodeURIComponent(normalizedDemandId)}?node=${encodeURIComponent(normalizedNodeKey)}`
+    : `/work-demands/${encodeURIComponent(normalizedDemandId)}`
   window.open(nextUrl, '_blank', 'noopener,noreferrer')
 }
 
@@ -469,7 +472,7 @@ function getActiveCardContainerStyle(item, currentStatus) {
   }
 }
 
-function DemandTagButton({ demandId, label }) {
+function DemandTagButton({ demandId, label, nodeKey }) {
   return (
     <button
       type="button"
@@ -485,7 +488,7 @@ function DemandTagButton({ demandId, label }) {
       }}
       onClick={(event) => {
         event.stopPropagation()
-        openDemandDetailInNewTab(demandId)
+        openDemandDetailInNewTab(demandId, nodeKey)
       }}
     >
       {label}
@@ -775,15 +778,13 @@ function WorkLogs({ mode = 'dashboard' }) {
     [],
   )
 
-  const workflowNodeByDemandId = useMemo(() => {
+  const workflowTodoByDemandId = useMemo(() => {
     const todos = Array.isArray(workbench?.workflow_todos) ? workbench.workflow_todos : []
     const map = new Map()
     todos.forEach((todo) => {
       const demandId = String(todo?.demand_id || '').trim()
       if (!demandId || map.has(demandId)) return
-      const nodeName = String(todo?.node_name || todo?.task_title || '').trim()
-      if (!nodeName) return
-      map.set(demandId, nodeName)
+      map.set(demandId, todo)
     })
     return map
   }, [workbench])
@@ -798,7 +799,8 @@ function WorkLogs({ mode = 'dashboard' }) {
         if (statusFilter.kind === 'unified' && getDisplayStatusMeta(item).code !== statusFilter.value) return false
         if (!keyword) return true
         const demandId = String(item?.demand_id || '').trim()
-        const workflowNodeName = demandId ? workflowNodeByDemandId.get(demandId) || '' : ''
+        const workflowTodo = demandId ? workflowTodoByDemandId.get(demandId) || null : null
+        const workflowNodeName = String(workflowTodo?.node_name || workflowTodo?.task_title || '').trim()
         const followupNodeLabel = isDemandFollowupItem(item) && workflowNodeName ? workflowNodeName : ''
         const text = `${item?.item_type_name || ''} ${item?.demand_id || ''} ${item?.phase_name || ''} ${
           item?.description || ''
@@ -823,7 +825,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       })
 
     return list
-  }, [activeItems, activeItemKeyword, activeItemStatusFilter, workflowNodeByDemandId])
+  }, [activeItems, activeItemKeyword, activeItemStatusFilter, workflowTodoByDemandId])
 
   const weeklySummary = useMemo(() => weeklyReport?.summary || {}, [weeklyReport])
   const weeklyTopItems = useMemo(
@@ -2247,7 +2249,11 @@ function WorkLogs({ mode = 'dashboard' }) {
                             const isStatusSubmitting = statusSubmittingId === item.id
                             const disableStatusActions = !canUpdate || isStatusSubmitting
                             const demandId = String(item?.demand_id || '').trim()
-                            const followupNodeLabel = demandId ? String(workflowNodeByDemandId.get(demandId) || '').trim() : ''
+                            const workflowTodo = demandId ? workflowTodoByDemandId.get(demandId) || null : null
+                            const followupNodeLabel = String(
+                              workflowTodo?.node_name || workflowTodo?.task_title || '',
+                            ).trim()
+                            const workflowNodeKey = String(workflowTodo?.node_key || '').trim()
                             const logPhaseLabel = String(item?.phase_name || item?.phase_key || '').trim()
                             const activePhaseLabel = logPhaseLabel || (isDemandFollowupItem(item) ? followupNodeLabel : '')
                             const statusPanelStyle = getActiveCardStatusPanelStyle(currentStatus)
@@ -2279,10 +2285,13 @@ function WorkLogs({ mode = 'dashboard' }) {
                                       return <Tag color={meta.color}>{meta.label}</Tag>
                                     })()}
                                     <Tag color="geekblue">{item.item_type_name || '事项'}</Tag>
+                                    {item.task_source === 'WORKFLOW_AUTO' && followupNodeLabel ? (
+                                      <Tag color="cyan">{followupNodeLabel}</Tag>
+                                    ) : null}
                                     {item.demand_id ? (
                                       <Tooltip title={demandFullName || demandTagLabel}>
                                         <Tag color="gold">
-                                          <DemandTagButton demandId={item.demand_id} label={demandTagLabel} />
+                                          <DemandTagButton demandId={item.demand_id} label={demandTagLabel} nodeKey={workflowNodeKey} />
                                         </Tag>
                                       </Tooltip>
                                     ) : null}

@@ -1,9 +1,9 @@
-function getWorkflowNodeDisplayName(node) {
-  const phaseName = String(node?.phase_name || '').trim()
-  if (phaseName) return phaseName
-
+export function getDemandWorkflowNodeDisplayName(node) {
   const snapshotName = String(node?.node_name_snapshot || '').trim()
   if (snapshotName) return snapshotName
+
+  const explicitNodeName = String(node?.node_name || node?.name || node?.title || '').trim()
+  if (explicitNodeName) return explicitNodeName
 
   const nodeKey = String(node?.node_key || '').trim()
   return nodeKey || '-'
@@ -34,7 +34,7 @@ export function mapDemandWorkflowToGraphNodes(workflowData) {
       return {
         id: nodeKey,
         key: nodeKey,
-        title: getWorkflowNodeDisplayName(node),
+        title: getDemandWorkflowNodeDisplayName(node),
         type: String(node?.node_type || node?.phase_key || 'EXECUTE').trim().toUpperCase(),
         phaseKey: String(node?.phase_key || 'develop').trim(),
         order: Number.isFinite(Number(node?.sort_order)) ? Number(node.sort_order) : index + 1,

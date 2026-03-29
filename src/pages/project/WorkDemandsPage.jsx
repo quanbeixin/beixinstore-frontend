@@ -4,35 +4,31 @@ import {
   Button,
   Card,
   DatePicker,
-  Descriptions,
-  Divider,
   Empty,
   Form,
   Input,
   InputNumber,
   Modal,
   Popconfirm,
-  Progress,
   Select,
   Space,
   Switch,
   Table,
   Tag,
+  Tabs,
   Typography,
   message,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { getDictItemsApi } from '../../api/configDict'
 import { getUsersApi } from '../../api/users'
 import {
-  addDemandWorkflowTaskCollaboratorApi,
   addDemandMemberApi,
   assignDemandWorkflowNodeApi,
   createWorkDemandApi,
   deleteWorkDemandApi,
-  forceCompleteDemandWorkflowNodeApi,
   getDemandWorkflowApi,
   getDemandMembersApi,
   getProjectTemplateByIdApi,
@@ -42,16 +38,17 @@ import {
   getWorkDemandsApi,
   getWorkLogsApi,
   initDemandWorkflowApi,
-  rejectDemandWorkflowNodeApi,
   removeDemandMemberApi,
-  removeDemandWorkflowTaskCollaboratorApi,
   replaceDemandWorkflowLatestApi,
   submitDemandWorkflowNodeApi,
   updateDemandWorkflowNodeHoursApi,
-  updateDemandWorkflowTaskHoursApi,
   updateWorkDemandApi,
 } from '../../api/work'
-import { DemandNodeInspector, mapDemandWorkflowToGraphNodes } from '../../modules/demand-workflow'
+import {
+  DemandNodeInspector,
+  getDemandWorkflowNodeDisplayName,
+  mapDemandWorkflowToGraphNodes,
+} from '../../modules/demand-workflow'
 import { WorkflowGraph } from '../../modules/workflow'
 import { getCurrentUser, getUserPreferences, hasPermission, hasRole } from '../../utils/access'
 import {
@@ -186,19 +183,9 @@ function isOverdueLogItem(item) {
   return expectedDate < getBeijingTodayDateString()
 }
 
-function getWorkflowNodeDisplayName(node) {
-  const phaseName = String(node?.phase_name || '').trim()
-  if (phaseName) return phaseName
-
-  const snapshotName = String(node?.node_name_snapshot || '').trim()
-  if (snapshotName) return snapshotName
-
-  const nodeKey = String(node?.node_key || '').trim()
-  return nodeKey || '-'
-}
-
 function WorkDemands() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { id: routeDemandId } = useParams()
   const isDetailPage = Boolean(routeDemandId)
   const canView = hasPermission('demand.view')
@@ -224,7 +211,6 @@ function WorkDemands() {
   const [users, setUsers] = useState([])
   const [projectTemplates, setProjectTemplates] = useState([])
   const [templateFallbackMap, setTemplateFallbackMap] = useState({})
-  const [templateFallbackLoadingMap, setTemplateFallbackLoadingMap] = useState({})
   const templateFallbackLoadingRef = useRef(new Set())
   const [workflowAssignees, setWorkflowAssignees] = useState([])
   const [businessGroups, setBusinessGroups] = useState([])
@@ -267,30 +253,16 @@ function WorkDemands() {
   const [workflowLoading, setWorkflowLoading] = useState(false)
   const [workflowSubmitting, setWorkflowSubmitting] = useState(false)
   const [workflowHoursSubmitting, setWorkflowHoursSubmitting] = useState(false)
-  const [workflowRejecting, setWorkflowRejecting] = useState(false)
-  const [workflowForceCompleting, setWorkflowForceCompleting] = useState(false)
   const [workflowReplacing, setWorkflowReplacing] = useState(false)
   const [workflowData, setWorkflowData] = useState(null)
   const [workflowWarning, setWorkflowWarning] = useState('')
   const [selectedWorkflowNodeKey, setSelectedWorkflowNodeKey] = useState('')
   const [workflowAssignee, setWorkflowAssignee] = useState()
   const [workflowDueAt, setWorkflowDueAt] = useState(null)
-  const [workflowExpectedStartAt, setWorkflowExpectedStartAt] = useState(() => dayjs(getBeijingTodayDateString()))
-  const [selectedWorkflowTaskId, setSelectedWorkflowTaskId] = useState()
-  const [nodeHoursOwnerEstimate, setNodeHoursOwnerEstimate] = useState()
+  const [workflowExpectedStartAt, setWorkflowExpectedStartAt] = useState(null)
   const [nodeHoursPersonalEstimate, setNodeHoursPersonalEstimate] = useState()
-  const [nodeHoursActual, setNodeHoursActual] = useState()
-  const [nodePlannedStartTime, setNodePlannedStartTime] = useState(null)
-  const [nodePlannedEndTime, setNodePlannedEndTime] = useState(null)
-  const [nodeActualStartTime, setNodeActualStartTime] = useState(null)
-  const [nodeActualEndTime, setNodeActualEndTime] = useState(null)
-  const [nodeRejectReason, setNodeRejectReason] = useState('')
-  const [taskHoursPersonalEstimate, setTaskHoursPersonalEstimate] = useState()
-  const [taskHoursActual, setTaskHoursActual] = useState()
-  const [taskDeadline, setTaskDeadline] = useState(null)
-  const [taskCollaboratorUserId, setTaskCollaboratorUserId] = useState()
-  const [taskCollaboratorSubmitting, setTaskCollaboratorSubmitting] = useState(false)
   const [detailStatus, setDetailStatus] = useState('')
+  const selectedWorkflowNodeKeyRef = useRef('')
 
   const detailLogStats = useMemo(() => {
     const total = detailLogs.length
@@ -344,17 +316,35 @@ function WorkDemands() {
     return workflowData?.current_node ? [workflowData.current_node] : []
   }, [workflowData])
 
+  const requestedWorkflowNodeKey = useMemo(() => {
+    const rawValue = new URLSearchParams(location.search).get('node')
+    return String(rawValue || '').trim().toUpperCase()
+  }, [location.search])
+
   const workflowGraphNodes = useMemo(
     () => mapDemandWorkflowToGraphNodes(workflowData),
     [workflowData],
   )
+
+  const workflowCompletedCount = useMemo(
+    () =>
+      (workflowGraphNodes || []).filter((item) => String(item?.status || '').toUpperCase() === 'DONE').length,
+    [workflowGraphNodes],
+  )
+
+  const currentWorkflowNodeLabel = useMemo(() => {
+    if (currentWorkflowNodes.length > 1) {
+      return currentWorkflowNodes.map((node) => getDemandWorkflowNodeDisplayName(node)).join(' / ')
+    }
+    return getDemandWorkflowNodeDisplayName(currentWorkflowNodes[0])
+  }, [currentWorkflowNodes])
 
   const canAssignSelectedWorkflowNode = useMemo(() => {
     const status = String(selectedWorkflowNode?.status || '').toUpperCase()
     return status !== 'DONE' && status !== 'CANCELLED'
   }, [selectedWorkflowNode])
 
-  const workflowActionBusy = workflowSubmitting || workflowReplacing || workflowRejecting || workflowForceCompleting
+  const workflowActionBusy = workflowSubmitting || workflowReplacing
 
   const canEditDemandRecord = useCallback(
     (record) => {
@@ -488,7 +478,6 @@ function WorkDemands() {
     if (templateFallbackLoadingRef.current.has(id)) return
 
     templateFallbackLoadingRef.current.add(id)
-    setTemplateFallbackLoadingMap((prev) => ({ ...prev, [id]: true }))
     try {
       const result = await getProjectTemplateByIdApi(id)
       if (result?.success && result.data && typeof result.data === 'object') {
@@ -500,7 +489,6 @@ function WorkDemands() {
       setTemplateFallbackMap((prev) => ({ ...prev, [id]: null }))
     } finally {
       templateFallbackLoadingRef.current.delete(id)
-      setTemplateFallbackLoadingMap((prev) => ({ ...prev, [id]: false }))
     }
   }, [templateByIdMap, templateFallbackMap])
 
@@ -515,17 +503,6 @@ function WorkDemands() {
     [selectedModalTemplate],
   )
 
-  const selectedDetailTemplate = useMemo(() => {
-    const id = Number(detailTemplateId)
-    if (!Number.isInteger(id) || id <= 0) return null
-    return templateByIdMap.get(id) || null
-  }, [detailTemplateId, templateByIdMap])
-
-  const selectedDetailTemplateNodes = useMemo(
-    () => extractTemplateNodes(selectedDetailTemplate),
-    [selectedDetailTemplate],
-  )
-
   const availableMemberOptions = useMemo(() => {
     const memberSet = new Set((detailMembers || []).map((item) => Number(item.user_id)))
     return ownerOptions.filter((item) => !memberSet.has(Number(item.value)))
@@ -536,60 +513,6 @@ function WorkDemands() {
     const tasks = Array.isArray(workflowData?.tasks) ? workflowData.tasks : []
     return tasks.filter((item) => Number(item.instance_node_id) === Number(selectedWorkflowNode.id))
   }, [selectedWorkflowNode, workflowData])
-
-  const selectedWorkflowTask = useMemo(() => {
-    if (!selectedWorkflowNodeTasks.length) return null
-    const normalizedTaskId = Number(selectedWorkflowTaskId)
-    if (Number.isInteger(normalizedTaskId) && normalizedTaskId > 0) {
-      const hit = selectedWorkflowNodeTasks.find((item) => Number(item.id) === normalizedTaskId)
-      if (hit) return hit
-    }
-    return selectedWorkflowNodeTasks[0] || null
-  }, [selectedWorkflowNodeTasks, selectedWorkflowTaskId])
-
-  const selectedWorkflowTaskCollaborators = useMemo(() => {
-    if (!selectedWorkflowTask) return []
-    const rows = Array.isArray(selectedWorkflowTask.collaborators) ? selectedWorkflowTask.collaborators : []
-    return rows
-      .map((item) => ({
-        user_id: Number(item?.user_id),
-        user_name: String(item?.user_name || item?.username || '').trim(),
-        username: String(item?.username || '').trim(),
-      }))
-      .filter((item) => Number.isInteger(item.user_id) && item.user_id > 0)
-  }, [selectedWorkflowTask])
-
-  const taskCollaboratorOptions = useMemo(() => {
-    const map = new Map()
-    ;(users || []).forEach((user) => {
-      const userId = Number(user?.id)
-      if (!Number.isInteger(userId) || userId <= 0 || map.has(userId)) return
-      const label = String(user?.real_name || user?.username || `用户${userId}`).trim() || `用户${userId}`
-      map.set(userId, {
-        value: userId,
-        label,
-      })
-    })
-
-    ;(workflowAssigneeOptions || []).forEach((item) => {
-      const userId = Number(item?.value)
-      if (!Number.isInteger(userId) || userId <= 0 || map.has(userId)) return
-      map.set(userId, {
-        value: userId,
-        label: String(item?.label || `用户${userId}`).trim() || `用户${userId}`,
-      })
-    })
-
-    const excluded = new Set(selectedWorkflowTaskCollaborators.map((item) => Number(item.user_id)))
-    const assigneeUserId = Number(selectedWorkflowTask?.assignee_user_id)
-    if (Number.isInteger(assigneeUserId) && assigneeUserId > 0) {
-      excluded.add(assigneeUserId)
-    }
-
-    return Array.from(map.values())
-      .filter((item) => !excluded.has(Number(item.value)))
-      .sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-CN'))
-  }, [users, workflowAssigneeOptions, selectedWorkflowTaskCollaborators, selectedWorkflowTask])
 
   const loadUsers = useCallback(async () => {
     if (!canView || !canViewUsers) {
@@ -982,8 +905,7 @@ function WorkDemands() {
     setSelectedWorkflowNodeKey('')
     setWorkflowAssignee(undefined)
     setWorkflowDueAt(null)
-    setWorkflowExpectedStartAt(dayjs(getBeijingTodayDateString()))
-    setSelectedWorkflowTaskId(undefined)
+    setWorkflowExpectedStartAt(null)
     navigate('/work-demands')
   }, [navigate])
 
@@ -1051,85 +973,46 @@ function WorkDemands() {
     setSelectedWorkflowNodeKey('')
     setWorkflowAssignee(undefined)
     setWorkflowDueAt(null)
-    setWorkflowExpectedStartAt(dayjs(getBeijingTodayDateString()))
-    setSelectedWorkflowTaskId(undefined)
-    setTaskCollaboratorUserId(undefined)
+    setWorkflowExpectedStartAt(null)
   }, [isDetailPage])
 
   useEffect(() => {
     if (!selectedWorkflowNode) {
+      selectedWorkflowNodeKeyRef.current = ''
       setWorkflowAssignee(undefined)
       setWorkflowDueAt(null)
-      setWorkflowExpectedStartAt(dayjs(getBeijingTodayDateString()))
-      setNodeHoursOwnerEstimate(undefined)
+      setWorkflowExpectedStartAt(null)
       setNodeHoursPersonalEstimate(undefined)
-      setNodeHoursActual(undefined)
-      setNodePlannedStartTime(null)
-      setNodePlannedEndTime(null)
-      setNodeActualStartTime(null)
-      setNodeActualEndTime(null)
-      setNodeRejectReason('')
-      setSelectedWorkflowTaskId(undefined)
       return
     }
+    const normalizedNodeKey = String(selectedWorkflowNode.node_key || '').trim().toUpperCase()
+    const persistedExpectedStartAt = selectedWorkflowNode.expected_start_date || selectedWorkflowNode.expected_start_at
     setWorkflowAssignee(selectedWorkflowNode.assignee_user_id || undefined)
     setWorkflowDueAt(selectedWorkflowNode.due_at ? dayjs(selectedWorkflowNode.due_at) : null)
-    setWorkflowExpectedStartAt(dayjs(getBeijingTodayDateString()))
-    setNodeHoursOwnerEstimate(
-      selectedWorkflowNode.owner_estimated_hours === null || selectedWorkflowNode.owner_estimated_hours === undefined
-        ? undefined
-        : Number(selectedWorkflowNode.owner_estimated_hours),
-    )
+    setWorkflowExpectedStartAt((previousValue) => {
+      if (persistedExpectedStartAt) {
+        return dayjs(persistedExpectedStartAt)
+      }
+      return selectedWorkflowNodeKeyRef.current === normalizedNodeKey ? previousValue : null
+    })
     setNodeHoursPersonalEstimate(
       selectedWorkflowNode.personal_estimated_hours === null || selectedWorkflowNode.personal_estimated_hours === undefined
         ? undefined
         : Number(selectedWorkflowNode.personal_estimated_hours),
     )
-    setNodeHoursActual(
-      selectedWorkflowNode.actual_hours === null || selectedWorkflowNode.actual_hours === undefined
-        ? undefined
-        : Number(selectedWorkflowNode.actual_hours),
-    )
-    setNodePlannedStartTime(toNullableDateTimeValue(selectedWorkflowNode.planned_start_time))
-    setNodePlannedEndTime(toNullableDateTimeValue(selectedWorkflowNode.planned_end_time))
-    setNodeActualStartTime(toNullableDateTimeValue(selectedWorkflowNode.actual_start_time))
-    setNodeActualEndTime(toNullableDateTimeValue(selectedWorkflowNode.actual_end_time))
-    setNodeRejectReason(selectedWorkflowNode.reject_reason || '')
+    selectedWorkflowNodeKeyRef.current = normalizedNodeKey
   }, [selectedWorkflowNode])
 
   useEffect(() => {
-    if (!selectedWorkflowTask) {
-      setTaskHoursPersonalEstimate(undefined)
-      setTaskHoursActual(undefined)
-      setTaskDeadline(null)
-      setTaskCollaboratorUserId(undefined)
-      return
-    }
-    setTaskHoursPersonalEstimate(
-      selectedWorkflowTask.personal_estimated_hours === null || selectedWorkflowTask.personal_estimated_hours === undefined
-        ? undefined
-        : Number(selectedWorkflowTask.personal_estimated_hours),
+    if (!requestedWorkflowNodeKey) return
+    const nodes = Array.isArray(workflowData?.nodes) ? workflowData.nodes : []
+    const matched = nodes.find(
+      (item) => String(item?.node_key || '').trim().toUpperCase() === requestedWorkflowNodeKey,
     )
-    setTaskHoursActual(
-      selectedWorkflowTask.actual_hours === null || selectedWorkflowTask.actual_hours === undefined
-        ? undefined
-        : Number(selectedWorkflowTask.actual_hours),
-    )
-    setTaskDeadline(toNullableDateTimeValue(selectedWorkflowTask.deadline || selectedWorkflowTask.due_at))
-    setTaskCollaboratorUserId(undefined)
-  }, [selectedWorkflowTask])
-
-  useEffect(() => {
-    if (!selectedWorkflowNodeTasks.length) {
-      setSelectedWorkflowTaskId(undefined)
-      return
+    if (matched?.node_key) {
+      setSelectedWorkflowNodeKey(matched.node_key)
     }
-    const normalizedTaskId = Number(selectedWorkflowTaskId)
-    const exists = selectedWorkflowNodeTasks.some((item) => Number(item.id) === normalizedTaskId)
-    if (!exists) {
-      setSelectedWorkflowTaskId(Number(selectedWorkflowNodeTasks[0].id))
-    }
-  }, [selectedWorkflowNodeTasks, selectedWorkflowTaskId])
+  }, [requestedWorkflowNodeKey, workflowData])
 
   useEffect(() => {
     if (!isDetailPage) return
@@ -1275,147 +1158,61 @@ function WorkDemands() {
 
   const handleSaveWorkflowNodeHours = async () => {
     if (!detailDemand?.id || !selectedWorkflowNode?.node_key || !canManageWorkflow) return
-    if (nodePlannedStartTime && nodePlannedEndTime && nodePlannedStartTime.isAfter(nodePlannedEndTime)) {
-      message.warning('计划开始时间不能晚于计划结束时间')
-      return
-    }
-    if (nodeActualStartTime && nodeActualEndTime && nodeActualStartTime.isAfter(nodeActualEndTime)) {
-      message.warning('实际开始时间不能晚于实际结束时间')
-      return
-    }
-
     try {
       setWorkflowHoursSubmitting(true)
       const result = await updateDemandWorkflowNodeHoursApi(detailDemand.id, selectedWorkflowNode.node_key, {
-        owner_estimated_hours: nodeHoursOwnerEstimate ?? null,
         personal_estimated_hours: nodeHoursPersonalEstimate ?? null,
-        actual_hours: nodeHoursActual ?? null,
-        planned_start_time: nodePlannedStartTime ? nodePlannedStartTime.format('YYYY-MM-DD HH:mm:ss') : null,
-        planned_end_time: nodePlannedEndTime ? nodePlannedEndTime.format('YYYY-MM-DD HH:mm:ss') : null,
-        actual_start_time: nodeActualStartTime ? nodeActualStartTime.format('YYYY-MM-DD HH:mm:ss') : null,
-        actual_end_time: nodeActualEndTime ? nodeActualEndTime.format('YYYY-MM-DD HH:mm:ss') : null,
-        reject_reason: nodeRejectReason || null,
       })
       if (!result?.success) {
-        message.error(result?.message || '节点工时保存失败')
+        message.error(result?.message || '个人预估保存失败')
         return
       }
-      message.success('节点工时已更新')
       setWorkflowData(result.data || null)
-      await loadDemands()
     } catch (error) {
-      message.error(error?.message || '节点工时保存失败')
+      message.error(error?.message || '个人预估保存失败')
     } finally {
       setWorkflowHoursSubmitting(false)
     }
   }
 
-  const handleSaveWorkflowTaskHours = async () => {
-    if (!detailDemand?.id || !selectedWorkflowTask?.id || !canManageWorkflow) return
-    try {
-      setWorkflowHoursSubmitting(true)
-      const result = await updateDemandWorkflowTaskHoursApi(detailDemand.id, selectedWorkflowTask.id, {
-        personal_estimated_hours: taskHoursPersonalEstimate ?? null,
-        actual_hours: taskHoursActual ?? null,
-        deadline: taskDeadline ? taskDeadline.format('YYYY-MM-DD HH:mm:ss') : null,
-      })
-      if (!result?.success) {
-        message.error(result?.message || '任务工时保存失败')
-        return
-      }
-      message.success('任务工时已更新')
-      setWorkflowData(result.data || null)
-      await loadDemands()
-    } catch (error) {
-      message.error(error?.message || '任务工时保存失败')
-    } finally {
-      setWorkflowHoursSubmitting(false)
-    }
-  }
-
-  const handleAddTaskCollaborator = async () => {
-    if (!detailDemand?.id || !selectedWorkflowTask?.id || !canManageWorkflow) return
-    const userId = Number(taskCollaboratorUserId)
-    if (!Number.isInteger(userId) || userId <= 0) {
-      message.warning('请选择协作人')
-      return
-    }
-
-    try {
-      setTaskCollaboratorSubmitting(true)
-      const result = await addDemandWorkflowTaskCollaboratorApi(detailDemand.id, selectedWorkflowTask.id, {
-        user_id: userId,
-      })
-      if (!result?.success) {
-        message.error(result?.message || '添加协作人失败')
-        return
-      }
-      message.success(result?.message || '协作人添加成功')
-      setWorkflowData(result.data || null)
-      setTaskCollaboratorUserId(undefined)
-      await loadDemands()
-    } catch (error) {
-      message.error(error?.message || '添加协作人失败')
-    } finally {
-      setTaskCollaboratorSubmitting(false)
-    }
-  }
-
-  const handleRemoveTaskCollaborator = async (userId) => {
-    if (!detailDemand?.id || !selectedWorkflowTask?.id || !canManageWorkflow) return
-    const normalizedUserId = Number(userId)
-    if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) return
-
-    try {
-      setTaskCollaboratorSubmitting(true)
-      const result = await removeDemandWorkflowTaskCollaboratorApi(
-        detailDemand.id,
-        selectedWorkflowTask.id,
-        normalizedUserId,
-      )
-      if (!result?.success) {
-        message.error(result?.message || '移除协作人失败')
-        return
-      }
-      message.success(result?.message || '协作人已移除')
-      setWorkflowData(result.data || null)
-      await loadDemands()
-    } catch (error) {
-      message.error(error?.message || '移除协作人失败')
-    } finally {
-      setTaskCollaboratorSubmitting(false)
-    }
-  }
-
-  const handleAssignWorkflowNode = async () => {
+  const handleAssignWorkflowNode = async (overrides = {}, options = {}) => {
     if (!detailDemand?.id || !canManageWorkflow) return
     if (!selectedWorkflowNode?.node_key) {
-      message.warning('请先选择流程节点')
+      if (!options.silent) {
+        message.warning('请先选择流程节点')
+      }
       return
     }
     if (!canAssignSelectedWorkflowNode) {
-      message.warning('已完成或已取消的节点不支持指派')
+      if (!options.silent) {
+        message.warning('已完成或已取消的节点不支持指派')
+      }
       return
     }
-    if (!workflowAssignee) {
-      message.warning('请选择指派成员')
+    const nextAssignee =
+      overrides.assignee_user_id === undefined ? workflowAssignee : overrides.assignee_user_id
+    const nextDueAt = overrides.due_at === undefined ? workflowDueAt : overrides.due_at
+    const nextExpectedStartAt =
+      overrides.expected_start_date === undefined ? workflowExpectedStartAt : overrides.expected_start_date
+
+    if (!nextAssignee) {
+      if (!options.skipMissingAssigneeWarning) {
+        message.warning('请选择负责人')
+      }
       return
     }
 
     try {
       setWorkflowSubmitting(true)
       const result = await assignDemandWorkflowNodeApi(detailDemand.id, selectedWorkflowNode.node_key, {
-        assignee_user_id: workflowAssignee,
-        due_at: workflowDueAt ? workflowDueAt.format('YYYY-MM-DD') : null,
-        expected_start_date: workflowExpectedStartAt ? workflowExpectedStartAt.format('YYYY-MM-DD') : null,
+        assignee_user_id: nextAssignee,
+        due_at: nextDueAt ? nextDueAt.format('YYYY-MM-DD') : null,
+        expected_start_date: nextExpectedStartAt ? nextExpectedStartAt.format('YYYY-MM-DD') : null,
       })
       if (!result?.success) {
         message.error(result?.message || '节点指派失败')
         return
       }
-      message.success(
-        isSelectedCurrentWorkflowNode ? '当前节点已指派，待办已更新' : '节点已预指派，进入该节点后将自动生效',
-      )
       setWorkflowData(result.data || null)
       setSelectedWorkflowNodeKey(selectedWorkflowNode.node_key)
     } catch (error) {
@@ -1453,71 +1250,6 @@ function WorkDemands() {
     }
   }
 
-  const handleRejectWorkflowNode = async () => {
-    if (!detailDemand?.id || !canManageWorkflow) return
-    if (!selectedWorkflowNode?.node_key) {
-      message.warning('请先选择流程节点')
-      return
-    }
-    if (!isSelectedCurrentWorkflowNode) {
-      message.warning('当前仅激活中的节点支持驳回')
-      return
-    }
-    const reason = String(nodeRejectReason || '').trim()
-    if (!reason) {
-      message.warning('请先填写驳回原因')
-      return
-    }
-
-    try {
-      setWorkflowRejecting(true)
-      const result = await rejectDemandWorkflowNodeApi(detailDemand.id, selectedWorkflowNode.node_key, {
-        reject_reason: reason,
-      })
-      if (!result?.success) {
-        message.error(result?.message || '节点驳回失败')
-        return
-      }
-      message.success(result?.message || '当前节点已驳回')
-      setWorkflowData(result.data || null)
-      await refreshListAndDetail()
-    } catch (error) {
-      message.error(error?.message || '节点驳回失败')
-    } finally {
-      setWorkflowRejecting(false)
-    }
-  }
-
-  const handleForceCompleteWorkflowNode = async () => {
-    if (!detailDemand?.id || !canManageWorkflow) return
-    if (!selectedWorkflowNode?.node_key) {
-      message.warning('请先选择流程节点')
-      return
-    }
-    if (!isSelectedCurrentWorkflowNode) {
-      message.warning('当前仅激活中的节点支持强制完成')
-      return
-    }
-
-    try {
-      setWorkflowForceCompleting(true)
-      const result = await forceCompleteDemandWorkflowNodeApi(detailDemand.id, selectedWorkflowNode.node_key, {
-        comment: '项目管理后台强制完成指定节点',
-      })
-      if (!result?.success) {
-        message.error(result?.message || '强制完成失败')
-        return
-      }
-      message.success(result?.message || '当前节点已强制完成')
-      setWorkflowData(result.data || null)
-      await refreshListAndDetail()
-    } catch (error) {
-      message.error(error?.message || '强制完成失败')
-    } finally {
-      setWorkflowForceCompleting(false)
-    }
-  }
-
   const handleReplaceWorkflowLatest = async () => {
     if (!detailDemand?.id || !canForceReplaceWorkflow) return
 
@@ -1541,6 +1273,23 @@ function WorkDemands() {
     } finally {
       setWorkflowReplacing(false)
     }
+  }
+
+  const handleConfirmReplaceWorkflowLatest = () => {
+    if (!detailDemand?.id || !canForceReplaceWorkflow) return
+
+    Modal.confirm({
+      title: '确认强制替换为最新流程？',
+      content:
+        '系统会按当前绑定的最新模板重建这条需求的流程节点，已有节点状态、负责人和排期可能被重置，请确认后再执行。',
+      okText: '确认替换',
+      cancelText: '取消',
+      okButtonProps: {
+        danger: true,
+        loading: workflowReplacing,
+      },
+      onOk: handleReplaceWorkflowLatest,
+    })
   }
 
   const handleDeleteDemand = useCallback(async (record) => {
@@ -2026,287 +1775,51 @@ function WorkDemands() {
 
       {isDetailPage ? (
         <Card
-          title={detailDemand ? `需求详情 · ${detailDemand.id}` : '需求详情'}
+          className="work-demand-detail__page"
           variant="borderless"
           loading={detailPageLoading && !detailDemand}
-          extra={
-            <Space>
-              <Button icon={<LeftOutlined />} onClick={closeDetailDrawer}>
-                返回需求池
-              </Button>
-              {detailDemand && canEditDemandRecord(detailDemand) ? (
-                <>
-                  {detailDemand.status === 'DONE' || detailDemand.status === 'CANCELLED' ? (
-                    <Button onClick={() => handleQuickStatusUpdate(detailDemand, 'IN_PROGRESS')}>重开需求</Button>
-                  ) : (
-                    <Button onClick={() => handleQuickStatusUpdate(detailDemand, 'DONE')}>标记完成</Button>
-                  )}
-                  <Button type="primary" onClick={handleSaveDetail} loading={detailSaving}>
-                    保存变更
-                  </Button>
-                </>
-              ) : null}
-            </Space>
-          }
         >
           {detailDemand ? (
-          <>
-            <Descriptions bordered size="small" column={2}>
-              <Descriptions.Item label="需求ID">{detailDemand.id}</Descriptions.Item>
-              <Descriptions.Item label="需求名称">{detailDemand.name || '-'}</Descriptions.Item>
-              <Descriptions.Item label="需求负责人">{detailDemand.owner_name || '-'}</Descriptions.Item>
-              <Descriptions.Item label="项目负责人">{detailDemand.project_manager_name || '-'}</Descriptions.Item>
-              <Descriptions.Item label="管理模式">
-                {detailDemand.management_mode === 'advanced' ? '项目模式' : '轻量模式'}
-              </Descriptions.Item>
-              <Descriptions.Item label="健康度">
-                <Tag color={getHealthTagColor(detailDemand.health_status)}>
-                  {getHealthLabel(detailDemand.health_status)}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="模板">
-                {detailDemand.template_name ? `${detailDemand.template_name} (#${detailDemand.template_id})` : '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label="成员数">{Number(detailDemand.member_count || 0)}</Descriptions.Item>
-              <Descriptions.Item label="业务组">
-                {detailDemand.business_group_name || detailDemand.business_group_code || '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label="状态">
-                <Tag color={getStatusTagColor(detailDemand.status)}>{getStatusLabel(detailDemand.status)}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="优先级">
-                <Tag color={getPriorityColor(detailDemand.priority)}>{detailDemand.priority}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="预期上线日期">
-                {formatBeijingDate(detailDemand.expected_release_date)}
-              </Descriptions.Item>
-              <Descriptions.Item label="累计实际(h)">
-                {toNumber(detailDemand.total_actual_hours, 0).toFixed(1)}
-              </Descriptions.Item>
-              <Descriptions.Item label="最近更新">{formatBeijingDateTime(detailDemand.updated_at)}</Descriptions.Item>
-              <Descriptions.Item label="实际完成日期">{formatBeijingDate(detailDemand.completed_at)}</Descriptions.Item>
-              <Descriptions.Item label="实际开始时间">{formatBeijingDateTime(detailDemand.actual_start_time)}</Descriptions.Item>
-              <Descriptions.Item label="实际结束时间">{formatBeijingDateTime(detailDemand.actual_end_time)}</Descriptions.Item>
-              <Descriptions.Item label="文档链接" span={2}>
-                {detailDemand.doc_link ? (
-                  <a href={detailDemand.doc_link} target="_blank" rel="noreferrer">
-                    {detailDemand.doc_link}
-                  </a>
-                ) : (
-                  '-'
-                )}
-              </Descriptions.Item>
-            </Descriptions>
-
-            {canEditDemandRecord(detailDemand) ? (
-              <>
-                <Divider titlePlacement="start">快速维护</Divider>
-                <Space wrap style={{ width: '100%' }}>
-                  <div style={{ minWidth: 220 }}>
-                    <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                      状态
-                    </Text>
-                    <Select
-                      style={{ width: '100%' }}
-                      value={detailStatus || undefined}
-                      options={STATUS_OPTIONS}
-                      placeholder="请选择状态"
-                      onChange={(value) => setDetailStatus(value)}
-                    />
-                  </div>
-                  <div style={{ minWidth: 220 }}>
-                    <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                      管理模式
-                    </Text>
-                    <Select
-                      style={{ width: '100%' }}
-                      value={detailManagementMode}
-                      options={MANAGEMENT_MODE_OPTIONS}
-                      onChange={(value) => setDetailManagementMode(value)}
-                    />
-                  </div>
-                  <div style={{ minWidth: 240 }}>
-                    <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                      项目模板
-                    </Text>
-                    <Select
-                      allowClear
-                      showSearch
-                      optionFilterProp="label"
-                      style={{ width: '100%' }}
-                      value={detailTemplateId}
-                      options={projectTemplateOptions}
-                      onChange={(value) => setDetailTemplateId(value)}
-                    />
-                  </div>
-                  {detailTemplateId ? (
-                    <div style={{ minWidth: 520 }}>
-                      <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                        模板节点预览
-                      </Text>
-                      <Card size="small" variant="borderless">
-                        {selectedDetailTemplate ? (
-                          <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                            <Text strong>
-                              {selectedDetailTemplate.name || '-'}（{selectedDetailTemplateNodes.length} 个节点）
-                            </Text>
-                            {selectedDetailTemplateNodes.length > 0 ? (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                {selectedDetailTemplateNodes.map((node) => (
-                                  <Tag key={`detail-tpl-${node.node_key}`} color="processing">
-                                    {node.sort_order}. {node.node_name}
-                                  </Tag>
-                                ))}
-                              </div>
-                            ) : (
-                              <Text type="secondary">模板未配置可识别节点</Text>
-                            )}
-                          </Space>
-                        ) : Number(templateFallbackLoadingMap[Number(detailTemplateId)]) ? (
-                          <Text type="secondary">正在加载模板详情...</Text>
-                        ) : (
-                          <Text type="secondary">未在可用模板列表中找到该模板，可能已停用或无权限查看</Text>
-                        )}
-                      </Card>
+            <>
+              <div className="work-demand-detail__hero">
+                <div className="work-demand-detail__hero-main">
+                  <div className="work-demand-detail__hero-heading">
+                    <div className="work-demand-detail__hero-heading-main">
+                      <span className="work-demand-detail__hero-name">{detailDemand.name || '-'}</span>
+                      <Space wrap size={[8, 8]} className="work-demand-detail__hero-tags">
+                        <Tag color="blue">{`需求 #${detailDemand.id}`}</Tag>
+                        <Tag color={getStatusTagColor(detailDemand.status)}>{getStatusLabel(detailDemand.status)}</Tag>
+                        <Tag color={getPriorityColor(detailDemand.priority)}>{detailDemand.priority}</Tag>
+                        <Tag color={getHealthTagColor(detailDemand.health_status)}>
+                          {getHealthLabel(detailDemand.health_status)}
+                        </Tag>
+                      </Space>
                     </div>
-                  ) : null}
-                  <div style={{ minWidth: 240 }}>
-                    <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                      项目负责人
-                    </Text>
-                    <Select
-                      allowClear
-                      showSearch
-                      optionFilterProp="label"
-                      style={{ width: '100%' }}
-                      value={detailProjectManager}
-                      options={ownerOptions}
-                      onChange={(value) => setDetailProjectManager(value)}
-                    />
-                  </div>
-                  <div style={{ minWidth: 220 }}>
-                    <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                      健康度
-                    </Text>
-                    <Select
-                      style={{ width: '100%' }}
-                      value={detailHealthStatus}
-                      options={HEALTH_STATUS_OPTIONS}
-                      onChange={(value) => setDetailHealthStatus(value)}
-                    />
-                  </div>
-                  <div style={{ minWidth: 280 }}>
-                    <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                      实际开始时间
-                    </Text>
-                    <DatePicker
-                      showTime
-                      style={{ width: '100%' }}
-                      format="YYYY-MM-DD HH:mm:ss"
-                      value={detailActualStartTime}
-                      onChange={(value) => setDetailActualStartTime(value)}
-                    />
-                  </div>
-                  <div style={{ minWidth: 280 }}>
-                    <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                      实际结束时间
-                    </Text>
-                    <DatePicker
-                      showTime
-                      style={{ width: '100%' }}
-                      format="YYYY-MM-DD HH:mm:ss"
-                      value={detailActualEndTime}
-                      onChange={(value) => setDetailActualEndTime(value)}
-                    />
-                  </div>
-                  <div style={{ minWidth: 380 }}>
-                    <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                      文档链接
-                    </Text>
-                    <Input
-                      value={detailDocLink}
-                      placeholder="填写 PRD / 飞书文档链接"
-                      onChange={(event) => setDetailDocLink(event.target.value)}
-                    />
-                  </div>
-                </Space>
-              </>
-            ) : null}
-
-            <Divider titlePlacement="start">项目成员</Divider>
-            <Card size="small" variant="borderless" loading={detailMembersLoading} style={{ marginBottom: 12 }}>
-              <Space wrap style={{ marginBottom: 12 }}>
-                <Select
-                  allowClear
-                  showSearch
-                  optionFilterProp="label"
-                  placeholder="选择成员"
-                  style={{ width: 240 }}
-                  value={detailMemberUserId}
-                  options={availableMemberOptions}
-                  disabled={!canEditDemandRecord(detailDemand)}
-                  onChange={(value) => setDetailMemberUserId(value)}
-                />
-                <Button
-                  type="primary"
-                  onClick={handleAddDemandMember}
-                  loading={detailMemberSubmitting}
-                  disabled={!canEditDemandRecord(detailDemand)}
-                >
-                  添加成员
-                </Button>
-              </Space>
-              <Table
-                rowKey="id"
-                size="small"
-                pagination={false}
-                dataSource={detailMembers}
-                locale={{ emptyText: '暂无项目成员' }}
-                columns={[
-                  {
-                    title: '成员',
-                    dataIndex: 'user_name',
-                    key: 'user_name',
-                    render: (value, row) => value || row.username || `用户${row.user_id}`,
-                  },
-                  {
-                    title: '用户ID',
-                    dataIndex: 'user_id',
-                    key: 'user_id',
-                    width: 110,
-                  },
-                  {
-                    title: '加入时间',
-                    dataIndex: 'created_at',
-                    key: 'created_at',
-                    width: 180,
-                    render: (value) => formatBeijingDateTime(value),
-                  },
-                  {
-                    title: '操作',
-                    key: 'action',
-                    width: 100,
-                    render: (_, row) =>
-                      canEditDemandRecord(detailDemand) ? (
-                        <Popconfirm
-                          title="确认移除该成员？"
-                          okText="移除"
-                          cancelText="取消"
-                          onConfirm={() => handleRemoveDemandMember(row.user_id)}
-                        >
-                          <Button type="link" danger size="small" loading={detailMemberSubmitting}>
-                            移除
+                    <div className="work-demand-detail__hero-actions">
+                      <Button icon={<LeftOutlined />} onClick={closeDetailDrawer}>
+                        返回需求池
+                      </Button>
+                      {canEditDemandRecord(detailDemand) ? (
+                        <>
+                          {detailDemand.status === 'DONE' || detailDemand.status === 'CANCELLED' ? (
+                            <Button onClick={() => handleQuickStatusUpdate(detailDemand, 'IN_PROGRESS')}>重开需求</Button>
+                          ) : (
+                            <Button onClick={() => handleQuickStatusUpdate(detailDemand, 'DONE')}>标记完成</Button>
+                          )}
+                          <Button type="primary" onClick={handleSaveDetail} loading={detailSaving}>
+                            保存变更
                           </Button>
-                        </Popconfirm>
-                      ) : (
-                        '-'
-                      ),
-                  },
-                ]}
-              />
-            </Card>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                  <Text type="secondary" className="work-demand-detail__hero-desc">
+                    {detailDemand.description || '当前需求暂无补充描述，可在下方基本信息中完善背景、目标和文档链接。'}
+                  </Text>
+                </div>
 
-            <Divider titlePlacement="start">需求流程</Divider>
+              </div>
+
             {!canViewWorkflow ? (
               <Alert type="info" showIcon title="当前账号无流程查看权限" />
             ) : (
@@ -2322,95 +1835,54 @@ function WorkDemands() {
 
                 {workflowData?.instance ? (
                   <div className="work-demand-detail__workflow-shell">
-                    <div className="work-demand-detail__workflow-overview">
-                      <div className="work-demand-detail__workflow-overview-head">
-                        <div>
-                          <div className="work-demand-detail__workflow-eyebrow">Workflow Runtime</div>
-                          <div className="work-demand-detail__workflow-title">当前需求执行流程</div>
-                          <Text type="secondary" className="work-demand-detail__workflow-desc">
-                            左侧查看整条链路，右侧直接维护节点负责人、排期、协作人和推进动作。
-                          </Text>
+                    <div className="work-demand-detail__workflow-overview-bar">
+                      <div className="work-demand-detail__workflow-overview">
+                        <div className="work-demand-detail__workflow-pill work-demand-detail__workflow-pill--current">
+                          <span>当前</span>
+                          <strong>{currentWorkflowNodeLabel || '-'}</strong>
                         </div>
-                        <Tag color={workflowData?.instance?.status === 'DONE' ? 'success' : 'processing'}>
-                          {getStatusLabel(workflowData?.instance?.status)}
-                        </Tag>
+                        <div className="work-demand-detail__workflow-pill">
+                          <span>已完成</span>
+                          <strong>{workflowCompletedCount}</strong>
+                        </div>
+                        <div className="work-demand-detail__workflow-pill">
+                          <span>总节点</span>
+                          <strong>{workflowGraphNodes.length}</strong>
+                        </div>
                       </div>
-
-                      <div className="work-demand-detail__workflow-progress">
-                        <Progress
-                          percent={toNumber(workflowData?.summary?.progress_percent, 0)}
+                      {canForceReplaceWorkflow ? (
+                        <Button
+                          danger
                           size="small"
-                          status={workflowData?.instance?.status === 'DONE' ? 'success' : 'active'}
-                        />
-                      </div>
-
-                      <Descriptions bordered size="small" column={2} className="work-demand-detail__workflow-summary">
-                        <Descriptions.Item label="实例状态">
-                          <Tag color={workflowData?.instance?.status === 'DONE' ? 'success' : 'processing'}>
-                            {getStatusLabel(workflowData?.instance?.status)}
-                          </Tag>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="当前节点">
-                          {currentWorkflowNodes.length > 1
-                            ? currentWorkflowNodes.map((node) => getWorkflowNodeDisplayName(node)).join(' / ')
-                            : getWorkflowNodeDisplayName(currentWorkflowNodes[0])}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="当前负责人">
-                          {currentWorkflowNodes.length > 1
-                            ? currentWorkflowNodes.map((node) => node?.assignee_name || '-').join(' / ')
-                            : currentWorkflowNodes[0]?.assignee_name || '-'}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="节点截止日">
-                          {currentWorkflowNodes.length > 1
-                            ? currentWorkflowNodes
-                                .map((node) => formatBeijingDate(node?.due_at))
-                                .filter(Boolean)
-                                .join(' / ') || '-'
-                            : formatBeijingDate(currentWorkflowNodes[0]?.due_at)}
-                        </Descriptions.Item>
-                      </Descriptions>
+                          className="work-demand-detail__workflow-upgrade-btn"
+                          loading={workflowReplacing}
+                          disabled={workflowActionBusy}
+                          onClick={handleConfirmReplaceWorkflowLatest}
+                        >
+                          强制替换为最新流程
+                        </Button>
+                      ) : null}
                     </div>
 
-                    <div className="work-demand-detail__workflow-split">
-                      <Card
-                        size="small"
-                        title="流程节点图"
-                        extra={<Tag color="processing">运行态视图</Tag>}
-                        variant="borderless"
-                        className="work-demand-detail__workflow-graph-card"
-                      >
-                        <WorkflowGraph
-                          nodes={workflowGraphNodes}
-                          selectedNodeId={String(selectedWorkflowNode?.node_key || '')}
-                          editable={false}
-                          helperText="节点卡片会同步展示负责人、任务量与节点状态，便于从总览快速定位执行瓶颈。"
-                          metaTags={[
-                            {
-                              label:
-                                currentWorkflowNodes.length > 1
-                                  ? `当前并行 ${currentWorkflowNodes.length} 节点`
-                                  : `当前 ${getWorkflowNodeDisplayName(currentWorkflowNodes[0])}`,
-                              color: 'blue',
-                            },
-                            {
-                              label: `已完成 ${(workflowGraphNodes || []).filter((item) => String(item?.status || '').toUpperCase() === 'DONE').length}`,
-                              color: 'green',
-                            },
-                          ]}
-                          onSelectNode={(nodeId) => setSelectedWorkflowNodeKey(nodeId)}
-                        />
-                      </Card>
+                    <Card size="small" variant="borderless" className="work-demand-detail__workflow-graph-card">
+                      <WorkflowGraph
+                        nodes={workflowGraphNodes}
+                        selectedNodeId={String(selectedWorkflowNode?.node_key || '')}
+                        editable={false}
+                        layoutMode="dag"
+                        showToolbar={false}
+                        onSelectNode={(nodeId) => setSelectedWorkflowNodeKey(nodeId)}
+                      />
+                    </Card>
+
+                    <div className="work-demand-detail__workflow-current">
                       <DemandNodeInspector
                         node={selectedWorkflowNode}
                         canManageWorkflow={canManageWorkflow}
                         isCurrentNode={isSelectedCurrentWorkflowNode}
                         workflowActionBusy={workflowActionBusy}
                         workflowSubmitting={workflowSubmitting}
-                        workflowRejecting={workflowRejecting}
-                        workflowForceCompleting={workflowForceCompleting}
-                        workflowReplacing={workflowReplacing}
                         workflowHoursSubmitting={workflowHoursSubmitting}
-                        taskCollaboratorSubmitting={taskCollaboratorSubmitting}
                         workflowAssignee={workflowAssignee}
                         workflowAssigneeOptions={workflowAssigneeOptions}
                         workflowDueAt={workflowDueAt}
@@ -2418,47 +1890,15 @@ function WorkDemands() {
                         onWorkflowAssigneeChange={setWorkflowAssignee}
                         onWorkflowDueAtChange={setWorkflowDueAt}
                         onWorkflowExpectedStartAtChange={setWorkflowExpectedStartAt}
-                        onAssignNode={handleAssignWorkflowNode}
+                        onCommitWorkflowArrangement={(payload) =>
+                          handleAssignWorkflowNode(payload, { silent: true, skipMissingAssigneeWarning: true })
+                        }
                         canAssignSelectedWorkflowNode={canAssignSelectedWorkflowNode}
                         onSubmitNode={handleSubmitWorkflowNode}
-                        onRejectNode={handleRejectWorkflowNode}
-                        onForceCompleteNode={handleForceCompleteWorkflowNode}
-                        canForceReplaceWorkflow={canForceReplaceWorkflow}
-                        onReplaceWorkflowLatest={handleReplaceWorkflowLatest}
-                        nodeHoursOwnerEstimate={nodeHoursOwnerEstimate}
                         nodeHoursPersonalEstimate={nodeHoursPersonalEstimate}
-                        nodeHoursActual={nodeHoursActual}
-                        nodePlannedStartTime={nodePlannedStartTime}
-                        nodePlannedEndTime={nodePlannedEndTime}
-                        nodeActualStartTime={nodeActualStartTime}
-                        nodeActualEndTime={nodeActualEndTime}
-                        nodeRejectReason={nodeRejectReason}
-                        onNodeHoursOwnerEstimateChange={setNodeHoursOwnerEstimate}
                         onNodeHoursPersonalEstimateChange={setNodeHoursPersonalEstimate}
-                        onNodeHoursActualChange={setNodeHoursActual}
-                        onNodePlannedStartTimeChange={setNodePlannedStartTime}
-                        onNodePlannedEndTimeChange={setNodePlannedEndTime}
-                        onNodeActualStartTimeChange={setNodeActualStartTime}
-                        onNodeActualEndTimeChange={setNodeActualEndTime}
-                        onNodeRejectReasonChange={setNodeRejectReason}
-                        onSaveNodeHours={handleSaveWorkflowNodeHours}
-                        selectedWorkflowTask={selectedWorkflowTask}
+                        onSaveNodePersonalEstimate={handleSaveWorkflowNodeHours}
                         selectedWorkflowNodeTasks={selectedWorkflowNodeTasks}
-                        selectedWorkflowTaskCollaborators={selectedWorkflowTaskCollaborators}
-                        selectedWorkflowTaskId={selectedWorkflowTaskId}
-                        onSelectedWorkflowTaskIdChange={setSelectedWorkflowTaskId}
-                        taskHoursPersonalEstimate={taskHoursPersonalEstimate}
-                        taskHoursActual={taskHoursActual}
-                        taskDeadline={taskDeadline}
-                        onTaskHoursPersonalEstimateChange={setTaskHoursPersonalEstimate}
-                        onTaskHoursActualChange={setTaskHoursActual}
-                        onTaskDeadlineChange={setTaskDeadline}
-                        onSaveTaskHours={handleSaveWorkflowTaskHours}
-                        taskCollaboratorUserId={taskCollaboratorUserId}
-                        taskCollaboratorOptions={taskCollaboratorOptions}
-                        onTaskCollaboratorUserIdChange={setTaskCollaboratorUserId}
-                        onAddTaskCollaborator={handleAddTaskCollaborator}
-                        onRemoveTaskCollaborator={handleRemoveTaskCollaborator}
                       />
                     </div>
                   </div>
@@ -2468,93 +1908,277 @@ function WorkDemands() {
               </Card>
             )}
 
-            <Divider titlePlacement="start">最近关联事项</Divider>
-            <div className="work-demand-detail__log-toolbar">
-              <Space size={8}>
-                <Text type="secondary">筛选</Text>
-                <Select
-                  size="small"
-                  style={{ width: 140 }}
-                  value={detailLogFilter}
-                  options={DETAIL_LOG_FILTER_OPTIONS}
-                  onChange={(value) => setDetailLogFilter(value || 'ALL')}
-                />
-              </Space>
-              <Text type="secondary">
-                全部 {detailLogStats.total} · 未完成 {detailLogStats.pending} · 逾期 {detailLogStats.overdue}
-              </Text>
-            </div>
-            <Table
-              rowKey="id"
-              size="small"
-              loading={detailLogsLoading}
-              dataSource={filteredDetailLogs}
-              pagination={false}
-              locale={{
-                emptyText: canViewSelfLogs ? '当前筛选下暂无关联事项' : '当前账号无工作记录查看权限',
-              }}
-              scroll={{ x: 980 }}
-              columns={[
+            <Tabs
+              className="work-demand-detail__tabs"
+              items={[
                 {
-                  title: '日期',
-                  dataIndex: 'log_date',
-                  key: 'log_date',
-                  width: 110,
-                  render: (value) => formatBeijingDate(value),
-                },
-                {
-                  title: '执行人',
-                  dataIndex: 'username',
-                  key: 'username',
-                  width: 120,
-                  render: (value) => value || '-',
-                },
-                {
-                  title: '阶段',
-                  dataIndex: 'phase_name',
-                  key: 'phase_name',
-                  width: 140,
-                  render: (_, row) => row.phase_name || row.phase_key || '-',
-                },
-                {
-                  title: '预计开始',
-                  dataIndex: 'expected_start_date',
-                  key: 'expected_start_date',
-                  width: 120,
-                  render: (value) => formatBeijingDate(value),
-                },
-                {
-                  title: '预计完成',
-                  dataIndex: 'expected_completion_date',
-                  key: 'expected_completion_date',
-                  width: 120,
-                  render: (value, row) => (
-                    <Space size={4}>
-                      <span>{formatBeijingDate(value)}</span>
-                      {isOverdueLogItem(row) ? <Tag color="error">逾期</Tag> : null}
-                    </Space>
+                  key: 'basic',
+                  label: '基本信息',
+                  children: (
+                    <div className="work-demand-detail__tab-section">
+                      <div className="work-demand-detail__mini-grid">
+                        <div className="work-demand-detail__mini-card">
+                          <span>业务组</span>
+                          <strong>{detailDemand.business_group_name || detailDemand.business_group_code || '-'}</strong>
+                        </div>
+                        <div className="work-demand-detail__mini-card">
+                          <span>项目成员</span>
+                          <strong>{Number(detailDemand.member_count || 0)} 人</strong>
+                        </div>
+                        <div className="work-demand-detail__mini-card">
+                          <span>预期上线</span>
+                          <strong>{formatBeijingDate(detailDemand.expected_release_date)}</strong>
+                        </div>
+                        <div className="work-demand-detail__mini-card">
+                          <span>累计实际</span>
+                          <strong>{toNumber(detailDemand.total_actual_hours, 0).toFixed(1)} h</strong>
+                        </div>
+                      </div>
+
+                      {canEditDemandRecord(detailDemand) ? (
+                        <div className="work-demand-detail__form-grid">
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">状态</Text>
+                            <Select
+                              value={detailStatus || undefined}
+                              options={STATUS_OPTIONS}
+                              placeholder="请选择状态"
+                              onChange={(value) => setDetailStatus(value)}
+                            />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">项目模板</Text>
+                            <Select
+                              allowClear
+                              showSearch
+                              optionFilterProp="label"
+                              value={detailTemplateId}
+                              options={projectTemplateOptions}
+                              onChange={(value) => setDetailTemplateId(value)}
+                            />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">项目负责人</Text>
+                            <Select
+                              allowClear
+                              showSearch
+                              optionFilterProp="label"
+                              value={detailProjectManager}
+                              options={ownerOptions}
+                              onChange={(value) => setDetailProjectManager(value)}
+                            />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">健康度</Text>
+                            <Select
+                              value={detailHealthStatus}
+                              options={HEALTH_STATUS_OPTIONS}
+                              onChange={(value) => setDetailHealthStatus(value)}
+                            />
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">文档链接</Text>
+                            <Input
+                              value={detailDocLink}
+                              placeholder="填写 PRD / 飞书文档链接"
+                              onChange={(event) => setDetailDocLink(event.target.value)}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                   ),
                 },
                 {
-                  title: '个人预估(h)',
-                  dataIndex: 'personal_estimate_hours',
-                  key: 'personal_estimate_hours',
-                  width: 120,
-                  render: (value) => toNumber(value, 0).toFixed(1),
+                  key: 'members',
+                  label: '成员',
+                  children: (
+                    <div className="work-demand-detail__tab-section">
+                      <div className="work-demand-detail__section-toolbar">
+                        <Select
+                          allowClear
+                          showSearch
+                          optionFilterProp="label"
+                          placeholder="选择成员"
+                          className="work-demand-detail__member-select"
+                          value={detailMemberUserId}
+                          options={availableMemberOptions}
+                          disabled={!canEditDemandRecord(detailDemand)}
+                          onChange={(value) => setDetailMemberUserId(value)}
+                        />
+                        <Button
+                          type="primary"
+                          onClick={handleAddDemandMember}
+                          loading={detailMemberSubmitting}
+                          disabled={!canEditDemandRecord(detailDemand)}
+                        >
+                          添加成员
+                        </Button>
+                      </div>
+                      <div className="work-demand-detail__table-shell">
+                      <Table
+                        rowKey="id"
+                        size="small"
+                        loading={detailMembersLoading}
+                        pagination={false}
+                        dataSource={detailMembers}
+                        locale={{ emptyText: '暂无项目成员' }}
+                        columns={[
+                          {
+                            title: '成员',
+                            dataIndex: 'user_name',
+                            key: 'user_name',
+                            render: (value, row) => value || row.username || `用户${row.user_id}`,
+                          },
+                          {
+                            title: '用户ID',
+                            dataIndex: 'user_id',
+                            key: 'user_id',
+                            width: 110,
+                          },
+                          {
+                            title: '加入时间',
+                            dataIndex: 'created_at',
+                            key: 'created_at',
+                            width: 180,
+                            render: (value) => formatBeijingDateTime(value),
+                          },
+                          {
+                            title: '操作',
+                            key: 'action',
+                            width: 100,
+                            render: (_, row) =>
+                              canEditDemandRecord(detailDemand) ? (
+                                <Popconfirm
+                                  title="确认移除该成员？"
+                                  okText="移除"
+                                  cancelText="取消"
+                                  onConfirm={() => handleRemoveDemandMember(row.user_id)}
+                                >
+                                  <Button type="link" danger size="small" loading={detailMemberSubmitting}>
+                                    移除
+                                  </Button>
+                                </Popconfirm>
+                              ) : (
+                                '-'
+                              ),
+                          },
+                        ]}
+                      />
+                      </div>
+                    </div>
+                  ),
                 },
                 {
-                  title: '实际用时(h)',
-                  dataIndex: 'actual_hours',
-                  key: 'actual_hours',
-                  width: 120,
-                  render: (value) => toNumber(value, 0).toFixed(1),
+                  key: 'bugs',
+                  label: 'Bug',
+                  children: (
+                    <div className="work-demand-detail__tab-section">
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description="当前需求下的 Bug 记录入口已预留，后续将在这里展示和维护缺陷记录。"
+                      />
+                    </div>
+                  ),
                 },
                 {
-                  title: '描述',
-                  dataIndex: 'description',
-                  key: 'description',
-                  ellipsis: true,
-                  render: (value) => value || '-',
+                  key: 'logs',
+                  label: '事项',
+                  children: (
+                    <div className="work-demand-detail__tab-section">
+                      <div className="work-demand-detail__log-toolbar">
+                        <Space size={8} wrap>
+                          <Text type="secondary">筛选</Text>
+                          <Select
+                            size="small"
+                            className="work-demand-detail__log-filter"
+                            value={detailLogFilter}
+                            options={DETAIL_LOG_FILTER_OPTIONS}
+                            onChange={(value) => setDetailLogFilter(value || 'ALL')}
+                          />
+                        </Space>
+                        <Text type="secondary" className="work-demand-detail__toolbar-summary">
+                          全部 {detailLogStats.total} · 未完成 {detailLogStats.pending} · 逾期 {detailLogStats.overdue}
+                        </Text>
+                      </div>
+                      <div className="work-demand-detail__table-shell">
+                      <Table
+                        rowKey="id"
+                        size="small"
+                        loading={detailLogsLoading}
+                        dataSource={filteredDetailLogs}
+                        pagination={false}
+                        locale={{
+                          emptyText: canViewSelfLogs ? '当前筛选下暂无关联事项' : '当前账号无工作记录查看权限',
+                        }}
+                        scroll={{ x: 980 }}
+                        columns={[
+                          {
+                            title: '日期',
+                            dataIndex: 'log_date',
+                            key: 'log_date',
+                            width: 110,
+                            render: (value) => formatBeijingDate(value),
+                          },
+                          {
+                            title: '执行人',
+                            dataIndex: 'username',
+                            key: 'username',
+                            width: 120,
+                            render: (value) => value || '-',
+                          },
+                          {
+                            title: '阶段',
+                            dataIndex: 'phase_name',
+                            key: 'phase_name',
+                            width: 140,
+                            render: (_, row) => row.phase_name || row.phase_key || '-',
+                          },
+                          {
+                            title: '预计开始',
+                            dataIndex: 'expected_start_date',
+                            key: 'expected_start_date',
+                            width: 120,
+                            render: (value) => formatBeijingDate(value),
+                          },
+                          {
+                            title: '预计完成',
+                            dataIndex: 'expected_completion_date',
+                            key: 'expected_completion_date',
+                            width: 120,
+                            render: (value, row) => (
+                              <Space size={4}>
+                                <span>{formatBeijingDate(value)}</span>
+                                {isOverdueLogItem(row) ? <Tag color="error">逾期</Tag> : null}
+                              </Space>
+                            ),
+                          },
+                          {
+                            title: '个人预估(h)',
+                            dataIndex: 'personal_estimate_hours',
+                            key: 'personal_estimate_hours',
+                            width: 120,
+                            render: (value) => toNumber(value, 0).toFixed(1),
+                          },
+                          {
+                            title: '实际用时(h)',
+                            dataIndex: 'actual_hours',
+                            key: 'actual_hours',
+                            width: 120,
+                            render: (value) => toNumber(value, 0).toFixed(1),
+                          },
+                          {
+                            title: '描述',
+                            dataIndex: 'description',
+                            key: 'description',
+                            ellipsis: true,
+                            render: (value) => value || '-',
+                          },
+                        ]}
+                      />
+                      </div>
+                    </div>
+                  ),
                 },
               ]}
             />

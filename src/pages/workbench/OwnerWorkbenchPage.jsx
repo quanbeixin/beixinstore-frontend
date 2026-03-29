@@ -87,6 +87,12 @@ function getSuggestedAssignStatusByStartDate(expectedStartDate) {
   return startDate > today ? 'TODO' : 'IN_PROGRESS'
 }
 
+function openDemandDetailInNewTab(demandId) {
+  const normalizedDemandId = String(demandId || '').trim()
+  if (!normalizedDemandId) return
+  window.open(`/work-demands/${encodeURIComponent(normalizedDemandId)}`, '_blank', 'noopener,noreferrer')
+}
+
 function OwnerWorkbench() {
   const [loading, setLoading] = useState(false)
   const [savingEstimate, setSavingEstimate] = useState(false)
@@ -536,7 +542,14 @@ function OwnerWorkbench() {
       title: '关联需求',
       key: 'demand',
       width: 240,
-      render: (_, row) => (row.demand_id ? `${row.demand_id} - ${row.demand_name || '-'}` : '-'),
+      render: (_, row) =>
+        row.demand_id ? (
+          <Button type="link" size="small" onClick={() => openDemandDetailInNewTab(row.demand_id)}>
+            {`${row.demand_id} - ${row.demand_name || '-'}`}
+          </Button>
+        ) : (
+          '-'
+        ),
     },
     {
       title: '阶段',

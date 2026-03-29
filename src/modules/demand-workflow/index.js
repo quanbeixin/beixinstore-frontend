@@ -1,2 +1,2 @@
-export { mapDemandWorkflowToGraphNodes } from './utils/demandWorkflow.mapper'
+export { getDemandWorkflowNodeDisplayName, mapDemandWorkflowToGraphNodes } from './utils/demandWorkflow.mapper'
 export { default as DemandNodeInspector } from './components/DemandNodeInspector'
