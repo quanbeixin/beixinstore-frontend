@@ -19,6 +19,7 @@ const DemandInsightBoard = lazy(() => import('./pages/insight/DemandInsightBoard
 const MemberRhythmBoard = lazy(() => import('./pages/insight/MemberRhythmBoardPage'))
 const WorkDemands = lazy(() => import('./pages/project/WorkDemandsPage'))
 const ProjectTemplates = lazy(() => import('./pages/project/ProjectTemplatesPage'))
+const ProjectTemplateDetail = lazy(() => import('./pages/project/ProjectTemplateDetailPage'))
 const NotificationConfig = lazy(() => import('./pages/project/NotificationConfigPage'))
 const WorkLogs = lazy(() => import('./pages/workbench/WorkLogsPage'))
 const WorkLogHistory = lazy(() => import('./pages/workbench/WorkLogHistoryPage'))
@@ -45,6 +46,7 @@ const PAGE_COMPONENTS = {
   demandInsightBoard: DemandInsightBoard,
   memberRhythmBoard: MemberRhythmBoard,
   projectTemplates: ProjectTemplates,
+  projectTemplateDetail: ProjectTemplateDetail,
   notificationConfig: NotificationConfig,
   register: Register,
   rolePermissions: RolePermissions,

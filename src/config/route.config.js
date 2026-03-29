@@ -123,6 +123,15 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/project-templates/:id',
+    componentKey: 'projectTemplateDetail',
+    requiredPermission: 'project.template.view',
+    page: {
+      title: '模板详情',
+      subtitle: '维护模板基础信息，并通过可视化画布配置项目流程节点。',
+    },
+  },
+  {
     path: '/notification-config',
     componentKey: 'notificationConfig',
     requiredPermission: 'notification.config.view',

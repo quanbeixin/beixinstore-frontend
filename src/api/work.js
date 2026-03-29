@@ -11,6 +11,11 @@ export function getWorkPhaseTypesApi(params) {
   return cachedRequest(key, () => request.get('/work/phase-types', { params }))
 }
 
+export function getProjectTemplatePhaseTypesApi(params) {
+  const key = `project-template-phase-types-${JSON.stringify(params)}`
+  return cachedRequest(key, () => request.get('/work/project-template-phase-types', { params }))
+}
+
 export function createWorkItemTypeApi(payload) {
   return request.post('/work/item-types', payload)
 }
@@ -113,12 +118,24 @@ export function submitDemandWorkflowCurrentNodeApi(demandId, payload = {}) {
   return request.post(`/work/demands/${demandId}/workflow/current/submit`, payload)
 }
 
+export function submitDemandWorkflowNodeApi(demandId, nodeKey, payload = {}) {
+  return request.post(`/work/demands/${demandId}/workflow/nodes/${nodeKey}/submit`, payload)
+}
+
 export function rejectDemandWorkflowCurrentNodeApi(demandId, payload = {}) {
   return request.post(`/work/demands/${demandId}/workflow/current/reject`, payload)
 }
 
+export function rejectDemandWorkflowNodeApi(demandId, nodeKey, payload = {}) {
+  return request.post(`/work/demands/${demandId}/workflow/nodes/${nodeKey}/reject`, payload)
+}
+
 export function forceCompleteDemandWorkflowCurrentNodeApi(demandId, payload = {}) {
   return request.post(`/work/demands/${demandId}/workflow/current/force-complete`, payload)
+}
+
+export function forceCompleteDemandWorkflowNodeApi(demandId, nodeKey, payload = {}) {
+  return request.post(`/work/demands/${demandId}/workflow/nodes/${nodeKey}/force-complete`, payload)
 }
 
 export function updateDemandWorkflowNodeHoursApi(demandId, nodeKey, payload) {

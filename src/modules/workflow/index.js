@@ -1,1 +1,2 @@
-// Shared workflow graph module exports will be added here.
+export { default as WorkflowGraph } from './components/WorkflowGraph'
+export { default as WorkflowInspector } from './inspectors/WorkflowInspector'

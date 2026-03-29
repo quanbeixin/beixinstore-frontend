@@ -65,10 +65,16 @@ function Sidebar({ collapsed = false }) {
   const location = useLocation()
 
   const menuItems = buildMenuItems()
-  const selectedKey =
-    location.pathname.startsWith('/work-demands/') && location.pathname !== '/work-demands'
-      ? '/work-demands'
-      : location.pathname
+  let selectedKey = location.pathname
+  if (location.pathname.startsWith('/work-demands/') && location.pathname !== '/work-demands') {
+    selectedKey = '/work-demands'
+  }
+  if (
+    location.pathname.startsWith('/project-templates/') &&
+    location.pathname !== '/project-templates'
+  ) {
+    selectedKey = '/project-templates'
+  }
 
   return (
     <Menu

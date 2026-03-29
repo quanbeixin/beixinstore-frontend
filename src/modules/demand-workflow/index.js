@@ -1,1 +1,2 @@
-// Demand workflow domain module exports will be added here.
+export { mapDemandWorkflowToGraphNodes } from './utils/demandWorkflow.mapper'
+export { default as DemandNodeInspector } from './components/DemandNodeInspector'

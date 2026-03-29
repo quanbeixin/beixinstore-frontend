@@ -32,7 +32,7 @@ import {
   assignDemandWorkflowNodeApi,
   createWorkDemandApi,
   deleteWorkDemandApi,
-  forceCompleteDemandWorkflowCurrentNodeApi,
+  forceCompleteDemandWorkflowNodeApi,
   getDemandWorkflowApi,
   getDemandMembersApi,
   getProjectTemplateByIdApi,
@@ -42,21 +42,24 @@ import {
   getWorkDemandsApi,
   getWorkLogsApi,
   initDemandWorkflowApi,
-  rejectDemandWorkflowCurrentNodeApi,
+  rejectDemandWorkflowNodeApi,
   removeDemandMemberApi,
   removeDemandWorkflowTaskCollaboratorApi,
   replaceDemandWorkflowLatestApi,
-  submitDemandWorkflowCurrentNodeApi,
+  submitDemandWorkflowNodeApi,
   updateDemandWorkflowNodeHoursApi,
   updateDemandWorkflowTaskHoursApi,
   updateWorkDemandApi,
 } from '../../api/work'
+import { DemandNodeInspector, mapDemandWorkflowToGraphNodes } from '../../modules/demand-workflow'
+import { WorkflowGraph } from '../../modules/workflow'
 import { getCurrentUser, getUserPreferences, hasPermission, hasRole } from '../../utils/access'
 import {
   formatBeijingDate,
   formatBeijingDateTime,
   getBeijingTodayDateString,
 } from '../../utils/datetime'
+import './WorkDemandsPage.css'
 
 const { Search } = Input
 const { Text } = Typography
@@ -173,14 +176,6 @@ function extractTemplateNodes(template) {
 function toNumber(value, fallback = 0) {
   const num = Number(value)
   return Number.isFinite(num) ? num : fallback
-}
-
-function getWorkflowNodeTagColor(status) {
-  if (status === 'DONE') return 'success'
-  if (status === 'IN_PROGRESS') return 'processing'
-  if (status === 'RETURNED') return 'orange'
-  if (status === 'CANCELLED') return 'default'
-  return 'default'
 }
 
 function isOverdueLogItem(item) {
@@ -325,10 +320,34 @@ function WorkDemands() {
     return workflowData?.current_node || nodes[0] || null
   }, [workflowData, selectedWorkflowNodeKey])
 
+  const currentWorkflowNodeKeySet = useMemo(() => {
+    const set = new Set(
+      (Array.isArray(workflowData?.current_nodes) ? workflowData.current_nodes : [])
+        .map((node) => String(node?.node_key || '').trim().toUpperCase())
+        .filter(Boolean),
+    )
+    if (set.size === 0) {
+      const fallbackKey = String(workflowData?.current_node?.node_key || '').trim().toUpperCase()
+      if (fallbackKey) set.add(fallbackKey)
+    }
+    return set
+  }, [workflowData])
+
   const isSelectedCurrentWorkflowNode = useMemo(() => {
-    if (!selectedWorkflowNode || !workflowData?.current_node) return false
-    return String(selectedWorkflowNode.node_key || '') === String(workflowData.current_node.node_key || '')
-  }, [selectedWorkflowNode, workflowData])
+    if (!selectedWorkflowNode) return false
+    return currentWorkflowNodeKeySet.has(String(selectedWorkflowNode.node_key || '').trim().toUpperCase())
+  }, [currentWorkflowNodeKeySet, selectedWorkflowNode])
+
+  const currentWorkflowNodes = useMemo(() => {
+    const rows = Array.isArray(workflowData?.current_nodes) ? workflowData.current_nodes : []
+    if (rows.length > 0) return rows
+    return workflowData?.current_node ? [workflowData.current_node] : []
+  }, [workflowData])
+
+  const workflowGraphNodes = useMemo(
+    () => mapDemandWorkflowToGraphNodes(workflowData),
+    [workflowData],
+  )
 
   const canAssignSelectedWorkflowNode = useMemo(() => {
     const status = String(selectedWorkflowNode?.status || '').toUpperCase()
@@ -923,7 +942,8 @@ function WorkDemands() {
 
         const workflow = result.data || null
         setWorkflowData(workflow)
-        const currentNode = workflow?.current_node || null
+        const firstCurrentNode = Array.isArray(workflow?.current_nodes) ? workflow.current_nodes[0] : null
+        const currentNode = firstCurrentNode || workflow?.current_node || null
         setSelectedWorkflowNodeKey(currentNode?.node_key || workflow?.nodes?.[0]?.node_key || '')
       } catch (error) {
         setWorkflowData(null)
@@ -1407,19 +1427,23 @@ function WorkDemands() {
 
   const handleSubmitWorkflowNode = async () => {
     if (!detailDemand?.id || !canManageWorkflow) return
+    if (!selectedWorkflowNode?.node_key) {
+      message.warning('请先选择流程节点')
+      return
+    }
     if (!isSelectedCurrentWorkflowNode) {
-      message.warning('请先选择当前节点再提交')
+      message.warning('当前仅激活中的节点支持提交')
       return
     }
 
     try {
       setWorkflowSubmitting(true)
-      const result = await submitDemandWorkflowCurrentNodeApi(detailDemand.id, {})
+      const result = await submitDemandWorkflowNodeApi(detailDemand.id, selectedWorkflowNode.node_key, {})
       if (!result?.success) {
         message.error(result?.message || '节点提交失败')
         return
       }
-      message.success('当前节点已提交')
+      message.success(result?.message || '节点已提交')
       setWorkflowData(result.data || null)
       await refreshListAndDetail()
     } catch (error) {
@@ -1431,8 +1455,12 @@ function WorkDemands() {
 
   const handleRejectWorkflowNode = async () => {
     if (!detailDemand?.id || !canManageWorkflow) return
+    if (!selectedWorkflowNode?.node_key) {
+      message.warning('请先选择流程节点')
+      return
+    }
     if (!isSelectedCurrentWorkflowNode) {
-      message.warning('请先选择当前节点再驳回')
+      message.warning('当前仅激活中的节点支持驳回')
       return
     }
     const reason = String(nodeRejectReason || '').trim()
@@ -1443,7 +1471,7 @@ function WorkDemands() {
 
     try {
       setWorkflowRejecting(true)
-      const result = await rejectDemandWorkflowCurrentNodeApi(detailDemand.id, {
+      const result = await rejectDemandWorkflowNodeApi(detailDemand.id, selectedWorkflowNode.node_key, {
         reject_reason: reason,
       })
       if (!result?.success) {
@@ -1462,15 +1490,19 @@ function WorkDemands() {
 
   const handleForceCompleteWorkflowNode = async () => {
     if (!detailDemand?.id || !canManageWorkflow) return
+    if (!selectedWorkflowNode?.node_key) {
+      message.warning('请先选择流程节点')
+      return
+    }
     if (!isSelectedCurrentWorkflowNode) {
-      message.warning('请先选择当前节点再强制完成')
+      message.warning('当前仅激活中的节点支持强制完成')
       return
     }
 
     try {
       setWorkflowForceCompleting(true)
-      const result = await forceCompleteDemandWorkflowCurrentNodeApi(detailDemand.id, {
-        comment: '项目管理后台强制完成当前节点',
+      const result = await forceCompleteDemandWorkflowNodeApi(detailDemand.id, selectedWorkflowNode.node_key, {
+        comment: '项目管理后台强制完成指定节点',
       })
       if (!result?.success) {
         message.error(result?.message || '强制完成失败')
@@ -1500,7 +1532,9 @@ function WorkDemands() {
       message.success(result?.message || '已替换为最新流程模板')
       const workflow = result?.data?.workflow || null
       setWorkflowData(workflow)
-      setSelectedWorkflowNodeKey(workflow?.current_node?.node_key || workflow?.nodes?.[0]?.node_key || '')
+      setSelectedWorkflowNodeKey(
+        workflow?.current_nodes?.[0]?.node_key || workflow?.current_node?.node_key || workflow?.nodes?.[0]?.node_key || '',
+      )
       await refreshListAndDetail()
     } catch (error) {
       message.error(error?.message || '强制替换流程失败')
@@ -2274,410 +2308,160 @@ function WorkDemands() {
 
             <Divider titlePlacement="start">需求流程</Divider>
             {!canViewWorkflow ? (
-              <Alert type="info" showIcon message="当前账号无流程查看权限" />
+              <Alert type="info" showIcon title="当前账号无流程查看权限" />
             ) : (
-              <Card loading={workflowLoading} size="small" variant="borderless" style={{ marginBottom: 12 }}>
+              <Card loading={workflowLoading} size="small" variant="borderless" className="work-demand-detail__workflow-card">
                 {workflowWarning ? (
                   <Alert
-                    style={{ marginBottom: 12 }}
+                    className="work-demand-detail__workflow-warning"
                     type="warning"
                     showIcon
-                    message={workflowWarning}
+                    title={workflowWarning}
                   />
                 ) : null}
 
                 {workflowData?.instance ? (
-                  <Space orientation="vertical" style={{ width: '100%' }} size={12}>
-                    <Progress
-                      percent={toNumber(workflowData?.summary?.progress_percent, 0)}
-                      size="small"
-                      status={workflowData?.instance?.status === 'DONE' ? 'success' : 'active'}
-                    />
-
-                    <Descriptions bordered size="small" column={2}>
-                      <Descriptions.Item label="实例状态">
+                  <div className="work-demand-detail__workflow-shell">
+                    <div className="work-demand-detail__workflow-overview">
+                      <div className="work-demand-detail__workflow-overview-head">
+                        <div>
+                          <div className="work-demand-detail__workflow-eyebrow">Workflow Runtime</div>
+                          <div className="work-demand-detail__workflow-title">当前需求执行流程</div>
+                          <Text type="secondary" className="work-demand-detail__workflow-desc">
+                            左侧查看整条链路，右侧直接维护节点负责人、排期、协作人和推进动作。
+                          </Text>
+                        </div>
                         <Tag color={workflowData?.instance?.status === 'DONE' ? 'success' : 'processing'}>
                           {getStatusLabel(workflowData?.instance?.status)}
                         </Tag>
-                      </Descriptions.Item>
-                      <Descriptions.Item label="当前节点">
-                        {getWorkflowNodeDisplayName(workflowData?.current_node)}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="当前负责人">
-                        {workflowData?.current_node?.assignee_name || '-'}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="节点截止日">
-                        {formatBeijingDate(workflowData?.current_node?.due_at)}
-                      </Descriptions.Item>
-                    </Descriptions>
+                      </div>
 
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {(workflowData?.nodes || []).map((node) => (
-                        <Tag
-                          key={node.id || node.node_key}
-                          color={getWorkflowNodeTagColor(node.status)}
-                          onClick={() => setSelectedWorkflowNodeKey(node.node_key)}
-                          style={{
-                            cursor: 'pointer',
-                            borderWidth:
-                              String(selectedWorkflowNode?.node_key || '') === String(node?.node_key || '') ? 2 : 1,
-                          }}
-                        >
-                          {getWorkflowNodeDisplayName(node)}
-                        </Tag>
-                      ))}
+                      <div className="work-demand-detail__workflow-progress">
+                        <Progress
+                          percent={toNumber(workflowData?.summary?.progress_percent, 0)}
+                          size="small"
+                          status={workflowData?.instance?.status === 'DONE' ? 'success' : 'active'}
+                        />
+                      </div>
+
+                      <Descriptions bordered size="small" column={2} className="work-demand-detail__workflow-summary">
+                        <Descriptions.Item label="实例状态">
+                          <Tag color={workflowData?.instance?.status === 'DONE' ? 'success' : 'processing'}>
+                            {getStatusLabel(workflowData?.instance?.status)}
+                          </Tag>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="当前节点">
+                          {currentWorkflowNodes.length > 1
+                            ? currentWorkflowNodes.map((node) => getWorkflowNodeDisplayName(node)).join(' / ')
+                            : getWorkflowNodeDisplayName(currentWorkflowNodes[0])}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="当前负责人">
+                          {currentWorkflowNodes.length > 1
+                            ? currentWorkflowNodes.map((node) => node?.assignee_name || '-').join(' / ')
+                            : currentWorkflowNodes[0]?.assignee_name || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="节点截止日">
+                          {currentWorkflowNodes.length > 1
+                            ? currentWorkflowNodes
+                                .map((node) => formatBeijingDate(node?.due_at))
+                                .filter(Boolean)
+                                .join(' / ') || '-'
+                            : formatBeijingDate(currentWorkflowNodes[0]?.due_at)}
+                        </Descriptions.Item>
+                      </Descriptions>
                     </div>
 
-                    {canManageWorkflow && workflowData?.instance?.status !== 'DONE' ? (
-                      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                        <Text type="secondary">
-                          已选择节点:
-                          {getWorkflowNodeDisplayName(selectedWorkflowNode)}
-                          {isSelectedCurrentWorkflowNode ? '（当前节点）' : '（预指派）'}
-                        </Text>
-                        <Space wrap align="end">
-                        <Select
-                          showSearch
-                          optionFilterProp="label"
-                          style={{ width: 220 }}
-                          value={workflowAssignee}
-                          options={workflowAssigneeOptions}
-                          placeholder="选择节点负责人"
-                          disabled={!canAssignSelectedWorkflowNode}
-                          onChange={(value) => setWorkflowAssignee(value)}
+                    <div className="work-demand-detail__workflow-split">
+                      <Card
+                        size="small"
+                        title="流程节点图"
+                        extra={<Tag color="processing">运行态视图</Tag>}
+                        variant="borderless"
+                        className="work-demand-detail__workflow-graph-card"
+                      >
+                        <WorkflowGraph
+                          nodes={workflowGraphNodes}
+                          selectedNodeId={String(selectedWorkflowNode?.node_key || '')}
+                          editable={false}
+                          helperText="节点卡片会同步展示负责人、任务量与节点状态，便于从总览快速定位执行瓶颈。"
+                          metaTags={[
+                            {
+                              label:
+                                currentWorkflowNodes.length > 1
+                                  ? `当前并行 ${currentWorkflowNodes.length} 节点`
+                                  : `当前 ${getWorkflowNodeDisplayName(currentWorkflowNodes[0])}`,
+                              color: 'blue',
+                            },
+                            {
+                              label: `已完成 ${(workflowGraphNodes || []).filter((item) => String(item?.status || '').toUpperCase() === 'DONE').length}`,
+                              color: 'green',
+                            },
+                          ]}
+                          onSelectNode={(nodeId) => setSelectedWorkflowNodeKey(nodeId)}
                         />
-                        <DatePicker
-                          value={workflowDueAt}
-                          format="YYYY-MM-DD"
-                          placeholder="节点截止日（可选）"
-                          disabled={!canAssignSelectedWorkflowNode}
-                          onChange={(value) => setWorkflowDueAt(value)}
-                        />
-                        <DatePicker
-                          value={workflowExpectedStartAt}
-                          format="YYYY-MM-DD"
-                          placeholder="预计开始日"
-                          disabled={!canAssignSelectedWorkflowNode}
-                          onChange={(value) => setWorkflowExpectedStartAt(value)}
-                        />
-                        <Button
-                          loading={workflowSubmitting}
-                          disabled={!canAssignSelectedWorkflowNode || workflowActionBusy}
-                          onClick={handleAssignWorkflowNode}
-                        >
-                          {isSelectedCurrentWorkflowNode ? '指派当前节点' : '预指派节点'}
-                        </Button>
-                        <Button
-                          type="primary"
-                          loading={workflowSubmitting}
-                          disabled={!isSelectedCurrentWorkflowNode || workflowActionBusy}
-                          onClick={handleSubmitWorkflowNode}
-                        >
-                          提交当前节点
-                        </Button>
-                        <Popconfirm
-                          title="驳回当前节点"
-                          description="驳回后流程将回退到上一节点，并要求重新推进。"
-                          okText="确认驳回"
-                          cancelText="取消"
-                          onConfirm={handleRejectWorkflowNode}
-                          okButtonProps={{ danger: true, loading: workflowRejecting }}
-                          disabled={!isSelectedCurrentWorkflowNode || workflowActionBusy}
-                        >
-                          <Button
-                            danger
-                            loading={workflowRejecting}
-                            disabled={!isSelectedCurrentWorkflowNode || workflowActionBusy}
-                          >
-                            驳回当前节点
-                          </Button>
-                        </Popconfirm>
-                        <Popconfirm
-                          title="强制完成当前节点"
-                          description="将跳过负责人校验，直接推进到下一节点。"
-                          okText="确认强制完成"
-                          cancelText="取消"
-                          onConfirm={handleForceCompleteWorkflowNode}
-                          okButtonProps={{ loading: workflowForceCompleting }}
-                          disabled={!isSelectedCurrentWorkflowNode || workflowActionBusy}
-                        >
-                          <Button
-                            loading={workflowForceCompleting}
-                            disabled={!isSelectedCurrentWorkflowNode || workflowActionBusy}
-                          >
-                            强制完成当前节点
-                          </Button>
-                        </Popconfirm>
-                        {canForceReplaceWorkflow ? (
-                          <Popconfirm
-                            title="强制替换为最新流程模板"
-                            description={`将终止当前流程并重建为最新模板，确认替换需求 ${detailDemand?.id || ''} 吗？`}
-                            okText="确认替换"
-                            cancelText="取消"
-                            onConfirm={handleReplaceWorkflowLatest}
-                            okButtonProps={{ danger: true, loading: workflowReplacing }}
-                            disabled={workflowActionBusy}
-                          >
-                            <Button danger loading={workflowReplacing} disabled={workflowActionBusy}>
-                              强制替换最新流程
-                            </Button>
-                          </Popconfirm>
-                        ) : null}
-                        </Space>
-                      </Space>
-                    ) : null}
-
-                    {canManageWorkflow && selectedWorkflowNode ? (
-                      <Card size="small" title="节点工时维护" variant="borderless">
-                        <Space wrap align="start">
-                          <div style={{ minWidth: 180 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              Owner预估(h)
-                            </Text>
-                            <InputNumber
-                              min={0}
-                              step={0.5}
-                              precision={2}
-                              style={{ width: '100%' }}
-                              value={nodeHoursOwnerEstimate}
-                              onChange={(value) => setNodeHoursOwnerEstimate(value)}
-                            />
-                          </div>
-                          <div style={{ minWidth: 180 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              个人预估(h)
-                            </Text>
-                            <InputNumber
-                              min={0}
-                              step={0.5}
-                              precision={2}
-                              style={{ width: '100%' }}
-                              value={nodeHoursPersonalEstimate}
-                              onChange={(value) => setNodeHoursPersonalEstimate(value)}
-                            />
-                          </div>
-                          <div style={{ minWidth: 180 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              实际工时(h)
-                            </Text>
-                            <InputNumber
-                              min={0}
-                              step={0.5}
-                              precision={2}
-                              style={{ width: '100%' }}
-                              value={nodeHoursActual}
-                              onChange={(value) => setNodeHoursActual(value)}
-                            />
-                          </div>
-                          <div style={{ minWidth: 240 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              计划开始
-                            </Text>
-                            <DatePicker
-                              showTime
-                              style={{ width: '100%' }}
-                              format="YYYY-MM-DD HH:mm:ss"
-                              value={nodePlannedStartTime}
-                              onChange={(value) => setNodePlannedStartTime(value)}
-                            />
-                          </div>
-                          <div style={{ minWidth: 240 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              计划结束
-                            </Text>
-                            <DatePicker
-                              showTime
-                              style={{ width: '100%' }}
-                              format="YYYY-MM-DD HH:mm:ss"
-                              value={nodePlannedEndTime}
-                              onChange={(value) => setNodePlannedEndTime(value)}
-                            />
-                          </div>
-                          <div style={{ minWidth: 240 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              实际开始
-                            </Text>
-                            <DatePicker
-                              showTime
-                              style={{ width: '100%' }}
-                              format="YYYY-MM-DD HH:mm:ss"
-                              value={nodeActualStartTime}
-                              onChange={(value) => setNodeActualStartTime(value)}
-                            />
-                          </div>
-                          <div style={{ minWidth: 240 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              实际结束
-                            </Text>
-                            <DatePicker
-                              showTime
-                              style={{ width: '100%' }}
-                              format="YYYY-MM-DD HH:mm:ss"
-                              value={nodeActualEndTime}
-                              onChange={(value) => setNodeActualEndTime(value)}
-                            />
-                          </div>
-                          <div style={{ minWidth: 320 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              驳回原因
-                            </Text>
-                            <Input.TextArea
-                              rows={2}
-                              maxLength={2000}
-                              value={nodeRejectReason}
-                              onChange={(event) => setNodeRejectReason(event.target.value)}
-                            />
-                          </div>
-                          <div style={{ minWidth: 140, paddingTop: 24 }}>
-                            <Button
-                              type="primary"
-                              loading={workflowHoursSubmitting}
-                              onClick={handleSaveWorkflowNodeHours}
-                            >
-                              保存节点工时
-                            </Button>
-                          </div>
-                        </Space>
                       </Card>
-                    ) : null}
-
-                    {canManageWorkflow && selectedWorkflowNode ? (
-                      <Card size="small" title="任务工时维护" variant="borderless">
-                        <Space wrap align="start">
-                          <div style={{ minWidth: 360 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              任务
-                            </Text>
-                            <Select
-                              allowClear
-                              showSearch
-                              optionFilterProp="label"
-                              style={{ width: '100%' }}
-                              value={selectedWorkflowTask ? Number(selectedWorkflowTask.id) : undefined}
-                              options={selectedWorkflowNodeTasks.map((item) => ({
-                                value: Number(item.id),
-                                label: `${item.task_title || `任务#${item.id}`} (${item.assignee_name || '-'})`,
-                              }))}
-                              placeholder="选择任务"
-                              onChange={(value) => setSelectedWorkflowTaskId(value)}
-                            />
-                          </div>
-                          <div style={{ minWidth: 180 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              个人预估(h)
-                            </Text>
-                            <InputNumber
-                              min={0}
-                              step={0.5}
-                              precision={2}
-                              style={{ width: '100%' }}
-                              value={taskHoursPersonalEstimate}
-                              onChange={(value) => setTaskHoursPersonalEstimate(value)}
-                              disabled={!selectedWorkflowTask}
-                            />
-                          </div>
-                          <div style={{ minWidth: 180 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              实际工时(h)
-                            </Text>
-                            <InputNumber
-                              min={0}
-                              step={0.5}
-                              precision={2}
-                              style={{ width: '100%' }}
-                              value={taskHoursActual}
-                              onChange={(value) => setTaskHoursActual(value)}
-                              disabled={!selectedWorkflowTask}
-                            />
-                          </div>
-                          <div style={{ minWidth: 240 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              截止时间
-                            </Text>
-                            <DatePicker
-                              showTime
-                              style={{ width: '100%' }}
-                              format="YYYY-MM-DD HH:mm:ss"
-                              value={taskDeadline}
-                              onChange={(value) => setTaskDeadline(value)}
-                              disabled={!selectedWorkflowTask}
-                            />
-                          </div>
-                          <div style={{ minWidth: 360 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              添加协作人
-                            </Text>
-                            <Space.Compact style={{ width: '100%' }}>
-                              <Select
-                                allowClear
-                                showSearch
-                                optionFilterProp="label"
-                                style={{ width: '100%' }}
-                                value={taskCollaboratorUserId}
-                                options={taskCollaboratorOptions}
-                                placeholder="选择协作人"
-                                disabled={!selectedWorkflowTask || taskCollaboratorSubmitting}
-                                onChange={(value) => setTaskCollaboratorUserId(value)}
-                              />
-                              <Button
-                                loading={taskCollaboratorSubmitting}
-                                disabled={!selectedWorkflowTask || taskCollaboratorSubmitting}
-                                onClick={handleAddTaskCollaborator}
-                              >
-                                添加
-                              </Button>
-                            </Space.Compact>
-                          </div>
-                          <div style={{ minWidth: 420 }}>
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
-                              当前协作人
-                            </Text>
-                            {selectedWorkflowTaskCollaborators.length > 0 ? (
-                              <Space wrap>
-                                {selectedWorkflowTaskCollaborators.map((item) => (
-                                  <Tag key={item.user_id}>
-                                    <Space size={4}>
-                                      <span>{item.user_name || item.username || `用户${item.user_id}`}</span>
-                                      {canManageWorkflow ? (
-                                        <Popconfirm
-                                          title="确认移除协作人？"
-                                          okText="移除"
-                                          cancelText="取消"
-                                          onConfirm={() => handleRemoveTaskCollaborator(item.user_id)}
-                                        >
-                                          <Button
-                                            type="link"
-                                            danger
-                                            size="small"
-                                            loading={taskCollaboratorSubmitting}
-                                            style={{ paddingInline: 2 }}
-                                          >
-                                            移除
-                                          </Button>
-                                        </Popconfirm>
-                                      ) : null}
-                                    </Space>
-                                  </Tag>
-                                ))}
-                              </Space>
-                            ) : (
-                              <Text type="secondary">暂无协作人</Text>
-                            )}
-                          </div>
-                          <div style={{ minWidth: 140, paddingTop: 24 }}>
-                            <Button
-                              type="primary"
-                              loading={workflowHoursSubmitting}
-                              disabled={!selectedWorkflowTask}
-                              onClick={handleSaveWorkflowTaskHours}
-                            >
-                              保存任务工时
-                            </Button>
-                          </div>
-                        </Space>
-                      </Card>
-                    ) : null}
-                  </Space>
+                      <DemandNodeInspector
+                        node={selectedWorkflowNode}
+                        canManageWorkflow={canManageWorkflow}
+                        isCurrentNode={isSelectedCurrentWorkflowNode}
+                        workflowActionBusy={workflowActionBusy}
+                        workflowSubmitting={workflowSubmitting}
+                        workflowRejecting={workflowRejecting}
+                        workflowForceCompleting={workflowForceCompleting}
+                        workflowReplacing={workflowReplacing}
+                        workflowHoursSubmitting={workflowHoursSubmitting}
+                        taskCollaboratorSubmitting={taskCollaboratorSubmitting}
+                        workflowAssignee={workflowAssignee}
+                        workflowAssigneeOptions={workflowAssigneeOptions}
+                        workflowDueAt={workflowDueAt}
+                        workflowExpectedStartAt={workflowExpectedStartAt}
+                        onWorkflowAssigneeChange={setWorkflowAssignee}
+                        onWorkflowDueAtChange={setWorkflowDueAt}
+                        onWorkflowExpectedStartAtChange={setWorkflowExpectedStartAt}
+                        onAssignNode={handleAssignWorkflowNode}
+                        canAssignSelectedWorkflowNode={canAssignSelectedWorkflowNode}
+                        onSubmitNode={handleSubmitWorkflowNode}
+                        onRejectNode={handleRejectWorkflowNode}
+                        onForceCompleteNode={handleForceCompleteWorkflowNode}
+                        canForceReplaceWorkflow={canForceReplaceWorkflow}
+                        onReplaceWorkflowLatest={handleReplaceWorkflowLatest}
+                        nodeHoursOwnerEstimate={nodeHoursOwnerEstimate}
+                        nodeHoursPersonalEstimate={nodeHoursPersonalEstimate}
+                        nodeHoursActual={nodeHoursActual}
+                        nodePlannedStartTime={nodePlannedStartTime}
+                        nodePlannedEndTime={nodePlannedEndTime}
+                        nodeActualStartTime={nodeActualStartTime}
+                        nodeActualEndTime={nodeActualEndTime}
+                        nodeRejectReason={nodeRejectReason}
+                        onNodeHoursOwnerEstimateChange={setNodeHoursOwnerEstimate}
+                        onNodeHoursPersonalEstimateChange={setNodeHoursPersonalEstimate}
+                        onNodeHoursActualChange={setNodeHoursActual}
+                        onNodePlannedStartTimeChange={setNodePlannedStartTime}
+                        onNodePlannedEndTimeChange={setNodePlannedEndTime}
+                        onNodeActualStartTimeChange={setNodeActualStartTime}
+                        onNodeActualEndTimeChange={setNodeActualEndTime}
+                        onNodeRejectReasonChange={setNodeRejectReason}
+                        onSaveNodeHours={handleSaveWorkflowNodeHours}
+                        selectedWorkflowTask={selectedWorkflowTask}
+                        selectedWorkflowNodeTasks={selectedWorkflowNodeTasks}
+                        selectedWorkflowTaskCollaborators={selectedWorkflowTaskCollaborators}
+                        selectedWorkflowTaskId={selectedWorkflowTaskId}
+                        onSelectedWorkflowTaskIdChange={setSelectedWorkflowTaskId}
+                        taskHoursPersonalEstimate={taskHoursPersonalEstimate}
+                        taskHoursActual={taskHoursActual}
+                        taskDeadline={taskDeadline}
+                        onTaskHoursPersonalEstimateChange={setTaskHoursPersonalEstimate}
+                        onTaskHoursActualChange={setTaskHoursActual}
+                        onTaskDeadlineChange={setTaskDeadline}
+                        onSaveTaskHours={handleSaveWorkflowTaskHours}
+                        taskCollaboratorUserId={taskCollaboratorUserId}
+                        taskCollaboratorOptions={taskCollaboratorOptions}
+                        onTaskCollaboratorUserIdChange={setTaskCollaboratorUserId}
+                        onAddTaskCollaborator={handleAddTaskCollaborator}
+                        onRemoveTaskCollaborator={handleRemoveTaskCollaborator}
+                      />
+                    </div>
+                  </div>
                 ) : (
                   <Empty description="暂无流程实例" />
                 )}
@@ -2685,16 +2469,7 @@ function WorkDemands() {
             )}
 
             <Divider titlePlacement="start">最近关联事项</Divider>
-            <div
-              style={{
-                marginBottom: 12,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-                flexWrap: 'wrap',
-              }}
-            >
+            <div className="work-demand-detail__log-toolbar">
               <Space size={8}>
                 <Text type="secondary">筛选</Text>
                 <Select

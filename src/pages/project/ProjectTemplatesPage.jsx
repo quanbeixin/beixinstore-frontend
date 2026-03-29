@@ -1,5 +1,6 @@
-import { EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import {
+  Alert,
   Button,
   Card,
   Form,
@@ -13,33 +14,45 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   createProjectTemplateApi,
   getProjectTemplatesApi,
-  updateProjectTemplateApi,
 } from '../../api/work'
 import { hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
 
 const { Text } = Typography
 
-function parseNodeConfigText(text) {
-  const raw = String(text || '').trim()
-  if (!raw) return []
-  const parsed = JSON.parse(raw)
-  if (Array.isArray(parsed)) return parsed
-  if (parsed && typeof parsed === 'object') return parsed
-  throw new Error('node_config 必须是 JSON 对象或数组')
+function getNodeSummary(value) {
+  let list = []
+  if (Array.isArray(value)) {
+    list = value
+  } else if (value && typeof value === 'object' && Array.isArray(value.nodes)) {
+    list = value.nodes
+  } else if (value && typeof value === 'object') {
+    list = Object.values(value).filter((item) => item && typeof item === 'object')
+  }
+
+  if (list.length === 0) return { count: 0, labels: [] }
+
+  return {
+    count: list.length,
+    labels: list
+      .slice(0, 3)
+      .map((item, index) => String(item?.node_name || item?.name || item?.title || `节点${index + 1}`).trim())
+      .filter(Boolean),
+  }
 }
 
 function ProjectTemplates() {
+  const navigate = useNavigate()
   const canManage = hasPermission('project.template.manage')
   const [form] = Form.useForm()
 
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
-  const [editingTemplate, setEditingTemplate] = useState(null)
 
   const [list, setList] = useState([])
   const [keywordInput, setKeywordInput] = useState('')
@@ -84,59 +97,44 @@ function ProjectTemplates() {
 
   const openCreateModal = () => {
     if (!canManage) return
-    setEditingTemplate(null)
     form.resetFields()
     form.setFieldsValue({
       status: 1,
-      node_config_text: JSON.stringify([], null, 2),
-    })
-    setModalOpen(true)
-  }
-
-  const openEditModal = (record) => {
-    if (!canManage) return
-    setEditingTemplate(record)
-    form.resetFields()
-    form.setFieldsValue({
-      name: record.name || '',
-      description: record.description || '',
-      status: Number(record.status) === 1 ? 1 : 0,
-      node_config_text: JSON.stringify(record.node_config || [], null, 2),
     })
     setModalOpen(true)
   }
 
   const closeModal = () => {
     setModalOpen(false)
-    setEditingTemplate(null)
     form.resetFields()
   }
 
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
-      const nodeConfig = parseNodeConfigText(values.node_config_text)
       setSubmitting(true)
 
       const payload = {
         name: String(values.name || '').trim(),
         description: String(values.description || '').trim(),
         status: Number(values.status) === 1 ? 1 : 0,
-        node_config: nodeConfig,
+        node_config: [],
       }
 
-      const result = editingTemplate
-        ? await updateProjectTemplateApi(editingTemplate.id, payload)
-        : await createProjectTemplateApi(payload)
+      const result = await createProjectTemplateApi(payload)
 
       if (!result?.success) {
-        message.error(result?.message || (editingTemplate ? '模板更新失败' : '模板创建失败'))
+        message.error(result?.message || '模板创建失败')
         return
       }
 
-      message.success(editingTemplate ? '模板更新成功' : '模板创建成功')
+      const nextTemplateId = Number(result?.data?.id || result?.data?.template_id)
+      message.success('模板创建成功，进入流程设计页')
       closeModal()
       await fetchTemplates()
+      if (nextTemplateId > 0) {
+        navigate(`/project-templates/${nextTemplateId}`)
+      }
     } catch (error) {
       if (error?.errorFields) return
       message.error(error?.message || '模板保存失败')
@@ -172,9 +170,16 @@ function ProjectTemplates() {
       dataIndex: 'node_config',
       key: 'node_config',
       render: (value) => {
-        if (Array.isArray(value)) return `数组(${value.length})`
-        if (value && typeof value === 'object') return `对象(${Object.keys(value).length}项)`
-        return '-'
+        const summary = getNodeSummary(value)
+        if (summary.count === 0) return <Text type="secondary">未配置节点</Text>
+        return (
+          <Space size={[6, 6]} wrap>
+            <Tag color="processing">共 {summary.count} 个节点</Tag>
+            {summary.labels.map((label) => (
+              <Tag key={label}>{label}</Tag>
+            ))}
+          </Space>
+        )
       },
     },
     {
@@ -194,16 +199,19 @@ function ProjectTemplates() {
     {
       title: '操作',
       key: 'action',
-      width: 110,
+      width: 160,
       fixed: 'right',
-      render: (_, record) =>
-        canManage ? (
-          <Button type="link" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
-            编辑
+      render: (_, record) => (
+        <Space size={4}>
+          <Button
+            type="link"
+            icon={canManage ? <EditOutlined /> : <EyeOutlined />}
+            onClick={() => navigate(`/project-templates/${record.id}`)}
+          >
+            {canManage ? '编辑流程' : '查看详情'}
           </Button>
-        ) : (
-          '-'
-        ),
+        </Space>
+      ),
     },
   ]
 
@@ -271,7 +279,7 @@ function ProjectTemplates() {
       </Card>
 
       <Modal
-        title={editingTemplate ? '编辑项目模板' : '新建项目模板'}
+        title="新建项目模板"
         open={modalOpen}
         onCancel={closeModal}
         onOk={handleSubmit}
@@ -279,7 +287,7 @@ function ProjectTemplates() {
         okText="保存"
         cancelText="取消"
         destroyOnHidden
-        width={760}
+        width={640}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
           <Form.Item label="模板名称" name="name" rules={[{ required: true, message: '请输入模板名称' }]}>
@@ -296,28 +304,12 @@ function ProjectTemplates() {
               ]}
             />
           </Form.Item>
-          <Form.Item
-            label="节点配置(JSON)"
-            name="node_config_text"
-            rules={[
-              { required: true, message: '请输入节点配置 JSON' },
-              {
-                validator: (_, value) => {
-                  try {
-                    parseNodeConfigText(value)
-                    return Promise.resolve()
-                  } catch (err) {
-                    return Promise.reject(new Error(err?.message || 'JSON 格式不正确'))
-                  }
-                },
-              },
-            ]}
-          >
-            <Input.TextArea
-              rows={12}
-              placeholder={`示例:\n[\n  {\n    "node_key": "PLAN",\n    "node_name": "需求评审"\n  }\n]`}
-            />
-          </Form.Item>
+          <Alert
+            showIcon
+            type="info"
+            title="创建后进入详情页继续设计"
+            description="节点流程不再在弹窗中通过 JSON 维护，创建成功后将进入模板详情页完成可视化配置。"
+          />
         </Form>
       </Modal>
     </div>
