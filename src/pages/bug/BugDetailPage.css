@@ -1,0 +1,63 @@
+.bug-detail-page {
+  padding: 12px;
+}
+
+.bug-detail-page__shell {
+  border-radius: 18px;
+}
+
+.bug-detail-page__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.bug-detail-page__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 12px;
+}
+
+.bug-detail-page__block {
+  border-radius: 16px;
+  margin-bottom: 12px;
+}
+
+.bug-detail-page__attachment-alert {
+  margin-bottom: 12px;
+}
+
+.bug-detail-page__log-item {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+}
+
+.bug-detail-page__log-main {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.bug-detail-page__log-time {
+  color: #8c8c8c;
+  font-size: 12px;
+}
+
+.bug-detail-page__log-remark {
+  color: #434343;
+}
+
+@media (max-width: 1100px) {
+  .bug-detail-page__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bug-detail-page__head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

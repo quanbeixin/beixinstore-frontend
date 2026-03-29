@@ -49,6 +49,7 @@ import {
   getDemandWorkflowNodeDisplayName,
   mapDemandWorkflowToGraphNodes,
 } from '../../modules/demand-workflow'
+import { DemandBugPanel } from '../../modules/bug'
 import { WorkflowGraph } from '../../modules/workflow'
 import { getCurrentUser, getUserPreferences, hasPermission, hasRole } from '../../utils/access'
 import {
@@ -2073,12 +2074,7 @@ function WorkDemands() {
                   key: 'bugs',
                   label: 'Bug',
                   children: (
-                    <div className="work-demand-detail__tab-section">
-                      <Empty
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description="当前需求下的 Bug 记录入口已预留，后续将在这里展示和维护缺陷记录。"
-                      />
-                    </div>
+                    <DemandBugPanel demandId={detailDemand?.id || ''} />
                   ),
                 },
                 {

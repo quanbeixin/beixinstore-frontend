@@ -14,6 +14,10 @@ const SCENE_META = {
   task_deadline: { label: '任务截止提醒', desc: '按提前天数触发截止提醒' },
   task_complete: { label: '任务完成', desc: '任务完成时触发' },
   node_complete: { label: '节点完成', desc: '节点完成时触发' },
+  bug_assign: { label: 'Bug指派', desc: 'Bug被分配给处理人时触发' },
+  bug_status_change: { label: 'Bug状态变更', desc: 'Bug状态发生变化时触发' },
+  bug_fixed: { label: 'Bug已修复', desc: 'Bug标记为已修复时触发' },
+  bug_reopen: { label: 'Bug重新打开', desc: 'Bug被重新打开时触发' },
 }
 
 const RECEIVER_ROLE_OPTIONS = [
@@ -21,6 +25,8 @@ const RECEIVER_ROLE_OPTIONS = [
   { label: '任务负责人', value: 'task_assignee' },
   { label: '任务创建人', value: 'task_creator' },
   { label: '项目负责人', value: 'project_manager' },
+  { label: 'Bug处理人', value: 'bug_assignee' },
+  { label: 'Bug发现人', value: 'bug_reporter' },
 ]
 
 const DEFAULT_SCENE_CONFIG = {
@@ -30,6 +36,10 @@ const DEFAULT_SCENE_CONFIG = {
   task_deadline: { enabled: 1, receiver_roles: ['task_assignee'], advance_days: 1 },
   task_complete: { enabled: 1, receiver_roles: ['task_creator'], advance_days: 0 },
   node_complete: { enabled: 1, receiver_roles: ['project_manager'], advance_days: 0 },
+  bug_assign: { enabled: 1, receiver_roles: ['bug_assignee'], advance_days: 0 },
+  bug_status_change: { enabled: 1, receiver_roles: ['bug_reporter'], advance_days: 0 },
+  bug_fixed: { enabled: 1, receiver_roles: ['bug_reporter'], advance_days: 0 },
+  bug_reopen: { enabled: 1, receiver_roles: ['bug_assignee'], advance_days: 0 },
 }
 
 function normalizeRows(rows) {

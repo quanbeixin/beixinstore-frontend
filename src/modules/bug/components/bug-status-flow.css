@@ -1,0 +1,53 @@
+.bug-status-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bug-status-flow__main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.bug-status-flow__segment {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bug-status-flow__node {
+  min-width: 84px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #f5f7fa;
+  border: 1px solid #e8edf3;
+  color: #5b6472;
+  font-size: 12px;
+  text-align: center;
+}
+
+.bug-status-flow__node.is-current {
+  background: #e6f4ff;
+  border-color: #91caff;
+  color: #0958d9;
+  font-weight: 600;
+}
+
+.bug-status-flow__node.is-passed {
+  background: #f6ffed;
+  border-color: #b7eb8f;
+  color: #389e0d;
+}
+
+.bug-status-flow__line {
+  width: 28px;
+  height: 1px;
+  background: #d9dfe7;
+}
+
+.bug-status-flow__reopened {
+  display: flex;
+  align-items: center;
+}

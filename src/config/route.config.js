@@ -132,6 +132,29 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/bugs',
+    componentKey: 'bugList',
+    requiredPermission: 'bug.view',
+    page: {
+      title: 'Bug管理',
+      subtitle: '统一管理缺陷记录、流转与验证闭环。',
+    },
+    menu: {
+      section: 'project',
+      label: 'Bug管理',
+      icon: 'tool',
+    },
+  },
+  {
+    path: '/bugs/:id',
+    componentKey: 'bugDetail',
+    requiredPermission: 'bug.view',
+    page: {
+      title: 'Bug详情',
+      subtitle: '查看缺陷详情、状态流转、历史和附件。',
+    },
+  },
+  {
     path: '/notification-config',
     componentKey: 'notificationConfig',
     requiredPermission: 'notification.config.view',

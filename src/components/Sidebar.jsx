@@ -75,6 +75,9 @@ function Sidebar({ collapsed = false }) {
   ) {
     selectedKey = '/project-templates'
   }
+  if (location.pathname.startsWith('/bugs/') && location.pathname !== '/bugs') {
+    selectedKey = '/bugs'
+  }
 
   return (
     <Menu

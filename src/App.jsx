@@ -30,6 +30,8 @@ const RolePermissions = lazy(() => import('./pages/system/RolePermissionsPage'))
 const MenuVisibility = lazy(() => import('./pages/system/MenuVisibilityPage'))
 const ArchiveDemands = lazy(() => import('./pages/project/ArchiveDemandsPage'))
 const DictCenter = lazy(() => import('./pages/system/DictCenterPage'))
+const BugList = lazy(() => import('./pages/bug/BugListPage'))
+const BugDetail = lazy(() => import('./pages/bug/BugDetailPage'))
 const Login = lazy(() => import('./pages/auth/LoginPage'))
 const Register = lazy(() => import('./pages/auth/RegisterPage'))
 
@@ -39,6 +41,8 @@ const PAGE_COMPONENTS = {
   login: Login,
   menuVisibility: MenuVisibility,
   archiveDemands: ArchiveDemands,
+  bugList: BugList,
+  bugDetail: BugDetail,
   morningStandupBoard: MorningStandupBoard,
   options: Options,
   ownerWorkbench: OwnerWorkbench,
