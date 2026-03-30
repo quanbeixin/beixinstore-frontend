@@ -219,7 +219,8 @@ function getRoleKeys(access) {
 
 const PERMISSION_ALIAS_MAP = Object.freeze({
   'demand.view': ['requirement.view'],
-  'demand.manage': ['requirement.create', 'requirement.edit', 'requirement.transition'],
+  'demand.create': ['requirement.create'],
+  'demand.manage': ['requirement.edit', 'requirement.transition'],
   'demand.workflow.view': ['requirement.view'],
   'demand.workflow.manage': ['requirement.transition'],
 })

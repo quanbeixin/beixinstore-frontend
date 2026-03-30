@@ -8,6 +8,10 @@ export function getUserByIdApi(userId) {
   return request.get(`/users/${userId}`)
 }
 
+export function getUserChangeLogsApi(params) {
+  return request.get('/users/change-logs', { params })
+}
+
 export function createUserApi(payload) {
   return request.post('/users', payload)
 }

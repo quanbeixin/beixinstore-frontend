@@ -1,12 +1,16 @@
 ﻿import {
   DeleteOutlined,
   EditOutlined,
+  EyeOutlined,
+  FileSearchOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
 } from '@ant-design/icons'
 import {
   Button,
+  DatePicker,
+  Descriptions,
   Form,
   Input,
   Modal,
@@ -25,6 +29,7 @@ import { getOptionsApi } from '../../api/options'
 import {
   createUserApi,
   deleteUserApi,
+  getUserChangeLogsApi,
   getUserByIdApi,
   getUsersApi,
   updateUserApi,
@@ -32,7 +37,21 @@ import {
 import { getCurrentUser } from '../../utils/access'
 
 const { Search } = Input
+const { RangePicker } = DatePicker
 const USERS_FULL_LIST_PAGE_SIZE = 5000
+const USER_CHANGE_LOG_PAGE_SIZE = 10
+const USER_CHANGE_ACTION_OPTIONS = [
+  { label: '全部类型', value: '' },
+  { label: '新增用户', value: 'CREATE' },
+  { label: '编辑用户', value: 'UPDATE' },
+  { label: '删除用户', value: 'DELETE' },
+  { label: '查看详情', value: 'VIEW' },
+  { label: '新用户注册', value: 'REGISTER' },
+]
+const USER_CHANGE_SOURCE_LABELS = {
+  ADMIN: '后台操作',
+  SELF_REGISTER: '用户注册',
+}
 
 function highlightText(text, keyword) {
   const source = String(text || '')
@@ -65,6 +84,32 @@ function highlightText(text, keyword) {
   return <>{parts}</>
 }
 
+function getUserChangeSnapshotRows(snapshot, statusOptions = []) {
+  if (!snapshot || typeof snapshot !== 'object') return []
+
+  const statusMap = new Map((statusOptions || []).map((item) => [item.item_code, item.item_name]))
+  const roleNames = Array.isArray(snapshot.role_names)
+    ? snapshot.role_names
+    : String(snapshot.role_names || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+
+  return [
+    { key: 'username', label: '用户名', value: snapshot.username || '-' },
+    { key: 'real_name', label: '真实姓名', value: snapshot.real_name || '-' },
+    { key: 'email', label: '邮箱', value: snapshot.email || '-' },
+    { key: 'department_name', label: '部门', value: snapshot.department_name || '-' },
+    { key: 'status_code', label: '状态', value: statusMap.get(snapshot.status_code) || snapshot.status_code || '-' },
+    {
+      key: 'include_in_metrics',
+      label: '纳入考核',
+      value: Number(snapshot.include_in_metrics ?? 1) === 1 ? '纳入' : '不纳入',
+    },
+    { key: 'role_names', label: '角色', value: roleNames.length > 0 ? roleNames.join('、') : '-' },
+  ]
+}
+
 function Users() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(false)
@@ -81,6 +126,18 @@ function Users() {
     { item_code: 'ACTIVE', item_name: '正常', color: 'success' },
     { item_code: 'DISABLED', item_name: '停用', color: 'default' },
   ])
+  const [isLogModalVisible, setIsLogModalVisible] = useState(false)
+  const [isLogDetailVisible, setIsLogDetailVisible] = useState(false)
+  const [logLoading, setLogLoading] = useState(false)
+  const [userChangeLogs, setUserChangeLogs] = useState([])
+  const [selectedLog, setSelectedLog] = useState(null)
+  const [logPage, setLogPage] = useState(1)
+  const [logPageSize, setLogPageSize] = useState(USER_CHANGE_LOG_PAGE_SIZE)
+  const [logTotal, setLogTotal] = useState(0)
+  const [logActionType, setLogActionType] = useState('')
+  const [logOperatorUserId, setLogOperatorUserId] = useState(undefined)
+  const [logKeyword, setLogKeyword] = useState('')
+  const [logDateRange, setLogDateRange] = useState([])
 
   const [form] = Form.useForm()
 
@@ -147,12 +204,44 @@ function Users() {
     }
   }, [])
 
+  const fetchUserChangeLogs = useCallback(async () => {
+    if (!isLogModalVisible) return
+    setLogLoading(true)
+    try {
+      const result = await getUserChangeLogsApi({
+        page: logPage,
+        pageSize: logPageSize,
+        ...(logActionType ? { action_type: logActionType } : {}),
+        ...(logOperatorUserId ? { operator_user_id: logOperatorUserId } : {}),
+        ...(logKeyword ? { keyword: logKeyword } : {}),
+        ...(logDateRange?.[0] ? { start_date: logDateRange[0].format('YYYY-MM-DD') } : {}),
+        ...(logDateRange?.[1] ? { end_date: logDateRange[1].format('YYYY-MM-DD') } : {}),
+      })
+
+      if (result.success) {
+        setUserChangeLogs(result.data?.list || [])
+        setLogTotal(result.data?.total || 0)
+      } else {
+        message.error(result.message || '获取操作记录失败')
+      }
+    } catch (error) {
+      message.error(error?.message || '获取操作记录失败')
+      console.error('Fetch user change logs error:', error)
+    } finally {
+      setLogLoading(false)
+    }
+  }, [isLogModalVisible, logActionType, logDateRange, logKeyword, logOperatorUserId, logPage, logPageSize])
+
   useEffect(() => {
     setCurrentUserId(getCurrentUserId())
     fetchUsers()
     fetchOptions()
     fetchStatusOptions()
   }, [fetchUsers, fetchOptions, fetchStatusOptions])
+
+  useEffect(() => {
+    fetchUserChangeLogs()
+  }, [fetchUserChangeLogs])
 
   const handleSearch = (value) => {
     setKeyword(value)
@@ -285,6 +374,41 @@ function Users() {
     setSortBy('real_name')
     setSortOrder('asc')
     fetchUsers()
+  }
+
+  const openLogModal = () => {
+    setLogPage(1)
+    setLogPageSize(USER_CHANGE_LOG_PAGE_SIZE)
+    setIsLogModalVisible(true)
+  }
+
+  const closeLogModal = () => {
+    setIsLogModalVisible(false)
+    handleCloseLogDetail()
+  }
+
+  const handleResetLogFilters = () => {
+    setLogActionType('')
+    setLogOperatorUserId(undefined)
+    setLogKeyword('')
+    setLogDateRange([])
+    setLogPage(1)
+    setLogPageSize(USER_CHANGE_LOG_PAGE_SIZE)
+  }
+
+  const handleLogTableChange = (pagination) => {
+    setLogPage(pagination.current || 1)
+    setLogPageSize(pagination.pageSize || USER_CHANGE_LOG_PAGE_SIZE)
+  }
+
+  const handleOpenLogDetail = (record) => {
+    setSelectedLog(record)
+    setIsLogDetailVisible(true)
+  }
+
+  const handleCloseLogDetail = () => {
+    setSelectedLog(null)
+    setIsLogDetailVisible(false)
   }
 
   const groupedUsers = useMemo(() => {
@@ -468,6 +592,91 @@ function Users() {
     },
   ]
 
+  const logColumns = [
+    {
+      title: '时间',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 180,
+    },
+    {
+      title: '操作类型',
+      dataIndex: 'action_label',
+      key: 'action_label',
+      width: 120,
+      render: (_, record) => {
+        const colorMap = {
+          CREATE: 'green',
+          UPDATE: 'blue',
+          DELETE: 'red',
+          VIEW: 'default',
+          REGISTER: 'gold',
+        }
+        return <Tag color={colorMap[record.action_type] || 'default'}>{record.action_label || record.action_type}</Tag>
+      },
+    },
+    {
+      title: '目标用户',
+      key: 'target_user',
+      width: 220,
+      render: (_, record) => (
+        <div>
+          <div style={{ fontWeight: 600 }}>{record.target_real_name || '-'}</div>
+          <div style={{ fontSize: 12, color: '#667085' }}>{record.target_username || '-'}</div>
+        </div>
+      ),
+    },
+    {
+      title: '操作人',
+      key: 'operator_name',
+      width: 160,
+      render: (_, record) => record.operator_name || '系统',
+    },
+    {
+      title: '来源',
+      dataIndex: 'source',
+      key: 'source',
+      width: 120,
+      render: (value) => USER_CHANGE_SOURCE_LABELS[value] || value || '-',
+    },
+    {
+      title: '变更摘要',
+      dataIndex: 'change_summary',
+      key: 'change_summary',
+      ellipsis: true,
+      render: (value) => value || '-',
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 100,
+      fixed: 'right',
+      render: (_, record) => (
+        <Button type="link" icon={<EyeOutlined />} onClick={() => handleOpenLogDetail(record)}>
+          详情
+        </Button>
+      ),
+    },
+  ]
+
+  const operatorOptions = useMemo(
+    () =>
+      (users || []).map((user) => ({
+        value: user.id,
+        label: user.real_name || user.username || `用户#${user.id}`,
+      })),
+    [users],
+  )
+
+  const selectedLogBeforeRows = useMemo(
+    () => getUserChangeSnapshotRows(selectedLog?.before_data, statusOptions),
+    [selectedLog?.before_data, statusOptions],
+  )
+  const selectedLogAfterRows = useMemo(
+    () => getUserChangeSnapshotRows(selectedLog?.after_data, statusOptions),
+    [selectedLog?.after_data, statusOptions],
+  )
+
   return (
     <div style={{ padding: '12px' }}>
       <div
@@ -490,9 +699,14 @@ function Users() {
             刷新
           </Button>
         </Space>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-          新增用户
-        </Button>
+        <Space>
+          <Button icon={<FileSearchOutlined />} onClick={openLogModal}>
+            操作记录
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+            新增用户
+          </Button>
+        </Space>
       </div>
 
       <Table
@@ -505,6 +719,134 @@ function Users() {
         onChange={handleTableChange}
         scroll={{ x: 1200 }}
       />
+
+      <Modal
+        title="用户操作记录"
+        open={isLogModalVisible}
+        onCancel={closeLogModal}
+        footer={null}
+        width={1120}
+        destroyOnHidden={false}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Space wrap size={10}>
+            <Select
+              style={{ width: 150 }}
+              value={logActionType}
+              options={USER_CHANGE_ACTION_OPTIONS}
+              onChange={(value) => {
+                setLogActionType(value)
+                setLogPage(1)
+              }}
+            />
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              style={{ width: 180 }}
+              placeholder="筛选操作人"
+              value={logOperatorUserId}
+              options={operatorOptions}
+              onChange={(value) => {
+                setLogOperatorUserId(value)
+                setLogPage(1)
+              }}
+            />
+            <Input
+              allowClear
+              style={{ width: 220 }}
+              placeholder="搜索操作人/目标用户/摘要"
+              value={logKeyword}
+              onChange={(event) => {
+                setLogKeyword(event.target.value)
+                setLogPage(1)
+              }}
+            />
+            <RangePicker
+              allowEmpty={[true, true]}
+              value={logDateRange}
+              onChange={(dates) => {
+                setLogDateRange(dates || [])
+                setLogPage(1)
+              }}
+            />
+            <Button onClick={handleResetLogFilters}>重置</Button>
+          </Space>
+
+          <Table
+            rowKey="id"
+            size="small"
+            loading={logLoading}
+            columns={logColumns}
+            dataSource={userChangeLogs}
+            pagination={{
+              current: logPage,
+              pageSize: logPageSize,
+              total: logTotal,
+              showSizeChanger: true,
+              showTotal: (total) => `共 ${total} 条`,
+            }}
+            onChange={handleLogTableChange}
+            scroll={{ x: 980 }}
+          />
+        </div>
+      </Modal>
+
+      <Modal
+        title="操作记录详情"
+        open={isLogDetailVisible}
+        onCancel={handleCloseLogDetail}
+        footer={null}
+        width={900}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Descriptions bordered size="small" column={2}>
+            <Descriptions.Item label="操作类型">
+              {selectedLog?.action_label || selectedLog?.action_type || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="操作时间">{selectedLog?.created_at || '-'}</Descriptions.Item>
+            <Descriptions.Item label="目标用户">
+              {selectedLog?.target_real_name || '-'} / {selectedLog?.target_username || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="操作人">{selectedLog?.operator_name || '系统'}</Descriptions.Item>
+            <Descriptions.Item label="来源">
+              {USER_CHANGE_SOURCE_LABELS[selectedLog?.source] || selectedLog?.source || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="变更摘要">{selectedLog?.change_summary || '-'}</Descriptions.Item>
+          </Descriptions>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 12 }}>
+              <div style={{ marginBottom: 12, fontWeight: 600 }}>变更前</div>
+              <Descriptions bordered size="small" column={1}>
+                {selectedLogBeforeRows.length > 0 ? (
+                  selectedLogBeforeRows.map((item) => (
+                    <Descriptions.Item key={item.key} label={item.label}>
+                      {item.value}
+                    </Descriptions.Item>
+                  ))
+                ) : (
+                  <Descriptions.Item label="数据">-</Descriptions.Item>
+                )}
+              </Descriptions>
+            </div>
+            <div style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 12 }}>
+              <div style={{ marginBottom: 12, fontWeight: 600 }}>变更后</div>
+              <Descriptions bordered size="small" column={1}>
+                {selectedLogAfterRows.length > 0 ? (
+                  selectedLogAfterRows.map((item) => (
+                    <Descriptions.Item key={item.key} label={item.label}>
+                      {item.value}
+                    </Descriptions.Item>
+                  ))
+                ) : (
+                  <Descriptions.Item label="数据">-</Descriptions.Item>
+                )}
+              </Descriptions>
+            </div>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         title={editingUser ? '编辑用户' : '新增用户'}

@@ -71,12 +71,16 @@ const UNIFIED_STATUS_OPTIONS = [
 const STATUS_FILTER_VALUE_PREFIX = {
   LIFECYCLE: 'LIFECYCLE:',
   UNIFIED: 'UNIFIED:',
+  CUSTOM: 'CUSTOM:',
 }
 function makeLifecycleFilterValue(status) {
   return `${STATUS_FILTER_VALUE_PREFIX.LIFECYCLE}${String(status || '').trim().toUpperCase()}`
 }
 function makeUnifiedFilterValue(status) {
   return `${STATUS_FILTER_VALUE_PREFIX.UNIFIED}${String(status || '').trim().toUpperCase()}`
+}
+function makeCustomFilterValue(status) {
+  return `${STATUS_FILTER_VALUE_PREFIX.CUSTOM}${String(status || '').trim().toUpperCase()}`
 }
 function parseStatusFilterValue(rawValue) {
   const value = String(rawValue || '').trim()
@@ -93,12 +97,19 @@ function parseStatusFilterValue(rawValue) {
       value: value.slice(STATUS_FILTER_VALUE_PREFIX.UNIFIED.length).toUpperCase(),
     }
   }
+  if (value.startsWith(STATUS_FILTER_VALUE_PREFIX.CUSTOM)) {
+    return {
+      kind: 'custom',
+      value: value.slice(STATUS_FILTER_VALUE_PREFIX.CUSTOM.length).toUpperCase(),
+    }
+  }
   return { kind: 'all', value: '' }
 }
 const ACTIVE_ITEM_STATUS_FILTER_OPTIONS = [
   { label: '全部状态', value: 'ALL' },
   { label: '待开始', value: makeLifecycleFilterValue('TODO') },
   { label: '进行中', value: makeLifecycleFilterValue('IN_PROGRESS') },
+  { label: '今日已完成', value: makeCustomFilterValue('TODAY_DONE') },
   { label: '风险', value: makeUnifiedFilterValue('RISK') },
   { label: '逾期', value: makeUnifiedFilterValue('OVERDUE') },
   { label: '今日到期', value: makeUnifiedFilterValue('DUE_TODAY') },
@@ -168,6 +179,21 @@ const ACTIVE_CARD_BASE_STYLE = {
   transition: ACTION_TRANSITION,
   boxShadow: '0 1px 2px rgba(16, 24, 40, 0.06)',
 }
+const SUMMARY_CARD_BASE_STYLE = {
+  height: '100%',
+  borderRadius: 12,
+  transition: ACTION_TRANSITION,
+}
+const CLICKABLE_SUMMARY_CARD_STYLE = (hovered = false) => ({
+  ...SUMMARY_CARD_BASE_STYLE,
+  cursor: 'pointer',
+  border: `1px solid ${hovered ? '#91caff' : '#dbeafe'}`,
+  background: hovered
+    ? 'linear-gradient(135deg, #f2f8ff 0%, #eef6ff 100%)'
+    : 'linear-gradient(135deg, #f8fbff 0%, #f4f8ff 100%)',
+  boxShadow: hovered ? '0 10px 24px rgba(22, 119, 255, 0.14)' : '0 4px 12px rgba(15, 23, 42, 0.06)',
+  transform: hovered ? 'translateY(-1px)' : 'translateY(0)',
+})
 const HISTORY_HEADER_CARD_STYLE = {
   border: '1px solid #dbe7ff',
   borderRadius: 14,
@@ -364,6 +390,17 @@ function truncateText(value, maxLength = 8) {
   const chars = Array.from(text)
   if (chars.length <= maxLength) return text
   return `${chars.slice(0, maxLength).join('')}...`
+}
+
+function getTodayHoursDetailRows(items = [], type = 'planned') {
+  const field = type === 'actual' ? 'today_actual_hours' : 'today_planned_hours'
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => toNumber(item?.[field], 0) > 0)
+    .map((item) => ({
+      ...item,
+      hours: toNumber(item?.[field], 0),
+    }))
+    .sort((a, b) => b.hours - a.hours || Number(b.id || 0) - Number(a.id || 0))
 }
 
 function formatRateText(value) {
@@ -581,6 +618,9 @@ function WorkLogs({ mode = 'dashboard' }) {
       actual_hours_today: 0,
       remaining_hours_today: 0,
     },
+    today_planned_detail_items: [],
+    today_actual_detail_items: [],
+    today_done_items: [],
     active_items: [],
     recent_logs: [],
   })
@@ -595,12 +635,14 @@ function WorkLogs({ mode = 'dashboard' }) {
   const [actualModalMode, setActualModalMode] = useState('full')
   const [dailyEntryModalOpen, setDailyEntryModalOpen] = useState(false)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
+  const [hoursDetailModal, setHoursDetailModal] = useState({ open: false, type: 'planned' })
   const [dailyEntrySubmitting, setDailyEntrySubmitting] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [editingLog, setEditingLog] = useState(null)
   const [operatingLog, setOperatingLog] = useState(null)
   const [detailLog, setDetailLog] = useState(null)
   const [detailTimeline, setDetailTimeline] = useState([])
+  const [hoveredSummaryCard, setHoveredSummaryCard] = useState('')
   const [activeItemKeyword, setActiveItemKeyword] = useState('')
   const [activeItemStatusFilter, setActiveItemStatusFilter] = useState('ALL')
   const [weeklyModalOpen, setWeeklyModalOpen] = useState(false)
@@ -742,6 +784,28 @@ function WorkLogs({ mode = 'dashboard' }) {
     return rows.filter((item) => (item?.log_status || 'IN_PROGRESS') !== 'DONE')
   }, [workbench])
 
+  const todayPlannedDetailItems = useMemo(
+    () => getTodayHoursDetailRows(workbench?.today_planned_detail_items, 'planned'),
+    [workbench?.today_planned_detail_items],
+  )
+
+  const todayActualDetailItems = useMemo(
+    () => getTodayHoursDetailRows(workbench?.today_actual_detail_items, 'actual'),
+    [workbench?.today_actual_detail_items],
+  )
+
+  const todayDoneItems = useMemo(() => {
+    const rows = Array.isArray(workbench?.today_done_items) ? workbench.today_done_items : []
+    return [...rows].sort((a, b) => {
+      const completedAtA = String(a?.log_completed_at || '')
+      const completedAtB = String(b?.log_completed_at || '')
+      if (completedAtA && completedAtB && completedAtA !== completedAtB) {
+        return completedAtB.localeCompare(completedAtA)
+      }
+      return Number(b?.id || 0) - Number(a?.id || 0)
+    })
+  }, [workbench?.today_done_items])
+
   const activeItemSummary = useMemo(() => {
     return activeItems.reduce(
       (acc, item) => {
@@ -752,9 +816,9 @@ function WorkLogs({ mode = 'dashboard' }) {
         if (!item?.expected_completion_date) acc.noDeadline += 1
         return acc
       },
-      { todo: 0, inProgress: 0, overdue: 0, noDeadline: 0 },
+      { todo: 0, inProgress: 0, overdue: 0, noDeadline: 0, todayDone: todayDoneItems.length },
     )
-  }, [activeItems])
+  }, [activeItems, todayDoneItems.length])
 
   // 提醒统计
   const reminderStats = useMemo(() => {
@@ -792,6 +856,7 @@ function WorkLogs({ mode = 'dashboard' }) {
     () => ({
       todo: makeLifecycleFilterValue('TODO'),
       inProgress: makeLifecycleFilterValue('IN_PROGRESS'),
+      todayDone: makeCustomFilterValue('TODAY_DONE'),
       overdue: makeUnifiedFilterValue('OVERDUE'),
     }),
     [],
@@ -811,9 +876,14 @@ function WorkLogs({ mode = 'dashboard' }) {
   const filteredActiveItems = useMemo(() => {
     const keyword = activeItemKeyword.trim().toLowerCase()
     const statusFilter = parseStatusFilterValue(activeItemStatusFilter)
+    const sourceItems =
+      statusFilter.kind === 'custom' && statusFilter.value === 'TODAY_DONE' ? todayDoneItems : activeItems
 
-    const list = activeItems
+    const list = sourceItems
       .filter((item) => {
+        if (statusFilter.kind === 'custom' && statusFilter.value === 'TODAY_DONE') {
+          if (String(item?.log_status || '').trim().toUpperCase() !== 'DONE') return false
+        }
         if (statusFilter.kind === 'lifecycle' && (item?.log_status || 'IN_PROGRESS') !== statusFilter.value) return false
         if (statusFilter.kind === 'unified' && getDisplayStatusMeta(item).code !== statusFilter.value) return false
         if (!keyword) return true
@@ -844,7 +914,19 @@ function WorkLogs({ mode = 'dashboard' }) {
       })
 
     return list
-  }, [activeItems, activeItemKeyword, activeItemStatusFilter, workflowTodoByDemandId])
+  }, [activeItems, activeItemKeyword, activeItemStatusFilter, todayDoneItems, workflowTodoByDemandId])
+
+  const currentActivePanelTitle = useMemo(() => {
+    const statusFilter = parseStatusFilterValue(activeItemStatusFilter)
+    if (statusFilter.kind === 'custom' && statusFilter.value === 'TODAY_DONE') return '我今日已完成的事项'
+    return '我的进行中事项'
+  }, [activeItemStatusFilter])
+
+  const currentActiveEmptyText = useMemo(() => {
+    const statusFilter = parseStatusFilterValue(activeItemStatusFilter)
+    if (statusFilter.kind === 'custom' && statusFilter.value === 'TODAY_DONE') return '今日暂无已完成事项'
+    return '没有匹配的进行中事项'
+  }, [activeItemStatusFilter])
 
   const weeklySummary = useMemo(() => weeklyReport?.summary || {}, [weeklyReport])
   const weeklyTopItems = useMemo(
@@ -1920,13 +2002,19 @@ function WorkLogs({ mode = 'dashboard' }) {
     },
   ]
 
+  const currentHoursDetailItems =
+    hoursDetailModal.type === 'actual' ? todayActualDetailItems : todayPlannedDetailItems
+  const currentHoursDetailTitle = hoursDetailModal.type === 'actual' ? '今日实际用时明细' : '今日计划用时明细'
+  const currentHoursField = hoursDetailModal.type === 'actual' ? 'today_actual_hours' : 'today_planned_hours'
+  const currentHoursTotal = currentHoursDetailItems.reduce((sum, item) => sum + toNumber(item?.hours, 0), 0)
+
   return (
     <div style={{ padding: 12, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       {!isHistoryPage ? (
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col xs={24} sm={12} lg={4}>
-              <Card variant="borderless" style={{ height: '100%' }}>
+              <Card variant="borderless" style={SUMMARY_CARD_BASE_STYLE}>
                 <Space>
                   <UnorderedListOutlined />
                   <Text type="secondary">今日应完成事项</Text>
@@ -1937,7 +2025,7 @@ function WorkLogs({ mode = 'dashboard' }) {
               </Card>
             </Col>
             <Col xs={24} sm={12} lg={4}>
-              <Card variant="borderless" style={{ height: '100%' }}>
+              <Card variant="borderless" style={SUMMARY_CARD_BASE_STYLE}>
                 <Space>
                   <CheckCircleOutlined />
                   <Text type="secondary">今日已填报事项</Text>
@@ -1948,7 +2036,14 @@ function WorkLogs({ mode = 'dashboard' }) {
               </Card>
             </Col>
             <Col xs={24} sm={12} lg={5}>
-              <Card variant="borderless" style={{ height: '100%' }}>
+              <Card
+                variant="borderless"
+                hoverable
+                style={CLICKABLE_SUMMARY_CARD_STYLE(hoveredSummaryCard === 'planned')}
+                onClick={() => setHoursDetailModal({ open: true, type: 'planned' })}
+                onMouseEnter={() => setHoveredSummaryCard('planned')}
+                onMouseLeave={() => setHoveredSummaryCard('')}
+              >
                 <Space>
                   <ClockCircleOutlined />
                   <Text type="secondary">今日计划用时(h)</Text>
@@ -1959,7 +2054,14 @@ function WorkLogs({ mode = 'dashboard' }) {
               </Card>
             </Col>
             <Col xs={24} sm={12} lg={5}>
-              <Card variant="borderless" style={{ height: '100%' }}>
+              <Card
+                variant="borderless"
+                hoverable
+                style={CLICKABLE_SUMMARY_CARD_STYLE(hoveredSummaryCard === 'actual')}
+                onClick={() => setHoursDetailModal({ open: true, type: 'actual' })}
+                onMouseEnter={() => setHoveredSummaryCard('actual')}
+                onMouseLeave={() => setHoveredSummaryCard('')}
+              >
                 <Space>
                   <FileTextOutlined />
                   <Text type="secondary">今日实际用时(h)</Text>
@@ -1970,7 +2072,7 @@ function WorkLogs({ mode = 'dashboard' }) {
               </Card>
             </Col>
             <Col xs={24} sm={24} lg={6}>
-              <Card variant="borderless" style={{ height: '100%' }}>
+              <Card variant="borderless" style={SUMMARY_CARD_BASE_STYLE}>
                 <Space>
                   <ClockCircleOutlined />
                   <Text type="secondary">今日可指派用时(h)</Text>
@@ -2137,7 +2239,7 @@ function WorkLogs({ mode = 'dashboard' }) {
 
             <Col xs={24} lg={14} style={{ display: 'flex' }}>
               <Card
-                title="我的进行中事项"
+                title={currentActivePanelTitle}
                 variant="borderless"
                 style={{ width: '100%' }}
                 extra={
@@ -2164,8 +2266,8 @@ function WorkLogs({ mode = 'dashboard' }) {
                   },
                 }}
               >
-                {activeItems.length === 0 ? (
-                  <Empty description="暂无未完成事项" />
+                {activeItems.length === 0 && todayDoneItems.length === 0 ? (
+                  <Empty description="暂无可展示事项" />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
                     {/* 提醒区域 */}
@@ -2245,6 +2347,26 @@ function WorkLogs({ mode = 'dashboard' }) {
                       </button>
                       <button
                         type="button"
+                        onClick={() => handleSummaryQuickFilterClick(activeSummaryQuickFilterValues.todayDone)}
+                        style={{
+                          ...SURFACE_CARD_STYLE,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          border:
+                            activeItemStatusFilter === activeSummaryQuickFilterValues.todayDone
+                              ? '1px solid #95de64'
+                              : SURFACE_CARD_STYLE.border,
+                          background:
+                            activeItemStatusFilter === activeSummaryQuickFilterValues.todayDone
+                              ? '#f6ffed'
+                              : SURFACE_CARD_STYLE.background,
+                        }}
+                      >
+                        <div style={{ ...SURFACE_LABEL_STYLE, color: '#389e0d' }}>今日已完成</div>
+                        <div style={{ ...SURFACE_VALUE_STYLE, color: '#237804' }}>{activeItemSummary.todayDone}</div>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleSummaryQuickFilterClick(activeSummaryQuickFilterValues.overdue)}
                         style={{
                           ...WARNING_SURFACE_CARD_STYLE,
@@ -2301,7 +2423,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                       }}
                     >
                       {filteredActiveItems.length === 0 ? (
-                        <Empty description="没有匹配的进行中事项" />
+                        <Empty description={currentActiveEmptyText} />
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                           {filteredActiveItems.map((item) => {
@@ -2643,6 +2765,73 @@ function WorkLogs({ mode = 'dashboard' }) {
             </Col>
           </Row>
         </>
+      ) : null}
+
+      {!isHistoryPage ? (
+        <Modal
+          title={`${currentHoursDetailTitle}（${currentHoursTotal.toFixed(1)}h）`}
+          open={hoursDetailModal.open}
+          onCancel={() => setHoursDetailModal((prev) => ({ ...prev, open: false }))}
+          footer={null}
+          width={880}
+        >
+          {currentHoursDetailItems.length === 0 ? (
+            <Empty description="当前没有可校准的明细事项" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          ) : (
+            <Table
+              rowKey={(record) => `${hoursDetailModal.type}-${record.id}`}
+              size="small"
+              pagination={false}
+              dataSource={currentHoursDetailItems}
+              scroll={{ x: 720 }}
+              columns={[
+                {
+                  title: '事项',
+                  key: 'item',
+                  render: (_, record) => (
+                    <div>
+                      <div style={{ fontWeight: 600, color: '#0f172a' }}>
+                        {record.description || record.item_type_name || '-'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#667085' }}>
+                        {record.item_type_name || '-'} · #{record.id}
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  title: '需求',
+                  key: 'demand',
+                  width: 220,
+                  render: (_, record) => record.demand_name || record.demand_id || '-',
+                },
+                {
+                  title: '需求任务',
+                  dataIndex: 'phase_name',
+                  key: 'phase_name',
+                  width: 180,
+                  render: (value) => value || '-',
+                },
+                {
+                  title: hoursDetailModal.type === 'actual' ? '今日实际(h)' : '今日计划(h)',
+                  key: 'hours',
+                  width: 120,
+                  render: (_, record) => toNumber(record?.[currentHoursField], 0).toFixed(1),
+                },
+              ]}
+              summary={() => (
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0} colSpan={3}>
+                    <Text strong>合计</Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={1}>
+                    <Text strong>{currentHoursTotal.toFixed(1)}</Text>
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              )}
+            />
+          )}
+        </Modal>
       ) : null}
 
       {isHistoryPage ? (

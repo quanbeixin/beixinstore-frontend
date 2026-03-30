@@ -199,6 +199,17 @@ function getMemberItemClassName(overdue, dueToday) {
   return 'morning-member-item'
 }
 
+function getTodayHoursDetailRows(items = [], type = 'planned') {
+  const field = type === 'actual' ? 'today_actual_hours' : 'today_planned_hours'
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => toNumber(item?.[field], 0) > 0)
+    .map((item) => ({
+      ...item,
+      hours: toNumber(item?.[field], 0),
+    }))
+    .sort((a, b) => b.hours - a.hours || Number(b.id || 0) - Number(a.id || 0))
+}
+
 function MorningStandupBoard() {
   const currentUser = useMemo(() => getCurrentUser(), [])
   const [loading, setLoading] = useState(false)
@@ -211,6 +222,7 @@ function MorningStandupBoard() {
     readStoredViewMode(STANDUP_VIEW_MODE_STORAGE_KEYS.yesterdayDue, 'tree'),
   )
   const [unscheduledModalOpen, setUnscheduledModalOpen] = useState(false)
+  const [hoursDetailModal, setHoursDetailModal] = useState({ open: false, type: 'planned' })
   const [data, setData] = useState({
     tabs: [],
     default_tab_key: '',
@@ -250,6 +262,8 @@ function MorningStandupBoard() {
     focus_in_progress_items: [],
     focus_done_today_items: [],
     focus_todo_items: [],
+    today_planned_detail_items: [],
+    today_actual_detail_items: [],
     members: [],
     no_fill_members: [],
   })
@@ -324,6 +338,14 @@ function MorningStandupBoard() {
   const focusDoneTodayItems = useMemo(
     () => (Array.isArray(data.focus_done_today_items) ? data.focus_done_today_items : EMPTY_ARRAY),
     [data.focus_done_today_items],
+  )
+  const todayPlannedDetailItems = useMemo(
+    () => getTodayHoursDetailRows(data.today_planned_detail_items, 'planned'),
+    [data.today_planned_detail_items],
+  )
+  const todayActualDetailItems = useMemo(
+    () => getTodayHoursDetailRows(data.today_actual_detail_items, 'actual'),
+    [data.today_actual_detail_items],
   )
   const focusTodoItems = useMemo(
     () => (Array.isArray(data.focus_todo_items) ? data.focus_todo_items : EMPTY_ARRAY),
@@ -957,6 +979,12 @@ function MorningStandupBoard() {
     await loadBoard(nextKey)
   }
 
+  const currentHoursDetailItems =
+    hoursDetailModal.type === 'actual' ? todayActualDetailItems : todayPlannedDetailItems
+  const currentHoursDetailTitle = hoursDetailModal.type === 'actual' ? '今日实际用时明细' : '今日计划用时明细'
+  const currentHoursField = hoursDetailModal.type === 'actual' ? 'today_actual_hours' : 'today_planned_hours'
+  const currentHoursTotal = currentHoursDetailItems.reduce((sum, item) => sum + toNumber(item?.hours, 0), 0)
+
   const renderMemberCard = (member) => {
     const activeItems = Array.isArray(member?.active_items) ? member.active_items : []
     const todayScheduled = Boolean(member?.today_scheduled)
@@ -1145,7 +1173,11 @@ function MorningStandupBoard() {
             </Card>
           </Col>
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>
-            <Card size="small" className="morning-summary-card">
+            <Card
+              size="small"
+              className="morning-summary-card morning-summary-card--clickable"
+              onClick={() => setHoursDetailModal({ open: true, type: 'planned' })}
+            >
               <Space>
                 <ClockCircleOutlined />
                 <Text type="secondary">{`计划用时(h/${teamPlannedCapacityHours.toFixed(1)})`}</Text>
@@ -1156,7 +1188,11 @@ function MorningStandupBoard() {
             </Card>
           </Col>
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>
-            <Card size="small" className="morning-summary-card">
+            <Card
+              size="small"
+              className="morning-summary-card morning-summary-card--clickable"
+              onClick={() => setHoursDetailModal({ open: true, type: 'actual' })}
+            >
               <Space>
                 <ClockCircleOutlined />
                 <Text type="secondary">实际用时(h)</Text>
@@ -1312,6 +1348,76 @@ function MorningStandupBoard() {
               )
             })}
           </Space>
+        )}
+      </Modal>
+
+      <Modal
+        title={`${currentHoursDetailTitle}（${currentHoursTotal.toFixed(1)}h）`}
+        open={hoursDetailModal.open}
+        onCancel={() => setHoursDetailModal((prev) => ({ ...prev, open: false }))}
+        footer={null}
+        width={920}
+      >
+        {currentHoursDetailItems.length === 0 ? (
+          <Empty description="当前没有可校准的明细事项" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <Table
+            rowKey={(record) => `${hoursDetailModal.type}-${record.id}`}
+            size="small"
+            pagination={false}
+            dataSource={currentHoursDetailItems}
+            scroll={{ x: 760 }}
+            columns={[
+              {
+                title: '事项',
+                key: 'item',
+                render: (_, record) => (
+                  <div>
+                    <div style={{ fontWeight: 600, color: '#0f172a' }}>{record.description || record.item_type_name || '-'}</div>
+                    <div style={{ fontSize: 12, color: '#667085' }}>
+                      {record.item_type_name || '-'} · #{record.id}
+                    </div>
+                  </div>
+                ),
+              },
+              {
+                title: '需求',
+                key: 'demand',
+                width: 180,
+                render: (_, record) => record.demand_name || record.demand_id || '-',
+              },
+              {
+                title: '阶段',
+                dataIndex: 'phase_name',
+                key: 'phase_name',
+                width: 160,
+                render: (value) => value || '-',
+              },
+              {
+                title: '负责人',
+                dataIndex: 'username',
+                key: 'username',
+                width: 120,
+                render: (value) => value || '-',
+              },
+              {
+                title: hoursDetailModal.type === 'actual' ? '今日实际(h)' : '今日计划(h)',
+                key: 'hours',
+                width: 120,
+                render: (_, record) => toNumber(record?.[currentHoursField], 0).toFixed(1),
+              },
+            ]}
+            summary={() => (
+              <Table.Summary.Row>
+                <Table.Summary.Cell index={0} colSpan={4}>
+                  <Text strong>合计</Text>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={1}>
+                  <Text strong>{currentHoursTotal.toFixed(1)}</Text>
+                </Table.Summary.Cell>
+              </Table.Summary.Row>
+            )}
+          />
         )}
       </Modal>
 

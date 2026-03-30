@@ -259,7 +259,9 @@ function WorkDemands() {
   const isDetailPage = Boolean(routeDemandId)
   const canView = hasPermission('demand.view')
   const canViewUsers = hasPermission('user.view')
-  const canCreate = hasPermission('demand.manage')
+  const canCreate = hasPermission('demand.create')
+  const canViewProjectTemplates =
+    hasPermission('project.template.view') || hasPermission('project.template.manage')
   const canTransferOwner = hasPermission('demand.transfer_owner') || hasRole('ADMIN')
   const canViewSelfLogs = hasPermission('worklog.view.self')
   const canViewTeamLogs = hasPermission('worklog.view.team')
@@ -600,6 +602,7 @@ function WorkDemands() {
   }, [projectTemplates])
 
   const loadTemplateByIdIfMissing = useCallback(async (rawTemplateId) => {
+    if (!canViewProjectTemplates) return
     const id = Number(rawTemplateId)
     if (!Number.isInteger(id) || id <= 0) return
     if (templateByIdMap.has(id)) return
@@ -619,7 +622,7 @@ function WorkDemands() {
     } finally {
       templateFallbackLoadingRef.current.delete(id)
     }
-  }, [templateByIdMap, templateFallbackMap])
+  }, [canViewProjectTemplates, templateByIdMap, templateFallbackMap])
 
   const selectedModalTemplate = useMemo(() => {
     const id = Number(modalTemplateId)
@@ -771,6 +774,10 @@ function WorkDemands() {
   }, [])
 
   const loadProjectTemplates = useCallback(async () => {
+    if (!canViewProjectTemplates) {
+      setProjectTemplates([])
+      return
+    }
     try {
       const result = await getProjectTemplatesApi({ page: 1, pageSize: 200, status: 1 })
       if (!result?.success) {
@@ -781,7 +788,7 @@ function WorkDemands() {
     } catch {
       setProjectTemplates([])
     }
-  }, [])
+  }, [canViewProjectTemplates])
 
   const loadDemands = useCallback(async () => {
     if (!canView) return
@@ -2464,7 +2471,7 @@ function WorkDemands() {
       {!canCreate ? (
         <div style={{ marginTop: 12, color: '#667085', display: 'flex', alignItems: 'center', gap: 8 }}>
           <UnorderedListOutlined />
-          <span>当前账号无创建权限，如需新建需求，请分配 `demand.manage` 权限。</span>
+          <span>当前账号无创建权限，只有管理员、超级管理员或产品角色可以新建需求。</span>
         </div>
       ) : null}
     </div>
