@@ -40,11 +40,11 @@ import {
   deleteWorkLogApi,
   getLogDailyEntriesApi,
   getLogDailyPlansApi,
+  getDemandWorkflowNodeOptionsApi,
   getMyWorkbenchApi,
   getMyWeeklyReportApi,
   getWorkDemandsApi,
   getWorkItemTypesApi,
-  getWorkPhaseTypesApi,
   getWorkLogsApi,
   updateWorkLogApi,
 } from '../../api/work'
@@ -153,6 +153,13 @@ const SURFACE_LABEL_STYLE = { fontSize: 12, color: MUTED_TEXT_COLOR }
 const SURFACE_VALUE_STYLE = { fontSize: 18, fontWeight: 700 }
 const COMPACT_SURFACE_LABEL_STYLE = { fontSize: 11, color: MUTED_TEXT_COLOR }
 const ACTION_TRANSITION = 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)'
+const ACTIVE_ITEM_ACTION_BUTTON_STYLE = {
+  minHeight: 28,
+  paddingInline: 10,
+  borderRadius: 8,
+  fontSize: 12,
+  fontWeight: 500,
+}
 const ACTIVE_CARD_BASE_STYLE = {
   borderRadius: 10,
   padding: 10,
@@ -563,7 +570,7 @@ function WorkLogs({ mode = 'dashboard' }) {
 
   const [itemTypes, setItemTypes] = useState([])
   const [demands, setDemands] = useState([])
-  const [phaseDictItems, setPhaseDictItems] = useState([])
+  const [demandWorkflowNodeOptionsMap, setDemandWorkflowNodeOptionsMap] = useState({})
   const [logs, setLogs] = useState([])
   const [workbench, setWorkbench] = useState({
     today: {
@@ -583,6 +590,7 @@ function WorkLogs({ mode = 'dashboard' }) {
   const [statusSubmittingId, setStatusSubmittingId] = useState(null)
   const [deletingLogId, setDeletingLogId] = useState(null)
   const [actualModalOpen, setActualModalOpen] = useState(false)
+  const [actualModalMode, setActualModalMode] = useState('full')
   const [dailyEntryModalOpen, setDailyEntryModalOpen] = useState(false)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
   const [dailyEntrySubmitting, setDailyEntrySubmitting] = useState(false)
@@ -622,6 +630,7 @@ function WorkLogs({ mode = 'dashboard' }) {
   const selectedActualTypeId = Form.useWatch('item_type_id', actualForm)
   const selectedActualDemandId = Form.useWatch('demand_id', actualForm)
   const selectedActualPhaseKey = Form.useWatch('phase_key', actualForm)
+  const actualModalIsQuickEdit = actualModalMode === 'quick'
 
   const selectedItemType = useMemo(
     () => itemTypes.find((item) => Number(item.id) === Number(selectedTypeId)) || null,
@@ -664,15 +673,6 @@ function WorkLogs({ mode = 'dashboard' }) {
     [demands],
   )
 
-  const phaseOptions = useMemo(
-    () =>
-      phaseDictItems.map((item) => ({
-        value: item.phase_key,
-        label: item.phase_name || item.phase_key,
-      })),
-    [phaseDictItems],
-  )
-
   const isQuickBatchPhaseMode = Boolean(selectedDemandId) && isDemandFollowupItemType(selectedItemType)
   const normalizedSelectedQuickPhaseKeys = useMemo(() => {
     const rawValues = Array.isArray(selectedQuickPhaseValue)
@@ -691,8 +691,23 @@ function WorkLogs({ mode = 'dashboard' }) {
     return unique
   }, [selectedQuickPhaseValue])
 
-  const quickPhaseOptions = phaseOptions
-  const actualPhaseOptions = phaseOptions
+  const quickPhaseOptions = useMemo(() => {
+    const rows = Array.isArray(demandWorkflowNodeOptionsMap?.[selectedDemandId]) ? demandWorkflowNodeOptionsMap[selectedDemandId] : []
+    return rows.map((item) => ({
+      value: item.node_key,
+      label: item.node_name || item.node_key,
+    }))
+  }, [demandWorkflowNodeOptionsMap, selectedDemandId])
+
+  const actualPhaseOptions = useMemo(() => {
+    const rows = Array.isArray(demandWorkflowNodeOptionsMap?.[selectedActualDemandId])
+      ? demandWorkflowNodeOptionsMap[selectedActualDemandId]
+      : []
+    return rows.map((item) => ({
+      value: item.node_key,
+      label: item.node_name || item.node_key,
+    }))
+  }, [demandWorkflowNodeOptionsMap, selectedActualDemandId])
 
   const quickPhaseOptionsWithSelected = useMemo(() => {
     if (normalizedSelectedQuickPhaseKeys.length === 0) return quickPhaseOptions
@@ -700,23 +715,25 @@ function WorkLogs({ mode = 'dashboard' }) {
     const existingSet = new Set(merged.map((item) => String(item.value || '').toUpperCase()))
     normalizedSelectedQuickPhaseKeys.forEach((selected) => {
       if (existingSet.has(selected)) return
-      const fallback = phaseOptions.find((item) => String(item.value || '').toUpperCase() === selected)
-      if (!fallback) return
-      merged.push({ ...fallback, label: `${fallback.label}（非本部门）` })
+      merged.push({ value: selected, label: selected })
       existingSet.add(selected)
     })
     return merged
-  }, [quickPhaseOptions, phaseOptions, normalizedSelectedQuickPhaseKeys])
+  }, [quickPhaseOptions, normalizedSelectedQuickPhaseKeys])
 
   const actualPhaseOptionsWithSelected = useMemo(() => {
     if (!selectedActualPhaseKey) return actualPhaseOptions
     const selected = String(selectedActualPhaseKey).trim().toUpperCase()
     if (!selected) return actualPhaseOptions
     if (actualPhaseOptions.some((item) => String(item.value || '').toUpperCase() === selected)) return actualPhaseOptions
-    const fallback = phaseOptions.find((item) => String(item.value || '').toUpperCase() === selected)
-    if (!fallback) return actualPhaseOptions
-    return [...actualPhaseOptions, { ...fallback, label: `${fallback.label}（非本部门）` }]
-  }, [actualPhaseOptions, phaseOptions, selectedActualPhaseKey])
+    return [
+      ...actualPhaseOptions,
+      {
+        value: selected,
+        label: String(editingLog?.phase_name || selected).trim() || selected,
+      },
+    ]
+  }, [actualPhaseOptions, editingLog?.phase_name, selectedActualPhaseKey])
 
   const activeItems = useMemo(() => {
     const rows = Array.isArray(workbench?.active_items) ? workbench.active_items : []
@@ -908,13 +925,12 @@ function WorkLogs({ mode = 'dashboard' }) {
       const requests = [
         getWorkItemTypesApi({ enabled_only: 1 }),
         getWorkDemandsApi({ page: 1, pageSize: 1000 }),
-        getWorkPhaseTypesApi({ enabled_only: 1 }),
       ]
       if (!isHistoryPage) {
         requests.push(getMyWorkbenchApi())
       }
 
-      const [typeResult, demandResult, phaseResult, benchResult] = await Promise.all(requests)
+      const [typeResult, demandResult, benchResult] = await Promise.all(requests)
 
       if (!typeResult?.success) {
         message.error(typeResult?.message || '获取事项类型失败')
@@ -926,11 +942,6 @@ function WorkLogs({ mode = 'dashboard' }) {
         return
       }
 
-      if (!phaseResult?.success) {
-        message.error(phaseResult?.message || '获取需求任务字典失败')
-        return
-      }
-
       if (!isHistoryPage && !benchResult?.success) {
         message.error(benchResult?.message || '获取工作台数据失败')
         return
@@ -938,12 +949,6 @@ function WorkLogs({ mode = 'dashboard' }) {
 
       setItemTypes(typeResult.data || [])
       setDemands(demandResult.data?.list || [])
-      setPhaseDictItems(
-        (phaseResult.data || []).map((item) => ({
-          phase_key: item.phase_key,
-          phase_name: item.phase_name,
-        })),
-      )
       if (!isHistoryPage) {
         setWorkbench(benchResult?.data || {})
       }
@@ -953,6 +958,29 @@ function WorkLogs({ mode = 'dashboard' }) {
       setLoadingBase(false)
     }
   }, [isHistoryPage])
+
+  const ensureDemandWorkflowNodeOptionsLoaded = useCallback(
+    async (demandId) => {
+      const normalizedDemandId = String(demandId || '').trim()
+      if (!normalizedDemandId) return
+      if (Array.isArray(demandWorkflowNodeOptionsMap?.[normalizedDemandId])) return
+
+      try {
+        const result = await getDemandWorkflowNodeOptionsApi(normalizedDemandId)
+        if (!result?.success) return
+        setDemandWorkflowNodeOptionsMap((prev) => ({
+          ...prev,
+          [normalizedDemandId]: Array.isArray(result.data) ? result.data : [],
+        }))
+      } catch {
+        setDemandWorkflowNodeOptionsMap((prev) => ({
+          ...prev,
+          [normalizedDemandId]: [],
+        }))
+      }
+    },
+    [demandWorkflowNodeOptionsMap],
+  )
 
   const loadLogs = useCallback(async () => {
     if (!canView || !isHistoryPage) return
@@ -1104,6 +1132,16 @@ function WorkLogs({ mode = 'dashboard' }) {
     if (!isHistoryPage) return
     loadLogs()
   }, [isHistoryPage, loadLogs])
+
+  useEffect(() => {
+    if (!selectedDemandId) return
+    ensureDemandWorkflowNodeOptionsLoaded(selectedDemandId)
+  }, [ensureDemandWorkflowNodeOptionsLoaded, selectedDemandId])
+
+  useEffect(() => {
+    if (!selectedActualDemandId) return
+    ensureDemandWorkflowNodeOptionsLoaded(selectedActualDemandId)
+  }, [ensureDemandWorkflowNodeOptionsLoaded, selectedActualDemandId])
 
   useEffect(() => {
     if (!isHistoryPage) return
@@ -1289,14 +1327,16 @@ function WorkLogs({ mode = 'dashboard' }) {
     navigate('/work-logs')
   }
 
-  const openActualModal = (record) => {
+  const openActualModal = (record, mode = 'full') => {
     setEditingLog(record)
+    setActualModalMode(mode)
     setActualModalOpen(true)
   }
 
   const closeActualModal = () => {
     actualForm.resetFields()
     setActualModalOpen(false)
+    setActualModalMode('full')
     setEditingLog(null)
   }
 
@@ -1388,47 +1428,67 @@ function WorkLogs({ mode = 'dashboard' }) {
     try {
       setActualSubmitting(true)
       const values = await actualForm.validateFields()
-      const requireDemand = Number(selectedActualItemType?.require_demand) === 1
-      if (requireDemand && !values.demand_id) {
-        message.warning('当前事项类型必须关联需求')
-        return
-      }
-      if (values.demand_id && !values.phase_key) {
-        message.warning('关联需求时必须选择需求任务')
-        return
-      }
-      const selectedStatus = String(values.log_status || editingLog.log_status || 'IN_PROGRESS').toUpperCase()
+      let payload = null
 
-      // 状态转换验证：TODO → IN_PROGRESS 需要填写个人预估
-      const previousStatus = String(editingLog.log_status || 'TODO').toUpperCase()
-      if (previousStatus === 'TODO' && selectedStatus === 'IN_PROGRESS') {
-        if (!values.personal_estimate_hours || values.personal_estimate_hours <= 0) {
-          message.error('开始工作前必须填写个人预估用时')
+      if (actualModalIsQuickEdit) {
+        payload = {
+          item_type_id: editingLog.item_type_id,
+          demand_id: editingLog.demand_id || null,
+          phase_key: editingLog.demand_id ? editingLog.phase_key || null : null,
+          log_status: String(editingLog.log_status || 'IN_PROGRESS').toUpperCase(),
+          description: String(editingLog.description || ''),
+          personal_estimate_hours: values.personal_estimate_hours,
+          actual_hours:
+            values.actual_hours === undefined || values.actual_hours === null || values.actual_hours === ''
+              ? 0
+              : values.actual_hours,
+          expected_start_date: values.expected_start_date || null,
+          expected_completion_date: values.expected_completion_date || null,
+          log_completed_at: values.log_completed_at || null,
+        }
+      } else {
+        const requireDemand = Number(selectedActualItemType?.require_demand) === 1
+        if (requireDemand && !values.demand_id) {
+          message.warning('当前事项类型必须关联需求')
           return
         }
-      }
-      let nextCompletedAt = values.log_completed_at || null
+        if (values.demand_id && !values.phase_key) {
+          message.warning('关联需求时必须选择需求任务')
+          return
+        }
+        const selectedStatus = String(values.log_status || editingLog.log_status || 'IN_PROGRESS').toUpperCase()
 
-      if (selectedStatus === 'DONE' && !nextCompletedAt) {
-        nextCompletedAt = getTodayDateString()
-      }
+        // 状态转换验证：TODO → IN_PROGRESS 需要填写个人预估
+        const previousStatus = String(editingLog.log_status || 'TODO').toUpperCase()
+        if (previousStatus === 'TODO' && selectedStatus === 'IN_PROGRESS') {
+          if (!values.personal_estimate_hours || values.personal_estimate_hours <= 0) {
+            message.error('开始工作前必须填写个人预估用时')
+            return
+          }
+        }
+        let nextCompletedAt = values.log_completed_at || null
 
-      const resolvedActualHours =
-        values.actual_hours === undefined || values.actual_hours === null || values.actual_hours === ''
-          ? 0
-          : values.actual_hours
+        if (selectedStatus === 'DONE' && !nextCompletedAt) {
+          nextCompletedAt = getTodayDateString()
+        }
 
-      const payload = {
-        item_type_id: values.item_type_id,
-        demand_id: values.demand_id || null,
-        phase_key: values.demand_id ? values.phase_key : null,
-        log_status: selectedStatus,
-        description: values.description,
-        personal_estimate_hours: values.personal_estimate_hours,
-        actual_hours: resolvedActualHours,
-        expected_start_date: values.expected_start_date || null,
-        expected_completion_date: values.expected_completion_date || null,
-        log_completed_at: nextCompletedAt,
+        const resolvedActualHours =
+          values.actual_hours === undefined || values.actual_hours === null || values.actual_hours === ''
+            ? 0
+            : values.actual_hours
+
+        payload = {
+          item_type_id: values.item_type_id,
+          demand_id: values.demand_id || null,
+          phase_key: values.demand_id ? values.phase_key : null,
+          log_status: selectedStatus,
+          description: values.description,
+          personal_estimate_hours: values.personal_estimate_hours,
+          actual_hours: resolvedActualHours,
+          expected_start_date: values.expected_start_date || null,
+          expected_completion_date: values.expected_completion_date || null,
+          log_completed_at: nextCompletedAt,
+        }
       }
 
       const result = await updateWorkLogApi(editingLog.id, {
@@ -1440,7 +1500,7 @@ function WorkLogs({ mode = 'dashboard' }) {
         return
       }
 
-      message.success('事项进展已更新')
+      message.success(actualModalIsQuickEdit ? '事项已更新' : '事项进展已更新')
       closeActualModal()
       await reloadCurrentPageData()
     } catch (error) {
@@ -2092,7 +2152,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                       fontWeight: 600,
                     }}
                   >
-                    查看历史记录
+                    修改历史记录
                   </Button>
                 }
                 styles={{
@@ -2354,15 +2414,23 @@ function WorkLogs({ mode = 'dashboard' }) {
                                     <Button
                                       type="default"
                                       onClick={() => openDetailModal(item)}
-                                      style={{ minHeight: 34 }}
+                                      style={ACTIVE_ITEM_ACTION_BUTTON_STYLE}
                                     >
                                       查看日明细
+                                    </Button>
+                                    <Button
+                                      type="default"
+                                      onClick={() => openActualModal(item, 'quick')}
+                                      disabled={!canUpdate}
+                                      style={ACTIVE_ITEM_ACTION_BUTTON_STYLE}
+                                    >
+                                      编辑
                                     </Button>
                                     <Button
                                       type="primary"
                                       onClick={() => openDailyEntryModal(item)}
                                       disabled={!canUpdate}
-                                      style={{ minHeight: 34 }}
+                                      style={ACTIVE_ITEM_ACTION_BUTTON_STYLE}
                                     >
                                       填报今日投入
                                     </Button>
@@ -2803,147 +2871,211 @@ function WorkLogs({ mode = 'dashboard' }) {
         )}
       </Modal>
 
-      {isHistoryPage ? (
-        <Modal
-        title={editingLog ? `修改记录：#${editingLog.id}` : '修改记录'}
+      <Modal
+        title={
+          actualModalIsQuickEdit
+            ? editingLog
+              ? `快捷编辑事项：#${editingLog.id}`
+              : '快捷编辑事项'
+            : editingLog
+              ? `修改记录：#${editingLog.id}`
+              : '修改记录'
+        }
         open={actualModalOpen}
         onCancel={closeActualModal}
         onOk={handleUpdateActual}
         confirmLoading={actualSubmitting}
         okText="保存"
         cancelText="取消"
-        width={760}
+        width={actualModalIsQuickEdit ? 640 : 760}
         destroyOnHidden
       >
         <Form form={actualForm} layout="vertical" style={{ marginTop: 8 }}>
-          <Row gutter={12}>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="事项类型"
-                name="item_type_id"
-                rules={[{ required: true, message: '请选择事项类型' }]}
-              >
-                <Select options={itemTypeOptions} placeholder="请选择事项类型" />
-              </Form.Item>
-            </Col>
+          {actualModalIsQuickEdit ? (
+            <Row gutter={12}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  label="预计开始日期"
+                  name="expected_start_date"
+                  rules={[{ required: true, message: '请选择预计开始日期' }]}
+                >
+                  <Input type="date" />
+                </Form.Item>
+              </Col>
 
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="事项状态"
-                name="log_status"
-                rules={[{ required: true, message: '请选择事项状态' }]}
-              >
-                <Select options={ITEM_STATUS_OPTIONS} />
-              </Form.Item>
-            </Col>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  label="预计完成日期"
+                  name="expected_completion_date"
+                  rules={[{ required: true, message: '请选择预计完成日期' }]}
+                >
+                  <Input type="date" />
+                </Form.Item>
+              </Col>
 
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="关联需求"
-                name="demand_id"
-                rules={
-                  Number(selectedActualItemType?.require_demand) === 1
-                    ? [{ required: true, message: '当前事项类型需关联需求' }]
-                    : []
-                }
-              >
-                <Select
-                  allowClear
-                  showSearch
-                  options={demandOptions}
-                  placeholder="请选择需求池中的需求（可选）"
-                  optionFilterProp="label"
-                  onChange={(next) => {
-                    if (!next) {
-                      actualForm.setFieldValue('phase_key', undefined)
+              <Col xs={24} md={12}>
+                <Form.Item
+                  label="预计整体用时(h)"
+                  name="personal_estimate_hours"
+                  rules={[{ required: true, message: '请输入预计整体用时' }]}
+                >
+                  <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+
+              <Col xs={24} md={12}>
+                <Form.Item
+                  label="实际用时(h)"
+                  name="actual_hours"
+                  extra="默认 0.0；仅当状态为“已完成”且实际用时为 0.0 时，保存后会自动与预计整体用时一致"
+                >
+                  <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+
+              <Col xs={24} md={12}>
+                <Form.Item
+                  label="实际完成日期"
+                  name="log_completed_at"
+                  extra="状态为“已完成”时可设置；若不填，保存时默认使用今天"
+                >
+                  <Input type="date" />
+                </Form.Item>
+              </Col>
+            </Row>
+          ) : (
+            <>
+              <Row gutter={12}>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="事项类型"
+                    name="item_type_id"
+                    rules={[{ required: true, message: '请选择事项类型' }]}
+                  >
+                    <Select options={itemTypeOptions} placeholder="请选择事项类型" />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="事项状态"
+                    name="log_status"
+                    rules={[{ required: true, message: '请选择事项状态' }]}
+                  >
+                    <Select options={ITEM_STATUS_OPTIONS} />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="关联需求"
+                    name="demand_id"
+                    rules={
+                      Number(selectedActualItemType?.require_demand) === 1
+                        ? [{ required: true, message: '当前事项类型需关联需求' }]
+                        : []
                     }
-                  }}
+                  >
+                    <Select
+                      allowClear
+                      showSearch
+                      options={demandOptions}
+                      placeholder="请选择需求池中的需求（可选）"
+                      optionFilterProp="label"
+                      onChange={(next) => {
+                        if (!next) {
+                          actualForm.setFieldValue('phase_key', undefined)
+                        }
+                      }}
+                    />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="需求任务"
+                    name="phase_key"
+                    rules={selectedActualDemandId ? [{ required: true, message: '请选择需求任务' }] : []}
+                  >
+                    <Select
+                      allowClear
+                      showSearch
+                      options={actualPhaseOptionsWithSelected}
+                      placeholder={selectedActualDemandId ? '请选择需求任务' : '请先选择关联需求'}
+                      optionFilterProp="label"
+                      disabled={!selectedActualDemandId}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Row gutter={12}>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="预计开始日期"
+                    name="expected_start_date"
+                    rules={[{ required: true, message: '请选择预计开始日期' }]}
+                  >
+                    <Input type="date" />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="预计完成日期"
+                    name="expected_completion_date"
+                    rules={[{ required: true, message: '请选择预计完成日期' }]}
+                  >
+                    <Input type="date" />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="预计整体用时(h)"
+                    name="personal_estimate_hours"
+                    rules={[{ required: true, message: '请输入预计整体用时' }]}
+                  >
+                    <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="实际用时(h)"
+                    name="actual_hours"
+                    extra="默认 0.0；仅当状态为“已完成”且实际用时为 0.0 时，保存后会自动与预计整体用时一致"
+                  >
+                    <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="实际完成日期"
+                    name="log_completed_at"
+                    extra="状态为“已完成”时可设置；若不填，保存时默认使用今天"
+                  >
+                    <Input type="date" />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Form.Item
+                label="工作描述"
+                name="description"
+                rules={[{ required: true, message: '请填写工作描述' }]}
+              >
+                <Input.TextArea
+                  rows={3}
+                  maxLength={2000}
+                  placeholder="建议写清楚：做了什么、产出了什么、是否有风险"
                 />
               </Form.Item>
-            </Col>
-
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="需求任务"
-                name="phase_key"
-                rules={selectedActualDemandId ? [{ required: true, message: '请选择需求任务' }] : []}
-              >
-                <Select
-                  allowClear
-                  showSearch
-                  options={actualPhaseOptionsWithSelected}
-                  placeholder={selectedActualDemandId ? '请选择需求任务' : '请先选择关联需求'}
-                  optionFilterProp="label"
-                  disabled={!selectedActualDemandId}
-                />
-              </Form.Item>
-            </Col>
-
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="预计开始日期"
-                name="expected_start_date"
-                rules={[{ required: true, message: '请选择预计开始日期' }]}
-              >
-                <Input type="date" />
-              </Form.Item>
-            </Col>
-
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="预计完成日期"
-                name="expected_completion_date"
-                rules={[{ required: true, message: '请选择预计完成日期' }]}
-              >
-                <Input type="date" />
-              </Form.Item>
-            </Col>
-
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="预计整体用时(h)"
-                name="personal_estimate_hours"
-                rules={[{ required: true, message: '请输入预计整体用时' }]}
-              >
-                <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="实际用时(h)"
-                name="actual_hours"
-                extra="默认 0.0；仅当状态为“已完成”且实际用时为 0.0 时，保存后会自动与预计整体用时一致"
-              >
-                <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="实际完成日期"
-                name="log_completed_at"
-                extra="状态为“已完成”时可设置；若不填，保存时默认使用今天"
-              >
-                <Input type="date" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item
-            label="工作描述"
-            name="description"
-            rules={[{ required: true, message: '请填写工作描述' }]}
-          >
-            <Input.TextArea
-              rows={3}
-              maxLength={2000}
-              placeholder="建议写清楚：做了什么、产出了什么、是否有风险"
-            />
-          </Form.Item>
+            </>
+          )}
         </Form>
-        </Modal>
-      ) : null}
+      </Modal>
 
       <Modal
         title={operatingLog ? `填报今日投入：#${operatingLog.id}` : '填报今日投入'}

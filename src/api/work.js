@@ -1,5 +1,5 @@
 import { request } from './http'
-import { cachedRequest, clearCache } from '../utils/requestCache'
+import { cachedRequest, clearCache, clearCacheByPrefix } from '../utils/requestCache'
 
 export function getWorkItemTypesApi(params) {
   const key = `item-types-${JSON.stringify(params)}`
@@ -102,6 +102,10 @@ export function getDemandWorkflowApi(demandId) {
   return request.get(`/work/demands/${demandId}/workflow`)
 }
 
+export function getDemandWorkflowNodeOptionsApi(demandId) {
+  return request.get(`/work/demands/${demandId}/workflow/node-options`)
+}
+
 export function getWorkflowAssigneesApi(params) {
   return request.get('/work/workflow/assignees', { params })
 }
@@ -171,6 +175,7 @@ export function getWorkLogsApi(params) {
 
 export function createWorkLogApi(payload) {
   clearCache('workbench-me')
+  clearCacheByPrefix('logs-')
   return request.post('/work/logs', payload)
 }
 
@@ -180,11 +185,13 @@ export function createOwnerAssignedLogApi(payload) {
 
 export function updateWorkLogApi(logId, payload) {
   clearCache('workbench-me')
+  clearCacheByPrefix('logs-')
   return request.put(`/work/logs/${logId}`, payload)
 }
 
 export function deleteWorkLogApi(logId) {
   clearCache('workbench-me')
+  clearCacheByPrefix('logs-')
   return request.delete(`/work/logs/${logId}`)
 }
 

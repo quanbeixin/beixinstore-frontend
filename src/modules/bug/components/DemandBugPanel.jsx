@@ -6,6 +6,7 @@ import { createBugApi, getDemandBugsApi, getDemandBugStatsApi } from '../../../a
 import { hasPermission } from '../../../utils/access'
 import { formatBeijingDateTime } from '../../../utils/datetime'
 import BugFormModal from './BugFormModal'
+import { uploadDraftAttachments } from '../utils/attachmentUpload'
 import './demand-bug-panel.css'
 
 const { Search } = Input
@@ -190,7 +191,7 @@ function DemandBugPanel({ demandId }) {
         lockDemand
         confirmLoading={submitting}
         onCancel={() => setCreateOpen(false)}
-        onSubmit={async (values) => {
+        onSubmit={async (values, extra) => {
           setSubmitting(true)
           try {
             const result = await createBugApi(values)
@@ -198,7 +199,20 @@ function DemandBugPanel({ demandId }) {
               message.error(result?.message || '创建Bug失败')
               return
             }
-            message.success('Bug创建成功')
+            const bugId = Number(result?.data?.id || 0)
+            const draftAttachments = extra?.draftAttachments || []
+            if (bugId > 0 && draftAttachments.length > 0) {
+              const uploadResult = await uploadDraftAttachments(bugId, draftAttachments)
+              if (uploadResult.failures.length > 0) {
+                message.warning(
+                  `Bug已创建，附件上传成功 ${uploadResult.successCount}/${uploadResult.total}，请在详情页补传失败附件`,
+                )
+              } else {
+                message.success(`Bug创建成功，已上传 ${uploadResult.successCount} 个附件`)
+              }
+            } else {
+              message.success('Bug创建成功')
+            }
             setCreateOpen(false)
             await loadData()
           } catch (error) {

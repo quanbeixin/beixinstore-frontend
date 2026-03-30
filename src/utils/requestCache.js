@@ -33,3 +33,12 @@ export function clearCache(key) {
     cache.clear()
   }
 }
+
+export function clearCacheByPrefix(prefix) {
+  if (!prefix) return
+  Array.from(cache.keys()).forEach((key) => {
+    if (String(key).startsWith(prefix)) {
+      cache.delete(key)
+    }
+  })
+}

@@ -1,50 +1,54 @@
 .bug-status-flow {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .bug-status-flow__main {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
 }
 
 .bug-status-flow__segment {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .bug-status-flow__node {
-  min-width: 84px;
-  padding: 8px 12px;
+  min-width: 78px;
+  padding: 7px 11px;
   border-radius: 999px;
-  background: #f5f7fa;
-  border: 1px solid #e8edf3;
-  color: #5b6472;
+  background: #f7f9fd;
+  border: 1px solid #e6ebf4;
+  color: #5a6378;
   font-size: 12px;
+  line-height: 1;
   text-align: center;
+  transition: all 0.2s ease;
 }
 
 .bug-status-flow__node.is-current {
-  background: #e6f4ff;
-  border-color: #91caff;
-  color: #0958d9;
+  background: #edf4ff;
+  border-color: #94bdf7;
+  color: #1f56b4;
   font-weight: 600;
+  box-shadow: 0 2px 6px rgba(49, 93, 174, 0.14);
 }
 
 .bug-status-flow__node.is-passed {
-  background: #f6ffed;
-  border-color: #b7eb8f;
-  color: #389e0d;
+  background: #f3fbe9;
+  border-color: #bfe59b;
+  color: #367d16;
 }
 
 .bug-status-flow__line {
-  width: 28px;
-  height: 1px;
-  background: #d9dfe7;
+  width: 24px;
+  height: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #d6deeb 0%, #e4e9f3 100%);
 }
 
 .bug-status-flow__reopened {

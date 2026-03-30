@@ -1,8 +1,10 @@
-import { Button, Form, Input, Modal, Select, Space, message } from 'antd'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Button, Form, Input, Modal, Select, Space, Upload, message } from 'antd'
+import { InboxOutlined } from '@ant-design/icons'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getDictItemsApi } from '../../../api/configDict'
 import { getWorkDemandsApi } from '../../../api/work'
 import { getBugAssigneesApi } from '../../../api/bug'
+import './bug-form-modal.css'
 
 function mapDictOptions(rows) {
   return (rows || []).map((item) => ({
@@ -35,15 +37,19 @@ function BugFormModal({
   title = '新建Bug',
   submitText = '保存',
   confirmLoading = false,
+  showDraftAttachments = true,
 }) {
   const [form] = Form.useForm()
   const selectedDemandId = Form.useWatch('demand_id', form)
+  const [draftFileList, setDraftFileList] = useState([])
+  const pastedFileCountRef = useRef(0)
 
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [severityOptions, setSeverityOptions] = useState([])
   const [priorityOptions, setPriorityOptions] = useState([])
   const [bugTypeOptions, setBugTypeOptions] = useState([])
   const [productOptions, setProductOptions] = useState([])
+  const [stageOptions, setStageOptions] = useState([])
   const [demandOptions, setDemandOptions] = useState([])
   const [assigneeOptions, setAssigneeOptions] = useState([])
 
@@ -52,11 +58,12 @@ function BugFormModal({
   const loadOptions = useCallback(async () => {
     setLoadingOptions(true)
     try {
-      const [severityRes, priorityRes, bugTypeRes, productRes, demandRes] = await Promise.all([
+      const [severityRes, priorityRes, bugTypeRes, productRes, stageRes, demandRes] = await Promise.all([
         getDictItemsApi('bug_severity', { enabledOnly: true }),
         getDictItemsApi('bug_priority', { enabledOnly: true }),
         getDictItemsApi('bug_type', { enabledOnly: true }),
         getDictItemsApi('bug_product', { enabledOnly: true }),
+        getDictItemsApi('bug_stage', { enabledOnly: true }),
         getWorkDemandsApi({ page: 1, pageSize: 200 }),
       ])
 
@@ -64,6 +71,7 @@ function BugFormModal({
       setPriorityOptions(mapDictOptions(priorityRes?.data || []))
       setBugTypeOptions(mapDictOptions(bugTypeRes?.data || []))
       setProductOptions(mapDictOptions(productRes?.data || []))
+      setStageOptions(mapDictOptions(stageRes?.data || []))
       setDemandOptions(mapDemandOptions(demandRes?.data?.list || []))
     } catch (error) {
       message.error(error?.message || '加载Bug表单选项失败')
@@ -93,6 +101,29 @@ function BugFormModal({
   }, [open, loadOptions])
 
   useEffect(() => {
+    if (open) return
+    setDraftFileList([])
+    pastedFileCountRef.current = 0
+  }, [open])
+
+  const handleAttachmentPaste = useCallback((event) => {
+    const clipboardFiles = Array.from(event?.clipboardData?.files || []).filter(Boolean)
+    pastedFileCountRef.current = clipboardFiles.length
+  }, [])
+
+  const handleAttachmentChange = useCallback(({ fileList }) => {
+    const nextList = fileList.slice(0, 9)
+    setDraftFileList((prevList) => {
+      const addedCount = Math.max(0, nextList.length - prevList.length)
+      if (addedCount > 0 && pastedFileCountRef.current > 0) {
+        message.success(`已粘贴 ${Math.min(addedCount, pastedFileCountRef.current)} 个附件`)
+      }
+      pastedFileCountRef.current = 0
+      return nextList
+    })
+  }, [])
+
+  useEffect(() => {
     if (!open) return
     const nextDemandId = normalizedDemandPreset || String(initialValues?.demand_id || '').trim()
     const nextValues = {
@@ -102,6 +133,7 @@ function BugFormModal({
       priority_code: initialValues?.priority_code || undefined,
       bug_type_code: initialValues?.bug_type_code || undefined,
       product_code: initialValues?.product_code || undefined,
+      issue_stage: initialValues?.issue_stage || undefined,
       demand_id: nextDemandId || undefined,
       assignee_id: initialValues?.assignee_id || undefined,
       reproduce_steps: initialValues?.reproduce_steps || '',
@@ -121,18 +153,24 @@ function BugFormModal({
   const handleOk = useCallback(async () => {
     try {
       const values = await form.validateFields()
-      await onSubmit?.({
-        ...values,
-        demand_id: values.demand_id || null,
-        bug_type_code: values.bug_type_code || null,
-        product_code: values.product_code || null,
-        environment_info: values.environment_info || null,
-      })
+      await onSubmit?.(
+        {
+          ...values,
+          demand_id: values.demand_id || null,
+          bug_type_code: values.bug_type_code || null,
+          product_code: values.product_code || null,
+          issue_stage: values.issue_stage || null,
+          environment_info: values.environment_info || null,
+        },
+        {
+          draftAttachments: draftFileList.map((item) => item?.originFileObj || item).filter(Boolean),
+        },
+      )
     } catch (error) {
       if (error?.errorFields) return
       message.error(error?.message || '保存Bug失败')
     }
-  }, [form, onSubmit])
+  }, [draftFileList, form, onSubmit])
 
   const footer = useMemo(
     () => [
@@ -151,6 +189,7 @@ function BugFormModal({
       open={open}
       title={title}
       width={760}
+      className="bug-form-modal"
       onCancel={onCancel}
       footer={footer}
       destroyOnHidden
@@ -204,6 +243,9 @@ function BugFormModal({
           <Form.Item label="产品模块" name="product_code" style={{ minWidth: 160 }}>
             <Select allowClear options={productOptions} placeholder="可选" />
           </Form.Item>
+          <Form.Item label="Bug阶段" name="issue_stage" style={{ minWidth: 160 }}>
+            <Select allowClear options={stageOptions} placeholder="可选" />
+          </Form.Item>
         </Space>
 
         <Form.Item label="关联需求" name="demand_id">
@@ -252,6 +294,31 @@ function BugFormModal({
         <Form.Item label="环境信息" name="environment_info">
           <Input.TextArea rows={2} maxLength={20000} placeholder="浏览器、系统、设备等，可选" />
         </Form.Item>
+
+        {showDraftAttachments ? (
+          <Form.Item
+            label="附件"
+            extra="可选。Bug创建成功后将自动上传并关联到该Bug。"
+          >
+            <div onPaste={handleAttachmentPaste}>
+              <Upload.Dragger
+                className="bug-form-modal__dragger"
+                multiple
+                beforeUpload={() => false}
+                pastable
+                fileList={draftFileList}
+                onChange={handleAttachmentChange}
+                showUploadList={{ showPreviewIcon: false }}
+                maxCount={9}
+              >
+                <p className="ant-upload-drag-icon">
+                  <InboxOutlined />
+                </p>
+                <p className="ant-upload-text">点击、拖拽或粘贴上传附件（最多 9 个）</p>
+              </Upload.Dragger>
+            </div>
+          </Form.Item>
+        ) : null}
       </Form>
     </Modal>
   )

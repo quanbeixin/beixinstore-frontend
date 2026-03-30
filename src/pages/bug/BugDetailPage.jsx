@@ -309,19 +309,28 @@ function BugDetailPage() {
         {detail ? (
           <>
             <div className="bug-detail-page__head">
-              <div>
+              <div className="bug-detail-page__head-left">
                 <Space size={8} align="center" wrap>
-                  <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>
+                  <Button
+                    type="text"
+                    className="bug-detail-page__back-btn"
+                    icon={<ArrowLeftOutlined />}
+                    onClick={() => navigate(-1)}
+                  >
                     返回
                   </Button>
-                  <Tag color="blue">{detail.bug_no || '-'}</Tag>
-                  <Title level={4} style={{ margin: 0 }}>
+                  <Tag color="blue" className="bug-detail-page__bug-no">
+                    {detail.bug_no || '-'}
+                  </Tag>
+                  <Title level={4} style={{ margin: 0 }} className="bug-detail-page__title">
                     {detail.title || '-'}
                   </Title>
-                  <Tag color={detail.status_color || 'default'}>{detail.status_name || detail.status_code}</Tag>
+                  <Tag color={detail.status_color || 'default'} className="bug-detail-page__status-tag">
+                    {detail.status_name || detail.status_code}
+                  </Tag>
                 </Space>
               </div>
-              <Space size={8} wrap>
+              <Space size={8} wrap className="bug-detail-page__head-actions">
                 {canUpdate ? (
                   <Button icon={<EditOutlined />} onClick={() => setEditOpen(true)}>
                     编辑
@@ -350,7 +359,27 @@ function BugDetailPage() {
             </div>
 
             <Card size="small" className="bug-detail-page__block" variant="borderless" title="状态流转">
-              <BugStatusFlow currentStatus={detail.status_code} />
+              <div className="bug-detail-page__status-row">
+                <div className="bug-detail-page__status-flow">
+                  <BugStatusFlow currentStatus={detail.status_code} />
+                </div>
+                {transitionButtons.length ? (
+                  <Space size={8} wrap className="bug-detail-page__status-actions">
+                    {transitionButtons.map((item) => (
+                      <Button
+                        key={item.key}
+                        type="primary"
+                        className="bug-detail-page__status-action-btn"
+                        icon={item.icon}
+                        loading={actionLoading === item.key}
+                        onClick={() => runTransition(item.key)}
+                      >
+                        {item.label}
+                      </Button>
+                    ))}
+                  </Space>
+                ) : null}
+              </div>
             </Card>
 
             <div className="bug-detail-page__grid">
@@ -364,6 +393,7 @@ function BugDetailPage() {
                   </Descriptions.Item>
                   <Descriptions.Item label="Bug类型">{detail.bug_type_name || detail.bug_type_code || '-'}</Descriptions.Item>
                   <Descriptions.Item label="产品模块">{detail.product_name || detail.product_code || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="Bug阶段">{detail.issue_stage_name || detail.issue_stage || '-'}</Descriptions.Item>
                   <Descriptions.Item label="发现人">{detail.reporter_name || '-'}</Descriptions.Item>
                   <Descriptions.Item label="处理人">{detail.assignee_name || '-'}</Descriptions.Item>
                   <Descriptions.Item label="关联需求" span={2}>
@@ -386,11 +416,11 @@ function BugDetailPage() {
                     <Input.TextArea rows={3} maxLength={20000} placeholder="打回、重开或处理说明可填写在这里" />
                   </Form.Item>
                   <Form.Item
-                    label="修复方案"
+                    label="影响范围"
                     name="fix_solution"
                     extra="执行“修复完成”时必填"
                   >
-                    <Input.TextArea rows={3} maxLength={20000} placeholder="描述修复方案" />
+                    <Input.TextArea rows={3} maxLength={20000} placeholder="描述影响范围" />
                   </Form.Item>
                   <Form.Item
                     label="验证结果"
@@ -400,19 +430,6 @@ function BugDetailPage() {
                     <Input.TextArea rows={3} maxLength={20000} placeholder="描述验证结果" />
                   </Form.Item>
 
-                  <Space size={8} wrap>
-                    {transitionButtons.map((item) => (
-                      <Button
-                        key={item.key}
-                        type="primary"
-                        icon={item.icon}
-                        loading={actionLoading === item.key}
-                        onClick={() => runTransition(item.key)}
-                      >
-                        {item.label}
-                      </Button>
-                    ))}
-                  </Space>
                 </Form>
               </Card>
             </div>
@@ -439,7 +456,7 @@ function BugDetailPage() {
 
             <Card size="small" className="bug-detail-page__block" variant="borderless" title="修复与验证">
               <Descriptions column={1} size="small">
-                <Descriptions.Item label="修复方案">
+                <Descriptions.Item label="影响范围">
                   <Paragraph>{detail.fix_solution || '-'}</Paragraph>
                 </Descriptions.Item>
                 <Descriptions.Item label="验证结果">
@@ -469,12 +486,6 @@ function BugDetailPage() {
                 ) : null
               }
             >
-              <Alert
-                type="info"
-                showIcon
-                className="bug-detail-page__attachment-alert"
-                title="附件通过阿里云OSS直传，需先在后端环境中配置 OSS 参数并完成 Bucket CORS"
-              />
               <Table
                 rowKey="id"
                 size="small"
@@ -515,6 +526,7 @@ function BugDetailPage() {
               title="编辑Bug"
               submitText="保存"
               initialValues={detail}
+              showDraftAttachments={false}
               onCancel={() => setEditOpen(false)}
               onSubmit={async (values) => {
                 const result = await updateBugApi(bugId, values)

@@ -42,6 +42,7 @@ import {
   replaceDemandWorkflowLatestApi,
   submitDemandWorkflowNodeApi,
   updateDemandWorkflowNodeHoursApi,
+  updateDemandWorkflowTaskHoursApi,
   updateWorkDemandApi,
 } from '../../api/work'
 import {
@@ -184,6 +185,15 @@ function isOverdueLogItem(item) {
   return expectedDate < getBeijingTodayDateString()
 }
 
+function getNodeRelatedPhaseKeySet(node) {
+  const set = new Set()
+  const nodeKey = String(node?.node_key || '').trim().toUpperCase()
+  const phaseKey = String(node?.phase_key || '').trim().toUpperCase()
+  if (nodeKey) set.add(nodeKey)
+  if (phaseKey) set.add(phaseKey)
+  return set
+}
+
 function WorkDemands() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -244,25 +254,30 @@ function WorkDemands() {
   const [detailMemberSubmitting, setDetailMemberSubmitting] = useState(false)
   const [detailSaving, setDetailSaving] = useState(false)
   const [detailLogFilter, setDetailLogFilter] = useState('ALL')
+  const [detailName, setDetailName] = useState('')
   const [detailManagementMode, setDetailManagementMode] = useState('simple')
   const [detailTemplateId, setDetailTemplateId] = useState()
   const [detailProjectManager, setDetailProjectManager] = useState()
+  const [detailBusinessGroupCode, setDetailBusinessGroupCode] = useState(undefined)
   const [detailHealthStatus, setDetailHealthStatus] = useState('green')
   const [detailActualStartTime, setDetailActualStartTime] = useState(null)
   const [detailActualEndTime, setDetailActualEndTime] = useState(null)
+  const [detailExpectedReleaseDate, setDetailExpectedReleaseDate] = useState(null)
   const [detailDocLink, setDetailDocLink] = useState('')
+  const [detailUiDesignLink, setDetailUiDesignLink] = useState('')
+  const [detailTestCaseLink, setDetailTestCaseLink] = useState('')
   const [workflowLoading, setWorkflowLoading] = useState(false)
   const [workflowSubmitting, setWorkflowSubmitting] = useState(false)
-  const [workflowHoursSubmitting, setWorkflowHoursSubmitting] = useState(false)
   const [workflowReplacing, setWorkflowReplacing] = useState(false)
+  const [workflowTaskUpdatingId, setWorkflowTaskUpdatingId] = useState(null)
   const [workflowData, setWorkflowData] = useState(null)
   const [workflowWarning, setWorkflowWarning] = useState('')
   const [selectedWorkflowNodeKey, setSelectedWorkflowNodeKey] = useState('')
-  const [workflowAssignee, setWorkflowAssignee] = useState()
+  const [workflowParticipantUserIds, setWorkflowParticipantUserIds] = useState([])
   const [workflowDueAt, setWorkflowDueAt] = useState(null)
   const [workflowExpectedStartAt, setWorkflowExpectedStartAt] = useState(null)
-  const [nodeHoursPersonalEstimate, setNodeHoursPersonalEstimate] = useState()
   const [detailStatus, setDetailStatus] = useState('')
+  const [detailTabKey, setDetailTabKey] = useState('basic')
   const selectedWorkflowNodeKeyRef = useRef('')
 
   const detailLogStats = useMemo(() => {
@@ -332,6 +347,36 @@ function WorkDemands() {
       (workflowGraphNodes || []).filter((item) => String(item?.status || '').toUpperCase() === 'DONE').length,
     [workflowGraphNodes],
   )
+
+  const workflowTotalEstimatedHours = useMemo(() => {
+    const tasks = Array.isArray(workflowData?.tasks) ? workflowData.tasks : []
+    let totalTaskHours = 0
+    let hasTaskHours = false
+    tasks.forEach((item) => {
+      const status = String(item?.status || '').toUpperCase()
+      if (status === 'CANCELLED') return
+      const hours = Number(item?.personal_estimated_hours)
+      if (!Number.isFinite(hours) || hours <= 0) return
+      totalTaskHours += hours
+      hasTaskHours = true
+    })
+    if (hasTaskHours) return Number(totalTaskHours.toFixed(1))
+
+    const nodes = Array.isArray(workflowData?.nodes) ? workflowData.nodes : []
+    let totalNodeHours = 0
+    let hasNodeHours = false
+    nodes.forEach((item) => {
+      const fallbackValue =
+        item?.personal_estimated_hours !== undefined && item?.personal_estimated_hours !== null
+          ? item.personal_estimated_hours
+          : item?.owner_estimated_hours
+      const hours = Number(fallbackValue)
+      if (!Number.isFinite(hours) || hours <= 0) return
+      totalNodeHours += hours
+      hasNodeHours = true
+    })
+    return hasNodeHours ? Number(totalNodeHours.toFixed(1)) : 0
+  }, [workflowData])
 
   const currentWorkflowNodeLabel = useMemo(() => {
     if (currentWorkflowNodes.length > 1) {
@@ -510,10 +555,58 @@ function WorkDemands() {
   }, [ownerOptions, detailMembers])
 
   const selectedWorkflowNodeTasks = useMemo(() => {
-    if (!selectedWorkflowNode?.id) return []
+    if (!selectedWorkflowNode?.id && !selectedWorkflowNode?.node_key) return []
+    const relatedPhaseKeySet = getNodeRelatedPhaseKeySet(selectedWorkflowNode)
     const tasks = Array.isArray(workflowData?.tasks) ? workflowData.tasks : []
-    return tasks.filter((item) => Number(item.instance_node_id) === Number(selectedWorkflowNode.id))
-  }, [selectedWorkflowNode, workflowData])
+    const workflowTasks = tasks.filter((item) => {
+      if (Number(item.instance_node_id) !== Number(selectedWorkflowNode.id)) return false
+      const status = String(item?.status || '').toUpperCase()
+      return status !== 'CANCELLED'
+    })
+    const manualLogs = (detailLogs || [])
+      .filter((item) => {
+        const taskSource = String(item?.task_source || '').trim().toUpperCase()
+        if (taskSource === 'WORKFLOW_AUTO') return false
+        const phaseKey = String(item?.phase_key || '').trim().toUpperCase()
+        if (!phaseKey || !relatedPhaseKeySet.has(phaseKey)) return false
+        const status = String(item?.log_status || '').toUpperCase()
+        return status !== 'CANCELLED'
+      })
+      .map((item) => ({
+        id: `manual-log-${item.id}`,
+        source_type: 'MANUAL_LOG',
+        source_id: item.id,
+        task_title: item.description || `事项 #${item.id}`,
+        assignee_user_id: item.user_id || null,
+        assignee_name: item.username || '-',
+        status: String(item?.log_status || 'TODO').toUpperCase(),
+        personal_estimated_hours: item.personal_estimate_hours,
+        actual_hours: item.actual_hours,
+        expected_start_date: item.expected_start_date,
+        expected_completion_date: item.expected_completion_date,
+        due_at: item.expected_completion_date,
+        phase_key: item.phase_key,
+        phase_name: item.phase_name,
+        task_source: item.task_source || 'SELF',
+      }))
+    return [...workflowTasks, ...manualLogs]
+  }, [detailLogs, selectedWorkflowNode, workflowData])
+
+  const selectedWorkflowNodeAssigneeIds = useMemo(() => {
+    const fromTasks = Array.from(
+      new Set(
+        (selectedWorkflowNodeTasks || [])
+          .map((item) => Number(item?.assignee_user_id))
+          .filter((userId) => Number.isInteger(userId) && userId > 0),
+      ),
+    )
+    if (fromTasks.length > 0) return fromTasks
+    const nodeAssigneeUserId = Number(selectedWorkflowNode?.assignee_user_id)
+    if (Number.isInteger(nodeAssigneeUserId) && nodeAssigneeUserId > 0) {
+      return [nodeAssigneeUserId]
+    }
+    return []
+  }, [selectedWorkflowNode, selectedWorkflowNodeTasks])
 
   const loadUsers = useCallback(async () => {
     if (!canView || !canViewUsers) {
@@ -692,6 +785,8 @@ function WorkDemands() {
       actual_start_time: null,
       actual_end_time: null,
       doc_link: '',
+      ui_design_link: '',
+      test_case_link: '',
       business_group_code: undefined,
       expected_release_date: null,
       status: 'TODO',
@@ -717,6 +812,8 @@ function WorkDemands() {
       actual_start_time: toNullableDateTimeValue(record.actual_start_time),
       actual_end_time: toNullableDateTimeValue(record.actual_end_time),
       doc_link: record.doc_link || '',
+      ui_design_link: record.ui_design_link || '',
+      test_case_link: record.test_case_link || '',
       business_group_code: record.business_group_code || undefined,
       expected_release_date: record.expected_release_date ? dayjs(record.expected_release_date) : null,
       status: record.status,
@@ -745,6 +842,8 @@ function WorkDemands() {
         actual_start_time: values.actual_start_time ? values.actual_start_time.format('YYYY-MM-DD HH:mm:ss') : null,
         actual_end_time: values.actual_end_time ? values.actual_end_time.format('YYYY-MM-DD HH:mm:ss') : null,
         doc_link: values.doc_link || null,
+        ui_design_link: values.ui_design_link || null,
+        test_case_link: values.test_case_link || null,
         business_group_code: values.business_group_code ?? null,
         expected_release_date: values.expected_release_date ? values.expected_release_date.format('YYYY-MM-DD') : null,
         status: values.status,
@@ -787,7 +886,7 @@ function WorkDemands() {
       try {
         const params = {
           page: 1,
-          pageSize: 12,
+          pageSize: 200,
           demand_id: demandId,
         }
         if (canViewTeamLogs) {
@@ -894,17 +993,23 @@ function WorkDemands() {
     setDetailMembers([])
     setDetailMemberUserId(undefined)
     setDetailLogFilter('ALL')
+    setDetailName('')
     setDetailManagementMode('simple')
     setDetailTemplateId(undefined)
     setDetailProjectManager(undefined)
+    setDetailBusinessGroupCode(undefined)
     setDetailHealthStatus('green')
     setDetailActualStartTime(null)
     setDetailActualEndTime(null)
+    setDetailExpectedReleaseDate(null)
     setDetailDocLink('')
+    setDetailUiDesignLink('')
+    setDetailTestCaseLink('')
+    setDetailTabKey('basic')
     setWorkflowData(null)
     setWorkflowWarning('')
     setSelectedWorkflowNodeKey('')
-    setWorkflowAssignee(undefined)
+    setWorkflowParticipantUserIds([])
     setWorkflowDueAt(null)
     setWorkflowExpectedStartAt(null)
     navigate('/work-demands')
@@ -962,17 +1067,23 @@ function WorkDemands() {
     setDetailMembers([])
     setDetailMemberUserId(undefined)
     setDetailLogFilter('ALL')
+    setDetailName('')
     setDetailManagementMode('simple')
     setDetailTemplateId(undefined)
     setDetailProjectManager(undefined)
+    setDetailBusinessGroupCode(undefined)
     setDetailHealthStatus('green')
     setDetailActualStartTime(null)
     setDetailActualEndTime(null)
+    setDetailExpectedReleaseDate(null)
     setDetailDocLink('')
+    setDetailUiDesignLink('')
+    setDetailTestCaseLink('')
+    setDetailTabKey('basic')
     setWorkflowData(null)
     setWorkflowWarning('')
     setSelectedWorkflowNodeKey('')
-    setWorkflowAssignee(undefined)
+    setWorkflowParticipantUserIds([])
     setWorkflowDueAt(null)
     setWorkflowExpectedStartAt(null)
   }, [isDetailPage])
@@ -980,29 +1091,36 @@ function WorkDemands() {
   useEffect(() => {
     if (!selectedWorkflowNode) {
       selectedWorkflowNodeKeyRef.current = ''
-      setWorkflowAssignee(undefined)
+      setWorkflowParticipantUserIds([])
       setWorkflowDueAt(null)
       setWorkflowExpectedStartAt(null)
-      setNodeHoursPersonalEstimate(undefined)
       return
     }
     const normalizedNodeKey = String(selectedWorkflowNode.node_key || '').trim().toUpperCase()
-    const persistedExpectedStartAt = selectedWorkflowNode.expected_start_date || selectedWorkflowNode.expected_start_at
-    setWorkflowAssignee(selectedWorkflowNode.assignee_user_id || undefined)
-    setWorkflowDueAt(selectedWorkflowNode.due_at ? dayjs(selectedWorkflowNode.due_at) : null)
+    const persistedExpectedStartAt = selectedWorkflowNode.planned_start_time || selectedWorkflowNode.expected_start_date || selectedWorkflowNode.expected_start_at
+    const participantIds = Array.from(
+      new Set(
+        selectedWorkflowNodeTasks
+          .map((item) => Number(item?.assignee_user_id))
+          .filter((userId) => Number.isInteger(userId) && userId > 0),
+      ),
+    )
+    if (participantIds.length > 0) {
+      setWorkflowParticipantUserIds(participantIds)
+    } else if (selectedWorkflowNode.assignee_user_id) {
+      setWorkflowParticipantUserIds([Number(selectedWorkflowNode.assignee_user_id)])
+    } else {
+      setWorkflowParticipantUserIds([])
+    }
+    setWorkflowDueAt(selectedWorkflowNode.planned_end_time ? dayjs(selectedWorkflowNode.planned_end_time) : null)
     setWorkflowExpectedStartAt((previousValue) => {
       if (persistedExpectedStartAt) {
         return dayjs(persistedExpectedStartAt)
       }
       return selectedWorkflowNodeKeyRef.current === normalizedNodeKey ? previousValue : null
     })
-    setNodeHoursPersonalEstimate(
-      selectedWorkflowNode.personal_estimated_hours === null || selectedWorkflowNode.personal_estimated_hours === undefined
-        ? undefined
-        : Number(selectedWorkflowNode.personal_estimated_hours),
-    )
     selectedWorkflowNodeKeyRef.current = normalizedNodeKey
-  }, [selectedWorkflowNode])
+  }, [selectedWorkflowNode, selectedWorkflowNodeTasks])
 
   useEffect(() => {
     if (!requestedWorkflowNodeKey) return
@@ -1019,22 +1137,32 @@ function WorkDemands() {
     if (!isDetailPage) return
     if (!detailDemand) {
       setDetailStatus('')
+      setDetailName('')
       setDetailManagementMode('simple')
       setDetailTemplateId(undefined)
       setDetailProjectManager(undefined)
+      setDetailBusinessGroupCode(undefined)
       setDetailHealthStatus('green')
       setDetailActualStartTime(null)
       setDetailActualEndTime(null)
+      setDetailExpectedReleaseDate(null)
       setDetailDocLink('')
+      setDetailUiDesignLink('')
+      setDetailTestCaseLink('')
       return
     }
+    setDetailName(detailDemand.name || '')
     setDetailManagementMode(detailDemand.management_mode || 'simple')
     setDetailTemplateId(detailDemand.template_id ? Number(detailDemand.template_id) : undefined)
     setDetailProjectManager(detailDemand.project_manager ? Number(detailDemand.project_manager) : undefined)
+    setDetailBusinessGroupCode(detailDemand.business_group_code || undefined)
     setDetailHealthStatus(detailDemand.health_status || 'green')
     setDetailActualStartTime(toNullableDateTimeValue(detailDemand.actual_start_time))
     setDetailActualEndTime(toNullableDateTimeValue(detailDemand.actual_end_time))
+    setDetailExpectedReleaseDate(detailDemand.expected_release_date ? dayjs(detailDemand.expected_release_date) : null)
     setDetailDocLink(detailDemand.doc_link || '')
+    setDetailUiDesignLink(detailDemand.ui_design_link || '')
+    setDetailTestCaseLink(detailDemand.test_case_link || '')
 
     if (!canEditDemandRecord(detailDemand)) {
       setDetailStatus('')
@@ -1077,6 +1205,11 @@ function WorkDemands() {
 
   const handleSaveDetail = async () => {
     if (!detailDemand?.id || !canEditDemandRecord(detailDemand)) return
+    const nextName = String(detailName || '').trim()
+    if (!nextName) {
+      message.warning('需求名称不能为空')
+      return
+    }
     const nextStatus = String(detailStatus || detailDemand.status || '').trim()
     if (!nextStatus) {
       message.warning('请选择状态')
@@ -1089,14 +1222,19 @@ function WorkDemands() {
     try {
       setDetailSaving(true)
       const result = await updateWorkDemandApi(detailDemand.id, {
+        name: nextName,
         status: nextStatus,
         management_mode: detailManagementMode || 'simple',
         template_id: detailTemplateId ?? null,
         project_manager: detailProjectManager ?? null,
+        business_group_code: detailBusinessGroupCode ?? null,
         health_status: detailHealthStatus || 'green',
         actual_start_time: detailActualStartTime ? detailActualStartTime.format('YYYY-MM-DD HH:mm:ss') : null,
         actual_end_time: detailActualEndTime ? detailActualEndTime.format('YYYY-MM-DD HH:mm:ss') : null,
+        expected_release_date: detailExpectedReleaseDate ? detailExpectedReleaseDate.format('YYYY-MM-DD') : null,
         doc_link: detailDocLink || null,
+        ui_design_link: detailUiDesignLink || null,
+        test_case_link: detailTestCaseLink || null,
       })
       if (!result?.success) {
         message.error(result?.message || '保存失败')
@@ -1157,67 +1295,90 @@ function WorkDemands() {
     }
   }
 
-  const handleSaveWorkflowNodeHours = async () => {
-    if (!detailDemand?.id || !selectedWorkflowNode?.node_key || !canManageWorkflow) return
-    try {
-      setWorkflowHoursSubmitting(true)
-      const result = await updateDemandWorkflowNodeHoursApi(detailDemand.id, selectedWorkflowNode.node_key, {
-        personal_estimated_hours: nodeHoursPersonalEstimate ?? null,
-      })
-      if (!result?.success) {
-        message.error(result?.message || '个人预估保存失败')
-        return
-      }
-      setWorkflowData(result.data || null)
-    } catch (error) {
-      message.error(error?.message || '个人预估保存失败')
-    } finally {
-      setWorkflowHoursSubmitting(false)
-    }
-  }
-
   const handleAssignWorkflowNode = async (overrides = {}, options = {}) => {
-    if (!detailDemand?.id || !canManageWorkflow) return
+    if (!detailDemand?.id || !canManageWorkflow) return false
     if (!selectedWorkflowNode?.node_key) {
       if (!options.silent) {
         message.warning('请先选择流程节点')
       }
-      return
+      return false
     }
     if (!canAssignSelectedWorkflowNode) {
       if (!options.silent) {
         message.warning('已完成或已取消的节点不支持指派')
       }
-      return
+      return false
     }
-    const nextAssignee =
-      overrides.assignee_user_id === undefined ? workflowAssignee : overrides.assignee_user_id
-    const nextDueAt = overrides.due_at === undefined ? workflowDueAt : overrides.due_at
-    const nextExpectedStartAt =
-      overrides.expected_start_date === undefined ? workflowExpectedStartAt : overrides.expected_start_date
+    const requestedAssigneeUserIds = Array.isArray(overrides.assignee_user_ids)
+      ? overrides.assignee_user_ids
+      : workflowParticipantUserIds
+    const nextAssigneeUserIds = Array.from(
+      new Set(
+        (requestedAssigneeUserIds.length > 0 ? requestedAssigneeUserIds : selectedWorkflowNodeAssigneeIds)
+          .map((item) => Number(item))
+          .filter((userId) => Number.isInteger(userId) && userId > 0),
+      ),
+    )
 
-    if (!nextAssignee) {
+    if (nextAssigneeUserIds.length === 0) {
       if (!options.skipMissingAssigneeWarning) {
-        message.warning('请选择负责人')
+        message.warning('请选择参与人')
       }
-      return
+      return false
     }
 
     try {
       setWorkflowSubmitting(true)
       const result = await assignDemandWorkflowNodeApi(detailDemand.id, selectedWorkflowNode.node_key, {
-        assignee_user_id: nextAssignee,
-        due_at: nextDueAt ? nextDueAt.format('YYYY-MM-DD') : null,
-        expected_start_date: nextExpectedStartAt ? nextExpectedStartAt.format('YYYY-MM-DD') : null,
+        assignee_user_ids: nextAssigneeUserIds,
       })
       if (!result?.success) {
         message.error(result?.message || '节点指派失败')
-        return
+        return false
       }
       setWorkflowData(result.data || null)
       setSelectedWorkflowNodeKey(selectedWorkflowNode.node_key)
+      return true
     } catch (error) {
       message.error(error?.message || '节点指派失败')
+      return false
+    } finally {
+      setWorkflowSubmitting(false)
+    }
+  }
+
+  const handleSaveWorkflowNodeSchedule = async (payload = {}) => {
+    if (!detailDemand?.id || !canManageWorkflow || !selectedWorkflowNode?.node_key) return false
+    const nextPayload = {}
+    if (payload.planned_start_time !== undefined) {
+      nextPayload.planned_start_time = payload.planned_start_time
+        ? payload.planned_start_time.format('YYYY-MM-DD')
+        : null
+    }
+    if (payload.planned_end_time !== undefined) {
+      nextPayload.planned_end_time = payload.planned_end_time
+        ? payload.planned_end_time.format('YYYY-MM-DD')
+        : null
+    }
+    if (Object.keys(nextPayload).length === 0) return false
+
+    try {
+      setWorkflowSubmitting(true)
+      const result = await updateDemandWorkflowNodeHoursApi(
+        detailDemand.id,
+        selectedWorkflowNode.node_key,
+        nextPayload,
+      )
+      if (!result?.success) {
+        message.error(result?.message || '节点排期保存失败')
+        return false
+      }
+      setWorkflowData(result.data || null)
+      setSelectedWorkflowNodeKey(selectedWorkflowNode.node_key)
+      return true
+    } catch (error) {
+      message.error(error?.message || '节点排期保存失败')
+      return false
     } finally {
       setWorkflowSubmitting(false)
     }
@@ -1248,6 +1409,50 @@ function WorkDemands() {
       message.error(error?.message || '节点提交失败')
     } finally {
       setWorkflowSubmitting(false)
+    }
+  }
+
+  const handleUpdateWorkflowTask = async (taskId, payload = {}) => {
+    if (!detailDemand?.id || !canManageWorkflow || !taskId) return false
+    if (!isSelectedCurrentWorkflowNode) {
+      message.warning('仅当前激活节点的子任务支持编辑')
+      return false
+    }
+
+    const nextPayload = {}
+    if (payload.personal_estimated_hours !== undefined) {
+      nextPayload.personal_estimated_hours = payload.personal_estimated_hours
+    }
+    if (payload.expected_start_date !== undefined) {
+      nextPayload.expected_start_date = payload.expected_start_date
+    }
+    if (payload.expected_completion_date !== undefined) {
+      nextPayload.expected_completion_date = payload.expected_completion_date
+    }
+    if (payload.deadline !== undefined) {
+      nextPayload.deadline = payload.deadline
+    }
+
+    if (Object.keys(nextPayload).length === 0) return false
+
+    try {
+      setWorkflowTaskUpdatingId(taskId)
+      const result = await updateDemandWorkflowTaskHoursApi(detailDemand.id, taskId, nextPayload)
+      if (!result?.success) {
+        message.error(result?.message || '子任务更新失败')
+        return false
+      }
+      setWorkflowData(result.data || null)
+      if (selectedWorkflowNode?.node_key) {
+        setSelectedWorkflowNodeKey(selectedWorkflowNode.node_key)
+      }
+      message.success('子任务已更新')
+      return true
+    } catch (error) {
+      message.error(error?.message || '子任务更新失败')
+      return false
+    } finally {
+      setWorkflowTaskUpdatingId(null)
     }
   }
 
@@ -1404,7 +1609,7 @@ function WorkDemands() {
           render: (value) => Number(value || 0),
         },
         {
-          title: '累计实际(h)',
+          title: '整体用时(h)',
           dataIndex: 'total_actual_hours',
           key: 'total_actual_hours',
           width: 120,
@@ -1738,8 +1943,16 @@ function WorkDemands() {
             />
           </Form.Item>
 
-          <Form.Item label="文档链接" name="doc_link">
-            <Input maxLength={500} placeholder="例如 PRD / 飞书文档链接（可选）" />
+          <Form.Item label="PRD链接" name="doc_link">
+            <Input maxLength={500} placeholder="例如 PRD链接（可选）" />
+          </Form.Item>
+
+          <Form.Item label="UI设计稿地址" name="ui_design_link">
+            <Input maxLength={500} placeholder="例如 Figma/蓝湖 链接（可选）" />
+          </Form.Item>
+
+          <Form.Item label="测试用例CASE地址" name="test_case_link">
+            <Input maxLength={500} placeholder="例如 测试用例平台链接（可选）" />
           </Form.Item>
 
           <Form.Item label="业务组" name="business_group_code">
@@ -1807,15 +2020,12 @@ function WorkDemands() {
                           ) : (
                             <Button onClick={() => handleQuickStatusUpdate(detailDemand, 'DONE')}>标记完成</Button>
                           )}
-                          <Button type="primary" onClick={handleSaveDetail} loading={detailSaving}>
-                            保存变更
-                          </Button>
                         </>
                       ) : null}
                     </div>
                   </div>
                   <Text type="secondary" className="work-demand-detail__hero-desc">
-                    {detailDemand.description || '当前需求暂无补充描述，可在下方基本信息中完善背景、目标和文档链接。'}
+                    {detailDemand.description || '当前需求暂无补充描述，可在下方基本信息中完善背景、目标和PRD链接。'}
                   </Text>
                 </div>
 
@@ -1850,6 +2060,10 @@ function WorkDemands() {
                           <span>总节点</span>
                           <strong>{workflowGraphNodes.length}</strong>
                         </div>
+                        <div className="work-demand-detail__workflow-pill">
+                          <span>整体预估用时</span>
+                          <strong>{workflowTotalEstimatedHours.toFixed(1)} h</strong>
+                        </div>
                       </div>
                       {canForceReplaceWorkflow ? (
                         <Button
@@ -1883,23 +2097,23 @@ function WorkDemands() {
                         isCurrentNode={isSelectedCurrentWorkflowNode}
                         workflowActionBusy={workflowActionBusy}
                         workflowSubmitting={workflowSubmitting}
-                        workflowHoursSubmitting={workflowHoursSubmitting}
-                        workflowAssignee={workflowAssignee}
+                        workflowParticipantUserIds={workflowParticipantUserIds}
                         workflowAssigneeOptions={workflowAssigneeOptions}
                         workflowDueAt={workflowDueAt}
                         workflowExpectedStartAt={workflowExpectedStartAt}
-                        onWorkflowAssigneeChange={setWorkflowAssignee}
+                        onWorkflowParticipantsChange={setWorkflowParticipantUserIds}
                         onWorkflowDueAtChange={setWorkflowDueAt}
                         onWorkflowExpectedStartAtChange={setWorkflowExpectedStartAt}
                         onCommitWorkflowArrangement={(payload) =>
-                          handleAssignWorkflowNode(payload, { silent: true, skipMissingAssigneeWarning: true })
+                          payload?.assignee_user_ids !== undefined
+                            ? handleAssignWorkflowNode(payload, { silent: true, skipMissingAssigneeWarning: true })
+                            : handleSaveWorkflowNodeSchedule(payload)
                         }
                         canAssignSelectedWorkflowNode={canAssignSelectedWorkflowNode}
                         onSubmitNode={handleSubmitWorkflowNode}
-                        nodeHoursPersonalEstimate={nodeHoursPersonalEstimate}
-                        onNodeHoursPersonalEstimateChange={setNodeHoursPersonalEstimate}
-                        onSaveNodePersonalEstimate={handleSaveWorkflowNodeHours}
                         selectedWorkflowNodeTasks={selectedWorkflowNodeTasks}
+                        workflowTaskUpdatingId={workflowTaskUpdatingId}
+                        onUpdateWorkflowTask={handleUpdateWorkflowTask}
                       />
                     </div>
                   </div>
@@ -1911,33 +2125,32 @@ function WorkDemands() {
 
             <Tabs
               className="work-demand-detail__tabs"
+              activeKey={detailTabKey}
+              onChange={setDetailTabKey}
+              tabBarExtraContent={
+                canEditDemandRecord(detailDemand) && detailTabKey === 'basic' ? (
+                  <Button type="primary" onClick={handleSaveDetail} loading={detailSaving}>
+                    保存变更
+                  </Button>
+                ) : null
+              }
               items={[
                 {
                   key: 'basic',
                   label: '基本信息',
                   children: (
-                    <div className="work-demand-detail__tab-section">
-                      <div className="work-demand-detail__mini-grid">
-                        <div className="work-demand-detail__mini-card">
-                          <span>业务组</span>
-                          <strong>{detailDemand.business_group_name || detailDemand.business_group_code || '-'}</strong>
-                        </div>
-                        <div className="work-demand-detail__mini-card">
-                          <span>项目成员</span>
-                          <strong>{Number(detailDemand.member_count || 0)} 人</strong>
-                        </div>
-                        <div className="work-demand-detail__mini-card">
-                          <span>预期上线</span>
-                          <strong>{formatBeijingDate(detailDemand.expected_release_date)}</strong>
-                        </div>
-                        <div className="work-demand-detail__mini-card">
-                          <span>累计实际</span>
-                          <strong>{toNumber(detailDemand.total_actual_hours, 0).toFixed(1)} h</strong>
-                        </div>
-                      </div>
-
+                    <div className="work-demand-detail__tab-section work-demand-detail__tab-section--basic">
                       {canEditDemandRecord(detailDemand) ? (
                         <div className="work-demand-detail__form-grid">
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">需求名称</Text>
+                            <Input
+                              value={detailName}
+                              maxLength={200}
+                              placeholder="请输入需求名称"
+                              onChange={(event) => setDetailName(event.target.value)}
+                            />
+                          </div>
                           <div className="work-demand-detail__field">
                             <Text type="secondary">状态</Text>
                             <Select
@@ -1948,7 +2161,7 @@ function WorkDemands() {
                             />
                           </div>
                           <div className="work-demand-detail__field">
-                            <Text type="secondary">项目模板</Text>
+                            <Text type="secondary">需求模板</Text>
                             <Select
                               allowClear
                               showSearch
@@ -1959,7 +2172,7 @@ function WorkDemands() {
                             />
                           </div>
                           <div className="work-demand-detail__field">
-                            <Text type="secondary">项目负责人</Text>
+                            <Text type="secondary">需求负责人</Text>
                             <Select
                               allowClear
                               showSearch
@@ -1970,6 +2183,18 @@ function WorkDemands() {
                             />
                           </div>
                           <div className="work-demand-detail__field">
+                            <Text type="secondary">业务组</Text>
+                            <Select
+                              allowClear
+                              showSearch
+                              optionFilterProp="label"
+                              value={detailBusinessGroupCode}
+                              options={businessGroupOptions}
+                              placeholder="请选择业务组"
+                              onChange={(value) => setDetailBusinessGroupCode(value)}
+                            />
+                          </div>
+                          <div className="work-demand-detail__field">
                             <Text type="secondary">健康度</Text>
                             <Select
                               value={detailHealthStatus}
@@ -1977,12 +2202,37 @@ function WorkDemands() {
                               onChange={(value) => setDetailHealthStatus(value)}
                             />
                           </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">预期上线</Text>
+                            <DatePicker
+                              value={detailExpectedReleaseDate}
+                              format="YYYY-MM-DD"
+                              placeholder="选择预期上线日期"
+                              onChange={(value) => setDetailExpectedReleaseDate(value)}
+                            />
+                          </div>
                           <div className="work-demand-detail__field work-demand-detail__field--full">
-                            <Text type="secondary">文档链接</Text>
+                            <Text type="secondary">PRD链接</Text>
                             <Input
                               value={detailDocLink}
-                              placeholder="填写 PRD / 飞书文档链接"
+                              placeholder="填写 PRD链接"
                               onChange={(event) => setDetailDocLink(event.target.value)}
+                            />
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">UI设计稿地址</Text>
+                            <Input
+                              value={detailUiDesignLink}
+                              placeholder="填写 UI设计稿地址"
+                              onChange={(event) => setDetailUiDesignLink(event.target.value)}
+                            />
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">测试用例CASE地址</Text>
+                            <Input
+                              value={detailTestCaseLink}
+                              placeholder="填写 测试用例CASE地址"
+                              onChange={(event) => setDetailTestCaseLink(event.target.value)}
                             />
                           </div>
                         </div>

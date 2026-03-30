@@ -29,10 +29,10 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createOwnerAssignedLogApi,
+  getDemandWorkflowNodeOptionsApi,
   getOwnerWorkbenchApi,
   getWorkDemandsApi,
   getWorkItemTypesApi,
-  getWorkPhaseTypesApi,
   updateWorkLogOwnerEstimateApi,
 } from '../../api/work'
 import {
@@ -141,7 +141,7 @@ function OwnerWorkbench() {
 
   const [itemTypes, setItemTypes] = useState([])
   const [demands, setDemands] = useState([])
-  const [phaseDictItems, setPhaseDictItems] = useState([])
+  const [demandWorkflowNodeOptionsMap, setDemandWorkflowNodeOptionsMap] = useState({})
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -169,10 +169,9 @@ function OwnerWorkbench() {
 
   const loadAssignBase = useCallback(async () => {
     try {
-      const [itemTypeResult, demandResult, phaseResult] = await Promise.all([
+      const [itemTypeResult, demandResult] = await Promise.all([
         getWorkItemTypesApi({ enabled_only: 1 }),
         getWorkDemandsApi({ page: 1, pageSize: 1000 }),
-        getWorkPhaseTypesApi({ enabled_only: 1 }),
       ])
       if (itemTypeResult?.success) {
         setItemTypes(itemTypeResult.data || [])
@@ -180,18 +179,33 @@ function OwnerWorkbench() {
       if (demandResult?.success) {
         setDemands(demandResult.data?.list || [])
       }
-      if (phaseResult?.success) {
-        setPhaseDictItems(
-          (phaseResult.data || []).map((item) => ({
-            phase_key: item.phase_key,
-            phase_name: item.phase_name,
-          })),
-        )
-      }
     } catch {
       // keep owner panel available even if optional lists fail
     }
   }, [])
+
+  const ensureDemandWorkflowNodeOptionsLoaded = useCallback(
+    async (demandId) => {
+      const normalizedDemandId = String(demandId || '').trim()
+      if (!normalizedDemandId) return
+      if (Array.isArray(demandWorkflowNodeOptionsMap?.[normalizedDemandId])) return
+
+      try {
+        const result = await getDemandWorkflowNodeOptionsApi(normalizedDemandId)
+        if (!result?.success) return
+        setDemandWorkflowNodeOptionsMap((prev) => ({
+          ...prev,
+          [normalizedDemandId]: Array.isArray(result.data) ? result.data : [],
+        }))
+      } catch {
+        setDemandWorkflowNodeOptionsMap((prev) => ({
+          ...prev,
+          [normalizedDemandId]: [],
+        }))
+      }
+    },
+    [demandWorkflowNodeOptionsMap],
+  )
 
   useEffect(() => {
     loadData()
@@ -200,6 +214,11 @@ function OwnerWorkbench() {
   useEffect(() => {
     loadAssignBase()
   }, [loadAssignBase])
+
+  useEffect(() => {
+    if (!assignDemandId) return
+    ensureDemandWorkflowNodeOptionsLoaded(assignDemandId)
+  }, [assignDemandId, ensureDemandWorkflowNodeOptionsLoaded])
 
   const overview = data.team_overview || {}
   const teamSize = toNumber(overview.team_size, 0)
@@ -244,6 +263,7 @@ function OwnerWorkbench() {
   )
   const pendingOwnerEstimateCount = toNumber(data.owner_estimate_pending_count, 0)
   const assignItemTypeId = Form.useWatch('item_type_id', assignForm)
+  const assignDemandId = Form.useWatch('demand_id', assignForm)
 
   const memberOptions = useMemo(() => {
     const map = new Map()
@@ -302,14 +322,15 @@ function OwnerWorkbench() {
     [demands],
   )
 
-  const assignPhaseOptions = useMemo(
-    () =>
-      phaseDictItems.map((item) => ({
-        value: item.phase_key,
-        label: `${item.phase_name} (${item.phase_key})`,
-      })),
-    [phaseDictItems],
-  )
+  const assignPhaseOptions = useMemo(() => {
+    const rows = Array.isArray(demandWorkflowNodeOptionsMap?.[assignDemandId])
+      ? demandWorkflowNodeOptionsMap[assignDemandId]
+      : EMPTY_ARRAY
+    return rows.map((item) => ({
+      value: item.node_key,
+      label: item.node_name || item.node_key,
+    }))
+  }, [assignDemandId, demandWorkflowNodeOptionsMap])
 
   const selectedAssignItemType = useMemo(
     () => itemTypes.find((item) => Number(item.id) === Number(assignItemTypeId)) || null,
@@ -1031,6 +1052,9 @@ function OwnerWorkbench() {
             if (Object.prototype.hasOwnProperty.call(changedValues, 'demand_id') && !changedValues.demand_id) {
               assignForm.setFieldsValue({ phase_key: undefined })
             }
+            if (Object.prototype.hasOwnProperty.call(changedValues, 'demand_id') && changedValues.demand_id) {
+              assignForm.setFieldsValue({ phase_key: undefined })
+            }
           }}
         >
           <Form.Item
@@ -1089,13 +1113,13 @@ function OwnerWorkbench() {
             {({ getFieldValue }) =>
               getFieldValue('demand_id') ? (
                 <Form.Item
-                  label="需求阶段"
+                  label="需求任务"
                   name="phase_key"
-                  rules={[{ required: true, message: '请选择需求阶段' }]}
+                  rules={[{ required: true, message: '请选择需求任务' }]}
                 >
                   <Select
                     showSearch
-                    placeholder="请选择阶段"
+                    placeholder="请选择需求任务"
                     options={assignPhaseOptions}
                     optionFilterProp="label"
                   />
