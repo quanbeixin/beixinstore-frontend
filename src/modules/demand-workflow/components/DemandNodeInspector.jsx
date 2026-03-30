@@ -1,8 +1,9 @@
-import { Button, DatePicker, InputNumber, Select, Tag, Typography } from 'antd'
+import { Button, DatePicker, Input, InputNumber, Modal, Select, Tag, Typography, message } from 'antd'
 import dayjs from 'dayjs'
 import { useState } from 'react'
 import { WorkflowInspector } from '../../workflow'
 import { getDemandWorkflowNodeDisplayName } from '../utils/demandWorkflow.mapper'
+import { getCurrentUser } from '../../../utils/access'
 import './demand-node-inspector.css'
 
 const { Text } = Typography
@@ -68,6 +69,12 @@ function calcStageTotalEstimatedHours(tasks = []) {
   return Number(total.toFixed(2))
 }
 
+function getTaskDraftKey(item) {
+  const raw = item?.id
+  if (raw === undefined || raw === null || raw === '') return ''
+  return String(raw)
+}
+
 function createTaskDraft(item) {
   return {
     expected_start_date: formatCompactDate(item?.expected_start_date || item?.planned_start_time, ''),
@@ -118,37 +125,58 @@ function DemandNodeInspector({
   onWorkflowParticipantsChange,
   onWorkflowDueAtChange,
   onWorkflowExpectedStartAtChange,
-  onCommitWorkflowArrangement,
+  onSaveWorkflowOwner,
+  onSaveWorkflowSchedule,
   canAssignSelectedWorkflowNode = false,
   onSubmitNode,
   selectedWorkflowNodeTasks = [],
   workflowTaskUpdatingId = null,
   onUpdateWorkflowTask,
+  onQuickCreateTask,
+  quickCreateTaskSubmitting = false,
 }) {
+  const currentUser = getCurrentUser()
+  const currentUserId = Number(currentUser?.id || 0)
   const summaryTitle = getDemandWorkflowNodeDisplayName(node)
   const normalizedNodeStatus = String(node?.status || '').toUpperCase()
   const stageTotalEstimatedHours = calcStageTotalEstimatedHours(selectedWorkflowNodeTasks)
-  const participantNames = Array.from(
-    new Set(
-      (selectedWorkflowNodeTasks || [])
-        .map((item) => item?.assignee_name || item?.assignee_username || '')
-        .filter(Boolean),
-    ),
-  )
   const scheduleValue =
     workflowExpectedStartAt || workflowDueAt ? [workflowExpectedStartAt || null, workflowDueAt || null] : null
   const canEditArrangement = canManageWorkflow && canAssignSelectedWorkflowNode && !workflowSubmitting
   const canEditNodeSchedule = canManageWorkflow && !workflowSubmitting
+  const canQuickCreateTask = canManageWorkflow && canAssignSelectedWorkflowNode && !workflowSubmitting
   const canEditTaskDetails =
     canManageWorkflow && isCurrentNode && canAssignSelectedWorkflowNode && !workflowActionBusy && !workflowSubmitting
   const hasTasks = selectedWorkflowNodeTasks.length > 0
   const [taskDrafts, setTaskDrafts] = useState({})
+  const buildQuickTaskDraft = () => ({
+    task_title: summaryTitle || '',
+    assignee_user_id:
+      Array.isArray(workflowParticipantUserIds) && workflowParticipantUserIds.length > 0
+        ? Number(workflowParticipantUserIds[0]) || undefined
+        : undefined,
+    schedule:
+      workflowExpectedStartAt || workflowDueAt
+        ? [workflowExpectedStartAt || null, workflowDueAt || null]
+        : [null, null],
+  })
+  const [quickTaskOpen, setQuickTaskOpen] = useState(false)
+  const [quickTaskDraft, setQuickTaskDraft] = useState(() => buildQuickTaskDraft())
 
   const handleParticipantsChange = (value) => {
-    const nextUserIds = Array.isArray(value) ? value : []
+    const previousUserIds = Array.isArray(workflowParticipantUserIds) ? workflowParticipantUserIds : []
+    const nextUserId = Number(value)
+    const nextUserIds = Number.isInteger(nextUserId) && nextUserId > 0 ? [nextUserId] : []
     onWorkflowParticipantsChange?.(nextUserIds)
-    onCommitWorkflowArrangement?.({
-      assignee_user_ids: nextUserIds,
+    Promise.resolve(
+      onSaveWorkflowOwner?.({
+        assignee_user_id: nextUserId || null,
+        assignee_user_ids: nextUserIds,
+      }),
+    ).then((saved) => {
+      if (saved === false) {
+        onWorkflowParticipantsChange?.(previousUserIds)
+      }
     })
   }
 
@@ -159,7 +187,7 @@ function DemandNodeInspector({
     onWorkflowExpectedStartAtChange?.(nextStartAt)
     onWorkflowDueAtChange?.(nextEndAt)
     Promise.resolve(
-      onCommitWorkflowArrangement?.({
+      onSaveWorkflowSchedule?.({
         planned_start_time: nextStartAt,
         planned_end_time: nextEndAt,
       }),
@@ -169,6 +197,43 @@ function DemandNodeInspector({
         onWorkflowDueAtChange?.(previousEndAt)
       }
     })
+  }
+
+  const openQuickTaskModal = () => {
+    setQuickTaskDraft(buildQuickTaskDraft())
+    setQuickTaskOpen(true)
+  }
+
+  const handleConfirmQuickTask = async () => {
+    const taskTitle = String(quickTaskDraft.task_title || '').trim()
+    const assigneeUserId = Number(quickTaskDraft.assignee_user_id)
+    const [expectedStartDate, expectedCompletionDate] = Array.isArray(quickTaskDraft.schedule)
+      ? quickTaskDraft.schedule
+      : [null, null]
+
+    if (!taskTitle) {
+      message.warning('请输入任务标题')
+      return
+    }
+    if (!Number.isInteger(assigneeUserId) || assigneeUserId <= 0) {
+      message.warning('请选择执行人')
+      return
+    }
+    if (!expectedStartDate || !expectedCompletionDate) {
+      message.warning('请选择预期开始和结束时间')
+      return
+    }
+
+    const saved = await onQuickCreateTask?.({
+      task_title: taskTitle,
+      assignee_user_id: assigneeUserId,
+      expected_start_date: expectedStartDate.format('YYYY-MM-DD'),
+      expected_completion_date: expectedCompletionDate.format('YYYY-MM-DD'),
+    })
+    if (saved) {
+      setQuickTaskOpen(false)
+      setQuickTaskDraft(buildQuickTaskDraft())
+    }
   }
 
   const updateTaskDraft = (taskId, patch) => {
@@ -191,8 +256,8 @@ function DemandNodeInspector({
   }
 
   const handleSaveTask = async (task) => {
-    const taskId = Number(task?.id)
-    if (!Number.isInteger(taskId) || taskId <= 0) return
+    const taskId = getTaskDraftKey(task)
+    if (!taskId) return
     const baseDraft = createTaskDraft(task)
     const draft = taskDrafts?.[taskId] || baseDraft
     if (!isTaskDraftDirty(baseDraft, draft)) return
@@ -241,21 +306,20 @@ function DemandNodeInspector({
 
             <div className="demand-node-inspector__info-grid">
               <div className="demand-node-inspector__info-cell">
-                <span className="demand-node-inspector__label">参与人</span>
+                <span className="demand-node-inspector__label">节点负责人</span>
                 {canManageWorkflow ? (
                   <Select
-                    mode="multiple"
                     showSearch
                     optionFilterProp="label"
-                    value={workflowParticipantUserIds}
+                    value={workflowParticipantUserIds?.[0]}
                     options={workflowAssigneeOptions}
-                    placeholder="选择参与人"
+                    placeholder="选择节点负责人"
                     disabled={!canEditArrangement}
                     onChange={handleParticipantsChange}
                   />
                 ) : (
                   <Text className="demand-node-inspector__value-text">
-                    {participantNames.length ? participantNames.join('、') : node.assignee_name || '-'}
+                    {node.assignee_name || '-'}
                   </Text>
                 )}
               </div>
@@ -280,6 +344,16 @@ function DemandNodeInspector({
               </div>
 
               <div className="demand-node-inspector__info-cell">
+                {canManageWorkflow ? (
+                  <Button
+                    size="small"
+                    className="demand-node-inspector__quick-task-btn"
+                    disabled={!canQuickCreateTask}
+                    onClick={openQuickTaskModal}
+                  >
+                    快速添加任务
+                  </Button>
+                ) : null}
                 <span className="demand-node-inspector__label">阶段整体用时</span>
                 <Text className="demand-node-inspector__value-text">{formatHours(stageTotalEstimatedHours)}</Text>
               </div>
@@ -292,7 +366,7 @@ function DemandNodeInspector({
                   {selectedWorkflowNodeTasks.map((item) => {
                     const normalizedStatus = String(item?.status || '').toUpperCase()
                     const metaText = [item.assignee_name || '-', getTaskSourceText(item)].filter(Boolean).join(' · ')
-                    const taskId = Number(item?.id)
+                    const taskId = getTaskDraftKey(item)
                     const baseTaskDraft = createTaskDraft(item)
                     const taskDraft = taskDrafts?.[taskId] || baseTaskDraft
                     const taskRangeValue = [
@@ -317,12 +391,20 @@ function DemandNodeInspector({
                       '-',
                     )
                     const taskEstimatedHours = formatHours(taskDraft.personal_estimated_hours)
-                    const isTaskUpdating = Number(workflowTaskUpdatingId) === taskId
+                    const isTaskUpdating = String(workflowTaskUpdatingId || '') === String(taskId)
                     const isTaskClosed = normalizedStatus === 'DONE' || normalizedStatus === 'CANCELLED'
                     const isTaskDirty = isTaskDraftDirty(baseTaskDraft, taskDraft)
                     const isManualLogTask = String(item?.source_type || '').trim().toUpperCase() === 'MANUAL_LOG'
-                    const canEditCurrentTask = canEditTaskDetails && !isTaskUpdating && !isTaskClosed && !isManualLogTask
+                    const canEditManualLogTask =
+                      isManualLogTask &&
+                      !isTaskUpdating &&
+                      !isTaskClosed &&
+                      Number(item?.assignee_user_id) > 0 &&
+                      Number(item?.assignee_user_id) === currentUserId
+                    const canEditCurrentTask =
+                      (isManualLogTask ? canEditManualLogTask : canEditTaskDetails) && !isTaskUpdating && !isTaskClosed
                     const canSaveCurrentTask = canEditCurrentTask && isTaskDirty
+                    const canShowTaskEditor = canManageWorkflow || canEditManualLogTask
 
                     return (
                       <div key={String(item.id)} className="demand-node-inspector__task-item">
@@ -330,11 +412,11 @@ function DemandNodeInspector({
                           <div className="demand-node-inspector__task-name">{item.task_title || `任务 #${item.id}`}</div>
                           <div className="demand-node-inspector__task-meta">{metaText || '-'}</div>
                           <div
-                            className={`demand-node-inspector__task-aux${canManageWorkflow ? ' demand-node-inspector__task-aux--editable' : ''}`}
+                            className={`demand-node-inspector__task-aux${canShowTaskEditor ? ' demand-node-inspector__task-aux--editable' : ''}`}
                           >
                             <span className="demand-node-inspector__task-aux-text">{`排期 ${taskStartDate} ~ ${taskEndDate}`}</span>
                             <span className="demand-node-inspector__task-aux-text">{`预估 ${taskEstimatedHours}`}</span>
-                            {canManageWorkflow ? (
+                            {canShowTaskEditor ? (
                               <>
                                 <span className="demand-node-inspector__task-aux-divider">|</span>
                                 <RangePicker
@@ -396,6 +478,65 @@ function DemandNodeInspector({
           </div>
         </div>
       ) : null}
+      <Modal
+        title="快速添加任务"
+        open={quickTaskOpen}
+        onCancel={() => setQuickTaskOpen(false)}
+        onOk={handleConfirmQuickTask}
+        confirmLoading={quickCreateTaskSubmitting}
+        okText="创建任务"
+        cancelText="取消"
+        destroyOnHidden
+      >
+        <div className="demand-node-inspector__quick-task-form">
+          <div className="demand-node-inspector__quick-task-field">
+            <span className="demand-node-inspector__label">任务标题</span>
+            <Input
+              value={quickTaskDraft.task_title}
+              maxLength={120}
+              placeholder="请输入任务标题"
+              onChange={(event) =>
+                setQuickTaskDraft((prev) => ({
+                  ...prev,
+                  task_title: event.target.value,
+                }))
+              }
+            />
+          </div>
+
+          <div className="demand-node-inspector__quick-task-field">
+            <span className="demand-node-inspector__label">执行人</span>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              value={quickTaskDraft.assignee_user_id}
+              options={workflowAssigneeOptions}
+              placeholder="请选择执行人"
+              onChange={(value) =>
+                setQuickTaskDraft((prev) => ({
+                  ...prev,
+                  assignee_user_id: value,
+                }))
+              }
+            />
+          </div>
+
+          <div className="demand-node-inspector__quick-task-field">
+            <span className="demand-node-inspector__label">排期</span>
+            <RangePicker
+              value={quickTaskDraft.schedule}
+              format="YYYY-MM-DD"
+              allowEmpty={[false, false]}
+              onChange={(dates) =>
+                setQuickTaskDraft((prev) => ({
+                  ...prev,
+                  schedule: Array.isArray(dates) ? dates : [null, null],
+                }))
+              }
+            />
+          </div>
+        </div>
+      </Modal>
     </WorkflowInspector>
   )
 }

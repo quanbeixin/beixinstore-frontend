@@ -227,6 +227,38 @@
   font-weight: 600;
 }
 
+.demand-node-inspector__quick-task-btn {
+  height: 26px;
+  padding-inline: 10px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #35518a;
+  border-color: rgba(157, 179, 222, 0.9);
+  background: rgba(244, 248, 255, 0.92);
+  box-shadow: none;
+}
+
+.demand-node-inspector__quick-task-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.demand-node-inspector__quick-task-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.demand-node-inspector__quick-task-field .ant-input,
+.demand-node-inspector__quick-task-field .ant-select-selector,
+.demand-node-inspector__quick-task-field .ant-picker {
+  border-radius: 10px;
+  border-color: #d9e3f2;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .demand-node-inspector__panel,
   .demand-node-inspector__task-item,

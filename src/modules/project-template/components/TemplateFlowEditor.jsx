@@ -1,4 +1,4 @@
-import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import { Button, Card, Input, Select, Space, Tag, Typography } from 'antd'
 import { WorkflowGraph } from '../../workflow'
 
@@ -16,6 +16,7 @@ function TemplateFlowEditor({
   onTemplateDescriptionChange,
   onTemplateStatusChange,
   onBack,
+  onAddNode,
   onSave,
 }) {
   return (
@@ -44,9 +45,14 @@ function TemplateFlowEditor({
                 返回列表
               </Button>
               {canManage ? (
-                <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={onSave}>
-                  保存模板
-                </Button>
+                <>
+                  <Button icon={<PlusOutlined />} onClick={onAddNode}>
+                    新增节点
+                  </Button>
+                  <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={onSave}>
+                    保存模板
+                  </Button>
+                </>
               ) : null}
             </Space>
           </div>

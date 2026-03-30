@@ -57,6 +57,18 @@ export function getDemandMembersApi(demandId) {
   return request.get(`/work/demands/${demandId}/members`)
 }
 
+export function getDemandCommunicationsApi(demandId, params) {
+  return request.get(`/work/demands/${demandId}/communications`, { params })
+}
+
+export function createDemandCommunicationApi(demandId, payload) {
+  return request.post(`/work/demands/${demandId}/communications`, payload)
+}
+
+export function deleteDemandCommunicationApi(demandId, communicationId) {
+  return request.delete(`/work/demands/${demandId}/communications/${communicationId}`)
+}
+
 export function addDemandMemberApi(demandId, payload) {
   return request.post(`/work/demands/${demandId}/members`, payload)
 }
@@ -180,6 +192,8 @@ export function createWorkLogApi(payload) {
 }
 
 export function createOwnerAssignedLogApi(payload) {
+  clearCache('workbench-me')
+  clearCacheByPrefix('logs-')
   return request.post('/work/logs/owner-assign', payload)
 }
 

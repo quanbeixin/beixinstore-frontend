@@ -97,16 +97,21 @@ function TemplateNodeInspector({
       return
     }
 
+    const currentIncomingKeys = Array.isArray(node?.meta?.incomingKeys) ? node.meta.incomingKeys : []
+    const currentParticipantRoles = Array.isArray(node?.meta?.participantRoles) ? node.meta.participantRoles : []
+
     onChangeNode?.(node.id, {
-      title: allValues?.title,
-      key: allValues?.key,
-      type: allValues?.type,
-      phaseKey: allValues?.phaseKey,
+      title: allValues?.title ?? node.title,
+      key: allValues?.key ?? node.key,
+      type: allValues?.type ?? node.type,
+      phaseKey: allValues?.phaseKey ?? node.phaseKey,
       meta: {
         ...(node.meta || {}),
-        description: allValues?.description,
-        incomingKeys: Array.isArray(allValues?.incomingKeys) ? allValues.incomingKeys : [],
-        participantRoles: Array.isArray(allValues?.participantRoles) ? allValues.participantRoles : [],
+        description: allValues?.description ?? node.meta?.description,
+        incomingKeys: Array.isArray(allValues?.incomingKeys) ? allValues.incomingKeys : currentIncomingKeys,
+        participantRoles: Array.isArray(allValues?.participantRoles)
+          ? allValues.participantRoles
+          : currentParticipantRoles,
       },
     })
 
@@ -128,6 +133,7 @@ function TemplateNodeInspector({
           <Form form={form} layout="vertical" disabled={!editable} onValuesChange={handleValuesChange}>
             <Tabs
               defaultActiveKey="basic"
+              destroyOnHidden={false}
               items={[
                 {
                   key: 'basic',

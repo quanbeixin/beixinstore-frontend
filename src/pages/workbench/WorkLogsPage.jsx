@@ -173,6 +173,35 @@ const ACTIVE_ITEM_ACTION_BUTTON_STYLE = {
   fontSize: 12,
   fontWeight: 500,
 }
+const ACTIVE_ITEM_META_ROW_STYLE = {
+  marginTop: 8,
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 6,
+}
+const ACTIVE_ITEM_META_PILL_STYLE = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  maxWidth: '100%',
+  padding: '2px 8px',
+  borderRadius: 999,
+  border: '1px solid #e4e7ec',
+  background: '#f8fafc',
+  color: '#667085',
+  fontSize: 11,
+  lineHeight: 1.45,
+}
+const DETAIL_TIMELINE_MISSING_ROW_STYLE = {
+  background: 'linear-gradient(180deg, #fffdf6 0%, #fffaf0 100%)',
+}
+const DETAIL_TIMELINE_ACTION_BUTTON_STYLE = {
+  height: 24,
+  paddingInline: 6,
+  borderRadius: 6,
+  fontSize: 11,
+  fontWeight: 500,
+  color: '#667085',
+}
 const ACTIVE_CARD_BASE_STYLE = {
   borderRadius: 10,
   padding: 10,
@@ -296,6 +325,13 @@ function getLastWeeklyRange() {
 function toNumber(value, fallback = 0) {
   const num = Number(value)
   return Number.isFinite(num) ? num : fallback
+}
+
+function getTaskSourceLabel(source) {
+  const normalizedSource = String(source || '').trim().toUpperCase()
+  if (normalizedSource === 'OWNER_ASSIGN') return 'Owner指派'
+  if (normalizedSource === 'WORKFLOW_AUTO') return '流程待办'
+  return '自主填报'
 }
 
 function formatDateOnly(value) {
@@ -634,6 +670,7 @@ function WorkLogs({ mode = 'dashboard' }) {
   const [actualModalOpen, setActualModalOpen] = useState(false)
   const [actualModalMode, setActualModalMode] = useState('full')
   const [dailyEntryModalOpen, setDailyEntryModalOpen] = useState(false)
+  const [dailyEntryModalMode, setDailyEntryModalMode] = useState('today')
   const [detailModalOpen, setDetailModalOpen] = useState(false)
   const [hoursDetailModal, setHoursDetailModal] = useState({ open: false, type: 'planned' })
   const [dailyEntrySubmitting, setDailyEntrySubmitting] = useState(false)
@@ -675,6 +712,7 @@ function WorkLogs({ mode = 'dashboard' }) {
   const selectedActualDemandId = Form.useWatch('demand_id', actualForm)
   const selectedActualPhaseKey = Form.useWatch('phase_key', actualForm)
   const actualModalIsQuickEdit = actualModalMode === 'quick'
+  const dailyEntryModalIsDetailEdit = dailyEntryModalMode === 'detail'
 
   const selectedItemType = useMemo(
     () => itemTypes.find((item) => Number(item.id) === Number(selectedTypeId)) || null,
@@ -1290,18 +1328,27 @@ function WorkLogs({ mode = 'dashboard' }) {
 
   useEffect(() => {
     if (!dailyEntryModalOpen || !operatingLog) return
+    const isDetailEdit = dailyEntryModalMode === 'detail'
+    const defaultEntryDate = isDetailEdit
+      ? String(operatingLog?.entry_date || '').trim() || getTodayDateString()
+      : getTodayDateString()
+    const hasDetailActual = Number.isFinite(Number(operatingLog?.detail_entry_actual_hours))
     const hasTodayActual = Number.isFinite(Number(operatingLog?.today_actual_hours))
-    const defaultActualHours = hasTodayActual
-      ? toNumber(operatingLog?.today_actual_hours, 0)
-      : toNumber(operatingLog?.today_planned_hours, 0) > 0
-        ? toNumber(operatingLog?.today_planned_hours, 0)
-        : 0
+    const defaultActualHours = isDetailEdit
+      ? hasDetailActual
+        ? toNumber(operatingLog?.detail_entry_actual_hours, 0)
+        : toNumber(operatingLog?.today_planned_hours, 0)
+      : hasTodayActual
+        ? toNumber(operatingLog?.today_actual_hours, 0)
+        : toNumber(operatingLog?.today_planned_hours, 0) > 0
+          ? toNumber(operatingLog?.today_planned_hours, 0)
+          : 0
     dailyEntryForm.setFieldsValue({
-      entry_date: getTodayDateString(),
+      entry_date: defaultEntryDate,
       actual_hours: defaultActualHours,
-      description: '',
+      description: isDetailEdit ? String(operatingLog?.detail_entry_description || '') : '',
     })
-  }, [dailyEntryForm, dailyEntryModalOpen, operatingLog])
+  }, [dailyEntryForm, dailyEntryModalMode, dailyEntryModalOpen, operatingLog])
 
   const reloadCurrentPageData = useCallback(async () => {
     if (isHistoryPage) {
@@ -1426,21 +1473,36 @@ function WorkLogs({ mode = 'dashboard' }) {
 
   const openDailyEntryModal = (record) => {
     setOperatingLog(record)
+    setDailyEntryModalMode('today')
+    setDailyEntryModalOpen(true)
+  }
+
+  const openDetailDayEntryModal = (timelineRow) => {
+    if (!detailLog?.id || !timelineRow?.date) return
+    const latestEntry = Array.isArray(timelineRow?.entry_details) ? timelineRow.entry_details[0] || null : null
+    setOperatingLog({
+      ...detailLog,
+      entry_date: timelineRow.date,
+      detail_entry_actual_hours:
+        latestEntry?.actual_hours !== undefined && latestEntry?.actual_hours !== null
+          ? latestEntry.actual_hours
+          : timelineRow.actual_hours,
+      detail_entry_description: String(latestEntry?.description || '').trim(),
+      detail_entry_count: Number(timelineRow?.entry_count || 0),
+    })
+    setDailyEntryModalMode('detail')
     setDailyEntryModalOpen(true)
   }
 
   const closeDailyEntryModal = () => {
     dailyEntryForm.resetFields()
     setDailyEntryModalOpen(false)
+    setDailyEntryModalMode('today')
     setOperatingLog(null)
   }
 
-  const openDetailModal = async (record) => {
-    if (!record?.id) return
-    setDetailLog(record)
-    setDetailTimeline([])
-    setDetailModalOpen(true)
-    setDetailLoading(true)
+  const loadDetailTimeline = useCallback(async (record) => {
+    if (!record?.id) return false
     try {
       const rangeParams = buildDetailDateRangeParams(record)
       const [planResult, entryResult] = await Promise.all([
@@ -1450,17 +1512,30 @@ function WorkLogs({ mode = 'dashboard' }) {
 
       if (!planResult?.success) {
         message.error(planResult?.message || '获取事项日计划失败')
-        return
+        return false
       }
       if (!entryResult?.success) {
         message.error(entryResult?.message || '获取事项日投入失败')
-        return
+        return false
       }
 
       const timeline = buildDailyTimeline(planResult.data || [], entryResult.data || [])
       setDetailTimeline(timeline)
+      return true
     } catch (error) {
       message.error(error?.message || '获取事项日明细失败')
+      return false
+    }
+  }, [])
+
+  const openDetailModal = async (record) => {
+    if (!record?.id) return
+    setDetailLog(record)
+    setDetailTimeline([])
+    setDetailModalOpen(true)
+    setDetailLoading(true)
+    try {
+      await loadDetailTimeline(record)
     } finally {
       setDetailLoading(false)
     }
@@ -1478,8 +1553,13 @@ function WorkLogs({ mode = 'dashboard' }) {
     try {
       setDailyEntrySubmitting(true)
       const values = await dailyEntryForm.validateFields()
+      const entryDate = String(values.entry_date || getTodayDateString()).trim()
+      if (entryDate > getTodayDateString()) {
+        message.warning('不能填写未来日期的投入')
+        return
+      }
       const result = await createLogDailyEntryApi(operatingLog.id, {
-        entry_date: values.entry_date || getTodayDateString(),
+        entry_date: entryDate,
         actual_hours: values.actual_hours,
         description: values.description || '',
       })
@@ -1488,15 +1568,27 @@ function WorkLogs({ mode = 'dashboard' }) {
         return
       }
 
-      const savedEntryDate = String(values.entry_date || getTodayDateString()).trim()
+      const savedEntryDate = entryDate
       const todayDate = getTodayDateString()
-      if (savedEntryDate && savedEntryDate !== todayDate) {
-        message.success('投入已登记（仅填报日期为今天时会联动今日汇总）')
+      if (dailyEntryModalMode === 'detail') {
+        message.success(Number(operatingLog?.detail_entry_count || 0) > 0 ? '当日投入已调整' : '当日投入已补填')
       } else {
-        message.success('今日投入已登记')
+        if (savedEntryDate && savedEntryDate !== todayDate) {
+          message.success('投入已登记（仅填报日期为今天时会联动今日汇总）')
+        } else {
+          message.success('今日投入已登记')
+        }
       }
       closeDailyEntryModal()
       await reloadCurrentPageData()
+      if (detailModalOpen && detailLog?.id) {
+        setDetailLoading(true)
+        try {
+          await loadDetailTimeline(detailLog)
+        } finally {
+          setDetailLoading(false)
+        }
+      }
     } catch (error) {
       if (!error?.errorFields) {
         message.error(error?.message || '登记今日投入失败')
@@ -1849,6 +1941,15 @@ function WorkLogs({ mode = 'dashboard' }) {
       dataIndex: 'date',
       key: 'date',
       width: 120,
+      render: (value, record) => {
+        const isMissingEntry = toNumber(record?.entry_count, 0) === 0
+        return (
+          <Space size={6}>
+            <span>{value || '-'}</span>
+            {isMissingEntry ? <Tag color="gold">待补填</Tag> : null}
+          </Space>
+        )
+      },
     },
     {
       title: '计划(h)',
@@ -1892,6 +1993,26 @@ function WorkLogs({ mode = 'dashboard' }) {
           </Tooltip>
         )
       },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (_, record) =>
+        canUpdate ? (
+          <Button
+            type="link"
+            size="small"
+            onClick={() => openDetailDayEntryModal(record)}
+            disabled={String(record?.date || '').trim() > getTodayDateString()}
+            style={{
+              ...DETAIL_TIMELINE_ACTION_BUTTON_STYLE,
+              color: toNumber(record?.entry_count, 0) > 0 ? '#98a2b3' : '#b54708',
+            }}
+          >
+            {toNumber(record?.entry_count, 0) > 0 ? '调整投入' : '补填投入'}
+          </Button>
+        ) : null,
     },
   ]
 
@@ -2522,6 +2643,28 @@ function WorkLogs({ mode = 'dashboard' }) {
                                   >
                                     {item.description || '（暂无工作描述）'}
                                   </div>
+                                  <div style={ACTIVE_ITEM_META_ROW_STYLE}>
+                                    <span style={ACTIVE_ITEM_META_PILL_STYLE}>{`来源：${getTaskSourceLabel(item.task_source)}`}</span>
+                                    {item.assigned_by_name ? (
+                                      <span
+                                        style={{
+                                          ...ACTIVE_ITEM_META_PILL_STYLE,
+                                          maxWidth: 220,
+                                        }}
+                                      >
+                                        <span
+                                          style={{
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                          }}
+                                          title={`指派人：${item.assigned_by_name}`}
+                                        >
+                                          {`指派人：${item.assigned_by_name}`}
+                                        </span>
+                                      </span>
+                                    ) : null}
+                                  </div>
                                 </div>
 
                                 <div
@@ -3051,6 +3194,9 @@ function WorkLogs({ mode = 'dashboard' }) {
             columns={detailColumns}
             dataSource={detailTimeline}
             scroll={{ x: 760 }}
+            onRow={(record) => ({
+              style: toNumber(record?.entry_count, 0) === 0 ? DETAIL_TIMELINE_MISSING_ROW_STYLE : undefined,
+            })}
           />
         )}
       </Modal>
@@ -3262,7 +3408,15 @@ function WorkLogs({ mode = 'dashboard' }) {
       </Modal>
 
       <Modal
-        title={operatingLog ? `填报今日投入：#${operatingLog.id}` : '填报今日投入'}
+        title={
+          dailyEntryModalIsDetailEdit
+            ? operatingLog
+              ? `${Number(operatingLog?.detail_entry_count || 0) > 0 ? '调整当日投入' : '补填当日投入'}：#${operatingLog.id}`
+              : '调整当日投入'
+            : operatingLog
+              ? `填报今日投入：#${operatingLog.id}`
+              : '填报今日投入'
+        }
         open={dailyEntryModalOpen}
         onCancel={closeDailyEntryModal}
         onOk={handleCreateDailyEntry}
@@ -3277,13 +3431,17 @@ function WorkLogs({ mode = 'dashboard' }) {
             name="entry_date"
             rules={[{ required: true, message: '请选择投入日期' }]}
           >
-            <Input type="date" />
+            <Input type="date" disabled={dailyEntryModalIsDetailEdit} />
           </Form.Item>
           <Form.Item
             label="实际用时(h)"
             name="actual_hours"
             rules={[{ required: true, message: '请输入实际用时' }]}
-            extra="同一事项在同一天重复填报时，以最后一次提交为准（不会累加）"
+            extra={
+              dailyEntryModalIsDetailEdit
+                ? '当前调整的是明细中该日期的实际投入，保存后会覆盖当天最后一次记录'
+                : '同一事项在同一天重复填报时，以最后一次提交为准（不会累加）'
+            }
           >
             <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
           </Form.Item>

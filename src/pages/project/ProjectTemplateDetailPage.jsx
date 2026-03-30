@@ -33,6 +33,7 @@ const FALLBACK_PARTICIPANT_ROLE_OPTIONS = [
   { value: 'DESIGNER', label: '设计' },
   { value: 'FRONTEND_DEV', label: '前端开发' },
   { value: 'BACKEND_DEV', label: '后端开发' },
+  { value: 'DEVOPS_DEV', label: '运维开发' },
   { value: 'BIGDATA_DEV', label: '大数据开发' },
   { value: 'ALGORITHM_DEV', label: '算法开发' },
   { value: 'QA', label: '测试' },
@@ -330,6 +331,7 @@ function ProjectTemplateDetailPage() {
             onTemplateDescriptionChange={handleTemplateDescriptionChange}
             onTemplateStatusChange={handleTemplateStatusChange}
             onBack={() => navigate('/project-templates')}
+            onAddNode={addNode}
             onSave={handleSave}
           />
         </div>

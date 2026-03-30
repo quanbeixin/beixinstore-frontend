@@ -27,6 +27,7 @@ import { getDictItemsApi } from '../../api/configDict'
 import { getUsersApi } from '../../api/users'
 import {
   assignDemandWorkflowNodeApi,
+  createOwnerAssignedLogApi,
   createWorkDemandApi,
   deleteWorkDemandApi,
   getDemandWorkflowApi,
@@ -42,12 +43,14 @@ import {
   updateDemandWorkflowNodeHoursApi,
   updateDemandWorkflowTaskHoursApi,
   updateWorkDemandApi,
+  updateWorkLogApi,
 } from '../../api/work'
 import {
   DemandNodeInspector,
   getDemandWorkflowNodeDisplayName,
   mapDemandWorkflowToGraphNodes,
 } from '../../modules/demand-workflow'
+import { DemandCommunicationPanel } from '../../modules/demand-communication'
 import { DemandBugPanel } from '../../modules/bug'
 import { WorkflowGraph } from '../../modules/workflow'
 import { getCurrentUser, getUserPreferences, hasPermission, hasRole } from '../../utils/access'
@@ -68,7 +71,7 @@ const STATUS_OPTIONS = [
   { label: '待开始', value: 'TODO' },
   { label: '进行中', value: 'IN_PROGRESS' },
   { label: '已完成', value: 'DONE' },
-  { label: '已取消', value: 'CANCELLED' },
+  { label: '已中止', value: 'CANCELLED' },
 ]
 
 const PRIORITY_OPTIONS = [
@@ -90,6 +93,7 @@ const FALLBACK_PARTICIPANT_ROLE_OPTIONS = [
   { value: 'DESIGNER', label: '设计' },
   { value: 'FRONTEND_DEV', label: '前端开发' },
   { value: 'BACKEND_DEV', label: '后端开发' },
+  { value: 'DEVOPS_DEV', label: '运维开发' },
   { value: 'BIGDATA_DEV', label: '大数据开发' },
   { value: 'ALGORITHM_DEV', label: '算法开发' },
   { value: 'QA', label: '测试' },
@@ -139,6 +143,28 @@ function getHealthTagColor(healthStatus) {
 function getHealthLabel(healthStatus) {
   const target = HEALTH_STATUS_OPTIONS.find((item) => item.value === healthStatus)
   return target?.label || healthStatus || '健康'
+}
+
+function getDemandPhaseTagColor(phaseKey, phaseName) {
+  const text = `${String(phaseKey || '').trim().toUpperCase()} ${String(phaseName || '').trim().toUpperCase()}`
+  if (!text.trim()) return 'default'
+  if (text.includes('BUG')) return 'volcano'
+  if (text.includes('TEST') || text.includes('测试') || text.includes('QA')) return 'gold'
+  if (
+    text.includes('FRONTEND') ||
+    text.includes('BACKEND') ||
+    text.includes('DEV') ||
+    text.includes('开发') ||
+    text.includes('研发')
+  ) {
+    return 'geekblue'
+  }
+  if (text.includes('DESIGN') || text.includes('设计') || text.includes('UI')) return 'cyan'
+  if (text.includes('PRODUCT') || text.includes('需求') || text.includes('产品') || text.includes('PRD')) return 'purple'
+  if (text.includes('ACCEPT') || text.includes('验收') || text.includes('REVIEW') || text.includes('评审')) return 'lime'
+  if (text.includes('RELEASE') || text.includes('上线') || text.includes('发布') || text.includes('LAUNCH')) return 'green'
+  if (text.includes('OPERAT') || text.includes('运营') || text.includes('投放')) return 'magenta'
+  return 'blue'
 }
 
 function toNullableDateTimeValue(value) {
@@ -286,6 +312,8 @@ function WorkDemands() {
   const templateFallbackLoadingRef = useRef(new Set())
   const [workflowAssignees, setWorkflowAssignees] = useState([])
   const [businessGroups, setBusinessGroups] = useState([])
+  const [businessGroupCounts, setBusinessGroupCounts] = useState([])
+  const [businessGroupAllCount, setBusinessGroupAllCount] = useState(0)
   const [participantRoleItems, setParticipantRoleItems] = useState([])
 
   const [page, setPage] = useState(1)
@@ -334,6 +362,7 @@ function WorkDemands() {
   const [workflowParticipantUserIds, setWorkflowParticipantUserIds] = useState([])
   const [workflowDueAt, setWorkflowDueAt] = useState(null)
   const [workflowExpectedStartAt, setWorkflowExpectedStartAt] = useState(null)
+  const [workflowQuickTaskSubmitting, setWorkflowQuickTaskSubmitting] = useState(false)
   const [detailStatus, setDetailStatus] = useState('')
   const [detailTabKey, setDetailTabKey] = useState('basic')
   const selectedWorkflowNodeKeyRef = useRef('')
@@ -408,6 +437,14 @@ function WorkDemands() {
 
   const workflowTotalEstimatedHours = useMemo(() => {
     const tasks = Array.isArray(workflowData?.tasks) ? workflowData.tasks : []
+    const nodes = Array.isArray(workflowData?.nodes) ? workflowData.nodes : []
+    const relatedPhaseKeySet = new Set()
+    nodes.forEach((item) => {
+      getNodeRelatedPhaseKeySet(item).forEach((key) => {
+        if (key) relatedPhaseKeySet.add(key)
+      })
+    })
+
     let totalTaskHours = 0
     let hasTaskHours = false
     tasks.forEach((item) => {
@@ -418,9 +455,22 @@ function WorkDemands() {
       totalTaskHours += hours
       hasTaskHours = true
     })
+
+    ;(detailLogs || []).forEach((item) => {
+      const taskSource = String(item?.task_source || '').trim().toUpperCase()
+      if (taskSource === 'WORKFLOW_AUTO') return
+      const status = String(item?.log_status || '').toUpperCase()
+      if (status === 'CANCELLED') return
+      const phaseKey = String(item?.phase_key || '').trim().toUpperCase()
+      if (!phaseKey || !relatedPhaseKeySet.has(phaseKey)) return
+      const hours = Number(item?.personal_estimate_hours)
+      if (!Number.isFinite(hours) || hours <= 0) return
+      totalTaskHours += hours
+      hasTaskHours = true
+    })
+
     if (hasTaskHours) return Number(totalTaskHours.toFixed(1))
 
-    const nodes = Array.isArray(workflowData?.nodes) ? workflowData.nodes : []
     let totalNodeHours = 0
     let hasNodeHours = false
     nodes.forEach((item) => {
@@ -434,7 +484,7 @@ function WorkDemands() {
       hasNodeHours = true
     })
     return hasNodeHours ? Number(totalNodeHours.toFixed(1)) : 0
-  }, [workflowData])
+  }, [detailLogs, workflowData])
 
   const currentWorkflowNodeLabel = useMemo(() => {
     if (currentWorkflowNodes.length > 1) {
@@ -532,6 +582,29 @@ function WorkDemands() {
         label: item.item_name || item.item_code,
       })),
     [businessGroups],
+  )
+
+  const businessGroupCountMap = useMemo(() => {
+    const map = new Map()
+    ;(businessGroupCounts || []).forEach((item) => {
+      map.set(String(item?.business_group_code || ''), Number(item?.total || 0))
+    })
+    return map
+  }, [businessGroupCounts])
+
+  const businessGroupTabItems = useMemo(
+    () => [
+      { key: '__ALL__', label: `全部 (${Number(businessGroupAllCount || 0)})` },
+      ...businessGroupOptions.map((item) => {
+        const key = String(item.value || '')
+        const count = Number(businessGroupCountMap.get(key) || 0)
+        return {
+          key,
+          label: `${item.label} (${count})`,
+        }
+      }),
+    ],
+    [businessGroupAllCount, businessGroupCountMap, businessGroupOptions],
   )
 
   const participantRoleOptions = useMemo(() => {
@@ -674,20 +747,12 @@ function WorkDemands() {
   }, [detailLogs, selectedWorkflowNode, workflowData])
 
   const selectedWorkflowNodeAssigneeIds = useMemo(() => {
-    const fromTasks = Array.from(
-      new Set(
-        (selectedWorkflowNodeTasks || [])
-          .map((item) => Number(item?.assignee_user_id))
-          .filter((userId) => Number.isInteger(userId) && userId > 0),
-      ),
-    )
-    if (fromTasks.length > 0) return fromTasks
     const nodeAssigneeUserId = Number(selectedWorkflowNode?.assignee_user_id)
     if (Number.isInteger(nodeAssigneeUserId) && nodeAssigneeUserId > 0) {
       return [nodeAssigneeUserId]
     }
     return []
-  }, [selectedWorkflowNode, selectedWorkflowNodeTasks])
+  }, [selectedWorkflowNode])
 
   const loadUsers = useCallback(async () => {
     if (!canView || !canViewUsers) {
@@ -821,6 +886,8 @@ function WorkDemands() {
 
       setDemands(result.data?.list || [])
       setTotal(result.data?.total || 0)
+      setBusinessGroupAllCount(Number(result.data?.all_total || 0))
+      setBusinessGroupCounts(Array.isArray(result.data?.group_counts) ? result.data.group_counts : [])
     } catch (error) {
       message.error(error?.message || '获取需求列表失败')
     } finally {
@@ -1181,16 +1248,7 @@ function WorkDemands() {
     }
     const normalizedNodeKey = String(selectedWorkflowNode.node_key || '').trim().toUpperCase()
     const persistedExpectedStartAt = selectedWorkflowNode.planned_start_time || selectedWorkflowNode.expected_start_date || selectedWorkflowNode.expected_start_at
-    const participantIds = Array.from(
-      new Set(
-        selectedWorkflowNodeTasks
-          .map((item) => Number(item?.assignee_user_id))
-          .filter((userId) => Number.isInteger(userId) && userId > 0),
-      ),
-    )
-    if (participantIds.length > 0) {
-      setWorkflowParticipantUserIds(participantIds)
-    } else if (selectedWorkflowNode.assignee_user_id) {
+    if (selectedWorkflowNode.assignee_user_id) {
       setWorkflowParticipantUserIds([Number(selectedWorkflowNode.assignee_user_id)])
     } else {
       setWorkflowParticipantUserIds([])
@@ -1203,7 +1261,7 @@ function WorkDemands() {
       return selectedWorkflowNodeKeyRef.current === normalizedNodeKey ? previousValue : null
     })
     selectedWorkflowNodeKeyRef.current = normalizedNodeKey
-  }, [selectedWorkflowNode, selectedWorkflowNodeTasks])
+  }, [selectedWorkflowNode])
 
   useEffect(() => {
     if (!requestedWorkflowNodeKey) return
@@ -1375,11 +1433,11 @@ function WorkDemands() {
           .map((item) => Number(item))
           .filter((userId) => Number.isInteger(userId) && userId > 0),
       ),
-    )
+    ).slice(0, 1)
 
     if (nextAssigneeUserIds.length === 0) {
       if (!options.skipMissingAssigneeWarning) {
-        message.warning('请选择参与人')
+        message.warning('请选择节点负责人')
       }
       return false
     }
@@ -1387,17 +1445,20 @@ function WorkDemands() {
     try {
       setWorkflowSubmitting(true)
       const result = await assignDemandWorkflowNodeApi(detailDemand.id, selectedWorkflowNode.node_key, {
-        assignee_user_ids: nextAssigneeUserIds,
+        assignee_user_id: nextAssigneeUserIds[0],
       })
       if (!result?.success) {
-        message.error(result?.message || '节点指派失败')
+        message.error(result?.message || '节点负责人保存失败')
         return false
       }
       setWorkflowData(result.data || null)
       setSelectedWorkflowNodeKey(selectedWorkflowNode.node_key)
+      if (!options.silent) {
+        message.success(result?.message || '节点负责人已更新')
+      }
       return true
     } catch (error) {
-      message.error(error?.message || '节点指派失败')
+      message.error(error?.message || '节点负责人保存失败')
       return false
     } finally {
       setWorkflowSubmitting(false)
@@ -1441,6 +1502,62 @@ function WorkDemands() {
     }
   }
 
+  const handleCreateWorkflowQuickTask = async (payload = {}) => {
+    if (!detailDemand?.id || !canManageWorkflow) return false
+    if (!selectedWorkflowNode?.node_key) {
+      message.warning('请先选择流程节点')
+      return false
+    }
+    if (!canAssignSelectedWorkflowNode) {
+      message.warning('当前节点不支持新增任务')
+      return false
+    }
+
+    const taskTitle = String(payload.task_title || '').trim()
+    const assigneeUserId = Number(payload.assignee_user_id)
+    const expectedStartDate = String(payload.expected_start_date || '').trim()
+    const expectedCompletionDate = String(payload.expected_completion_date || '').trim()
+
+    if (!taskTitle) {
+      message.warning('请输入任务标题')
+      return false
+    }
+    if (!Number.isInteger(assigneeUserId) || assigneeUserId <= 0) {
+      message.warning('请选择执行人')
+      return false
+    }
+    if (!expectedStartDate || !expectedCompletionDate) {
+      message.warning('请选择预期开始和结束时间')
+      return false
+    }
+
+    try {
+      setWorkflowQuickTaskSubmitting(true)
+      const result = await createOwnerAssignedLogApi({
+        create_scene: 'DEMAND_NODE_QUICK_ADD',
+        assignee_user_id: assigneeUserId,
+        description: taskTitle,
+        demand_id: detailDemand.id,
+        phase_key: selectedWorkflowNode.node_key || selectedWorkflowNode.phase_key,
+        expected_start_date: expectedStartDate,
+        expected_completion_date: expectedCompletionDate,
+        log_date: expectedStartDate,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '任务创建失败')
+        return false
+      }
+      await fetchDemandRelatedLogs(detailDemand.id)
+      message.success('任务已创建')
+      return true
+    } catch (error) {
+      message.error(error?.message || '任务创建失败')
+      return false
+    } finally {
+      setWorkflowQuickTaskSubmitting(false)
+    }
+  }
+
   const handleSubmitWorkflowNode = async () => {
     if (!detailDemand?.id || !canManageWorkflow) return
     if (!selectedWorkflowNode?.node_key) {
@@ -1470,8 +1587,22 @@ function WorkDemands() {
   }
 
   const handleUpdateWorkflowTask = async (taskId, payload = {}) => {
-    if (!detailDemand?.id || !canManageWorkflow || !taskId) return false
-    if (!isSelectedCurrentWorkflowNode) {
+    if (!detailDemand?.id || !taskId) return false
+    const selectedTask = (selectedWorkflowNodeTasks || []).find((item) => String(item?.id) === String(taskId))
+    const isManualLogTask = String(selectedTask?.source_type || '').trim().toUpperCase() === 'MANUAL_LOG'
+    const manualLogId = Number(selectedTask?.source_id)
+    const canEditManualLogTask =
+      isManualLogTask &&
+      Number(selectedTask?.assignee_user_id) > 0 &&
+      Number(selectedTask?.assignee_user_id) === Number(currentUser?.id)
+
+    if (!isManualLogTask && !canManageWorkflow) return false
+    if (isManualLogTask && !canEditManualLogTask) {
+      message.warning('仅事项执行人可编辑该工作台事项')
+      return false
+    }
+
+    if (!isManualLogTask && !isSelectedCurrentWorkflowNode) {
       message.warning('仅当前激活节点的子任务支持编辑')
       return false
     }
@@ -1494,14 +1625,20 @@ function WorkDemands() {
 
     try {
       setWorkflowTaskUpdatingId(taskId)
-      const result = await updateDemandWorkflowTaskHoursApi(detailDemand.id, taskId, nextPayload)
+      const result = isManualLogTask
+        ? await updateWorkLogApi(manualLogId, nextPayload)
+        : await updateDemandWorkflowTaskHoursApi(detailDemand.id, taskId, nextPayload)
       if (!result?.success) {
         message.error(result?.message || '子任务更新失败')
         return false
       }
-      setWorkflowData(result.data || null)
-      if (selectedWorkflowNode?.node_key) {
-        setSelectedWorkflowNodeKey(selectedWorkflowNode.node_key)
+      if (isManualLogTask) {
+        await fetchDemandRelatedLogs(detailDemand.id)
+      } else {
+        setWorkflowData(result.data || null)
+        if (selectedWorkflowNode?.node_key) {
+          setSelectedWorkflowNodeKey(selectedWorkflowNode.node_key)
+        }
       }
       message.success('子任务已更新')
       return true
@@ -1580,6 +1717,8 @@ function WorkDemands() {
     setPriorityFilter('')
     setPrioritySortOrder(undefined)
     setBusinessGroupFilter('')
+    setBusinessGroupAllCount(0)
+    setBusinessGroupCounts([])
     setOwnerFilter(undefined)
     setUpdatedRange([])
     setScopeFilter('all')
@@ -1645,6 +1784,21 @@ function WorkDemands() {
         render: (value) => <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>,
       },
       {
+        title: '需求阶段',
+        dataIndex: 'current_phase_name',
+        key: 'current_phase_name',
+        width: 150,
+        ellipsis: true,
+        render: (value, record) =>
+          value ? (
+            <Tag color={getDemandPhaseTagColor(record?.current_phase_key, value)} style={{ fontWeight: 600 }}>
+              {value}
+            </Tag>
+          ) : (
+            <Tag>未开始</Tag>
+          ),
+      },
+      {
         title: '优先级',
         dataIndex: 'priority',
         key: 'priority',
@@ -1653,6 +1807,13 @@ function WorkDemands() {
         sortOrder: prioritySortOrder,
         sortDirections: ['ascend', 'descend'],
         render: (value) => <Tag color={getPriorityColor(value)}>{value}</Tag>,
+      },
+      {
+        title: '预期上线时间',
+        dataIndex: 'expected_release_date',
+        key: 'expected_release_date',
+        width: 130,
+        render: (value) => formatBeijingDate(value),
       },
     ]
 
@@ -1671,13 +1832,6 @@ function WorkDemands() {
           key: 'total_actual_hours',
           width: 120,
           render: (value) => toNumber(value, 0).toFixed(1),
-        },
-        {
-          title: '预期上线日期',
-          dataIndex: 'expected_release_date',
-          key: 'expected_release_date',
-          width: 130,
-          render: (value) => formatBeijingDate(value),
         },
         {
           title: '最近更新',
@@ -1781,6 +1935,14 @@ function WorkDemands() {
               </Space>
             }
           >
+            <Tabs
+              activeKey={businessGroupFilter || '__ALL__'}
+              items={businessGroupTabItems}
+              onChange={(activeKey) => {
+                setBusinessGroupFilter(activeKey === '__ALL__' ? '' : activeKey)
+                setPage(1)
+              }}
+            />
             <Space wrap>
               <Search
                 allowClear
@@ -1847,19 +2009,6 @@ function WorkDemands() {
                 placeholder={['更新开始', '更新结束']}
               />
               <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                style={{ width: 180 }}
-                placeholder="业务组"
-                options={businessGroupOptions}
-                value={businessGroupFilter || undefined}
-                onChange={(value) => {
-                  setBusinessGroupFilter(value || '')
-                  setPage(1)
-                }}
-              />
-              <Select
                 style={{ width: 140 }}
                 value={scopeFilter}
                 options={[
@@ -1885,7 +2034,7 @@ function WorkDemands() {
               loading={loading}
               columns={demandColumns}
               dataSource={demands}
-              scroll={{ x: compactView ? 1540 : 2120 }}
+              scroll={{ x: compactView ? 1820 : 2380 }}
               pagination={{
                 current: page,
                 pageSize,
@@ -2179,16 +2328,17 @@ function WorkDemands() {
                         onWorkflowParticipantsChange={setWorkflowParticipantUserIds}
                         onWorkflowDueAtChange={setWorkflowDueAt}
                         onWorkflowExpectedStartAtChange={setWorkflowExpectedStartAt}
-                        onCommitWorkflowArrangement={(payload) =>
-                          payload?.assignee_user_ids !== undefined
-                            ? handleAssignWorkflowNode(payload, { silent: true, skipMissingAssigneeWarning: true })
-                            : handleSaveWorkflowNodeSchedule(payload)
+                        onSaveWorkflowOwner={(payload) =>
+                          handleAssignWorkflowNode(payload, { silent: true, skipMissingAssigneeWarning: true })
                         }
+                        onSaveWorkflowSchedule={handleSaveWorkflowNodeSchedule}
                         canAssignSelectedWorkflowNode={canAssignSelectedWorkflowNode}
                         onSubmitNode={handleSubmitWorkflowNode}
                         selectedWorkflowNodeTasks={selectedWorkflowNodeTasks}
                         workflowTaskUpdatingId={workflowTaskUpdatingId}
                         onUpdateWorkflowTask={handleUpdateWorkflowTask}
+                        onQuickCreateTask={handleCreateWorkflowQuickTask}
+                        quickCreateTaskSubmitting={workflowQuickTaskSubmitting}
                       />
                     </div>
                   </div>
@@ -2351,6 +2501,16 @@ function WorkDemands() {
                         </div>
                       </div>
                     </div>
+                  ),
+                },
+                {
+                  key: 'communications',
+                  label: '沟通记录',
+                  children: (
+                    <DemandCommunicationPanel
+                      demandId={detailDemand?.id || ''}
+                      canManage={canEditDemandRecord(detailDemand)}
+                    />
                   ),
                 },
                 {
