@@ -16,6 +16,7 @@ const Departments = lazy(() => import('./pages/system/DepartmentsPage'))
 const UserDepartments = lazy(() => import('./pages/system/UserDepartmentsPage'))
 const Options = lazy(() => import('./pages/system/OptionsPage'))
 const DemandInsightBoard = lazy(() => import('./pages/insight/DemandInsightBoardPage'))
+const DepartmentEfficiencyRanking = lazy(() => import('./pages/insight/DepartmentEfficiencyRankingPage'))
 const MemberRhythmBoard = lazy(() => import('./pages/insight/MemberRhythmBoardPage'))
 const WorkDemands = lazy(() => import('./pages/project/WorkDemandsPage'))
 const ProjectTemplates = lazy(() => import('./pages/project/ProjectTemplatesPage'))
@@ -48,6 +49,7 @@ const PAGE_COMPONENTS = {
   ownerWorkbench: OwnerWorkbench,
   personalSettings: PersonalSettings,
   demandInsightBoard: DemandInsightBoard,
+  departmentEfficiencyRanking: DepartmentEfficiencyRanking,
   memberRhythmBoard: MemberRhythmBoard,
   projectTemplates: ProjectTemplates,
   projectTemplateDetail: ProjectTemplateDetail,

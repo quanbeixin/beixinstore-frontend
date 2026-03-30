@@ -14,6 +14,21 @@ export const PRIVATE_ROUTES = [
   // requiredPermission: 'user.view'
   // requiredRoles: ['ADMIN', 'SUPER_ADMIN']
   {
+    path: '/efficiency/department-ranking',
+    componentKey: 'departmentEfficiencyRanking',
+    requiredPermission: null,
+    requiredRoles: ['ADMIN'],
+    page: {
+      title: '部门人效排行',
+      subtitle: '按部门查看成员投入排行、预估工时与实际工时分布。',
+    },
+    menu: {
+      section: 'efficiency',
+      label: '部门人效排行',
+      icon: 'dashboard',
+    },
+  },
+  {
     path: '/efficiency/demand',
     componentKey: 'demandInsightBoard',
     requiredPermission: null,
@@ -32,7 +47,7 @@ export const PRIVATE_ROUTES = [
     path: '/efficiency/member',
     componentKey: 'memberRhythmBoard',
     requiredPermission: null,
-    requiredRoles: ['SUPER_ADMIN'],
+    requiredRoles: ['ADMIN'],
     page: {
       title: '成员工作节奏',
       subtitle: '按成员和日期观察工作饱和度与投入节奏。',

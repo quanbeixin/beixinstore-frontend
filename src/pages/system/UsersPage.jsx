@@ -84,10 +84,11 @@ function highlightText(text, keyword) {
   return <>{parts}</>
 }
 
-function getUserChangeSnapshotRows(snapshot, statusOptions = []) {
+function getUserChangeSnapshotRows(snapshot, statusOptions = [], jobLevelOptions = []) {
   if (!snapshot || typeof snapshot !== 'object') return []
 
   const statusMap = new Map((statusOptions || []).map((item) => [item.item_code, item.item_name]))
+  const jobLevelMap = new Map((jobLevelOptions || []).map((item) => [item.item_code, item.item_name]))
   const roleNames = Array.isArray(snapshot.role_names)
     ? snapshot.role_names
     : String(snapshot.role_names || '')
@@ -100,6 +101,7 @@ function getUserChangeSnapshotRows(snapshot, statusOptions = []) {
     { key: 'real_name', label: '真实姓名', value: snapshot.real_name || '-' },
     { key: 'email', label: '邮箱', value: snapshot.email || '-' },
     { key: 'department_name', label: '部门', value: snapshot.department_name || '-' },
+    { key: 'job_level', label: '职级', value: jobLevelMap.get(snapshot.job_level) || snapshot.job_level || '-' },
     { key: 'status_code', label: '状态', value: statusMap.get(snapshot.status_code) || snapshot.status_code || '-' },
     {
       key: 'include_in_metrics',
@@ -122,6 +124,7 @@ function Users() {
   const [currentUserId, setCurrentUserId] = useState(null)
   const [departments, setDepartments] = useState([])
   const [roles, setRoles] = useState([])
+  const [jobLevelOptions, setJobLevelOptions] = useState([])
   const [statusOptions, setStatusOptions] = useState([
     { item_code: 'ACTIVE', item_name: '正常', color: 'success' },
     { item_code: 'DISABLED', item_name: '停用', color: 'default' },
@@ -195,9 +198,16 @@ function Users() {
 
   const fetchStatusOptions = useCallback(async () => {
     try {
-      const result = await getDictItemsApi('user_status', { enabledOnly: true })
-      if (result.success && Array.isArray(result.data) && result.data.length > 0) {
-        setStatusOptions(result.data)
+      const [statusResult, jobLevelResult] = await Promise.all([
+        getDictItemsApi('user_status', { enabledOnly: true }),
+        getDictItemsApi('job_level', { enabledOnly: true }),
+      ])
+
+      if (statusResult.success && Array.isArray(statusResult.data) && statusResult.data.length > 0) {
+        setStatusOptions(statusResult.data)
+      }
+      if (jobLevelResult.success && Array.isArray(jobLevelResult.data)) {
+        setJobLevelOptions(jobLevelResult.data)
       }
     } catch (error) {
       console.warn('Fetch user_status options failed, fallback to defaults:', error)
@@ -289,6 +299,7 @@ function Users() {
         real_name: detail.real_name || '',
         email: detail.email,
         department_id: detail.department_id,
+        job_level: detail.job_level || undefined,
         status_code: detail.status_code || 'ACTIVE',
         include_in_metrics: Number(detail.include_in_metrics ?? 1) === 1,
         role_ids: roleIds,
@@ -313,6 +324,7 @@ function Users() {
         real_name: values.real_name || '',
         email: values.email || null,
         department_id: values.department_id ?? null,
+        job_level: values.job_level || null,
         status_code: values.status_code || 'ACTIVE',
         include_in_metrics: values.include_in_metrics ? 1 : 0,
         role_ids: values.role_ids || [],
@@ -506,6 +518,17 @@ function Users() {
         record?.row_type === 'department_group' ? '-' : highlightText(value || record.username || '-', keyword),
     },
     {
+      title: '职级',
+      dataIndex: 'job_level',
+      key: 'job_level',
+      width: 100,
+      render: (value, record) => {
+        if (record?.row_type === 'department_group') return '-'
+        const option = jobLevelOptions.find((item) => item.item_code === value)
+        return option?.item_name || value || '-'
+      },
+    },
+    {
       title: '邮箱',
       dataIndex: 'email',
       key: 'email',
@@ -669,12 +692,12 @@ function Users() {
   )
 
   const selectedLogBeforeRows = useMemo(
-    () => getUserChangeSnapshotRows(selectedLog?.before_data, statusOptions),
-    [selectedLog?.before_data, statusOptions],
+    () => getUserChangeSnapshotRows(selectedLog?.before_data, statusOptions, jobLevelOptions),
+    [jobLevelOptions, selectedLog?.before_data, statusOptions],
   )
   const selectedLogAfterRows = useMemo(
-    () => getUserChangeSnapshotRows(selectedLog?.after_data, statusOptions),
-    [selectedLog?.after_data, statusOptions],
+    () => getUserChangeSnapshotRows(selectedLog?.after_data, statusOptions, jobLevelOptions),
+    [jobLevelOptions, selectedLog?.after_data, statusOptions],
   )
 
   return (
@@ -938,6 +961,17 @@ function Users() {
               placeholder="请选择部门"
               allowClear
               options={departments.map((dept) => ({ value: dept.id, label: dept.name }))}
+            />
+          </Form.Item>
+
+          <Form.Item label="职级" name="job_level">
+            <Select
+              placeholder="请选择职级"
+              allowClear
+              options={jobLevelOptions.map((item) => ({
+                value: item.item_code,
+                label: item.item_name,
+              }))}
             />
           </Form.Item>
 

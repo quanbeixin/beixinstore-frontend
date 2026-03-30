@@ -355,6 +355,15 @@ export function canAccessRoute(route) {
   if (!route) return false
 
   const access = getAccessSnapshot()
+  const menuKey = String(route.menu?.key || route.path || '').trim()
+
+  if (
+    (menuKey === '/efficiency/department-ranking' || menuKey === '/efficiency/member') &&
+    access?.is_department_manager
+  ) {
+    return true
+  }
+
   if (Array.isArray(route.requiredRoles) && route.requiredRoles.includes('SUPER_ADMIN')) {
     if (!access?.is_super_admin) return false
   }
@@ -363,7 +372,6 @@ export function canAccessRoute(route) {
   const passRole = hasAnyRole(route.requiredRoles)
   if (!passPermission || !passRole) return false
 
-  const menuKey = String(route.menu?.key || route.path || '').trim()
   if (!menuKey) return true
 
    // Ensure owner-workbench menu can be shown for department managers.

@@ -253,6 +253,10 @@ export function getInsightFilterOptionsApi() {
   return request.get('/work/insight/filters')
 }
 
+export function getDepartmentEfficiencyRankingApi(params) {
+  return request.get('/work/insight/department-ranking', { params })
+}
+
 export function getDemandInsightApi(params) {
   return request.get('/work/insight/demand', { params })
 }

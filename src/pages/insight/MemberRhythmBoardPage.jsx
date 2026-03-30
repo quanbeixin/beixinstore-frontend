@@ -20,6 +20,7 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getInsightFilterOptionsApi, getMemberInsightApi } from '../../api/work'
+import { getAccessSnapshot } from '../../utils/access'
 import { formatBeijingDate } from '../../utils/datetime'
 
 const { RangePicker } = DatePicker
@@ -56,6 +57,7 @@ function getDefaultDateRange() {
 function MemberRhythmBoard() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const access = useMemo(() => getAccessSnapshot() || {}, [])
 
   const [loading, setLoading] = useState(false)
   const [filterLoading, setFilterLoading] = useState(false)
@@ -91,6 +93,8 @@ function MemberRhythmBoard() {
     },
     member_list: [],
   })
+
+  const canOpenDemandInsight = Boolean(access?.is_super_admin)
 
   useEffect(() => {
     const startDate = toDateValue(searchParams.get('start_date'))
@@ -161,6 +165,19 @@ function MemberRhythmBoard() {
   }, [loadFilterOptions])
 
   useEffect(() => {
+    if (departmentId) return
+    if (access?.is_super_admin || (access?.role_keys || []).includes('ADMIN')) return
+    const managedDepartmentIds = Array.isArray(access?.managed_department_ids)
+      ? access.managed_department_ids
+          .map((item) => Number(item))
+          .filter((item) => Number.isInteger(item) && item > 0)
+      : []
+    if (managedDepartmentIds.length > 0) {
+      setDepartmentId(managedDepartmentIds[0])
+    }
+  }, [access, departmentId])
+
+  useEffect(() => {
     if (!queryReady) return
     loadData()
   }, [queryReady, loadData])
@@ -186,7 +203,7 @@ function MemberRhythmBoard() {
   }
 
   const summary = data.summary || {}
-  const memberList = Array.isArray(data.member_list) ? data.member_list : []
+  const memberList = useMemo(() => (Array.isArray(data.member_list) ? data.member_list : []), [data.member_list])
 
   const overloadTop10 = useMemo(
     () =>
@@ -350,12 +367,12 @@ function MemberRhythmBoard() {
       key: 'demand_count',
       width: 110,
       render: (value, row) =>
-        Number(value || 0) > 0 ? (
+        canOpenDemandInsight && Number(value || 0) > 0 ? (
           <Button type="link" style={{ paddingInline: 0 }} onClick={() => goDemandInsight(row.user_id)}>
             {value}
           </Button>
         ) : (
-          '0'
+          String(Number(value || 0))
         ),
     },
     {
