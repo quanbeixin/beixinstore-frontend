@@ -221,6 +221,14 @@
   background: #fbfcff;
 }
 
+.work-demand-detail__role-panel {
+  min-height: 72px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #e4eaf5;
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.92), rgba(255, 255, 255, 0.98));
+}
+
 .work-demand-detail__workflow-current {
   min-width: 0;
 }

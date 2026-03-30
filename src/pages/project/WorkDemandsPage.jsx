@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   DatePicker,
+  Drawer,
   Empty,
   Form,
   Input,
@@ -25,12 +26,10 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { getDictItemsApi } from '../../api/configDict'
 import { getUsersApi } from '../../api/users'
 import {
-  addDemandMemberApi,
   assignDemandWorkflowNodeApi,
   createWorkDemandApi,
   deleteWorkDemandApi,
   getDemandWorkflowApi,
-  getDemandMembersApi,
   getProjectTemplateByIdApi,
   getProjectTemplatesApi,
   getWorkflowAssigneesApi,
@@ -38,7 +37,6 @@ import {
   getWorkDemandsApi,
   getWorkLogsApi,
   initDemandWorkflowApi,
-  removeDemandMemberApi,
   replaceDemandWorkflowLatestApi,
   submitDemandWorkflowNodeApi,
   updateDemandWorkflowNodeHoursApi,
@@ -80,15 +78,31 @@ const PRIORITY_OPTIONS = [
   { label: 'P3', value: 'P3' },
 ]
 
-const MANAGEMENT_MODE_OPTIONS = [
-  { label: '轻量模式', value: 'simple' },
-  { label: '项目模式', value: 'advanced' },
-]
-
 const HEALTH_STATUS_OPTIONS = [
   { label: '健康', value: 'green' },
   { label: '预警', value: 'yellow' },
   { label: '风险', value: 'red' },
+]
+
+const FALLBACK_PARTICIPANT_ROLE_OPTIONS = [
+  { value: 'DEMAND_OWNER', label: '需求负责人' },
+  { value: 'PRODUCT_MANAGER', label: '产品经理' },
+  { value: 'DESIGNER', label: '设计' },
+  { value: 'FRONTEND_DEV', label: '前端开发' },
+  { value: 'BACKEND_DEV', label: '后端开发' },
+  { value: 'BIGDATA_DEV', label: '大数据开发' },
+  { value: 'ALGORITHM_DEV', label: '算法开发' },
+  { value: 'QA', label: '测试' },
+  { value: 'OPERATIONS', label: '运营' },
+  { value: 'MEDIA_BUYER', label: '投放' },
+]
+
+const DEFAULT_DEMAND_PARTICIPANT_ROLES = [
+  'PRODUCT_MANAGER',
+  'DESIGNER',
+  'FRONTEND_DEV',
+  'BACKEND_DEV',
+  'QA',
 ]
 
 const DETAIL_LOG_FILTER_OPTIONS = [
@@ -167,9 +181,53 @@ function extractTemplateNodes(template) {
         node_type: String(row.node_type || '').trim(),
         phase_key: String(row.phase_key || '').trim(),
         sort_order: sortOrder,
+        participant_roles: Array.from(
+          new Set(
+            (Array.isArray(row.participant_roles) ? row.participant_roles : [])
+              .map((role) =>
+                String(role || '')
+                  .trim()
+                  .replace(/\s+/g, '_')
+                  .toUpperCase(),
+              )
+              .filter(Boolean),
+          ),
+        ),
       }
     })
     .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+}
+
+function normalizeParticipantRoles(value) {
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : []
+
+  return Array.from(
+    new Set(
+      list
+        .map((item) =>
+          String(item || '')
+            .trim()
+            .replace(/\s+/g, '_')
+            .toUpperCase(),
+        )
+        .filter(Boolean),
+    ),
+  )
+}
+
+function filterTemplateNodesByParticipantRoles(nodes, participantRoles = []) {
+  const normalizedDemandRoles = normalizeParticipantRoles(participantRoles)
+  const demandRoleSet = new Set(normalizedDemandRoles)
+
+  return (Array.isArray(nodes) ? nodes : []).filter((node) => {
+    const nodeRoles = normalizeParticipantRoles(node?.participant_roles)
+    if (nodeRoles.length === 0) return true
+    return nodeRoles.some((role) => demandRoleSet.has(role))
+  })
 }
 
 function toNumber(value, fallback = 0) {
@@ -212,6 +270,7 @@ function WorkDemands() {
 
   const [form] = Form.useForm()
   const modalTemplateId = Form.useWatch('template_id', form)
+  const modalParticipantRoles = Form.useWatch('participant_roles', form)
 
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -225,6 +284,7 @@ function WorkDemands() {
   const templateFallbackLoadingRef = useRef(new Set())
   const [workflowAssignees, setWorkflowAssignees] = useState([])
   const [businessGroups, setBusinessGroups] = useState([])
+  const [participantRoleItems, setParticipantRoleItems] = useState([])
 
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -248,15 +308,11 @@ function WorkDemands() {
   const [detailDemand, setDetailDemand] = useState(null)
   const [detailLogs, setDetailLogs] = useState([])
   const [detailLogsLoading, setDetailLogsLoading] = useState(false)
-  const [detailMembers, setDetailMembers] = useState([])
-  const [detailMembersLoading, setDetailMembersLoading] = useState(false)
-  const [detailMemberUserId, setDetailMemberUserId] = useState()
-  const [detailMemberSubmitting, setDetailMemberSubmitting] = useState(false)
   const [detailSaving, setDetailSaving] = useState(false)
   const [detailLogFilter, setDetailLogFilter] = useState('ALL')
   const [detailName, setDetailName] = useState('')
-  const [detailManagementMode, setDetailManagementMode] = useState('simple')
   const [detailTemplateId, setDetailTemplateId] = useState()
+  const [detailParticipantRoles, setDetailParticipantRoles] = useState(DEFAULT_DEMAND_PARTICIPANT_ROLES)
   const [detailProjectManager, setDetailProjectManager] = useState()
   const [detailBusinessGroupCode, setDetailBusinessGroupCode] = useState(undefined)
   const [detailHealthStatus, setDetailHealthStatus] = useState('green')
@@ -476,6 +532,23 @@ function WorkDemands() {
     [businessGroups],
   )
 
+  const participantRoleOptions = useMemo(() => {
+    const rows = Array.isArray(participantRoleItems) ? participantRoleItems : []
+    if (rows.length === 0) return FALLBACK_PARTICIPANT_ROLE_OPTIONS
+    return rows.map((item) => ({
+      value: String(item.item_code || '').trim().toUpperCase(),
+      label: item.item_name || item.item_code,
+    }))
+  }, [participantRoleItems])
+
+  const participantRoleLabelMap = useMemo(() => {
+    const map = new Map()
+    participantRoleOptions.forEach((item) => {
+      map.set(String(item.value || '').trim().toUpperCase(), item.label)
+    })
+    return map
+  }, [participantRoleOptions])
+
   const templateByIdMap = useMemo(() => {
     const map = new Map()
     ;(projectTemplates || []).forEach((item) => {
@@ -516,6 +589,16 @@ function WorkDemands() {
     return [...fromList, ...fallback]
   }, [projectTemplates, templateFallbackMap])
 
+  const defaultProjectTemplateId = useMemo(() => {
+    const normalizedList = Array.isArray(projectTemplates) ? projectTemplates : []
+    const preferred =
+      normalizedList.find((item) => String(item?.name || '').trim() === '通用产研流程' && Number(item?.status) === 1) ||
+      normalizedList.find((item) => Number(item?.status) === 1) ||
+      null
+    const id = Number(preferred?.id)
+    return Number.isInteger(id) && id > 0 ? id : undefined
+  }, [projectTemplates])
+
   const loadTemplateByIdIfMissing = useCallback(async (rawTemplateId) => {
     const id = Number(rawTemplateId)
     if (!Number.isInteger(id) || id <= 0) return
@@ -544,15 +627,10 @@ function WorkDemands() {
     return templateByIdMap.get(id) || null
   }, [modalTemplateId, templateByIdMap])
 
-  const selectedModalTemplateNodes = useMemo(
-    () => extractTemplateNodes(selectedModalTemplate),
-    [selectedModalTemplate],
-  )
-
-  const availableMemberOptions = useMemo(() => {
-    const memberSet = new Set((detailMembers || []).map((item) => Number(item.user_id)))
-    return ownerOptions.filter((item) => !memberSet.has(Number(item.value)))
-  }, [ownerOptions, detailMembers])
+  const selectedModalTemplateNodes = useMemo(() => {
+    const nodes = extractTemplateNodes(selectedModalTemplate)
+    return filterTemplateNodesByParticipantRoles(nodes, modalParticipantRoles)
+  }, [selectedModalTemplate, modalParticipantRoles])
 
   const selectedWorkflowNodeTasks = useMemo(() => {
     if (!selectedWorkflowNode?.id && !selectedWorkflowNode?.node_key) return []
@@ -679,6 +757,19 @@ function WorkDemands() {
     }
   }, [])
 
+  const loadParticipantRoles = useCallback(async () => {
+    try {
+      const result = await getDictItemsApi('demand_participant_role', { enabledOnly: true })
+      if (result?.success) {
+        setParticipantRoleItems(Array.isArray(result.data) ? result.data : [])
+        return
+      }
+      setParticipantRoleItems([])
+    } catch {
+      setParticipantRoleItems([])
+    }
+  }, [])
+
   const loadProjectTemplates = useCallback(async () => {
     try {
       const result = await getProjectTemplatesApi({ page: 1, pageSize: 200, status: 1 })
@@ -755,8 +846,20 @@ function WorkDemands() {
   }, [loadBusinessGroups])
 
   useEffect(() => {
+    loadParticipantRoles()
+  }, [loadParticipantRoles])
+
+  useEffect(() => {
     loadProjectTemplates()
   }, [loadProjectTemplates])
+
+  useEffect(() => {
+    if (!modalOpen || editingDemand) return
+    if (!defaultProjectTemplateId) return
+    const currentTemplateId = form.getFieldValue('template_id')
+    if (currentTemplateId) return
+    form.setFieldValue('template_id', defaultProjectTemplateId)
+  }, [modalOpen, editingDemand, defaultProjectTemplateId, form])
 
   useEffect(() => {
     loadTemplateByIdIfMissing(modalTemplateId)
@@ -778,8 +881,8 @@ function WorkDemands() {
     form.resetFields()
     form.setFieldsValue({
       owner_user_id: currentUser?.id || undefined,
-      management_mode: 'simple',
-      template_id: undefined,
+      template_id: defaultProjectTemplateId,
+      participant_roles: DEFAULT_DEMAND_PARTICIPANT_ROLES,
       project_manager: undefined,
       health_status: 'green',
       actual_start_time: null,
@@ -805,8 +908,11 @@ function WorkDemands() {
     form.setFieldsValue({
       name: record.name,
       owner_user_id: record.owner_user_id,
-      management_mode: record.management_mode || 'simple',
-      template_id: record.template_id ? Number(record.template_id) : undefined,
+      template_id: record.template_id ? Number(record.template_id) : defaultProjectTemplateId,
+      participant_roles:
+        Array.isArray(record.participant_roles) && record.participant_roles.length > 0
+          ? record.participant_roles
+          : DEFAULT_DEMAND_PARTICIPANT_ROLES,
       project_manager: record.project_manager ? Number(record.project_manager) : undefined,
       health_status: record.health_status || 'green',
       actual_start_time: toNullableDateTimeValue(record.actual_start_time),
@@ -820,7 +926,7 @@ function WorkDemands() {
       priority: record.priority,
       description: record.description || '',
     })
-  }, [canEditDemandRecord, form])
+  }, [canEditDemandRecord, defaultProjectTemplateId, form])
 
   const closeModal = () => {
     setModalOpen(false)
@@ -831,12 +937,17 @@ function WorkDemands() {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
+      if (values.template_id && selectedModalTemplateNodes.length === 0) {
+        message.warning('当前参与角色未命中模板节点，请调整参与角色或模板配置')
+        return
+      }
       setSubmitting(true)
 
       const payload = {
         name: values.name,
-        management_mode: values.management_mode || 'simple',
-        template_id: values.template_id ?? null,
+        management_mode: 'advanced',
+        template_id: values.template_id,
+        participant_roles: normalizeParticipantRoles(values.participant_roles),
         project_manager: values.project_manager ?? null,
         health_status: values.health_status || 'green',
         actual_start_time: values.actual_start_time ? values.actual_start_time.format('YYYY-MM-DD HH:mm:ss') : null,
@@ -908,35 +1019,6 @@ function WorkDemands() {
     [canViewSelfLogs, canViewTeamLogs],
   )
 
-  const fetchDemandMembers = useCallback(async (demandId) => {
-    if (!demandId) {
-      setDetailMembers([])
-      return
-    }
-
-    setDetailMembersLoading(true)
-    try {
-      const result = await getDemandMembersApi(demandId)
-      if (!result?.success) {
-        setDetailMembers([])
-        return
-      }
-      const members = Array.isArray(result.data) ? result.data : []
-      setDetailMembers(members)
-      setDetailDemand((prev) => {
-        if (!prev || String(prev.id || '').toUpperCase() !== String(demandId || '').toUpperCase()) return prev
-        return {
-          ...prev,
-          member_count: members.length,
-        }
-      })
-    } catch {
-      setDetailMembers([])
-    } finally {
-      setDetailMembersLoading(false)
-    }
-  }, [])
-
   const loadDemandWorkflow = useCallback(
     async (demandId) => {
       if (!demandId || !canViewWorkflow) {
@@ -990,12 +1072,10 @@ function WorkDemands() {
   const closeDetailDrawer = useCallback(() => {
     setDetailDemand(null)
     setDetailLogs([])
-    setDetailMembers([])
-    setDetailMemberUserId(undefined)
     setDetailLogFilter('ALL')
     setDetailName('')
-    setDetailManagementMode('simple')
     setDetailTemplateId(undefined)
+    setDetailParticipantRoles(DEFAULT_DEMAND_PARTICIPANT_ROLES)
     setDetailProjectManager(undefined)
     setDetailBusinessGroupCode(undefined)
     setDetailHealthStatus('green')
@@ -1033,7 +1113,6 @@ function WorkDemands() {
 
         const demand = result.data
         setDetailDemand(demand)
-        fetchDemandMembers(demand.id)
         fetchDemandRelatedLogs(demand.id)
         loadDemandWorkflow(demand.id)
       } catch (error) {
@@ -1053,7 +1132,6 @@ function WorkDemands() {
     isDetailPage,
     routeDemandId,
     canEditDemandRecord,
-    fetchDemandMembers,
     fetchDemandRelatedLogs,
     loadDemandWorkflow,
     navigate,
@@ -1064,12 +1142,10 @@ function WorkDemands() {
     setDetailPageLoading(false)
     setDetailDemand(null)
     setDetailLogs([])
-    setDetailMembers([])
-    setDetailMemberUserId(undefined)
     setDetailLogFilter('ALL')
     setDetailName('')
-    setDetailManagementMode('simple')
     setDetailTemplateId(undefined)
+    setDetailParticipantRoles(DEFAULT_DEMAND_PARTICIPANT_ROLES)
     setDetailProjectManager(undefined)
     setDetailBusinessGroupCode(undefined)
     setDetailHealthStatus('green')
@@ -1138,8 +1214,8 @@ function WorkDemands() {
     if (!detailDemand) {
       setDetailStatus('')
       setDetailName('')
-      setDetailManagementMode('simple')
       setDetailTemplateId(undefined)
+      setDetailParticipantRoles(['DEMAND_OWNER'])
       setDetailProjectManager(undefined)
       setDetailBusinessGroupCode(undefined)
       setDetailHealthStatus('green')
@@ -1152,8 +1228,12 @@ function WorkDemands() {
       return
     }
     setDetailName(detailDemand.name || '')
-    setDetailManagementMode(detailDemand.management_mode || 'simple')
-    setDetailTemplateId(detailDemand.template_id ? Number(detailDemand.template_id) : undefined)
+    setDetailTemplateId(detailDemand.template_id ? Number(detailDemand.template_id) : defaultProjectTemplateId)
+    setDetailParticipantRoles(
+      Array.isArray(detailDemand.participant_roles) && detailDemand.participant_roles.length > 0
+        ? detailDemand.participant_roles
+        : DEFAULT_DEMAND_PARTICIPANT_ROLES,
+    )
     setDetailProjectManager(detailDemand.project_manager ? Number(detailDemand.project_manager) : undefined)
     setDetailBusinessGroupCode(detailDemand.business_group_code || undefined)
     setDetailHealthStatus(detailDemand.health_status || 'green')
@@ -1169,7 +1249,7 @@ function WorkDemands() {
       return
     }
     setDetailStatus(detailDemand.status || 'TODO')
-  }, [isDetailPage, detailDemand, canEditDemandRecord])
+  }, [isDetailPage, detailDemand, canEditDemandRecord, defaultProjectTemplateId])
 
   const refreshListAndDetail = useCallback(async (nextDetail) => {
     if (!isDetailPage) {
@@ -1181,10 +1261,9 @@ function WorkDemands() {
       ...(nextDetail || {}),
     }
     setDetailDemand(mergedDetail)
-    fetchDemandMembers(mergedDetail.id)
     fetchDemandRelatedLogs(mergedDetail.id)
     loadDemandWorkflow(mergedDetail.id)
-  }, [isDetailPage, loadDemands, detailDemand, fetchDemandMembers, fetchDemandRelatedLogs, loadDemandWorkflow])
+  }, [isDetailPage, loadDemands, detailDemand, fetchDemandRelatedLogs, loadDemandWorkflow])
 
   const handleQuickStatusUpdate = useCallback(async (record, nextStatus) => {
     if (!record?.id || !canEditDemandRecord(record)) return
@@ -1210,9 +1289,18 @@ function WorkDemands() {
       message.warning('需求名称不能为空')
       return
     }
+    if (!detailTemplateId) {
+      message.warning('请选择需求模板')
+      return
+    }
     const nextStatus = String(detailStatus || detailDemand.status || '').trim()
     if (!nextStatus) {
       message.warning('请选择状态')
+      return
+    }
+    const normalizedDetailParticipantRoles = normalizeParticipantRoles(detailParticipantRoles)
+    if (normalizedDetailParticipantRoles.length === 0) {
+      message.warning('请选择需求涉及角色')
       return
     }
     if (detailActualStartTime && detailActualEndTime && detailActualStartTime.isAfter(detailActualEndTime)) {
@@ -1224,8 +1312,9 @@ function WorkDemands() {
       const result = await updateWorkDemandApi(detailDemand.id, {
         name: nextName,
         status: nextStatus,
-        management_mode: detailManagementMode || 'simple',
-        template_id: detailTemplateId ?? null,
+        management_mode: 'advanced',
+        template_id: detailTemplateId,
+        participant_roles: normalizedDetailParticipantRoles,
         project_manager: detailProjectManager ?? null,
         business_group_code: detailBusinessGroupCode ?? null,
         health_status: detailHealthStatus || 'green',
@@ -1240,58 +1329,19 @@ function WorkDemands() {
         message.error(result?.message || '保存失败')
         return
       }
-      message.success('需求信息已更新')
+      if (result?.data?.workflow_auto_replaced) {
+        message.success('需求信息已更新，流程已自动同步')
+      } else if (result?.data?.workflow_sync_notice) {
+        message.success('需求信息已更新')
+        message.warning(result.data.workflow_sync_notice)
+      } else {
+        message.success('需求信息已更新')
+      }
       await refreshListAndDetail(result?.data || null)
     } catch (error) {
       message.error(error?.message || '保存失败')
     } finally {
       setDetailSaving(false)
-    }
-  }
-
-  const handleAddDemandMember = async () => {
-    if (!detailDemand?.id || !canEditDemandRecord(detailDemand)) return
-    if (!detailMemberUserId) {
-      message.warning('请选择要添加的成员')
-      return
-    }
-
-    try {
-      setDetailMemberSubmitting(true)
-      const result = await addDemandMemberApi(detailDemand.id, {
-        user_id: detailMemberUserId,
-      })
-      if (!result?.success) {
-        message.error(result?.message || '添加成员失败')
-        return
-      }
-      message.success('项目成员添加成功')
-      setDetailMemberUserId(undefined)
-      await fetchDemandMembers(detailDemand.id)
-      await loadDemands()
-    } catch (error) {
-      message.error(error?.message || '添加成员失败')
-    } finally {
-      setDetailMemberSubmitting(false)
-    }
-  }
-
-  const handleRemoveDemandMember = async (userId) => {
-    if (!detailDemand?.id || !canEditDemandRecord(detailDemand) || !userId) return
-    try {
-      setDetailMemberSubmitting(true)
-      const result = await removeDemandMemberApi(detailDemand.id, userId)
-      if (!result?.success) {
-        message.error(result?.message || '移除成员失败')
-        return
-      }
-      message.success('项目成员移除成功')
-      await fetchDemandMembers(detailDemand.id)
-      await loadDemands()
-    } catch (error) {
-      message.error(error?.message || '移除成员失败')
-    } finally {
-      setDetailMemberSubmitting(false)
     }
   }
 
@@ -1849,13 +1899,22 @@ function WorkDemands() {
         </>
       ) : null}
 
-      <Modal
+      <Drawer
         title={editingDemand ? '编辑需求' : '新建需求'}
         open={modalOpen}
-        onCancel={closeModal}
-        onOk={handleSubmit}
-        confirmLoading={submitting}
-        forceRender
+        onClose={closeModal}
+        placement="right"
+        size={640}
+        destroyOnHidden={false}
+        maskClosable={false}
+        extra={
+          <Space size={8}>
+            <Button onClick={closeModal}>取消</Button>
+            <Button type="primary" loading={submitting} onClick={handleSubmit}>
+              {editingDemand ? '保存' : '创建'}
+            </Button>
+          </Space>
+        }
       >
         <Form form={form} layout="vertical">
           <Form.Item label="需求名称" name="name" rules={[{ required: true, message: '请输入需求名称' }]}>
@@ -1876,25 +1935,34 @@ function WorkDemands() {
             />
           </Form.Item>
 
-          <Form.Item label="管理模式" name="management_mode" rules={[{ required: true, message: '请选择管理模式' }]}>
-            <Select options={MANAGEMENT_MODE_OPTIONS} />
-          </Form.Item>
-
-          <Form.Item label="项目模板" name="template_id">
+          <Form.Item label="需求模板" name="template_id" rules={[{ required: true, message: '请选择需求模板' }]}>
             <Select
-              allowClear
               showSearch
               optionFilterProp="label"
               options={projectTemplateOptions}
-              placeholder="选择项目模板（可选）"
+              placeholder="请选择需求模板"
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="需求涉及角色"
+            name="participant_roles"
+            rules={[{ required: true, message: '请选择需求涉及角色' }]}
+          >
+            <Select
+              mode="multiple"
+              showSearch
+              optionFilterProp="label"
+              options={participantRoleOptions}
+              placeholder="请选择本需求会参与的业务角色"
             />
           </Form.Item>
 
           {selectedModalTemplate ? (
             <Card size="small" variant="borderless" style={{ marginBottom: 12 }}>
-              <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <Space orientation="vertical" size={6} style={{ width: '100%' }}>
                 <Text strong>
-                  模板预览：{selectedModalTemplate.name || '-'}（共 {selectedModalTemplateNodes.length} 个节点）
+                  模板预览：{selectedModalTemplate.name || '-'}（当前命中 {selectedModalTemplateNodes.length} 个节点）
                 </Text>
                 {selectedModalTemplateNodes.length > 0 ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -1905,7 +1973,7 @@ function WorkDemands() {
                     ))}
                   </div>
                 ) : (
-                  <Text type="secondary">模板未配置可识别节点</Text>
+                  <Text type="secondary">当前参与角色下未命中任何模板节点</Text>
                 )}
               </Space>
             </Card>
@@ -1985,7 +2053,7 @@ function WorkDemands() {
             <Input.TextArea rows={4} maxLength={2000} placeholder="补充需求背景、目标和注意事项" />
           </Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
 
       {isDetailPage ? (
         <Card
@@ -2128,7 +2196,7 @@ function WorkDemands() {
               activeKey={detailTabKey}
               onChange={setDetailTabKey}
               tabBarExtraContent={
-                canEditDemandRecord(detailDemand) && detailTabKey === 'basic' ? (
+                canEditDemandRecord(detailDemand) && (detailTabKey === 'basic' || detailTabKey === 'roles') ? (
                   <Button type="primary" onClick={handleSaveDetail} loading={detailSaving}>
                     保存变更
                   </Button>
@@ -2163,11 +2231,11 @@ function WorkDemands() {
                           <div className="work-demand-detail__field">
                             <Text type="secondary">需求模板</Text>
                             <Select
-                              allowClear
                               showSearch
                               optionFilterProp="label"
                               value={detailTemplateId}
                               options={projectTemplateOptions}
+                              placeholder="请选择需求模板"
                               onChange={(value) => setDetailTemplateId(value)}
                             />
                           </div>
@@ -2241,81 +2309,39 @@ function WorkDemands() {
                   ),
                 },
                 {
-                  key: 'members',
-                  label: '成员',
+                  key: 'roles',
+                  label: '涉及角色',
                   children: (
                     <div className="work-demand-detail__tab-section">
-                      <div className="work-demand-detail__section-toolbar">
-                        <Select
-                          allowClear
-                          showSearch
-                          optionFilterProp="label"
-                          placeholder="选择成员"
-                          className="work-demand-detail__member-select"
-                          value={detailMemberUserId}
-                          options={availableMemberOptions}
-                          disabled={!canEditDemandRecord(detailDemand)}
-                          onChange={(value) => setDetailMemberUserId(value)}
-                        />
-                        <Button
-                          type="primary"
-                          onClick={handleAddDemandMember}
-                          loading={detailMemberSubmitting}
-                          disabled={!canEditDemandRecord(detailDemand)}
-                        >
-                          添加成员
-                        </Button>
+                      <div className="work-demand-detail__form-grid">
+                        <div className="work-demand-detail__field work-demand-detail__field--full">
+                          <Text type="secondary">需求涉及角色</Text>
+                          <Select
+                            mode="multiple"
+                            showSearch
+                            optionFilterProp="label"
+                            value={detailParticipantRoles}
+                            options={participantRoleOptions}
+                            placeholder="请选择需求涉及角色"
+                            disabled={!canEditDemandRecord(detailDemand)}
+                            onChange={(value) => setDetailParticipantRoles(value)}
+                          />
+                        </div>
                       </div>
                       <div className="work-demand-detail__table-shell">
-                      <Table
-                        rowKey="id"
-                        size="small"
-                        loading={detailMembersLoading}
-                        pagination={false}
-                        dataSource={detailMembers}
-                        locale={{ emptyText: '暂无项目成员' }}
-                        columns={[
-                          {
-                            title: '成员',
-                            dataIndex: 'user_name',
-                            key: 'user_name',
-                            render: (value, row) => value || row.username || `用户${row.user_id}`,
-                          },
-                          {
-                            title: '用户ID',
-                            dataIndex: 'user_id',
-                            key: 'user_id',
-                            width: 110,
-                          },
-                          {
-                            title: '加入时间',
-                            dataIndex: 'created_at',
-                            key: 'created_at',
-                            width: 180,
-                            render: (value) => formatBeijingDateTime(value),
-                          },
-                          {
-                            title: '操作',
-                            key: 'action',
-                            width: 100,
-                            render: (_, row) =>
-                              canEditDemandRecord(detailDemand) ? (
-                                <Popconfirm
-                                  title="确认移除该成员？"
-                                  okText="移除"
-                                  cancelText="取消"
-                                  onConfirm={() => handleRemoveDemandMember(row.user_id)}
-                                >
-                                  <Button type="link" danger size="small" loading={detailMemberSubmitting}>
-                                    移除
-                                  </Button>
-                                </Popconfirm>
-                              ) : (
-                                '-'
-                              ),
-                          },
-                        ]}
-                      />
+                        <div className="work-demand-detail__role-panel">
+                          {(detailParticipantRoles || []).length > 0 ? (
+                            <Space size={[8, 8]} wrap>
+                              {detailParticipantRoles.map((role) => (
+                                <Tag key={role} color="blue">
+                                  {participantRoleLabelMap.get(String(role || '').trim().toUpperCase()) || role}
+                                </Tag>
+                              ))}
+                            </Space>
+                          ) : (
+                            <Text type="secondary">当前未配置需求涉及角色</Text>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ),

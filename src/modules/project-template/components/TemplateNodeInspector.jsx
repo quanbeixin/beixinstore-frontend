@@ -23,6 +23,7 @@ function TemplateNodeInspector({
   totalNodes = 0,
   nodeOptions = [],
   phaseOptions = [],
+  participantRoleOptions = [],
   onChangeNode,
   onMoveToOrder,
   onDuplicate,
@@ -48,6 +49,7 @@ function TemplateNodeInspector({
       order: Number(node.order) || 1,
       description: String(node.meta?.description || ''),
       incomingKeys: Array.isArray(node.meta?.incomingKeys) ? node.meta.incomingKeys : [],
+      participantRoles: Array.isArray(node.meta?.participantRoles) ? node.meta.participantRoles : [],
     })
   }, [form, node])
 
@@ -104,6 +106,7 @@ function TemplateNodeInspector({
         ...(node.meta || {}),
         description: allValues?.description,
         incomingKeys: Array.isArray(allValues?.incomingKeys) ? allValues.incomingKeys : [],
+        participantRoles: Array.isArray(allValues?.participantRoles) ? allValues.participantRoles : [],
       },
     })
 
@@ -173,6 +176,21 @@ function TemplateNodeInspector({
                           <Input maxLength={50} placeholder="例如：PLAN_REVIEW" />
                         </Form.Item>
                       </div>
+                      <Form.Item
+                        label={renderLabelWithHelp(
+                          '适用参与角色',
+                          '不设置表示所有需求都启用；设置后，只有需求选择了对应参与角色，系统才会生成该节点。',
+                        )}
+                        name="participantRoles"
+                      >
+                        <Select
+                          mode="multiple"
+                          allowClear
+                          optionFilterProp="label"
+                          placeholder="选择哪些业务参与角色需要这个节点"
+                          options={participantRoleOptions}
+                        />
+                      </Form.Item>
                       <Form.Item label="节点说明" name="description">
                         <Input.TextArea rows={4} maxLength={300} placeholder="补充这个节点的目标、输出物或执行要求" />
                       </Form.Item>

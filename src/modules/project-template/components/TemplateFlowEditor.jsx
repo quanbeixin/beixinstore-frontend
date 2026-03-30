@@ -21,7 +21,7 @@ function TemplateFlowEditor({
   return (
     <Card
       className="project-template-detail__canvas-card"
-      bodyStyle={{ padding: 20 }}
+      styles={{ body: { padding: 20 } }}
     >
       <div className="project-template-detail__canvas-header">
         <div className="project-template-detail__canvas-meta">

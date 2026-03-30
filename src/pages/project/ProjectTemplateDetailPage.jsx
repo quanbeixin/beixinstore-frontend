@@ -1,6 +1,7 @@
 import { Alert, Button, Result, Spin, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { getDictItemsApi } from '../../api/configDict'
 import { getProjectTemplateByIdApi, getProjectTemplatePhaseTypesApi, updateProjectTemplateApi } from '../../api/work'
 import {
   duplicateGraphNode,
@@ -26,6 +27,19 @@ const FALLBACK_PHASE_TYPES = TEMPLATE_PHASE_OPTIONS.map((item, index) => ({
   enabled: 1,
 }))
 
+const FALLBACK_PARTICIPANT_ROLE_OPTIONS = [
+  { value: 'DEMAND_OWNER', label: '需求负责人' },
+  { value: 'PRODUCT_MANAGER', label: '产品经理' },
+  { value: 'DESIGNER', label: '设计' },
+  { value: 'FRONTEND_DEV', label: '前端开发' },
+  { value: 'BACKEND_DEV', label: '后端开发' },
+  { value: 'BIGDATA_DEV', label: '大数据开发' },
+  { value: 'ALGORITHM_DEV', label: '算法开发' },
+  { value: 'QA', label: '测试' },
+  { value: 'OPERATIONS', label: '运营' },
+  { value: 'MEDIA_BUYER', label: '投放' },
+]
+
 function mapPhaseRowsToOptions(rows = []) {
   return (Array.isArray(rows) ? rows : [])
     .filter((item) => String(item?.phase_key || '').trim())
@@ -46,15 +60,17 @@ function ProjectTemplateDetailPage() {
   const [template, setTemplate] = useState(null)
   const [nodes, setNodes] = useState([])
   const [phaseTypes, setPhaseTypes] = useState(FALLBACK_PHASE_TYPES)
+  const [participantRoleOptions, setParticipantRoleOptions] = useState(FALLBACK_PARTICIPANT_ROLE_OPTIONS)
   const [selectedNodeId, setSelectedNodeId] = useState('')
 
   const loadTemplate = useCallback(async () => {
     if (!Number.isInteger(templateId) || templateId <= 0) return
     setLoading(true)
     try {
-      const [templateResult, phaseResult] = await Promise.all([
+      const [templateResult, phaseResult, participantRoleResult] = await Promise.all([
         getProjectTemplateByIdApi(templateId),
         getProjectTemplatePhaseTypesApi({ enabled_only: 1 }).catch(() => null),
+        getDictItemsApi('demand_participant_role', { enabledOnly: true }).catch(() => null),
       ])
 
       if (!templateResult?.success) {
@@ -67,6 +83,15 @@ function ProjectTemplateDetailPage() {
 
       const remotePhaseTypes = Array.isArray(phaseResult?.data) ? phaseResult.data : []
       setPhaseTypes(remotePhaseTypes.length > 0 ? remotePhaseTypes : FALLBACK_PHASE_TYPES)
+      const participantRoleRows = Array.isArray(participantRoleResult?.data) ? participantRoleResult.data : []
+      setParticipantRoleOptions(
+        participantRoleRows.length > 0
+          ? participantRoleRows.map((item) => ({
+              value: String(item.item_code || '').trim().toUpperCase(),
+              label: String(item.item_name || item.item_code || '').trim(),
+            }))
+          : FALLBACK_PARTICIPANT_ROLE_OPTIONS,
+      )
       setTemplate(currentTemplate)
       setNodes(mappedNodes)
       setSelectedNodeId((prev) => prev || mappedNodes[0]?.id || '')
@@ -315,6 +340,7 @@ function ProjectTemplateDetailPage() {
             totalNodes={nodes.length}
             nodeOptions={nodeOptions}
             phaseOptions={phaseOptions}
+            participantRoleOptions={participantRoleOptions}
             onChangeNode={updateNode}
             onMoveToOrder={handleMoveNode}
             onDuplicate={handleDuplicateNode}

@@ -16,6 +16,30 @@ import './MorningStandupPage.css'
 const { Text } = Typography
 const EMPTY_ARRAY = []
 const EMPTY_OBJECT = {}
+const STANDUP_VIEW_MODE_STORAGE_KEYS = {
+  inProgress: 'morning-standup-in-progress-view-mode',
+  yesterdayDue: 'morning-standup-yesterday-due-view-mode',
+}
+
+function readStoredViewMode(storageKey, fallback = 'tree') {
+  if (typeof window === 'undefined' || !window.localStorage) return fallback
+  try {
+    const raw = String(window.localStorage.getItem(storageKey) || '').trim()
+    if (raw === 'flat' || raw === 'tree') return raw
+  } catch (error) {
+    console.warn('read standup view mode failed', error)
+  }
+  return fallback
+}
+
+function writeStoredViewMode(storageKey, value) {
+  if (typeof window === 'undefined' || !window.localStorage) return
+  try {
+    window.localStorage.setItem(storageKey, value)
+  } catch (error) {
+    console.warn('write standup view mode failed', error)
+  }
+}
 
 function toNumber(value, fallback = 0) {
   const num = Number(value)
@@ -180,8 +204,12 @@ function MorningStandupBoard() {
   const [loading, setLoading] = useState(false)
   const [activeTabKey, setActiveTabKey] = useState('')
   const [activeAlignmentTab, setActiveAlignmentTab] = useState('in_progress')
-  const [inProgressViewMode, setInProgressViewMode] = useState('tree')
-  const [yesterdayDueViewMode, setYesterdayDueViewMode] = useState('tree')
+  const [inProgressViewMode, setInProgressViewMode] = useState(() =>
+    readStoredViewMode(STANDUP_VIEW_MODE_STORAGE_KEYS.inProgress, 'tree'),
+  )
+  const [yesterdayDueViewMode, setYesterdayDueViewMode] = useState(() =>
+    readStoredViewMode(STANDUP_VIEW_MODE_STORAGE_KEYS.yesterdayDue, 'tree'),
+  )
   const [unscheduledModalOpen, setUnscheduledModalOpen] = useState(false)
   const [data, setData] = useState({
     tabs: [],
@@ -261,6 +289,14 @@ function MorningStandupBoard() {
   useEffect(() => {
     loadBoard()
   }, [loadBoard])
+
+  useEffect(() => {
+    writeStoredViewMode(STANDUP_VIEW_MODE_STORAGE_KEYS.inProgress, inProgressViewMode)
+  }, [inProgressViewMode])
+
+  useEffect(() => {
+    writeStoredViewMode(STANDUP_VIEW_MODE_STORAGE_KEYS.yesterdayDue, yesterdayDueViewMode)
+  }, [yesterdayDueViewMode])
 
   const tabs = useMemo(() => (Array.isArray(data.tabs) ? data.tabs : EMPTY_ARRAY), [data.tabs])
   const members = useMemo(() => (Array.isArray(data.members) ? data.members : EMPTY_ARRAY), [data.members])

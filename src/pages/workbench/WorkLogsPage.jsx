@@ -15,6 +15,7 @@ import {
   Button,
   Card,
   Col,
+  DatePicker,
   Empty,
   Form,
   Input,
@@ -53,6 +54,7 @@ import { formatBeijingDate, getBeijingTodayDateString } from '../../utils/dateti
 import { getUnifiedStatusMeta } from '../../utils/workStatus'
 
 const { Text } = Typography
+const { RangePicker } = DatePicker
 const ITEM_STATUS_OPTIONS = [
   { label: '待开始', value: 'TODO' },
   { label: '进行中', value: 'IN_PROGRESS' },
@@ -1584,14 +1586,12 @@ function WorkLogs({ mode = 'dashboard' }) {
     }
   }
 
-  const handleHistoryCustomDateChange = (field, value) => {
+  const handleHistoryRangeChange = (dates) => {
+    const nextStartDate = dates?.[0]?.format?.('YYYY-MM-DD') || ''
+    const nextEndDate = dates?.[1]?.format?.('YYYY-MM-DD') || ''
     setHistoryDatePreset('CUSTOM')
-    if (field === 'start_date') {
-      setHistoryCustomStartDate(value || '')
-    }
-    if (field === 'end_date') {
-      setHistoryCustomEndDate(value || '')
-    }
+    setHistoryCustomStartDate(nextStartDate)
+    setHistoryCustomEndDate(nextEndDate)
     if (page !== 1) {
       setPage(1)
     }
@@ -2318,7 +2318,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                             const activePhaseLabel = logPhaseLabel || (isDemandFollowupItem(item) ? followupNodeLabel : '')
                             const statusPanelStyle = getActiveCardStatusPanelStyle(currentStatus)
                             const demandFullName = String(item.demand_name || item.demand_id || '').trim()
-                            const demandTagLabel = item?.demand_id ? `需求#${item.demand_id}` : ''
+                            const demandTagLabel = demandFullName || (item?.demand_id ? `需求#${item.demand_id}` : '')
                             const cardTopic = activePhaseLabel || item.item_type_name || '事项'
                             const isOverdue = isOverdueDate(item.expected_completion_date)
                             const remainingWorkload = calcRemainingWorkload(item)
@@ -2583,21 +2583,16 @@ function WorkLogs({ mode = 'dashboard' }) {
                       options={HISTORY_DATE_PRESET_OPTIONS}
                       onChange={handleHistoryDatePresetChange}
                     />
-                    <Input
-                      type="date"
-                      value={historyCustomStartDate}
-                      onChange={(e) => handleHistoryCustomDateChange('start_date', e.target.value)}
-                      style={{ width: 150 }}
-                      aria-label="工作记录开始日期"
-                      placeholder="开始日期"
-                    />
-                    <Input
-                      type="date"
-                      value={historyCustomEndDate}
-                      onChange={(e) => handleHistoryCustomDateChange('end_date', e.target.value)}
-                      style={{ width: 150 }}
-                      aria-label="工作记录结束日期"
-                      placeholder="结束日期"
+                    <RangePicker
+                      allowEmpty={[true, true]}
+                      value={[
+                        historyDateRange.startDate ? dayjs(historyDateRange.startDate) : null,
+                        historyDateRange.endDate ? dayjs(historyDateRange.endDate) : null,
+                      ]}
+                      onChange={handleHistoryRangeChange}
+                      style={{ width: 280 }}
+                      aria-label="工作记录日期范围"
+                      placeholder={['开始日期', '结束日期']}
                     />
                     <Text type="secondary">状态筛选</Text>
                     <Select

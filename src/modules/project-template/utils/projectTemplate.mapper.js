@@ -19,6 +19,27 @@ function normalizeText(value, fallback = '') {
   return text || fallback
 }
 
+function normalizeParticipantRoles(value) {
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : []
+
+  return Array.from(
+    new Set(
+      list
+        .map((item) =>
+          String(item || '')
+            .trim()
+            .replace(/\s+/g, '_')
+            .toUpperCase(),
+        )
+        .filter(Boolean),
+    ),
+  )
+}
+
 function normalizeNodeConfig(nodeConfig) {
   if (Array.isArray(nodeConfig)) {
     return {
@@ -117,6 +138,7 @@ function hydrateGraphNodes(nodes, explicitEdges = null) {
         description: normalizeText(node?.meta?.description, ''),
         incomingKeys: incomingMap.get(key) || [],
         outgoingKeys: outgoingMap.get(key) || [],
+        participantRoles: normalizeParticipantRoles(node?.meta?.participantRoles),
       },
     }
   })
@@ -171,12 +193,15 @@ export function createEmptyGraphNode(partial = {}) {
     order,
     status: String(partial.status || TEMPLATE_GRAPH_STATUS.DRAFT),
     children: Array.isArray(partial.children) ? partial.children : [],
-    meta: {
-      description: normalizeText(partial?.meta?.description, ''),
-      incomingKeys: Array.isArray(partial?.meta?.incomingKeys) ? partial.meta.incomingKeys : [],
-      outgoingKeys: Array.isArray(partial?.meta?.outgoingKeys) ? partial.meta.outgoingKeys : [],
-    },
-  }
+      meta: {
+        description: normalizeText(partial?.meta?.description, ''),
+        incomingKeys: Array.isArray(partial?.meta?.incomingKeys) ? partial.meta.incomingKeys : [],
+        outgoingKeys: Array.isArray(partial?.meta?.outgoingKeys) ? partial.meta.outgoingKeys : [],
+        participantRoles: normalizeParticipantRoles(
+          partial?.meta?.participantRoles || partial?.meta?.participant_roles,
+        ),
+      },
+    }
 }
 
 export function mapTemplateNodeConfigToGraphNodes(nodeConfig) {
@@ -192,6 +217,7 @@ export function mapTemplateNodeConfigToGraphNodes(nodeConfig) {
       order: Number.isFinite(Number(row?.sort_order)) ? Number(row.sort_order) : index + 1,
       meta: {
         description: row?.description,
+        participantRoles: row?.participant_roles || row?.participantRoles,
       },
     }),
   )
@@ -210,6 +236,7 @@ export function mapGraphNodesToTemplateNodeConfig(nodes) {
       node_type: normalizeText(node?.type, 'EXECUTE').toUpperCase(),
       phase_key: normalizeText(node?.phaseKey, 'develop'),
       sort_order: index + 1,
+      participant_roles: normalizeParticipantRoles(node?.meta?.participantRoles),
       ...(normalizeText(node?.meta?.description, '') ? { description: normalizeText(node.meta.description, '') } : {}),
     })),
     edges: buildEdgesFromNodes(list),
@@ -257,6 +284,7 @@ export function duplicateGraphNode(nodes, nodeId) {
     meta: {
       description: source?.meta?.description,
       incomingKeys: source?.meta?.incomingKeys || [],
+      participantRoles: source?.meta?.participantRoles || [],
     },
   })
   next.splice(index + 1, 0, copy)
