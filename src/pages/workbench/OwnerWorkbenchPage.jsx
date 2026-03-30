@@ -117,6 +117,8 @@ function OwnerWorkbench() {
   const [estimateForm] = Form.useForm()
   const [batchForm] = Form.useForm()
   const [assignForm] = Form.useForm()
+  const assignItemTypeId = Form.useWatch('item_type_id', assignForm)
+  const assignDemandId = Form.useWatch('demand_id', assignForm)
 
   const [data, setData] = useState({
     data_scope: {
@@ -262,8 +264,6 @@ function OwnerWorkbench() {
     [data.owner_estimate_items],
   )
   const pendingOwnerEstimateCount = toNumber(data.owner_estimate_pending_count, 0)
-  const assignItemTypeId = Form.useWatch('item_type_id', assignForm)
-  const assignDemandId = Form.useWatch('demand_id', assignForm)
 
   const memberOptions = useMemo(() => {
     const map = new Map()
