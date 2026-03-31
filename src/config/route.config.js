@@ -14,59 +14,18 @@ export const PRIVATE_ROUTES = [
   // requiredPermission: 'user.view'
   // requiredRoles: ['ADMIN', 'SUPER_ADMIN']
   {
-    path: '/pm/projects',
-    componentKey: 'projects',
-    requiredPermission: 'project.view',
+    path: '/efficiency/department-ranking',
+    componentKey: 'departmentEfficiencyRanking',
+    requiredPermission: null,
+    requiredRoles: ['ADMIN'],
     page: {
-      title: '业务线',
-      subtitle: '管理业务线基础信息、成员角色和活动日志。',
+      title: '部门人效排行',
+      subtitle: '按部门查看成员投入排行、预估工时与实际工时分布。',
     },
     menu: {
-      section: 'projectManagement',
-      label: '业务线',
-      icon: 'folder',
-    },
-  },
-  {
-    path: '/pm/requirements',
-    componentKey: 'workDemands',
-    requiredPermission: 'demand.view',
-    page: {
-      title: '需求池',
-      subtitle: '统一维护需求信息，支持筛选、创建、流程与关联工时。',
-    },
-    menu: {
-      section: 'projectManagement',
-      label: '需求池',
-      icon: 'tool',
-    },
-  },
-  {
-    path: '/pm/bugs',
-    componentKey: 'bugs',
-    requiredPermission: 'bug.view',
-    page: {
-      title: '缺陷管理',
-      subtitle: '管理缺陷信息、严重程度、负责人和处理流程。',
-    },
-    menu: {
-      section: 'projectManagement',
-      label: '缺陷管理',
-      icon: 'bug',
-    },
-  },
-  {
-    path: '/pm/stats',
-    componentKey: 'projectStats',
-    requiredPermission: 'project.stats.view',
-    page: {
-      title: '业务线统计',
-      subtitle: '查看业务线与成员维度的工时、人天和任务投入统计。',
-    },
-    menu: {
-      section: 'projectManagement',
-      label: '业务线统计',
-      icon: 'barChart',
+      section: 'efficiency',
+      label: '部门人效排行',
+      icon: 'dashboard',
     },
   },
   {
@@ -88,7 +47,7 @@ export const PRIVATE_ROUTES = [
     path: '/efficiency/member',
     componentKey: 'memberRhythmBoard',
     requiredPermission: null,
-    requiredRoles: ['SUPER_ADMIN'],
+    requiredRoles: ['ADMIN'],
     page: {
       title: '成员工作节奏',
       subtitle: '按成员和日期观察工作饱和度与投入节奏。',
@@ -111,6 +70,15 @@ export const PRIVATE_ROUTES = [
       section: 'main',
       label: '个人工作台',
       icon: 'dashboard',
+    },
+  },
+  {
+    path: '/work-log-history',
+    componentKey: 'workLogHistory',
+    requiredPermission: 'worklog.view.self',
+    page: {
+      title: '历史工作记录',
+      subtitle: '集中查看、筛选、维护个人历史工作记录。',
     },
   },
   {
@@ -142,26 +110,77 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
-    path: '/personal-settings',
-    componentKey: 'personalSettings',
-    requiredPermission: null,
-    page: {
-      title: '个人设置',
-      subtitle: '维护个人资料、安全信息与界面偏好。',
-    },
-    menu: {
-      section: 'main',
-      label: '个人设置',
-      icon: 'setting',
-    },
-  },
-  {
     path: '/work-demands',
     componentKey: 'workDemands',
     requiredPermission: 'demand.view',
     page: {
       title: '需求池',
       subtitle: '统一维护需求信息，支持筛选、创建与编辑需求。',
+    },
+    menu: {
+      section: 'project',
+      label: '需求池',
+      icon: 'tool',
+    },
+  },
+  {
+    path: '/project-templates',
+    componentKey: 'projectTemplates',
+    requiredPermission: 'project.template.view',
+    page: {
+      title: '项目模板',
+      subtitle: '维护项目流程模板配置，供项目模式复用。',
+    },
+    menu: {
+      section: 'project',
+      label: '项目模板',
+      icon: 'tool',
+    },
+  },
+  {
+    path: '/project-templates/:id',
+    componentKey: 'projectTemplateDetail',
+    requiredPermission: 'project.template.view',
+    page: {
+      title: '模板详情',
+      subtitle: '维护模板基础信息，并通过可视化画布配置项目流程节点。',
+    },
+  },
+  {
+    path: '/bugs',
+    componentKey: 'bugList',
+    requiredPermission: 'bug.view',
+    page: {
+      title: 'Bug管理',
+      subtitle: '统一管理缺陷记录、流转与验证闭环。',
+    },
+    menu: {
+      section: 'project',
+      label: 'Bug管理',
+      icon: 'tool',
+    },
+  },
+  {
+    path: '/bugs/:id',
+    componentKey: 'bugDetail',
+    requiredPermission: 'bug.view',
+    page: {
+      title: 'Bug详情',
+      subtitle: '查看缺陷详情、状态流转、历史和附件。',
+    },
+  },
+  {
+    path: '/notification-config',
+    componentKey: 'notificationConfig',
+    requiredPermission: 'notification.config.view',
+    page: {
+      title: '通知配置',
+      subtitle: '维护项目管理关键场景的通知规则与接收角色。',
+    },
+    menu: {
+      section: 'system',
+      label: '通知配置',
+      icon: 'setting',
     },
   },
   {
@@ -171,6 +190,20 @@ export const PRIVATE_ROUTES = [
     page: {
       title: '需求详情',
       subtitle: '查看单个需求的状态、流程和关联事项。',
+    },
+  },
+  {
+    path: '/personal-settings',
+    componentKey: 'personalSettings',
+    requiredPermission: null,
+    page: {
+      title: '个人设置',
+      subtitle: '维护个人资料、安全信息与界面偏好。',
+    },
+    menu: {
+      section: 'personal',
+      label: '个人设置',
+      icon: 'setting',
     },
   },
   {
@@ -255,6 +288,20 @@ export const PRIVATE_ROUTES = [
       section: 'system',
       label: '菜单权限',
       icon: 'setting',
+    },
+  },
+  {
+    path: '/archive-demands',
+    componentKey: 'archiveDemands',
+    requiredPermission: 'archive.view',
+    page: {
+      title: '归档管理',
+      subtitle: '集中管理已归档需求，并支持彻底删除。',
+    },
+    menu: {
+      section: 'system',
+      label: '归档管理',
+      icon: 'tool',
     },
   },
   {

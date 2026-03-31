@@ -1,64 +1,70 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { getAccessApi } from './api/auth'
 import { getMyMenuVisibilityApi } from './api/rbac'
 import { PRIVATE_ROUTES, PUBLIC_ROUTES } from './config/route.config'
 import {
+  AUTH_STORAGE_UPDATED_EVENT,
   canAccessRoute,
   getToken,
-  setActiveBusinessLineId,
-  setAuthStorage,
   setMenuVisibilityAccessMap,
 } from './utils/access'
 import './App.css'
 
 const AdminLayout = lazy(() => import('./layouts/AdminLayout'))
-const Users = lazy(() => import('./pages/Users'))
-const Departments = lazy(() => import('./pages/Departments'))
-const UserDepartments = lazy(() => import('./pages/UserDepartments'))
-const Options = lazy(() => import('./pages/Options'))
-const DemandInsightBoard = lazy(() => import('./pages/DemandInsightBoard'))
-const MemberRhythmBoard = lazy(() => import('./pages/MemberRhythmBoard'))
-const WorkDemands = lazy(() => import('./pages/WorkDemands'))
-const WorkLogs = lazy(() => import('./pages/WorkLogs'))
-const MorningStandupBoard = lazy(() => import('./pages/MorningStandupBoard'))
-const OwnerWorkbench = lazy(() => import('./pages/OwnerWorkbench'))
-const PersonalSettings = lazy(() => import('./pages/PersonalSettings'))
-const RolePermissions = lazy(() => import('./pages/RolePermissions'))
-const MenuVisibility = lazy(() => import('./pages/MenuVisibility'))
-const DictCenter = lazy(() => import('./pages/DictCenter'))
-const Projects = lazy(() => import('./pages/Projects'))
-const Requirements = lazy(() => import('./pages/Requirements'))
-const Bugs = lazy(() => import('./pages/Bugs'))
-const ProjectStats = lazy(() => import('./pages/ProjectStats'))
-const Login = lazy(() => import('./pages/Login'))
-const Register = lazy(() => import('./pages/Register'))
+const Users = lazy(() => import('./pages/system/UsersPage'))
+const Departments = lazy(() => import('./pages/system/DepartmentsPage'))
+const UserDepartments = lazy(() => import('./pages/system/UserDepartmentsPage'))
+const Options = lazy(() => import('./pages/system/OptionsPage'))
+const DemandInsightBoard = lazy(() => import('./pages/insight/DemandInsightBoardPage'))
+const DepartmentEfficiencyRanking = lazy(() => import('./pages/insight/DepartmentEfficiencyRankingPage'))
+const MemberRhythmBoard = lazy(() => import('./pages/insight/MemberRhythmBoardPage'))
+const WorkDemands = lazy(() => import('./pages/project/WorkDemandsPage'))
+const ProjectTemplates = lazy(() => import('./pages/project/ProjectTemplatesPage'))
+const ProjectTemplateDetail = lazy(() => import('./pages/project/ProjectTemplateDetailPage'))
+const NotificationConfig = lazy(() => import('./pages/project/NotificationConfigPage'))
+const WorkLogs = lazy(() => import('./pages/workbench/WorkLogsPage'))
+const WorkLogHistory = lazy(() => import('./pages/workbench/WorkLogHistoryPage'))
+const MorningStandupBoard = lazy(() => import('./pages/workbench/MorningStandupPage'))
+const OwnerWorkbench = lazy(() => import('./pages/workbench/OwnerWorkbenchPage'))
+const PersonalSettings = lazy(() => import('./pages/workbench/PersonalSettingsPage'))
+const RolePermissions = lazy(() => import('./pages/system/RolePermissionsPage'))
+const MenuVisibility = lazy(() => import('./pages/system/MenuVisibilityPage'))
+const ArchiveDemands = lazy(() => import('./pages/project/ArchiveDemandsPage'))
+const DictCenter = lazy(() => import('./pages/system/DictCenterPage'))
+const BugList = lazy(() => import('./pages/bug/BugListPage'))
+const BugDetail = lazy(() => import('./pages/bug/BugDetailPage'))
+const Login = lazy(() => import('./pages/auth/LoginPage'))
+const Register = lazy(() => import('./pages/auth/RegisterPage'))
 
 const PAGE_COMPONENTS = {
-  bugs: Bugs,
   departments: Departments,
   dictCenter: DictCenter,
   login: Login,
   menuVisibility: MenuVisibility,
+  archiveDemands: ArchiveDemands,
+  bugList: BugList,
+  bugDetail: BugDetail,
   morningStandupBoard: MorningStandupBoard,
   options: Options,
   ownerWorkbench: OwnerWorkbench,
   personalSettings: PersonalSettings,
-  projectStats: ProjectStats,
-  projects: Projects,
-  requirements: Requirements,
   demandInsightBoard: DemandInsightBoard,
+  departmentEfficiencyRanking: DepartmentEfficiencyRanking,
   memberRhythmBoard: MemberRhythmBoard,
+  projectTemplates: ProjectTemplates,
+  projectTemplateDetail: ProjectTemplateDetail,
+  notificationConfig: NotificationConfig,
   register: Register,
   rolePermissions: RolePermissions,
   workDemands: WorkDemands,
   workLogs: WorkLogs,
+  workLogHistory: WorkLogHistory,
   userDepartments: UserDepartments,
   users: Users,
 }
 
 function PageFallback() {
-  return <div style={{ padding: '12px' }}>页面加载中...</div>
+  return <div style={{ padding: '12px' }}>Loading...</div>
 }
 
 function getDefaultPrivatePath() {
@@ -113,53 +119,53 @@ function renderPrivateRoute(route) {
 
 function App() {
   const [loadingVisibility, setLoadingVisibility] = useState(Boolean(getToken()))
+  const [, setVisibilityVersion] = useState(0)
 
   useEffect(() => {
     let active = true
+    let requestId = 0
 
-    const loadMyMenuVisibility = async () => {
+    const loadMyMenuVisibility = async ({ showLoading = false } = {}) => {
+      const currentRequestId = ++requestId
+      if (showLoading && active) setLoadingVisibility(true)
+
       if (!getToken()) {
-        if (active) setLoadingVisibility(false)
+        setMenuVisibilityAccessMap({}, { user_id: null })
+        setVisibilityVersion((value) => value + 1)
+        if (active && currentRequestId === requestId) setLoadingVisibility(false)
         return
       }
 
       try {
-        try {
-          const accessResult = await getAccessApi()
-          if (accessResult?.success) {
-            setAuthStorage({ access: accessResult.data || null })
-          }
-        } catch (accessError) {
-          // Handle stale local business line context by clearing it and retrying once.
-          if (Number(accessError?.status) === 400) {
-            setActiveBusinessLineId(null)
-            const retryResult = await getAccessApi()
-            if (retryResult?.success) {
-              setAuthStorage({ access: retryResult.data || null })
-            }
-          } else {
-            throw accessError
-          }
-        }
-
         const result = await getMyMenuVisibilityApi()
+        if (!active || currentRequestId !== requestId) return
+
         if (result?.success) {
           setMenuVisibilityAccessMap(result?.data?.menu_access_map || {})
         } else {
           setMenuVisibilityAccessMap({})
         }
+        setVisibilityVersion((value) => value + 1)
       } catch {
         // keep the app available even when this endpoint is temporarily unavailable
+        if (!active || currentRequestId !== requestId) return
         setMenuVisibilityAccessMap({})
+        setVisibilityVersion((value) => value + 1)
       } finally {
-        if (active) setLoadingVisibility(false)
+        if (active && currentRequestId === requestId) setLoadingVisibility(false)
       }
     }
 
-    loadMyMenuVisibility()
+    loadMyMenuVisibility({ showLoading: Boolean(getToken()) })
+
+    const handleAuthStorageUpdated = () => {
+      loadMyMenuVisibility({ showLoading: false })
+    }
+    window.addEventListener(AUTH_STORAGE_UPDATED_EVENT, handleAuthStorageUpdated)
 
     return () => {
       active = false
+      window.removeEventListener(AUTH_STORAGE_UPDATED_EVENT, handleAuthStorageUpdated)
     }
   }, [])
 

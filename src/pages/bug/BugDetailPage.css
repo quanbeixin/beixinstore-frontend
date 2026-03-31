@@ -1,0 +1,216 @@
+.bug-detail-page {
+  padding: 12px;
+  --bug-surface-bg: #fbfcff;
+  --bug-border-color: #e8edf5;
+  --bug-muted-text: #6e7891;
+  --bug-main-text: #1f2a44;
+}
+
+.bug-detail-page__shell {
+  border-radius: 18px;
+  border: 1px solid var(--bug-border-color);
+  background: linear-gradient(180deg, #fcfdff 0%, #f8fafe 100%);
+}
+
+.bug-detail-page__shell .ant-card-body {
+  padding: 14px 14px 10px;
+}
+
+.bug-detail-page__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--bug-surface-bg);
+  border: 1px solid var(--bug-border-color);
+}
+
+.bug-detail-page__head-left {
+  min-width: 0;
+}
+
+.bug-detail-page__back-btn {
+  color: var(--bug-muted-text);
+  border-radius: 8px;
+}
+
+.bug-detail-page__back-btn:hover {
+  color: #42506d !important;
+  background: #f0f4fb !important;
+}
+
+.bug-detail-page__bug-no {
+  margin-inline-end: 0;
+  border-radius: 999px;
+}
+
+.bug-detail-page__title {
+  color: var(--bug-main-text);
+  font-weight: 650 !important;
+  letter-spacing: 0.01em;
+}
+
+.bug-detail-page__status-tag {
+  margin-inline-end: 0;
+  font-weight: 600;
+}
+
+.bug-detail-page__head-actions .ant-btn {
+  border-radius: 9px;
+}
+
+.bug-detail-page__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 12px;
+}
+
+.bug-detail-page__block {
+  border-radius: 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--bug-border-color);
+  background: #fff;
+}
+
+.bug-detail-page__block .ant-card-head {
+  min-height: 42px;
+  padding: 0 12px;
+  border-bottom-color: #eef2f8;
+}
+
+.bug-detail-page__block .ant-card-head-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #273248;
+}
+
+.bug-detail-page__block .ant-card-body {
+  padding: 12px;
+}
+
+.bug-detail-page__status-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bug-detail-page__status-flow {
+  min-width: 0;
+  flex: 1;
+}
+
+.bug-detail-page__status-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-self: center;
+}
+
+.bug-detail-page__status-action-btn {
+  min-width: 88px;
+  height: 32px;
+  border-radius: 9px;
+  font-weight: 600;
+}
+
+.bug-detail-page__grid .ant-descriptions-item-label {
+  color: var(--bug-muted-text) !important;
+  font-size: 12px;
+  width: 86px;
+}
+
+.bug-detail-page__grid .ant-descriptions-item-content {
+  color: #2b3550;
+}
+
+.bug-detail-page__grid .ant-form-item {
+  margin-bottom: 10px;
+}
+
+.bug-detail-page__grid .ant-form-item-label > label {
+  font-size: 12px;
+  color: var(--bug-muted-text);
+}
+
+.bug-detail-page__grid .ant-input-textarea textarea {
+  border-radius: 10px;
+}
+
+.bug-detail-page__grid .ant-input-textarea textarea:hover {
+  border-color: #9fb4e8;
+}
+
+.bug-detail-page__grid .ant-input-textarea textarea:focus,
+.bug-detail-page__grid .ant-input-textarea textarea:focus-visible {
+  border-color: #7396e6;
+  box-shadow: 0 0 0 2px rgba(80, 119, 205, 0.14);
+}
+
+.bug-detail-page__log-item {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+}
+
+.bug-detail-page__log-main {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.bug-detail-page__log-time {
+  color: #7e8799;
+  font-size: 12px;
+}
+
+.bug-detail-page__log-remark {
+  color: #3a4561;
+  line-height: 1.6;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .bug-detail-page__block,
+  .bug-detail-page__head,
+  .bug-detail-page__status-action-btn,
+  .bug-detail-page__back-btn {
+    transition: all 0.2s ease;
+  }
+
+  .bug-detail-page__status-action-btn:hover {
+    transform: translateY(-1px);
+  }
+}
+
+@media (max-width: 1100px) {
+  .bug-detail-page__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bug-detail-page__head {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 10px;
+  }
+
+  .bug-detail-page__status-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .bug-detail-page__status-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .bug-detail-page__head-actions {
+    width: 100%;
+  }
+
+  .bug-detail-page__head-actions .ant-btn {
+    min-width: 86px;
+  }
+}

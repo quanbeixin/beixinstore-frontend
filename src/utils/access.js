@@ -9,10 +9,46 @@ function readJsonStorage(key) {
   }
 }
 
+function readJsonByStorage(storage, key) {
+  const raw = storage.getItem(key)
+  if (!raw) return null
+
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function readAuthStorageRaw(key) {
+  return sessionStorage.getItem(key) || localStorage.getItem(key) || ''
+}
+
+function readAuthStorageJson(key) {
+  return readJsonByStorage(sessionStorage, key) || readJsonByStorage(localStorage, key)
+}
+
+function clearAuthStorageCore() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+  localStorage.removeItem('access')
+  sessionStorage.removeItem('token')
+  sessionStorage.removeItem('user')
+  sessionStorage.removeItem('access')
+}
+
+function resolveAuthStorageByRemember(remember) {
+  if (remember === true) return localStorage
+  if (remember === false) return sessionStorage
+  if (sessionStorage.getItem('token')) return sessionStorage
+  return localStorage
+}
+
 const MENU_VISIBILITY_RULES_KEY = 'menu_visibility_rules'
 const MENU_VISIBILITY_ACCESS_KEY = 'menu_visibility_access'
 const USER_PREFERENCES_KEY = 'user_preferences'
-const ACTIVE_BUSINESS_LINE_ID_KEY = 'active_business_line_id'
+const AUTH_STORAGE_EVENT = 'auth-storage-updated'
+export const AUTH_STORAGE_UPDATED_EVENT = AUTH_STORAGE_EVENT
 
 const MENU_SCOPE_TYPES = {
   ALL: 'ALL',
@@ -47,9 +83,41 @@ function normalizeScopeType(value) {
   return MENU_SCOPE_TYPES[scopeType] || MENU_SCOPE_TYPES.ALL
 }
 
-function normalizeBusinessLineId(value) {
-  const num = Number(value)
-  return Number.isInteger(num) && num > 0 ? num : null
+function toBooleanMap(value) {
+  const map = {}
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return map
+
+  Object.keys(value).forEach((menuKey) => {
+    const normalizedKey = String(menuKey || '').trim()
+    if (!normalizedKey) return
+    map[normalizedKey] = Boolean(value[menuKey])
+  })
+
+  return map
+}
+
+function getCurrentUserId() {
+  const user = readAuthStorageJson('user')
+  return toPositiveInt(user?.id)
+}
+
+function normalizeMenuVisibilityAccessPayload(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value) && value.map) {
+    return {
+      user_id: toPositiveInt(value.user_id),
+      map: toBooleanMap(value.map),
+    }
+  }
+
+  return {
+    user_id: null,
+    map: toBooleanMap(value),
+  }
+}
+
+function emitAuthStorageUpdated() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event(AUTH_STORAGE_EVENT))
 }
 
 function normalizeMenuRule(rule) {
@@ -77,11 +145,11 @@ function normalizeMenuRule(rule) {
 }
 
 export function getToken() {
-  return localStorage.getItem('token') || ''
+  return readAuthStorageRaw('token')
 }
 
 export function getCurrentUser() {
-  return readJsonStorage('user')
+  return readAuthStorageJson('user')
 }
 
 function normalizeUserPreferences(value) {
@@ -121,45 +189,18 @@ export function getPreferredHomePath() {
 }
 
 export function getAccessSnapshot() {
-  return readJsonStorage('access')
-}
+  const access = readAuthStorageJson('access')
+  if (!access || typeof access !== 'object') return null
 
-export function getActiveBusinessLineId() {
-  return normalizeBusinessLineId(localStorage.getItem(ACTIVE_BUSINESS_LINE_ID_KEY))
-}
-
-export function setActiveBusinessLineId(value) {
-  const normalized = normalizeBusinessLineId(value)
-  if (!normalized) {
-    localStorage.removeItem(ACTIVE_BUSINESS_LINE_ID_KEY)
+  const currentUserId = getCurrentUserId()
+  const accessUserId = toPositiveInt(access.user_id)
+  if (currentUserId && accessUserId && currentUserId !== accessUserId) {
+    localStorage.removeItem('access')
+    sessionStorage.removeItem('access')
     return null
   }
-  localStorage.setItem(ACTIVE_BUSINESS_LINE_ID_KEY, String(normalized))
-  return normalized
-}
 
-export function getAvailableBusinessLines(access = getAccessSnapshot()) {
-  const list = Array.isArray(access?.available_business_lines) ? access.available_business_lines : []
-  return list
-    .map((item) => ({
-      id: normalizeBusinessLineId(item?.id),
-      name: String(item?.name || '').trim(),
-      code: String(item?.code || '').trim(),
-      status: String(item?.status || '').trim(),
-    }))
-    .filter((item) => item.id)
-}
-
-export function resolveCurrentBusinessLineId(access = getAccessSnapshot()) {
-  const available = getAvailableBusinessLines(access)
-  const availableIds = new Set(available.map((item) => item.id))
-  const storedId = getActiveBusinessLineId()
-  if (storedId && availableIds.has(storedId)) return storedId
-
-  const currentId = normalizeBusinessLineId(access?.current_business_line_id)
-  if (currentId && availableIds.has(currentId)) return currentId
-
-  return available[0]?.id || null
+  return access
 }
 
 function getRoleKeys(access) {
@@ -176,6 +217,24 @@ function getRoleKeys(access) {
   return []
 }
 
+const PERMISSION_ALIAS_MAP = Object.freeze({
+  'demand.view': ['requirement.view'],
+  'demand.create': ['requirement.create'],
+  'demand.manage': ['requirement.edit', 'requirement.transition'],
+  'demand.workflow.view': ['requirement.view'],
+  'demand.workflow.manage': ['requirement.transition'],
+})
+
+function hasPermissionCode(codes, permissionCode) {
+  const normalized = String(permissionCode || '').trim()
+  if (!normalized) return true
+  if (codes.includes(normalized)) return true
+
+  const aliases = PERMISSION_ALIAS_MAP[normalized]
+  if (!Array.isArray(aliases)) return false
+  return aliases.some((alias) => codes.includes(String(alias || '').trim()))
+}
+
 export function hasPermission(permissionCode) {
   const access = getAccessSnapshot()
   if (!access || !permissionCode) return true
@@ -186,8 +245,10 @@ export function hasPermission(permissionCode) {
   if (access.is_super_admin) return true
   if (access.permission_ready === false) return true
 
-  const codes = Array.isArray(access.permission_codes) ? access.permission_codes : []
-  return codes.includes(permissionCode)
+  const codes = Array.isArray(access.permission_codes)
+    ? access.permission_codes.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+  return hasPermissionCode(codes, permissionCode)
 }
 
 export function hasRole(roleKey) {
@@ -247,34 +308,29 @@ export function setMenuVisibilityRules(value) {
 }
 
 export function getMenuVisibilityAccessMap() {
-  const raw = readJsonStorage(MENU_VISIBILITY_ACCESS_KEY)
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+  const payload = normalizeMenuVisibilityAccessPayload(readJsonStorage(MENU_VISIBILITY_ACCESS_KEY))
+  const currentUserId = getCurrentUserId()
+
+  if (currentUserId && payload.user_id && currentUserId !== payload.user_id) {
+    localStorage.removeItem(MENU_VISIBILITY_ACCESS_KEY)
     return {}
   }
 
-  const map = {}
-
-  Object.keys(raw).forEach((menuKey) => {
-    const normalizedKey = String(menuKey || '').trim()
-    if (!normalizedKey) return
-    map[normalizedKey] = Boolean(raw[menuKey])
-  })
-
-  return map
+  return payload.map
 }
 
-export function setMenuVisibilityAccessMap(value) {
-  const map = {}
+export function setMenuVisibilityAccessMap(value, options = {}) {
+  const map = toBooleanMap(value)
+  const currentUserId = getCurrentUserId()
+  const userId = toPositiveInt(options?.user_id) || currentUserId || null
 
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    Object.keys(value).forEach((menuKey) => {
-      const normalizedKey = String(menuKey || '').trim()
-      if (!normalizedKey) return
-      map[normalizedKey] = Boolean(value[menuKey])
-    })
-  }
-
-  localStorage.setItem(MENU_VISIBILITY_ACCESS_KEY, JSON.stringify(map))
+  localStorage.setItem(
+    MENU_VISIBILITY_ACCESS_KEY,
+    JSON.stringify({
+      user_id: userId,
+      map,
+    }),
+  )
   return map
 }
 
@@ -299,6 +355,15 @@ export function canAccessRoute(route) {
   if (!route) return false
 
   const access = getAccessSnapshot()
+  const menuKey = String(route.menu?.key || route.path || '').trim()
+
+  if (
+    (menuKey === '/efficiency/department-ranking' || menuKey === '/efficiency/member') &&
+    access?.is_department_manager
+  ) {
+    return true
+  }
+
   if (Array.isArray(route.requiredRoles) && route.requiredRoles.includes('SUPER_ADMIN')) {
     if (!access?.is_super_admin) return false
   }
@@ -307,7 +372,6 @@ export function canAccessRoute(route) {
   const passRole = hasAnyRole(route.requiredRoles)
   if (!passPermission || !passRole) return false
 
-  const menuKey = String(route.menu?.key || route.path || '').trim()
   if (!menuKey) return true
 
    // Ensure owner-workbench menu can be shown for department managers.
@@ -323,28 +387,43 @@ export function canAccessRoute(route) {
   return canAccessRouteByCachedRule(route, menuKey)
 }
 
-export function setAuthStorage({ token, user, access }) {
-  if (token) {
-    localStorage.setItem('token', token)
+export function setAuthStorage({ token, user, access, remember }) {
+  const previousUserId = getCurrentUserId()
+  const nextUserId = user === undefined ? previousUserId : toPositiveInt(user?.id)
+  const authStorage = resolveAuthStorageByRemember(remember)
+
+  if (previousUserId && nextUserId && previousUserId !== nextUserId) {
+    localStorage.removeItem('access')
+    sessionStorage.removeItem('access')
+    localStorage.removeItem(MENU_VISIBILITY_ACCESS_KEY)
+    localStorage.removeItem(USER_PREFERENCES_KEY)
   }
 
-  if (user) {
-    localStorage.setItem('user', JSON.stringify(user))
+  if (token !== undefined) {
+    localStorage.removeItem('token')
+    sessionStorage.removeItem('token')
+    if (token) authStorage.setItem('token', token)
   }
 
-  if (access) {
-    localStorage.setItem('access', JSON.stringify(access))
-    const nextBusinessLineId = resolveCurrentBusinessLineId(access)
-    setActiveBusinessLineId(nextBusinessLineId)
+  if (user !== undefined) {
+    localStorage.removeItem('user')
+    sessionStorage.removeItem('user')
+    if (user) authStorage.setItem('user', JSON.stringify(user))
   }
+
+  if (access !== undefined) {
+    localStorage.removeItem('access')
+    sessionStorage.removeItem('access')
+    if (access) authStorage.setItem('access', JSON.stringify(access))
+  }
+
+  emitAuthStorageUpdated()
 }
 
 export function clearAuthStorage() {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('access')
+  clearAuthStorageCore()
   localStorage.removeItem(MENU_VISIBILITY_RULES_KEY)
   localStorage.removeItem(MENU_VISIBILITY_ACCESS_KEY)
   localStorage.removeItem(USER_PREFERENCES_KEY)
-  localStorage.removeItem(ACTIVE_BUSINESS_LINE_ID_KEY)
+  emitAuthStorageUpdated()
 }
