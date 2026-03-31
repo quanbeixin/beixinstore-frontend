@@ -1017,7 +1017,7 @@ function WorkLogs({ mode = 'dashboard' }) {
         const demandName = String(item?.demand_name || item?.demand_id || '').trim()
         const phaseName = String(item?.phase_name || item?.phase_key || '').trim()
         const label = demandName ? `${item.item_type_name || '事项'}｜${demandName}` : item.item_type_name || '事项'
-        const phaseText = phaseName ? `｜需求任务:${phaseName}` : ''
+        const phaseText = phaseName ? `｜关联节点:${phaseName}` : ''
         return `${index + 1}. ${label}${phaseText}｜计划:${toNumber(item?.planned_hours, 0).toFixed(1)}h｜实际:${toNumber(
           item?.actual_hours,
           0,
@@ -1379,7 +1379,7 @@ function WorkLogs({ mode = 'dashboard' }) {
     const uniquePhaseKeys = [...new Set(selectedPhaseKeys)]
 
     if (values.demand_id && uniquePhaseKeys.length === 0) {
-      message.warning('关联需求时必须选择需求任务')
+      message.warning('关联需求时必须选择关联节点')
       return
     }
 
@@ -1635,7 +1635,7 @@ function WorkLogs({ mode = 'dashboard' }) {
           return
         }
         if (values.demand_id && !values.phase_key) {
-          message.warning('关联需求时必须选择需求任务')
+          message.warning('关联需求时必须选择关联节点')
           return
         }
         const selectedStatus = String(values.log_status || editingLog.log_status || 'IN_PROGRESS').toUpperCase()
@@ -1846,7 +1846,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       ),
     },
     {
-      title: '需求任务',
+      title: '关联节点',
       dataIndex: 'phase_name',
       key: 'phase_name',
       width: 150,
@@ -2091,7 +2091,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       render: (_, record) => record?.demand_name || record?.demand_id || '-',
     },
     {
-      title: '需求任务',
+      title: '关联节点',
       dataIndex: 'phase_name',
       key: 'phase_name',
       width: 140,
@@ -2290,9 +2290,9 @@ function WorkLogs({ mode = 'dashboard' }) {
 
                     <Col xs={24} md={12}>
                       <Form.Item
-                        label="需求任务"
+                        label="关联节点"
                         name="phase_key"
-                        rules={selectedDemandId ? [{ required: true, message: '请选择需求任务' }] : []}
+                        rules={selectedDemandId ? [{ required: true, message: '请选择关联节点' }] : []}
                         extra={isQuickBatchPhaseMode ? '可多选；提交时会按预计整体用时平均拆分为多条事项' : undefined}
                       >
                         <Select
@@ -2300,7 +2300,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                           showSearch
                           mode={isQuickBatchPhaseMode ? 'multiple' : undefined}
                           options={quickPhaseOptionsWithSelected}
-                          placeholder={selectedDemandId ? '请选择需求任务' : '请先选择关联需求'}
+                          placeholder={selectedDemandId ? '请选择关联节点' : '请先选择关联需求'}
                           optionFilterProp="label"
                           disabled={!selectedDemandId}
                           maxTagCount="responsive"
@@ -2523,7 +2523,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                         <Input
                           allowClear
                           aria-label="搜索进行中事项"
-                          placeholder="搜索事项类型 / 需求ID / 需求任务 / 描述"
+                          placeholder="搜索事项类型 / 需求ID / 关联节点 / 描述"
                           value={activeItemKeyword}
                           onChange={(e) => setActiveItemKeyword(e.target.value)}
                         />
@@ -2955,7 +2955,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                   render: (_, record) => record.demand_name || record.demand_id || '-',
                 },
                 {
-                  title: '需求任务',
+                  title: '关联节点',
                   dataIndex: 'phase_name',
                   key: 'phase_name',
                   width: 180,
@@ -3193,7 +3193,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                 '无需求'
               )}
             </div>
-            <div>需求任务: {detailLog.phase_name || detailLog.phase_key || '-'}</div>
+            <div>关联节点: {detailLog.phase_name || detailLog.phase_key || '-'}</div>
             <div>
               明细范围: {toDateInputValue(detailLog.expected_start_date) || toDateInputValue(detailLog.log_date) || '-'}
               {' ~ '}
@@ -3344,15 +3344,15 @@ function WorkLogs({ mode = 'dashboard' }) {
 
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label="需求任务"
+                    label="关联节点"
                     name="phase_key"
-                    rules={selectedActualDemandId ? [{ required: true, message: '请选择需求任务' }] : []}
+                    rules={selectedActualDemandId ? [{ required: true, message: '请选择关联节点' }] : []}
                   >
                     <Select
                       allowClear
                       showSearch
                       options={actualPhaseOptionsWithSelected}
-                      placeholder={selectedActualDemandId ? '请选择需求任务' : '请先选择关联需求'}
+                      placeholder={selectedActualDemandId ? '请选择关联节点' : '请先选择关联需求'}
                       optionFilterProp="label"
                       disabled={!selectedActualDemandId}
                     />

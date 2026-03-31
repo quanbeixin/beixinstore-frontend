@@ -1,6 +1,7 @@
 import { TEMPLATE_GRAPH_STATUS } from './projectTemplate.constants'
 
 let NODE_COUNTER = 0
+const TRUE_LIKE_VALUES = new Set(['1', 'true', 'yes', 'y', 'on'])
 
 function nextNodeId(prefix = 'node') {
   NODE_COUNTER += 1
@@ -38,6 +39,15 @@ function normalizeParticipantRoles(value) {
         .filter(Boolean),
     ),
   )
+}
+
+function normalizeOwnerEstimateRequired(value, fallback = true) {
+  if (value === undefined || value === null || value === '') return Boolean(fallback)
+  if (typeof value === 'boolean') return value
+  const normalized = String(value).trim().toLowerCase()
+  if (TRUE_LIKE_VALUES.has(normalized)) return true
+  if (normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off') return false
+  return Boolean(fallback)
 }
 
 function normalizeNodeConfig(nodeConfig) {
@@ -139,6 +149,10 @@ function hydrateGraphNodes(nodes, explicitEdges = null) {
         incomingKeys: incomingMap.get(key) || [],
         outgoingKeys: outgoingMap.get(key) || [],
         participantRoles: normalizeParticipantRoles(node?.meta?.participantRoles),
+        ownerEstimateRequired: normalizeOwnerEstimateRequired(
+          node?.meta?.ownerEstimateRequired ?? node?.meta?.owner_estimate_required,
+          true,
+        ),
       },
     }
   })
@@ -200,6 +214,10 @@ export function createEmptyGraphNode(partial = {}) {
         participantRoles: normalizeParticipantRoles(
           partial?.meta?.participantRoles || partial?.meta?.participant_roles,
         ),
+        ownerEstimateRequired: normalizeOwnerEstimateRequired(
+          partial?.meta?.ownerEstimateRequired ?? partial?.meta?.owner_estimate_required,
+          true,
+        ),
       },
     }
 }
@@ -218,6 +236,7 @@ export function mapTemplateNodeConfigToGraphNodes(nodeConfig) {
       meta: {
         description: row?.description,
         participantRoles: row?.participant_roles || row?.participantRoles,
+        ownerEstimateRequired: row?.owner_estimate_required ?? row?.ownerEstimateRequired,
       },
     }),
   )
@@ -237,6 +256,7 @@ export function mapGraphNodesToTemplateNodeConfig(nodes) {
       phase_key: normalizeText(node?.phaseKey, 'develop'),
       sort_order: index + 1,
       participant_roles: normalizeParticipantRoles(node?.meta?.participantRoles),
+      owner_estimate_required: normalizeOwnerEstimateRequired(node?.meta?.ownerEstimateRequired, true),
       ...(normalizeText(node?.meta?.description, '') ? { description: normalizeText(node.meta.description, '') } : {}),
     })),
     edges: buildEdgesFromNodes(list),
@@ -285,6 +305,7 @@ export function duplicateGraphNode(nodes, nodeId) {
       description: source?.meta?.description,
       incomingKeys: source?.meta?.incomingKeys || [],
       participantRoles: source?.meta?.participantRoles || [],
+      ownerEstimateRequired: source?.meta?.ownerEstimateRequired,
     },
   })
   next.splice(index + 1, 0, copy)

@@ -1,5 +1,5 @@
 import { CopyOutlined, DeleteOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons'
-import { Button, Form, Input, InputNumber, Select, Space, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { Button, Form, Input, InputNumber, Select, Space, Switch, Tabs, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { TEMPLATE_NODE_TYPE_OPTIONS } from '../utils/projectTemplate.constants'
 import { WorkflowInspector } from '../../workflow'
@@ -50,6 +50,7 @@ function TemplateNodeInspector({
       description: String(node.meta?.description || ''),
       incomingKeys: Array.isArray(node.meta?.incomingKeys) ? node.meta.incomingKeys : [],
       participantRoles: Array.isArray(node.meta?.participantRoles) ? node.meta.participantRoles : [],
+      ownerEstimateRequired: node?.meta?.ownerEstimateRequired !== false,
     })
   }, [form, node])
 
@@ -99,6 +100,7 @@ function TemplateNodeInspector({
 
     const currentIncomingKeys = Array.isArray(node?.meta?.incomingKeys) ? node.meta.incomingKeys : []
     const currentParticipantRoles = Array.isArray(node?.meta?.participantRoles) ? node.meta.participantRoles : []
+    const currentOwnerEstimateRequired = node?.meta?.ownerEstimateRequired !== false
 
     onChangeNode?.(node.id, {
       title: allValues?.title ?? node.title,
@@ -112,6 +114,10 @@ function TemplateNodeInspector({
         participantRoles: Array.isArray(allValues?.participantRoles)
           ? allValues.participantRoles
           : currentParticipantRoles,
+        ownerEstimateRequired:
+          allValues?.ownerEstimateRequired === undefined
+            ? currentOwnerEstimateRequired
+            : Boolean(allValues.ownerEstimateRequired),
       },
     })
 
@@ -196,6 +202,16 @@ function TemplateNodeInspector({
                           placeholder="选择哪些业务参与角色需要这个节点"
                           options={participantRoleOptions}
                         />
+                      </Form.Item>
+                      <Form.Item
+                        label={renderLabelWithHelp(
+                          '需 Owner 评估',
+                          '开启后，该节点下创建的事项会进入 Owner 评估维护范围；关闭后，该节点事项不要求 Owner 评估。',
+                        )}
+                        name="ownerEstimateRequired"
+                        valuePropName="checked"
+                      >
+                        <Switch checkedChildren="需要" unCheckedChildren="不需要" />
                       </Form.Item>
                       <Form.Item label="节点说明" name="description">
                         <Input.TextArea rows={4} maxLength={300} placeholder="补充这个节点的目标、输出物或执行要求" />
