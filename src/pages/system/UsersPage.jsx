@@ -6,6 +6,7 @@
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
+  SyncOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -29,9 +30,12 @@ import { getOptionsApi } from '../../api/options'
 import {
   createUserApi,
   deleteUserApi,
+  getFeishuContactsApi,
   getUserChangeLogsApi,
   getUserByIdApi,
   getUsersApi,
+  saveFeishuSyncScopesApi,
+  syncUsersFromFeishuApi,
   updateUserApi,
 } from '../../api/users'
 import { getCurrentUser } from '../../utils/access'
@@ -143,6 +147,14 @@ function Users() {
   const [logDateRange, setLogDateRange] = useState([])
 
   const [form] = Form.useForm()
+  const [syncForm] = Form.useForm()
+  const [syncModalVisible, setSyncModalVisible] = useState(false)
+  const [syncingFeishuUsers, setSyncingFeishuUsers] = useState(false)
+  const [savingFeishuScopes, setSavingFeishuScopes] = useState(false)
+  const [loadingFeishuContacts, setLoadingFeishuContacts] = useState(false)
+  const [feishuContacts, setFeishuContacts] = useState([])
+  const [feishuKeyword, setFeishuKeyword] = useState('')
+  const [selectedFeishuOpenIds, setSelectedFeishuOpenIds] = useState([])
 
   const getCurrentUserId = () => {
     const user = getCurrentUser()
@@ -386,6 +398,109 @@ function Users() {
     setSortBy('real_name')
     setSortOrder('asc')
     fetchUsers()
+  }
+
+  const openSyncFeishuModal = () => {
+    syncForm.setFieldsValue({
+      default_password: 'Beixin123',
+      username_prefix: 'fs_',
+      dry_run: false,
+    })
+    setFeishuKeyword('')
+    setSelectedFeishuOpenIds([])
+    setSyncModalVisible(true)
+    void loadFeishuContacts('', { initializeSelection: true })
+  }
+
+  const loadFeishuContacts = async (keyword = '', options = {}) => {
+    const initializeSelection = options.initializeSelection === true
+    try {
+      setLoadingFeishuContacts(true)
+      const result = await getFeishuContactsApi({ keyword })
+      if (!result?.success) {
+        message.error(result?.message || '获取飞书通讯录失败')
+        return
+      }
+      const rows = Array.isArray(result.data) ? result.data : []
+      setFeishuContacts(rows)
+      if (initializeSelection) {
+        const preselected = rows.filter((item) => item.selected).map((item) => item.open_id)
+        setSelectedFeishuOpenIds(preselected)
+      }
+    } catch (error) {
+      message.error(error?.message || '获取飞书通讯录失败')
+    } finally {
+      setLoadingFeishuContacts(false)
+    }
+  }
+
+  const persistFeishuScopes = async () => {
+    const selectedUsers = feishuContacts
+      .filter((item) => selectedFeishuOpenIds.includes(item.open_id))
+      .map((item) => ({
+        open_id: item.open_id,
+        name: item.name,
+        email: item.email,
+        mobile: item.mobile,
+      }))
+
+    const saveScopeResult = await saveFeishuSyncScopesApi({
+      selected_open_ids: selectedFeishuOpenIds,
+      selected_users: selectedUsers,
+    })
+    if (!saveScopeResult?.success) {
+      throw new Error(saveScopeResult?.message || '保存同步名单失败')
+    }
+    return saveScopeResult
+  }
+
+  const handleSaveFeishuScopesOnly = async () => {
+    try {
+      setSavingFeishuScopes(true)
+      const result = await persistFeishuScopes()
+      message.success(result?.message || '飞书同步名单已保存')
+    } catch (error) {
+      message.error(error?.message || '保存同步名单失败')
+    } finally {
+      setSavingFeishuScopes(false)
+    }
+  }
+
+  const handleSyncFeishuUsers = async () => {
+    try {
+      const values = await syncForm.validateFields()
+      if (!selectedFeishuOpenIds.length) {
+        message.warning('请先选择需要同步的人员')
+        return
+      }
+      setSyncingFeishuUsers(true)
+      await persistFeishuScopes()
+
+      const result = await syncUsersFromFeishuApi({
+        default_password: values.default_password,
+        username_prefix: values.username_prefix,
+        dry_run: values.dry_run === true,
+        selected_open_ids: selectedFeishuOpenIds,
+      })
+
+      if (!result?.success) {
+        message.error(result?.message || '同步失败')
+        return
+      }
+
+      const stats = result?.data || {}
+      message.success(
+        `同步完成：通讯录总${stats.total || 0}，选中${stats.selected || selectedFeishuOpenIds.length}，新增${stats.created || 0}，更新${stats.updated || 0}`,
+      )
+      setSyncModalVisible(false)
+      fetchUsers()
+    } catch (error) {
+      if (!error?.errorFields) {
+        message.error(error?.message || '同步失败')
+      }
+    } finally {
+      setSyncingFeishuUsers(false)
+    }
   }
 
   const openLogModal = () => {
@@ -723,6 +838,9 @@ function Users() {
           </Button>
         </Space>
         <Space>
+          <Button icon={<SyncOutlined />} onClick={openSyncFeishuModal}>
+            同步飞书通讯录
+          </Button>
           <Button icon={<FileSearchOutlined />} onClick={openLogModal}>
             操作记录
           </Button>
@@ -742,6 +860,115 @@ function Users() {
         onChange={handleTableChange}
         scroll={{ x: 1200 }}
       />
+
+      <Modal
+        title="同步飞书通讯录到用户管理"
+        open={syncModalVisible}
+        onCancel={() => setSyncModalVisible(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setSyncModalVisible(false)}>
+            取消
+          </Button>,
+          <Button
+            key="save-scopes"
+            loading={savingFeishuScopes}
+            onClick={() => void handleSaveFeishuScopesOnly()}
+          >
+            仅保存名单
+          </Button>,
+          <Button
+            key="sync"
+            type="primary"
+            loading={syncingFeishuUsers}
+            onClick={() => void handleSyncFeishuUsers()}
+          >
+            开始同步
+          </Button>,
+        ]}
+      >
+        <Form form={syncForm} layout="vertical">
+          <Form.Item
+            label="默认初始密码"
+            name="default_password"
+            rules={[
+              { required: true, message: '请输入默认初始密码' },
+              { min: 6, message: '密码至少6位' },
+            ]}
+            extra="新创建的飞书用户将使用该默认密码，建议同步后强制修改。"
+          >
+            <Input.Password />
+          </Form.Item>
+          <Form.Item
+            label="用户名前缀"
+            name="username_prefix"
+            rules={[{ required: true, message: '请输入用户名前缀' }]}
+            extra="系统会自动拼接飞书邮箱/手机号等生成用户名，例如 fs_zhangsan。"
+          >
+            <Input maxLength={10} />
+          </Form.Item>
+          <Form.Item label="试运行（不落库）" name="dry_run" valuePropName="checked">
+            <Switch checkedChildren="试运行" unCheckedChildren="正式同步" />
+          </Form.Item>
+          <Form.Item label="通讯录筛选">
+            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+              <Input
+                placeholder="按姓名/邮箱/手机号搜索"
+                value={feishuKeyword}
+                onChange={(event) => setFeishuKeyword(event.target.value)}
+                onPressEnter={() => void loadFeishuContacts(feishuKeyword)}
+                style={{ width: 260 }}
+              />
+              <Button loading={loadingFeishuContacts} onClick={() => void loadFeishuContacts(feishuKeyword)}>
+                拉取通讯录
+              </Button>
+            </Space>
+          </Form.Item>
+          <Form.Item label={`选择同步人员（已选 ${selectedFeishuOpenIds.length} 人）`}>
+            <Table
+              rowKey="open_id"
+              size="small"
+              loading={loadingFeishuContacts}
+              dataSource={feishuContacts}
+              pagination={{ pageSize: 8 }}
+              rowSelection={{
+                selectedRowKeys: selectedFeishuOpenIds,
+                onChange: (keys) => setSelectedFeishuOpenIds(keys.map((item) => String(item))),
+              }}
+              columns={[
+                {
+                  title: '姓名',
+                  dataIndex: 'name',
+                  key: 'name',
+                  width: 140,
+                  render: (value) => value || '-',
+                },
+                {
+                  title: '邮箱',
+                  dataIndex: 'email',
+                  key: 'email',
+                  width: 180,
+                  render: (value) => value || '-',
+                },
+                {
+                  title: '手机号',
+                  dataIndex: 'mobile',
+                  key: 'mobile',
+                  width: 120,
+                  render: (value) => value || '-',
+                },
+                {
+                  title: 'open_id',
+                  dataIndex: 'open_id',
+                  key: 'open_id',
+                  ellipsis: true,
+                  render: (value) => value || '-',
+                },
+              ]}
+              scroll={{ y: 280 }}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title="用户操作记录"

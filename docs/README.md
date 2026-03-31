@@ -6,6 +6,7 @@
 
 - `frontend-staging-rules.md`：前端本地 `staging` 联调规则与环境约定
 - `project-management-frontend-guide.md`：项目管理模块前端接入规范与页面结构约定
+- `notification-config-center-frontend-guide.md`：通知配置中心（系统设置主入口）的 mock/real 联调与回归执行指南
 
 ## 维护原则
 

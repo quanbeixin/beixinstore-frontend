@@ -5,20 +5,26 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:notification:mock": "VITE_NOTIFICATION_API_MODE=mock vite",
+    "dev:notification:real": "VITE_NOTIFICATION_API_MODE=real vite",
     "dev:staging": "vite --mode staging",
     "build": "vite build",
     "build:staging": "vite build --mode staging",
     "lint": "eslint .",
+    "regression:notification": "node scripts/api-regression-notification-center.js",
+    "regression:notification:write": "node scripts/api-regression-notification-center.js --write",
     "format": "prettier --write .",
     "preview": "vite preview"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
+    "@tanstack/react-query": "^5.83.0",
     "antd": "^6.3.3",
     "axios": "^1.13.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router-dom": "^7.13.1"
+    "react-router-dom": "^7.13.1",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

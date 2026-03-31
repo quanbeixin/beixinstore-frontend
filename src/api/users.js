@@ -23,3 +23,15 @@ export function updateUserApi(userId, payload) {
 export function deleteUserApi(userId) {
   return request.post(`/users/${userId}/delete`)
 }
+
+export function syncUsersFromFeishuApi(payload) {
+  return request.post('/users/sync-feishu', payload)
+}
+
+export function getFeishuContactsApi(params) {
+  return request.get('/users/feishu-contacts', { params })
+}
+
+export function saveFeishuSyncScopesApi(payload) {
+  return request.put('/users/feishu-sync-scopes', payload)
+}
