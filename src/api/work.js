@@ -44,6 +44,14 @@ export function updateNotificationConfigApi(scene, payload) {
   return request.put(`/work/notification-configs/${scene}`, payload)
 }
 
+export function getEfficiencyFactorSettingsApi() {
+  return request.get('/work/efficiency-factor-settings')
+}
+
+export function updateEfficiencyFactorSettingsApi(payload) {
+  return request.put('/work/efficiency-factor-settings', payload)
+}
+
 export function getWorkDemandsApi(params) {
   const key = `demands-${JSON.stringify(params)}`
   return cachedRequest(key, () => request.get('/work/demands', { params }))
@@ -265,10 +273,18 @@ export function getDepartmentEfficiencyRankingApi(params) {
   return request.get('/work/insight/department-ranking', { params })
 }
 
+export function getDepartmentEfficiencyDetailApi(params) {
+  return request.get('/work/insight/department-detail', { params })
+}
+
 export function getDemandInsightApi(params) {
   return request.get('/work/insight/demand', { params })
 }
 
 export function getMemberInsightApi(params) {
   return request.get('/work/insight/member', { params })
+}
+
+export function getMemberEfficiencyDetailApi(params) {
+  return request.get('/work/insight/member-detail', { params })
 }
