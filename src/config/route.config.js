@@ -29,6 +29,16 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/efficiency/department/:departmentId/detail',
+    componentKey: 'departmentEfficiencyDetail',
+    requiredPermission: null,
+    requiredRoles: ['ADMIN'],
+    page: {
+      title: '部门人效详情',
+      subtitle: '查看单个部门在指定周期内的成员投入结构、重点需求与波动情况。',
+    },
+  },
+  {
     path: '/efficiency/demand',
     componentKey: 'demandInsightBoard',
     requiredPermission: null,
@@ -56,6 +66,31 @@ export const PRIVATE_ROUTES = [
       section: 'efficiency',
       label: '成员工作节奏',
       icon: 'dashboard',
+    },
+  },
+  {
+    path: '/efficiency/member/:userId/detail',
+    componentKey: 'memberEfficiencyDetail',
+    requiredPermission: null,
+    requiredRoles: ['ADMIN'],
+    page: {
+      title: '个人人效详情',
+      subtitle: '查看单个成员在指定周期内的投入结构、需求汇总与事项明细。',
+    },
+  },
+  {
+    path: '/efficiency/factor-settings',
+    componentKey: 'efficiencyFactorSettings',
+    requiredPermission: null,
+    requiredRoles: ['ADMIN'],
+    page: {
+      title: '效能系数设置',
+      subtitle: '维护效能口径中的配置项与后续计算系数入口。',
+    },
+    menu: {
+      section: 'efficiency',
+      label: '效能系数设置',
+      icon: 'setting',
     },
   },
   {

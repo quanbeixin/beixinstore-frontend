@@ -27,6 +27,7 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { getDictItemsApi } from '../../api/configDict'
 import {
   createOwnerAssignedLogApi,
   getDemandWorkflowNodeOptionsApi,
@@ -66,6 +67,8 @@ function getSearchText(item) {
     item?.assigned_by_name,
     item?.phase_name,
     item?.phase_key,
+    item?.task_difficulty_name,
+    item?.task_difficulty_code,
     item?.task_source,
     item?.description,
   ]
@@ -148,6 +151,7 @@ function OwnerWorkbench() {
   })
 
   const [itemTypes, setItemTypes] = useState([])
+  const [taskDifficultyOptions, setTaskDifficultyOptions] = useState([])
   const [demands, setDemands] = useState([])
   const [demandWorkflowNodeOptionsMap, setDemandWorkflowNodeOptionsMap] = useState({})
 
@@ -177,15 +181,24 @@ function OwnerWorkbench() {
 
   const loadAssignBase = useCallback(async () => {
     try {
-      const [itemTypeResult, demandResult] = await Promise.all([
+      const [itemTypeResult, demandResult, dictResult] = await Promise.all([
         getWorkItemTypesApi({ enabled_only: 1 }),
         getWorkDemandsApi({ page: 1, pageSize: 1000 }),
+        getDictItemsApi('task_difficulty', { enabledOnly: true }).catch(() => null),
       ])
       if (itemTypeResult?.success) {
         setItemTypes(itemTypeResult.data || [])
       }
       if (demandResult?.success) {
         setDemands(demandResult.data?.list || [])
+      }
+      if (dictResult?.success) {
+        setTaskDifficultyOptions(
+          (dictResult.data || []).map((item) => ({
+            value: item.item_code,
+            label: item.item_name || item.item_code,
+          })),
+        )
       }
     } catch {
       // keep owner panel available even if optional lists fail
@@ -394,6 +407,7 @@ function OwnerWorkbench() {
         item?.owner_estimate_hours === null || item?.owner_estimate_hours === undefined
           ? undefined
           : toNumber(item.owner_estimate_hours, 0),
+      task_difficulty_code: item?.task_difficulty_code || undefined,
     })
     setEstimateModalOpen(true)
   }
@@ -412,6 +426,7 @@ function OwnerWorkbench() {
       setSavingEstimate(true)
       const result = await updateWorkLogOwnerEstimateApi(editingItem.id, {
         owner_estimate_hours: values.owner_estimate_hours,
+        task_difficulty_code: values.task_difficulty_code,
       })
 
       if (!result?.success) {
@@ -635,6 +650,18 @@ function OwnerWorkbench() {
       key: 'expected_completion_date',
       width: 130,
       render: (value) => formatBeijingDate(value),
+    },
+    {
+      title: '任务难度',
+      dataIndex: 'task_difficulty_name',
+      key: 'task_difficulty_name',
+      width: 110,
+      render: (_, row) =>
+        row?.task_difficulty_name || row?.task_difficulty_code ? (
+          <Tag color="processing">{row.task_difficulty_name || row.task_difficulty_code}</Tag>
+        ) : (
+          <Text type="secondary">未评估</Text>
+        ),
     },
     {
       title: 'Owner评估(h)',
@@ -999,6 +1026,18 @@ function OwnerWorkbench() {
         destroyOnHidden
       >
         <Form form={estimateForm} layout="vertical" className="owner-modal-form">
+          <Form.Item
+            label="任务难度"
+            name="task_difficulty_code"
+            rules={[{ required: true, message: '请选择任务难度' }]}
+          >
+            <Select
+              showSearch
+              placeholder="请选择任务难度"
+              options={taskDifficultyOptions}
+              optionFilterProp="label"
+            />
+          </Form.Item>
           <Form.Item
             label="Owner评估(h)"
             name="owner_estimate_hours"

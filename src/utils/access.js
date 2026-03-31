@@ -356,9 +356,14 @@ export function canAccessRoute(route) {
 
   const access = getAccessSnapshot()
   const menuKey = String(route.menu?.key || route.path || '').trim()
+  const isEfficiencyDetailRoute =
+    menuKey === '/efficiency/department/:departmentId/detail' ||
+    menuKey === '/efficiency/member/:userId/detail'
 
   if (
-    (menuKey === '/efficiency/department-ranking' || menuKey === '/efficiency/member') &&
+    (menuKey === '/efficiency/department-ranking' ||
+      menuKey === '/efficiency/member' ||
+      isEfficiencyDetailRoute) &&
     access?.is_department_manager
   ) {
     return true

@@ -202,6 +202,14 @@ function MemberRhythmBoard() {
     navigate(`/efficiency/demand?${params.toString()}`)
   }
 
+  const goMemberDetail = (targetMemberUserId) => {
+    if (!targetMemberUserId) return
+    const params = new URLSearchParams()
+    if (dateRange?.[0]) params.set('start_date', dateRange[0].format('YYYY-MM-DD'))
+    if (dateRange?.[1]) params.set('end_date', dateRange[1].format('YYYY-MM-DD'))
+    navigate(`/efficiency/member/${targetMemberUserId}/detail?${params.toString()}`)
+  }
+
   const summary = data.summary || {}
   const memberList = useMemo(() => (Array.isArray(data.member_list) ? data.member_list : []), [data.member_list])
 
@@ -347,7 +355,9 @@ function MemberRhythmBoard() {
       width: 220,
       render: (_, row) => (
         <Space orientation="vertical" size={2}>
-          <Text strong>{row.username}</Text>
+          <Button type="link" style={{ paddingInline: 0, fontWeight: 600 }} onClick={() => goMemberDetail(row.user_id)}>
+            {row.username}
+          </Button>
           <Space size={4}>
             <Tag color="blue">#{row.user_id}</Tag>
             <Tag>{row.department_name || '-'}</Tag>
@@ -440,7 +450,9 @@ function MemberRhythmBoard() {
       render: (_, row) => (
         <Space>
           <Tag color="blue">#{row.user_id}</Tag>
-          <span>{row.username}</span>
+          <Button type="link" style={{ paddingInline: 0 }} onClick={() => goMemberDetail(row.user_id)}>
+            {row.username}
+          </Button>
         </Space>
       ),
     },
@@ -460,6 +472,77 @@ function MemberRhythmBoard() {
     },
   ]
 
+  const renderItemsTable = (items) => {
+    if (!Array.isArray(items) || items.length === 0) {
+      return <Empty description="当天暂无事项明细" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+    }
+
+    return (
+      <Table
+        rowKey="log_id"
+        size="small"
+        pagination={false}
+        dataSource={items}
+        columns={[
+          {
+            title: '需求ID',
+            dataIndex: 'demand_id',
+            key: 'demand_id',
+            width: 120,
+            render: (value) => value || '-',
+          },
+          {
+            title: '需求名称',
+            dataIndex: 'demand_name',
+            key: 'demand_name',
+            width: 200,
+            ellipsis: true,
+          },
+          {
+            title: '事项描述',
+            dataIndex: 'description',
+            key: 'description',
+            width: 250,
+            ellipsis: true,
+          },
+          {
+            title: '阶段',
+            dataIndex: 'phase_name',
+            key: 'phase_name',
+            width: 100,
+          },
+          {
+            title: '类型',
+            dataIndex: 'item_type_name',
+            key: 'item_type_name',
+            width: 100,
+          },
+          {
+            title: '负责人预估(h)',
+            dataIndex: 'owner_estimate_hours',
+            key: 'owner_estimate_hours',
+            width: 130,
+            render: (value) => toNumber(value, 0).toFixed(1),
+          },
+          {
+            title: '个人预估(h)',
+            dataIndex: 'personal_estimate_hours',
+            key: 'personal_estimate_hours',
+            width: 120,
+            render: (value) => toNumber(value, 0).toFixed(1),
+          },
+          {
+            title: '个人实际(h)',
+            dataIndex: 'actual_hours',
+            key: 'actual_hours',
+            width: 120,
+            render: (value) => toNumber(value, 0).toFixed(1),
+          },
+        ]}
+      />
+    )
+  }
+
   const renderDailyTable = (memberRow) => {
     const rows = Array.isArray(memberRow.daily_stats) ? memberRow.daily_stats : []
     if (rows.length === 0) {
@@ -475,6 +558,10 @@ function MemberRhythmBoard() {
         size="small"
         pagination={false}
         dataSource={sortedRows}
+        expandable={{
+          expandedRowRender: (dailyRow) => renderItemsTable(dailyRow.items),
+          rowExpandable: (record) => Array.isArray(record.items) && record.items.length > 0,
+        }}
         columns={[
           {
             title: '日期',

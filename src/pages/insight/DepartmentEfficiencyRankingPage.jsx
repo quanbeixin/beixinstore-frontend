@@ -218,13 +218,19 @@ function DepartmentEfficiencyRankingPage() {
     message.success('导出成功')
   }
 
-  const goMemberInsight = (row) => {
+  const goMemberDetail = (row) => {
     const params = new URLSearchParams()
-    if (departmentId) params.set('department_id', String(departmentId))
-    if (row?.user_id) params.set('member_user_id', String(row.user_id))
     if (dateRange?.[0]) params.set('start_date', dateRange[0].format('YYYY-MM-DD'))
     if (dateRange?.[1]) params.set('end_date', dateRange[1].format('YYYY-MM-DD'))
-    navigate(`/efficiency/member?${params.toString()}`)
+    navigate(`/efficiency/member/${row?.user_id}/detail?${params.toString()}`)
+  }
+
+  const goDepartmentDetail = () => {
+    if (!departmentId) return
+    const params = new URLSearchParams()
+    if (dateRange?.[0]) params.set('start_date', dateRange[0].format('YYYY-MM-DD'))
+    if (dateRange?.[1]) params.set('end_date', dateRange[1].format('YYYY-MM-DD'))
+    navigate(`/efficiency/department/${departmentId}/detail?${params.toString()}`)
   }
 
   const summary = data.summary || {}
@@ -244,7 +250,7 @@ function DepartmentEfficiencyRankingPage() {
       width: 220,
       render: (_, row) => (
         <Space orientation="vertical" size={2}>
-          <Button type="link" style={{ paddingInline: 0, fontWeight: 600 }} onClick={() => goMemberInsight(row)}>
+          <Button type="link" style={{ paddingInline: 0, fontWeight: 600 }} onClick={() => goMemberDetail(row)}>
             {row.username || '-'}
           </Button>
           <Space size={6}>
@@ -332,7 +338,7 @@ function DepartmentEfficiencyRankingPage() {
       width: 100,
       fixed: 'right',
       render: (_, row) => (
-        <Button type="link" style={{ paddingInline: 0 }} onClick={() => goMemberInsight(row)}>
+        <Button type="link" style={{ paddingInline: 0 }} onClick={() => goMemberDetail(row)}>
           查看明细
         </Button>
       ),
@@ -346,6 +352,9 @@ function DepartmentEfficiencyRankingPage() {
         style={{ marginBottom: 16 }}
         extra={
           <Space>
+            <Button type="primary" ghost onClick={goDepartmentDetail} disabled={!departmentId}>
+              查看部门详情
+            </Button>
             <Button icon={<ReloadOutlined />} loading={loading} onClick={loadData}>
               刷新
             </Button>
