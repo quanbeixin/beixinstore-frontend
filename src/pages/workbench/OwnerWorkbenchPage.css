@@ -47,6 +47,24 @@
   margin-bottom: 24px;
 }
 
+.owner-scope-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 0 4px;
+}
+
+.owner-scope-banner__label.ant-typography {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.owner-scope-banner__value.ant-typography {
+  color: #0f172a;
+  font-size: 13px;
+}
+
 .owner-metrics-row {
   margin-bottom: 0;
 }
@@ -242,6 +260,10 @@
   width: 220px;
 }
 
+.owner-filter-input--status {
+  width: 160px;
+}
+
 .owner-toggle-group {
   padding: 0 2px;
 }
@@ -290,7 +312,8 @@
 @media (max-width: 1199px) {
   .owner-filter-input--keyword,
   .owner-filter-input--member,
-  .owner-filter-input--phase {
+  .owner-filter-input--phase,
+  .owner-filter-input--status {
     width: 100%;
   }
 

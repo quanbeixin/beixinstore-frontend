@@ -222,7 +222,15 @@ export function getLogDailyEntriesApi(logId, params) {
 }
 
 export function createLogDailyEntryApi(logId, payload) {
+  clearCache('workbench-me')
+  clearCacheByPrefix('logs-')
   return request.post(`/work/logs/${logId}/daily-entries`, payload)
+}
+
+export function updateLogDailyEntryApi(logId, entryId, payload) {
+  clearCache('workbench-me')
+  clearCacheByPrefix('logs-')
+  return request.put(`/work/logs/${logId}/daily-entries/${entryId}`, payload)
 }
 
 export function updateWorkLogOwnerEstimateApi(logId, payload) {

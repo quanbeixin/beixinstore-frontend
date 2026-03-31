@@ -66,6 +66,7 @@ const { Text } = Typography
 const { RangePicker } = DatePicker
 const WORKFLOW_ASSIGNEE_PAGE_SIZE = 500
 const WORKFLOW_ASSIGNEE_MAX_PAGES = 50
+const DEMAND_LIST_PAGE_SIZE = 1000
 
 const STATUS_OPTIONS = [
   { label: '待开始', value: 'TODO' },
@@ -73,6 +74,10 @@ const STATUS_OPTIONS = [
   { label: '已完成', value: 'DONE' },
   { label: '已中止', value: 'CANCELLED' },
 ]
+
+const NON_COMPLETED_STATUS_OPTIONS = STATUS_OPTIONS.filter((item) => item.value !== 'DONE')
+const COMPLETED_TAB_STATUS_OPTIONS = STATUS_OPTIONS.filter((item) => item.value === 'DONE')
+const CANCELLED_TAB_STATUS_OPTIONS = STATUS_OPTIONS.filter((item) => item.value === 'CANCELLED')
 
 const PRIORITY_OPTIONS = [
   { label: 'P0', value: 'P0' },
@@ -278,6 +283,12 @@ function getNodeRelatedPhaseKeySet(node) {
   return set
 }
 
+function getDemandListPhaseGroup(record) {
+  const phaseKey = String(record?.current_phase_key || '').trim().toUpperCase() || '__UNSTARTED__'
+  const phaseName = String(record?.current_phase_name || '').trim() || '未开始'
+  return { phaseKey, phaseName }
+}
+
 function WorkDemands() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -286,8 +297,8 @@ function WorkDemands() {
   const canView = hasPermission('demand.view')
   const canViewUsers = hasPermission('user.view')
   const canCreate = hasPermission('demand.create')
-  const canViewProjectTemplates =
-    hasPermission('project.template.view') || hasPermission('project.template.manage')
+  const canUseProjectTemplates =
+    canCreate || hasPermission('project.template.view') || hasPermission('project.template.manage')
   const canTransferOwner = hasPermission('demand.transfer_owner') || hasRole('ADMIN')
   const canViewSelfLogs = hasPermission('worklog.view.self')
   const canViewTeamLogs = hasPermission('worklog.view.team')
@@ -299,6 +310,8 @@ function WorkDemands() {
   const [form] = Form.useForm()
   const modalTemplateId = Form.useWatch('template_id', form)
   const modalParticipantRoles = Form.useWatch('participant_roles', form)
+  const modalOwnerUserId = Form.useWatch('owner_user_id', form)
+  const modalProjectManager = Form.useWatch('project_manager', form)
 
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -310,15 +323,17 @@ function WorkDemands() {
   const [projectTemplates, setProjectTemplates] = useState([])
   const [templateFallbackMap, setTemplateFallbackMap] = useState({})
   const templateFallbackLoadingRef = useRef(new Set())
+  const previousCreateOwnerIdRef = useRef(null)
   const [workflowAssignees, setWorkflowAssignees] = useState([])
   const [businessGroups, setBusinessGroups] = useState([])
   const [businessGroupCounts, setBusinessGroupCounts] = useState([])
   const [businessGroupAllCount, setBusinessGroupAllCount] = useState(0)
+  const [completedDemandCount, setCompletedDemandCount] = useState(0)
+  const [cancelledDemandCount, setCancelledDemandCount] = useState(0)
   const [participantRoleItems, setParticipantRoleItems] = useState([])
 
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
-  const [total, setTotal] = useState(0)
+  const [pageSize] = useState(DEMAND_LIST_PAGE_SIZE)
 
   const [keyword, setKeyword] = useState('')
   const [keywordInput, setKeywordInput] = useState('')
@@ -326,6 +341,8 @@ function WorkDemands() {
   const [priorityFilter, setPriorityFilter] = useState('')
   const [prioritySortOrder, setPrioritySortOrder] = useState()
   const [businessGroupFilter, setBusinessGroupFilter] = useState('')
+  const [showCompletedTabOnly, setShowCompletedTabOnly] = useState(false)
+  const [showCancelledTabOnly, setShowCancelledTabOnly] = useState(false)
   const [ownerFilter, setOwnerFilter] = useState()
   const [updatedRange, setUpdatedRange] = useState([])
   const [scopeFilter, setScopeFilter] = useState('all')
@@ -603,9 +620,22 @@ function WorkDemands() {
           label: `${item.label} (${count})`,
         }
       }),
+      { key: '__DONE__', label: `已完成 (${Number(completedDemandCount || 0)})` },
+      { key: '__CANCELLED__', label: `已中止 (${Number(cancelledDemandCount || 0)})` },
     ],
-    [businessGroupAllCount, businessGroupCountMap, businessGroupOptions],
+    [businessGroupAllCount, businessGroupCountMap, businessGroupOptions, completedDemandCount, cancelledDemandCount],
   )
+
+  const activeDemandTabKey = showCompletedTabOnly
+    ? '__DONE__'
+    : showCancelledTabOnly
+      ? '__CANCELLED__'
+      : businessGroupFilter || '__ALL__'
+  const demandStatusOptions = showCompletedTabOnly
+    ? COMPLETED_TAB_STATUS_OPTIONS
+    : showCancelledTabOnly
+      ? CANCELLED_TAB_STATUS_OPTIONS
+      : NON_COMPLETED_STATUS_OPTIONS
 
   const participantRoleOptions = useMemo(() => {
     const rows = Array.isArray(participantRoleItems) ? participantRoleItems : []
@@ -623,6 +653,49 @@ function WorkDemands() {
     })
     return map
   }, [participantRoleOptions])
+
+  const groupedDemands = useMemo(() => {
+    const sortedRows = [...(demands || [])].sort((a, b) => {
+      const createdAtA = dayjs(a?.created_at).valueOf()
+      const createdAtB = dayjs(b?.created_at).valueOf()
+      if (Number.isFinite(createdAtA) || Number.isFinite(createdAtB)) {
+        return (Number.isFinite(createdAtB) ? createdAtB : 0) - (Number.isFinite(createdAtA) ? createdAtA : 0)
+      }
+      return Number(b?.id || 0) - Number(a?.id || 0)
+    })
+
+    const groupMap = new Map()
+    sortedRows.forEach((item) => {
+      const { phaseKey, phaseName } = getDemandListPhaseGroup(item)
+      if (!groupMap.has(phaseKey)) {
+        groupMap.set(phaseKey, {
+          id: `phase-group-${phaseKey}`,
+          __group: true,
+          current_phase_key: phaseKey,
+          current_phase_name: phaseName,
+          name: phaseName,
+          children: [],
+          __sortTime: 0,
+        })
+      }
+      const group = groupMap.get(phaseKey)
+      group.children.push(item)
+      const createdAt = dayjs(item?.created_at).valueOf()
+      if (Number.isFinite(createdAt) && createdAt > group.__sortTime) {
+        group.__sortTime = createdAt
+      }
+    })
+
+    return Array.from(groupMap.values()).sort((a, b) => {
+      const aIsFallbackGroup = String(a?.current_phase_name || '').trim() === '-'
+      const bIsFallbackGroup = String(b?.current_phase_name || '').trim() === '-'
+      if (aIsFallbackGroup !== bIsFallbackGroup) {
+        return aIsFallbackGroup ? 1 : -1
+      }
+      if (a.__sortTime !== b.__sortTime) return b.__sortTime - a.__sortTime
+      return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN')
+    })
+  }, [demands])
 
   const templateByIdMap = useMemo(() => {
     const map = new Map()
@@ -675,7 +748,7 @@ function WorkDemands() {
   }, [projectTemplates])
 
   const loadTemplateByIdIfMissing = useCallback(async (rawTemplateId) => {
-    if (!canViewProjectTemplates) return
+    if (!canUseProjectTemplates) return
     const id = Number(rawTemplateId)
     if (!Number.isInteger(id) || id <= 0) return
     if (templateByIdMap.has(id)) return
@@ -695,7 +768,7 @@ function WorkDemands() {
     } finally {
       templateFallbackLoadingRef.current.delete(id)
     }
-  }, [canViewProjectTemplates, templateByIdMap, templateFallbackMap])
+  }, [canUseProjectTemplates, templateByIdMap, templateFallbackMap])
 
   const selectedModalTemplate = useMemo(() => {
     const id = Number(modalTemplateId)
@@ -839,7 +912,7 @@ function WorkDemands() {
   }, [])
 
   const loadProjectTemplates = useCallback(async () => {
-    if (!canViewProjectTemplates) {
+    if (!canUseProjectTemplates) {
       setProjectTemplates([])
       return
     }
@@ -853,7 +926,7 @@ function WorkDemands() {
     } catch {
       setProjectTemplates([])
     }
-  }, [canViewProjectTemplates])
+  }, [canUseProjectTemplates])
 
   const loadDemands = useCallback(async () => {
     if (!canView) return
@@ -866,11 +939,21 @@ function WorkDemands() {
       }
 
       if (keyword.trim()) params.keyword = keyword.trim()
-      if (statusFilter) params.status = statusFilter
+      if (statusFilter && !showCompletedTabOnly && !showCancelledTabOnly) {
+        params.status = statusFilter
+      }
       if (priorityFilter) params.priority = priorityFilter
       if (prioritySortOrder === 'ascend') params.priority_order = 'asc'
       if (prioritySortOrder === 'descend') params.priority_order = 'desc'
       if (businessGroupFilter) params.business_group_code = businessGroupFilter
+      if (showCompletedTabOnly) {
+        params.completed_only = true
+      } else if (showCancelledTabOnly) {
+        params.cancelled_only = true
+      } else {
+        params.exclude_completed = true
+        params.exclude_cancelled = true
+      }
       if (ownerFilter) params.owner_user_id = ownerFilter
       if (Array.isArray(updatedRange) && updatedRange.length === 2 && updatedRange[0] && updatedRange[1]) {
         params.updated_start_date = updatedRange[0].format('YYYY-MM-DD')
@@ -885,8 +968,9 @@ function WorkDemands() {
       }
 
       setDemands(result.data?.list || [])
-      setTotal(result.data?.total || 0)
       setBusinessGroupAllCount(Number(result.data?.all_total || 0))
+      setCompletedDemandCount(Number(result.data?.completed_total || 0))
+      setCancelledDemandCount(Number(result.data?.cancelled_total || 0))
       setBusinessGroupCounts(Array.isArray(result.data?.group_counts) ? result.data.group_counts : [])
     } catch (error) {
       message.error(error?.message || '获取需求列表失败')
@@ -902,6 +986,8 @@ function WorkDemands() {
     priorityFilter,
     prioritySortOrder,
     businessGroupFilter,
+    showCompletedTabOnly,
+    showCancelledTabOnly,
     ownerFilter,
     updatedRange,
     scopeFilter,
@@ -953,13 +1039,15 @@ function WorkDemands() {
     setEditingDemand(null)
     setModalOpen(true)
     form.resetFields()
+    const defaultOwnerId = currentUser?.id || undefined
+    previousCreateOwnerIdRef.current = defaultOwnerId ?? null
     form.setFieldsValue({
-      owner_user_id: currentUser?.id || undefined,
+      owner_user_id: defaultOwnerId,
       template_id: defaultProjectTemplateId,
       participant_roles: DEFAULT_DEMAND_PARTICIPANT_ROLES,
-      project_manager: undefined,
+      project_manager: defaultOwnerId,
       health_status: 'green',
-      actual_start_time: null,
+      actual_start_time: dayjs(),
       actual_end_time: null,
       doc_link: '',
       ui_design_link: '',
@@ -967,7 +1055,7 @@ function WorkDemands() {
       business_group_code: undefined,
       expected_release_date: null,
       status: 'TODO',
-      priority: 'P2',
+      priority: 'P1',
     })
   }
 
@@ -978,6 +1066,7 @@ function WorkDemands() {
     }
     setEditingDemand(record)
     setModalOpen(true)
+    previousCreateOwnerIdRef.current = null
     form.resetFields()
     form.setFieldsValue({
       name: record.name,
@@ -1005,8 +1094,27 @@ function WorkDemands() {
   const closeModal = () => {
     setModalOpen(false)
     setEditingDemand(null)
+    previousCreateOwnerIdRef.current = null
     form.resetFields()
   }
+
+  useEffect(() => {
+    if (!modalOpen || editingDemand) return
+    const nextOwnerId = Number(modalOwnerUserId)
+    const currentProjectManagerId = Number(modalProjectManager)
+    const previousOwnerId = Number(previousCreateOwnerIdRef.current)
+    const hasNextOwner = Number.isInteger(nextOwnerId) && nextOwnerId > 0
+    const hasCurrentProjectManager = Number.isInteger(currentProjectManagerId) && currentProjectManagerId > 0
+    const shouldSyncProjectManager =
+      !hasCurrentProjectManager ||
+      (Number.isInteger(previousOwnerId) && previousOwnerId > 0 && currentProjectManagerId === previousOwnerId)
+
+    previousCreateOwnerIdRef.current = hasNextOwner ? nextOwnerId : null
+
+    if (!shouldSyncProjectManager) return
+
+    form.setFieldValue('project_manager', hasNextOwner ? nextOwnerId : undefined)
+  }, [modalOpen, editingDemand, modalOwnerUserId, modalProjectManager, form])
 
   const handleSubmit = async () => {
     try {
@@ -1024,8 +1132,8 @@ function WorkDemands() {
         participant_roles: normalizeParticipantRoles(values.participant_roles),
         project_manager: values.project_manager ?? null,
         health_status: values.health_status || 'green',
-        actual_start_time: values.actual_start_time ? values.actual_start_time.format('YYYY-MM-DD HH:mm:ss') : null,
-        actual_end_time: values.actual_end_time ? values.actual_end_time.format('YYYY-MM-DD HH:mm:ss') : null,
+        actual_start_time: values.actual_start_time ? values.actual_start_time.format('YYYY-MM-DD') : null,
+        actual_end_time: values.actual_end_time ? values.actual_end_time.format('YYYY-MM-DD') : null,
         doc_link: values.doc_link || null,
         ui_design_link: values.ui_design_link || null,
         test_case_link: values.test_case_link || null,
@@ -1661,7 +1769,19 @@ function WorkDemands() {
         return
       }
 
-      message.success(result?.message || '已替换为最新流程模板')
+      const migrationSummary = result?.data?.migration_summary || null
+      if (migrationSummary) {
+        const migratedCount = Number(migrationSummary?.migrated_done_node_count || 0)
+        const unmatchedCount = Number(migrationSummary?.unmatched_done_node_count || 0)
+        if (unmatchedCount > 0) {
+          message.success(`${result?.message || '已替换为最新流程模板'}，已继承 ${migratedCount} 个已完成节点`)
+          message.warning(`另有 ${unmatchedCount} 个历史已完成节点未能自动继承，个人事项与工作台数据不会删除`)
+        } else {
+          message.success(`${result?.message || '已替换为最新流程模板'}，已继承 ${migratedCount} 个已完成节点`)
+        }
+      } else {
+        message.success(result?.message || '已替换为最新流程模板')
+      }
       const workflow = result?.data?.workflow || null
       setWorkflowData(workflow)
       setSelectedWorkflowNodeKey(
@@ -1681,7 +1801,7 @@ function WorkDemands() {
     Modal.confirm({
       title: '确认强制替换为最新流程？',
       content:
-        '系统会按当前绑定的最新模板重建这条需求的流程节点，已有节点状态、负责人和排期可能被重置，请确认后再执行。',
+        '系统会按当前绑定的最新模板重建流程；可识别的已完成节点会尽量保留完成状态。历史个人事项、工作台记录与工时数据不会删除，但部分早期缺少 node_key 的节点可能无法完整继承。',
       okText: '确认替换',
       cancelText: '取消',
       okButtonProps: {
@@ -1733,7 +1853,7 @@ function WorkDemands() {
         key: 'id',
         width: 110,
         fixed: 'left',
-        render: (value) => <Tag color="blue">{value}</Tag>,
+        render: (value, record) => (record?.__group ? null : <Tag color="blue">{value}</Tag>),
       },
       {
         title: '需求名称',
@@ -1743,9 +1863,18 @@ function WorkDemands() {
         fixed: 'left',
         ellipsis: true,
         render: (value, record) => (
-          <Button type="link" style={{ padding: 0 }} onClick={() => openDetailDrawer(record)}>
-            <Text strong>{value}</Text>
-          </Button>
+          record?.__group ? (
+            <Space size={8}>
+              <Tag color={getDemandPhaseTagColor(record?.current_phase_key, record?.current_phase_name)}>
+                {record?.current_phase_name || '未开始'}
+              </Tag>
+              <Text strong>{Number(record?.children?.length || 0)} 条需求</Text>
+            </Space>
+          ) : (
+            <Button type="link" style={{ padding: 0 }} onClick={() => openDetailDrawer(record)}>
+              <Text strong>{value}</Text>
+            </Button>
+          )
         ),
       },
       {
@@ -1753,35 +1882,38 @@ function WorkDemands() {
         dataIndex: 'owner_name',
         key: 'owner_name',
         width: 120,
-        render: (value) => value || '-',
+        render: (value, record) => (record?.__group ? null : value || '-'),
       },
       {
         title: '项目负责人',
         dataIndex: 'project_manager_name',
         key: 'project_manager_name',
         width: 120,
-        render: (value) => value || '-',
+        render: (value, record) => (record?.__group ? null : value || '-'),
       },
       {
         title: '健康度',
         dataIndex: 'health_status',
         key: 'health_status',
         width: 100,
-        render: (value) => <Tag color={getHealthTagColor(value)}>{getHealthLabel(value)}</Tag>,
+        render: (value, record) =>
+          record?.__group ? null : <Tag color={getHealthTagColor(value)}>{getHealthLabel(value)}</Tag>,
       },
       {
         title: '业务组',
         dataIndex: 'business_group_name',
         key: 'business_group_name',
         width: 150,
-        render: (_, record) => record.business_group_name || record.business_group_code || '-',
+        render: (_, record) =>
+          record?.__group ? null : record.business_group_name || record.business_group_code || '-',
       },
       {
         title: '状态',
         dataIndex: 'status',
         key: 'status',
         width: 120,
-        render: (value) => <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>,
+        render: (value, record) =>
+          record?.__group ? null : <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>,
       },
       {
         title: '需求阶段',
@@ -1790,7 +1922,7 @@ function WorkDemands() {
         width: 150,
         ellipsis: true,
         render: (value, record) =>
-          value ? (
+          record?.__group ? null : value ? (
             <Tag color={getDemandPhaseTagColor(record?.current_phase_key, value)} style={{ fontWeight: 600 }}>
               {value}
             </Tag>
@@ -1806,14 +1938,14 @@ function WorkDemands() {
         sorter: true,
         sortOrder: prioritySortOrder,
         sortDirections: ['ascend', 'descend'],
-        render: (value) => <Tag color={getPriorityColor(value)}>{value}</Tag>,
+        render: (value, record) => (record?.__group ? null : <Tag color={getPriorityColor(value)}>{value}</Tag>),
       },
       {
         title: '预期上线时间',
         dataIndex: 'expected_release_date',
         key: 'expected_release_date',
         width: 130,
-        render: (value) => formatBeijingDate(value),
+        render: (value, record) => (record?.__group ? null : formatBeijingDate(value)),
       },
     ]
 
@@ -1824,28 +1956,28 @@ function WorkDemands() {
           dataIndex: 'member_count',
           key: 'member_count',
           width: 90,
-          render: (value) => Number(value || 0),
+          render: (value, record) => (record?.__group ? null : Number(value || 0)),
         },
         {
           title: '整体用时(h)',
           dataIndex: 'total_actual_hours',
           key: 'total_actual_hours',
           width: 120,
-          render: (value) => toNumber(value, 0).toFixed(1),
+          render: (value, record) => (record?.__group ? null : toNumber(value, 0).toFixed(1)),
         },
         {
           title: '最近更新',
           dataIndex: 'updated_at',
           key: 'updated_at',
           width: 160,
-          render: (value) => formatBeijingDateTime(value),
+          render: (value, record) => (record?.__group ? null : formatBeijingDateTime(value)),
         },
         {
           title: '实际完成日期',
           dataIndex: 'completed_at',
           key: 'completed_at',
           width: 120,
-          render: (value) => formatBeijingDate(value),
+          render: (value, record) => (record?.__group ? null : formatBeijingDate(value)),
         },
       )
     }
@@ -1855,7 +1987,7 @@ function WorkDemands() {
       key: 'action',
       width: canTransferOwner ? 280 : 180,
       fixed: 'right',
-      render: (_, record) => (
+      render: (_, record) => (record?.__group ? null : (
         <Space size={2}>
           <Button type="link" onClick={() => openDetailDrawer(record)}>
             详情
@@ -1900,7 +2032,7 @@ function WorkDemands() {
             </Popconfirm>
           ) : null}
         </Space>
-      ),
+      )),
     })
 
     return columns
@@ -1936,10 +2068,27 @@ function WorkDemands() {
             }
           >
             <Tabs
-              activeKey={businessGroupFilter || '__ALL__'}
+              activeKey={activeDemandTabKey}
               items={businessGroupTabItems}
               onChange={(activeKey) => {
-                setBusinessGroupFilter(activeKey === '__ALL__' ? '' : activeKey)
+                if (activeKey === '__DONE__') {
+                  setShowCompletedTabOnly(true)
+                  setShowCancelledTabOnly(false)
+                  setBusinessGroupFilter('')
+                  setStatusFilter('')
+                } else if (activeKey === '__CANCELLED__') {
+                  setShowCompletedTabOnly(false)
+                  setShowCancelledTabOnly(true)
+                  setBusinessGroupFilter('')
+                  setStatusFilter('')
+                } else {
+                  setShowCompletedTabOnly(false)
+                  setShowCancelledTabOnly(false)
+                  setBusinessGroupFilter(activeKey === '__ALL__' ? '' : activeKey)
+                  if (statusFilter === 'DONE' || statusFilter === 'CANCELLED') {
+                    setStatusFilter('')
+                  }
+                }
                 setPage(1)
               }}
             />
@@ -1968,8 +2117,9 @@ function WorkDemands() {
                 allowClear
                 style={{ width: 140 }}
                 placeholder="状态"
-                options={STATUS_OPTIONS}
-                value={statusFilter || undefined}
+                options={demandStatusOptions}
+                value={showCompletedTabOnly ? 'DONE' : showCancelledTabOnly ? 'CANCELLED' : statusFilter || undefined}
+                disabled={showCompletedTabOnly || showCancelledTabOnly}
                 onChange={(value) => {
                   setStatusFilter(value || '')
                   setPage(1)
@@ -2033,18 +2183,12 @@ function WorkDemands() {
               rowKey="id"
               loading={loading}
               columns={demandColumns}
-              dataSource={demands}
+              dataSource={groupedDemands}
+              defaultExpandAllRows
+              indentSize={18}
               scroll={{ x: compactView ? 1820 : 2380 }}
-              pagination={{
-                current: page,
-                pageSize,
-                total,
-                showSizeChanger: true,
-                showTotal: (count) => `共 ${count} 条`,
-              }}
-              onChange={(pagination, _filters, sorter) => {
-                setPage(pagination.current || 1)
-                setPageSize(pagination.pageSize || 10)
+              pagination={false}
+              onChange={(_pagination, _filters, sorter) => {
                 const nextSorter = Array.isArray(sorter) ? sorter[0] : sorter
                 if (nextSorter?.columnKey === 'priority') {
                   setPrioritySortOrder(nextSorter.order || undefined)
@@ -2062,7 +2206,7 @@ function WorkDemands() {
         placement="right"
         size={640}
         destroyOnHidden={false}
-        maskClosable={false}
+        maskClosable
         extra={
           <Space size={8}>
             <Button onClick={closeModal}>取消</Button>
@@ -2145,27 +2289,45 @@ function WorkDemands() {
             />
           </Form.Item>
 
+          <Form.Item label="业务组" name="business_group_code">
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={businessGroupOptions}
+              placeholder="请选择业务组（可选）"
+            />
+          </Form.Item>
+
+          <Form.Item label="状态" name="status" rules={[{ required: true, message: '请选择状态' }]}>
+            <Select options={STATUS_OPTIONS} />
+          </Form.Item>
+
+          <Form.Item label="优先级" name="priority" rules={[{ required: true, message: '请选择优先级' }]}>
+            <Select options={PRIORITY_OPTIONS} />
+          </Form.Item>
+
           <Form.Item label="健康度" name="health_status" rules={[{ required: true, message: '请选择健康度' }]}>
             <Select options={HEALTH_STATUS_OPTIONS} />
           </Form.Item>
 
-          <Form.Item label="实际开始时间" name="actual_start_time">
-            <DatePicker
-              showTime
-              style={{ width: '100%' }}
-              format="YYYY-MM-DD HH:mm:ss"
-              placeholder="请选择实际开始时间（可选）"
-            />
-          </Form.Item>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <Form.Item label="实际开始时间" name="actual_start_time" style={{ flex: 1 }}>
+              <DatePicker
+                style={{ width: '100%' }}
+                format="YYYY-MM-DD"
+                placeholder="请选择实际开始日期"
+              />
+            </Form.Item>
 
-          <Form.Item label="实际结束时间" name="actual_end_time">
-            <DatePicker
-              showTime
-              style={{ width: '100%' }}
-              format="YYYY-MM-DD HH:mm:ss"
-              placeholder="请选择实际结束时间（可选）"
-            />
-          </Form.Item>
+            <Form.Item label="实际结束时间" name="actual_end_time" style={{ flex: 1 }}>
+              <DatePicker
+                style={{ width: '100%' }}
+                format="YYYY-MM-DD"
+                placeholder="请选择实际结束日期（可选）"
+              />
+            </Form.Item>
+          </div>
 
           <Form.Item label="PRD链接" name="doc_link">
             <Input maxLength={500} placeholder="例如 PRD链接（可选）" />
@@ -2179,30 +2341,12 @@ function WorkDemands() {
             <Input maxLength={500} placeholder="例如 测试用例平台链接（可选）" />
           </Form.Item>
 
-          <Form.Item label="业务组" name="business_group_code">
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              options={businessGroupOptions}
-              placeholder="请选择业务组（可选）"
-            />
-          </Form.Item>
-
           <Form.Item label="预期上线日期" name="expected_release_date">
             <DatePicker
               style={{ width: '100%' }}
               format="YYYY-MM-DD"
               placeholder="请选择预期上线日期（可选）"
             />
-          </Form.Item>
-
-          <Form.Item label="状态" name="status" rules={[{ required: true, message: '请选择状态' }]}>
-            <Select options={STATUS_OPTIONS} />
-          </Form.Item>
-
-          <Form.Item label="优先级" name="priority" rules={[{ required: true, message: '请选择优先级' }]}>
-            <Select options={PRIORITY_OPTIONS} />
           </Form.Item>
 
           <Form.Item label="描述" name="description">

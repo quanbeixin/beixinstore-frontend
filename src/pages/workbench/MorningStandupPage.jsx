@@ -90,6 +90,10 @@ function renderDemandNameWithLimit(value, maxLength = 30) {
 }
 
 function getUnifiedStatusTag(record) {
+  const checkResult = String(record?.check_result || '').trim().toUpperCase()
+  if (checkResult === 'PREV_WORKDAY_DONE') {
+    return <Tag color="success">昨日完成</Tag>
+  }
   const meta = getUnifiedStatusMeta(record)
   return <Tag color={meta.color}>{meta.label}</Tag>
 }
@@ -97,8 +101,9 @@ function getUnifiedStatusTag(record) {
 function getGroupYesterdayCheckResult(stats) {
   if (toNumber(stats?.not_done_count, 0) > 0) return 'NOT_DONE'
   if (toNumber(stats?.late_done_count, 0) > 0) return 'LATE_DONE'
-  if (toNumber(stats?.pending_count, 0) > 0) return 'PENDING'
   if (toNumber(stats?.on_time_count, 0) > 0) return 'ON_TIME'
+  if (toNumber(stats?.prev_workday_done_count, 0) > 0) return 'PREV_WORKDAY_DONE'
+  if (toNumber(stats?.pending_count, 0) > 0) return 'PENDING'
   return 'PENDING'
 }
 
@@ -166,6 +171,17 @@ function sortYesterdayDueChildItems(items = []) {
   }
 
   return [...items].sort((a, b) => {
+    const checkResultA = String(a?.check_result || '').trim().toUpperCase()
+    const checkResultB = String(b?.check_result || '').trim().toUpperCase()
+    const checkResultRank = {
+      NOT_DONE: 0,
+      LATE_DONE: 1,
+      ON_TIME: 2,
+      PREV_WORKDAY_DONE: 3,
+    }
+    const checkResultDiff = (checkResultRank[checkResultA] ?? 9) - (checkResultRank[checkResultB] ?? 9)
+    if (checkResultDiff !== 0) return checkResultDiff
+
     const codeA = getUnifiedStatusMeta(a).code
     const codeB = getUnifiedStatusMeta(b).code
     const checkDiff = (statusRank[codeA] ?? 9) - (statusRank[codeB] ?? 9)
@@ -253,6 +269,7 @@ function MorningStandupBoard() {
       yesterday_due_total: 0,
       yesterday_due_not_done_count: 0,
       yesterday_due_late_done_count: 0,
+      yesterday_due_completed_count: 0,
       in_progress_count: 0,
       done_today_count: 0,
       todo_pending_count: 0,
@@ -713,6 +730,7 @@ function MorningStandupBoard() {
               <Tag color="error">{`未完成 ${toNumber(record?.not_done_count, 0)}`}</Tag>
               <Tag color="warning">{`延迟 ${toNumber(record?.late_done_count, 0)}`}</Tag>
               <Tag color="success">{`按期 ${toNumber(record?.on_time_count, 0)}`}</Tag>
+              <Tag color="blue">{`昨日完成 ${toNumber(record?.prev_workday_done_count, 0)}`}</Tag>
             </Space>
           ) : (
             renderDemandNameWithLimit(value, 30)
@@ -776,6 +794,7 @@ function MorningStandupBoard() {
           not_done_count: 0,
           late_done_count: 0,
           on_time_count: 0,
+          prev_workday_done_count: 0,
           pending_count: 0,
         })
       }
@@ -786,6 +805,7 @@ function MorningStandupBoard() {
       if (result === 'NOT_DONE') group.not_done_count += 1
       else if (result === 'LATE_DONE') group.late_done_count += 1
       else if (result === 'ON_TIME') group.on_time_count += 1
+      else if (result === 'PREV_WORKDAY_DONE') group.prev_workday_done_count += 1
       else group.pending_count += 1
     })
 
@@ -800,10 +820,11 @@ function MorningStandupBoard() {
         phase_name: phaseLabel,
         check_result: mergedResult,
         username: `共 ${itemCount} 项`,
-        demand_name: `未完成 ${group.not_done_count}，延迟 ${group.late_done_count}，按期 ${group.on_time_count}`,
+        demand_name: `未完成 ${group.not_done_count}，延迟 ${group.late_done_count}，按期 ${group.on_time_count}，昨日完成 ${group.prev_workday_done_count}`,
         not_done_count: group.not_done_count,
         late_done_count: group.late_done_count,
         on_time_count: group.on_time_count,
+        prev_workday_done_count: group.prev_workday_done_count,
         children: sortedChildren,
       }
     })
@@ -892,7 +913,7 @@ function MorningStandupBoard() {
       },
       {
         key: 'yesterday_due',
-        label: `昨日应完成检查 (${toNumber(focusSummary.yesterday_due_total)})`,
+        label: `昨日完成事项对齐 (${toNumber(focusSummary.yesterday_due_total)})`,
       },
       {
         key: 'todo_pending',
@@ -919,7 +940,7 @@ function MorningStandupBoard() {
       return {
         columns: yesterdayDueColumns,
         dataSource: yesterdayDueViewMode === 'tree' ? yesterdayDueTreeDataSource : yesterdayDueDataSource,
-        emptyText: '昨天无应完成事项',
+        emptyText: '上个工作日无需要对齐的事项',
         scrollX: 'max-content',
         treeMode: yesterdayDueViewMode === 'tree',
       }
@@ -1250,6 +1271,7 @@ function MorningStandupBoard() {
               <Space size={6} wrap>
                 <Tag color="error">{`昨日未完成 ${toNumber(focusSummary.yesterday_due_not_done_count)}`}</Tag>
                 <Tag color="warning">{`延迟完成 ${toNumber(focusSummary.yesterday_due_late_done_count)}`}</Tag>
+                <Tag color="blue">{`昨日完成 ${toNumber(focusSummary.yesterday_due_completed_count)}`}</Tag>
               </Space>
             }
           >

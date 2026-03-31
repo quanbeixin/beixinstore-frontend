@@ -201,7 +201,7 @@ export const PRIVATE_ROUTES = [
       subtitle: '维护个人资料、安全信息与界面偏好。',
     },
     menu: {
-      section: 'main',
+      section: 'personal',
       label: '个人设置',
       icon: 'setting',
     },

@@ -45,6 +45,11 @@ import './OwnerWorkbenchPage.css'
 
 const { Text } = Typography
 const EMPTY_ARRAY = []
+const OWNER_ITEM_STATUS_OPTIONS = [
+  { label: '待开始', value: 'TODO' },
+  { label: '进行中', value: 'IN_PROGRESS' },
+  { label: '已完成', value: 'DONE' },
+]
 
 function toNumber(value, fallback = 0) {
   const num = Number(value)
@@ -111,6 +116,7 @@ function OwnerWorkbench() {
   const [keyword, setKeyword] = useState('')
   const [memberFilter, setMemberFilter] = useState()
   const [phaseFilter, setPhaseFilter] = useState()
+  const [statusFilter, setStatusFilter] = useState()
   const [pendingOnly, setPendingOnly] = useState(true)
   const [selectedRowKeys, setSelectedRowKeys] = useState([])
 
@@ -222,6 +228,8 @@ function OwnerWorkbench() {
     ensureDemandWorkflowNodeOptionsLoaded(assignDemandId)
   }, [assignDemandId, ensureDemandWorkflowNodeOptionsLoaded])
 
+  const dataScope = data.data_scope || {}
+  const currentScopeLabel = dataScope.department_name || dataScope.scope_label || '-'
   const overview = data.team_overview || {}
   const teamSize = toNumber(overview.team_size, 0)
   const scheduledUsers = toNumber(overview.scheduled_users_today, 0)
@@ -343,10 +351,11 @@ function OwnerWorkbench() {
       if (pendingOnly && item.owner_estimate_hours !== null && item.owner_estimate_hours !== undefined) return false
       if (memberFilter && Number(item.user_id) !== Number(memberFilter)) return false
       if (phaseFilter && String(item.phase_key || '') !== String(phaseFilter)) return false
+      if (statusFilter && String(item?.log_status || 'IN_PROGRESS') !== String(statusFilter)) return false
       if (q && !getSearchText(item).includes(q)) return false
       return true
     })
-  }, [ownerEstimateItems, keyword, memberFilter, phaseFilter, pendingOnly])
+  }, [ownerEstimateItems, keyword, memberFilter, phaseFilter, statusFilter, pendingOnly])
 
   // Owner工作台提醒统计
   const ownerReminderStats = useMemo(() => {
@@ -734,6 +743,14 @@ function OwnerWorkbench() {
           </Space>
         }
       >
+        <div className="owner-scope-banner">
+          <Text type="secondary" className="owner-scope-banner__label">
+            当前范围：
+          </Text>
+          <Text strong className="owner-scope-banner__value">
+            {currentScopeLabel}
+          </Text>
+        </div>
         <Row gutter={[16, 16]} wrap={false}>
           <Col flex="1" className="owner-metric-col">
             <Card variant="borderless" className="owner-metric-card">
@@ -924,6 +941,14 @@ function OwnerWorkbench() {
             value={phaseFilter}
             onChange={setPhaseFilter}
             className="owner-filter-input owner-filter-input--phase"
+          />
+          <Select
+            allowClear
+            placeholder="筛选状态"
+            options={OWNER_ITEM_STATUS_OPTIONS}
+            value={statusFilter}
+            onChange={setStatusFilter}
+            className="owner-filter-input owner-filter-input--status"
           />
           <Space className="owner-toggle-group">
             <Text type="secondary">仅看待评估</Text>

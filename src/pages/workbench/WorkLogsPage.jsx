@@ -47,6 +47,7 @@ import {
   getWorkDemandsApi,
   getWorkItemTypesApi,
   getWorkLogsApi,
+  updateLogDailyEntryApi,
   updateWorkLogApi,
 } from '../../api/work'
 import { hasPermission } from '../../utils/access'
@@ -1483,6 +1484,7 @@ function WorkLogs({ mode = 'dashboard' }) {
     setOperatingLog({
       ...detailLog,
       entry_date: timelineRow.date,
+      detail_entry_id: latestEntry?.id || null,
       detail_entry_actual_hours:
         latestEntry?.actual_hours !== undefined && latestEntry?.actual_hours !== null
           ? latestEntry.actual_hours
@@ -1558,11 +1560,15 @@ function WorkLogs({ mode = 'dashboard' }) {
         message.warning('不能填写未来日期的投入')
         return
       }
-      const result = await createLogDailyEntryApi(operatingLog.id, {
+      const isDetailUpdate = dailyEntryModalMode === 'detail' && Number(operatingLog?.detail_entry_id) > 0
+      const payload = {
         entry_date: entryDate,
         actual_hours: values.actual_hours,
         description: values.description || '',
-      })
+      }
+      const result = isDetailUpdate
+        ? await updateLogDailyEntryApi(operatingLog.id, operatingLog.detail_entry_id, payload)
+        : await createLogDailyEntryApi(operatingLog.id, payload)
       if (!result?.success) {
         message.error(result?.message || '登记今日投入失败')
         return
@@ -1571,7 +1577,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       const savedEntryDate = entryDate
       const todayDate = getTodayDateString()
       if (dailyEntryModalMode === 'detail') {
-        message.success(Number(operatingLog?.detail_entry_count || 0) > 0 ? '当日投入已调整' : '当日投入已补填')
+        message.success(isDetailUpdate ? '当日投入已调整' : '当日投入已补填')
       } else {
         if (savedEntryDate && savedEntryDate !== todayDate) {
           message.success('投入已登记（仅填报日期为今天时会联动今日汇总）')
@@ -1804,30 +1810,6 @@ function WorkLogs({ mode = 'dashboard' }) {
       },
     },
     {
-      title: '生命周期',
-      dataIndex: 'log_status',
-      key: 'log_status_lifecycle',
-      width: 120,
-      render: (value) => (
-        <Tag color={getItemStatusColor(value)}>
-          {getItemStatusLabel(value)}
-        </Tag>
-      ),
-    },
-    {
-      title: '需求任务',
-      dataIndex: 'phase_name',
-      key: 'phase_name',
-      width: 150,
-      render: (_, record) => (record.phase_name || record.phase_key || '-'),
-    },
-    {
-      title: '事项类型',
-      dataIndex: 'item_type_name',
-      key: 'item_type_name',
-      width: 140,
-    },
-    {
       title: '描述',
       dataIndex: 'description',
       key: 'description',
@@ -1851,6 +1833,30 @@ function WorkLogs({ mode = 'dashboard' }) {
       key: 'demand_id',
       width: 220,
       render: (_, record) => record?.demand_name || '-',
+    },
+    {
+      title: '生命周期',
+      dataIndex: 'log_status',
+      key: 'log_status_lifecycle',
+      width: 120,
+      render: (value) => (
+        <Tag color={getItemStatusColor(value)}>
+          {getItemStatusLabel(value)}
+        </Tag>
+      ),
+    },
+    {
+      title: '需求任务',
+      dataIndex: 'phase_name',
+      key: 'phase_name',
+      width: 150,
+      render: (_, record) => (record.phase_name || record.phase_key || '-'),
+    },
+    {
+      title: '事项类型',
+      dataIndex: 'item_type_name',
+      key: 'item_type_name',
+      width: 140,
     },
     {
       title: '指派人',
@@ -2010,7 +2016,7 @@ function WorkLogs({ mode = 'dashboard' }) {
               color: toNumber(record?.entry_count, 0) > 0 ? '#98a2b3' : '#b54708',
             }}
           >
-            {toNumber(record?.entry_count, 0) > 0 ? '调整投入' : '补填投入'}
+            {toNumber(record?.entry_count, 0) > 0 ? '调整日期/工时' : '补填投入'}
           </Button>
         ) : null,
     },
@@ -3030,6 +3036,21 @@ function WorkLogs({ mode = 'dashboard' }) {
 
         <div
           style={{
+            marginBottom: 12,
+            padding: '8px 10px',
+            borderRadius: 8,
+            border: '1px solid #e4ecf7',
+            background: '#f8fbff',
+          }}
+        >
+          <Text style={{ fontSize: 12, fontWeight: 600, color: '#52637b' }}>周报统计口径说明</Text>
+          <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.6, color: '#667085' }}>
+            计划用时按事项排期与日计划归属；实际用时按每日投入日期归属。若补填到了错误日期，可在事项明细里调整投入日期后重新生成周报。
+          </div>
+        </div>
+
+        <div
+          style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
             gap: 8,
@@ -3411,8 +3432,8 @@ function WorkLogs({ mode = 'dashboard' }) {
         title={
           dailyEntryModalIsDetailEdit
             ? operatingLog
-              ? `${Number(operatingLog?.detail_entry_count || 0) > 0 ? '调整当日投入' : '补填当日投入'}：#${operatingLog.id}`
-              : '调整当日投入'
+              ? `${Number(operatingLog?.detail_entry_count || 0) > 0 ? '调整投入日期/工时' : '补填当日投入'}：#${operatingLog.id}`
+              : '调整投入日期/工时'
             : operatingLog
               ? `填报今日投入：#${operatingLog.id}`
               : '填报今日投入'
@@ -3431,7 +3452,7 @@ function WorkLogs({ mode = 'dashboard' }) {
             name="entry_date"
             rules={[{ required: true, message: '请选择投入日期' }]}
           >
-            <Input type="date" disabled={dailyEntryModalIsDetailEdit} />
+            <Input type="date" />
           </Form.Item>
           <Form.Item
             label="实际用时(h)"
@@ -3439,7 +3460,7 @@ function WorkLogs({ mode = 'dashboard' }) {
             rules={[{ required: true, message: '请输入实际用时' }]}
             extra={
               dailyEntryModalIsDetailEdit
-                ? '当前调整的是明细中该日期的实际投入，保存后会覆盖当天最后一次记录'
+                ? '可直接调整投入日期与工时；若改到其他日期，周报会按新日期重新归属'
                 : '同一事项在同一天重复填报时，以最后一次提交为准（不会累加）'
             }
           >
