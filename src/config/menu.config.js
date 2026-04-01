@@ -2,13 +2,14 @@
 
 const SECTION_META = {
   main: { key: 'main' },
+  workbench: { key: 'workbench', label: '个人工作台', icon: 'dashboard' },
   project: { key: 'project', label: '项目管理', icon: 'tool' },
   personal: { key: 'personal', label: '个人设置', icon: 'setting' },
   efficiency: { key: 'efficiency', label: '效能总览', icon: 'dashboard' },
   system: { key: 'system', label: '系统设置', icon: 'setting' },
 }
 
-const SECTION_ORDER = ['main', 'project', 'efficiency', 'system', 'personal']
+const SECTION_ORDER = ['workbench', 'main', 'project', 'efficiency', 'system', 'personal']
 
 function buildMenuSectionsFromRoutes() {
   const sectionMap = {}

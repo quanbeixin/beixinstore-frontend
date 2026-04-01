@@ -288,3 +288,11 @@ export function getMemberInsightApi(params) {
 export function getMemberEfficiencyDetailApi(params) {
   return request.get('/work/insight/member-detail', { params })
 }
+
+export function getMyAssignedItemsApi() {
+  return request.get('/work/my-assigned-items')
+}
+
+export function updateAssignedLogApi(logId, payload) {
+  return request.put(`/work/my-assigned-items/${logId}`, payload)
+}

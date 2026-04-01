@@ -26,6 +26,7 @@ const ProjectTemplates = lazy(() => import('./pages/project/ProjectTemplatesPage
 const ProjectTemplateDetail = lazy(() => import('./pages/project/ProjectTemplateDetailPage'))
 const NotificationConfig = lazy(() => import('./pages/project/NotificationConfigPage'))
 const WorkLogs = lazy(() => import('./pages/workbench/WorkLogsPage'))
+const MyAssignedItems = lazy(() => import('./pages/workbench/MyAssignedItemsPage'))
 const WorkLogHistory = lazy(() => import('./pages/workbench/WorkLogHistoryPage'))
 const MorningStandupBoard = lazy(() => import('./pages/workbench/MorningStandupPage'))
 const OwnerWorkbench = lazy(() => import('./pages/workbench/OwnerWorkbenchPage'))
@@ -64,6 +65,7 @@ const PAGE_COMPONENTS = {
   rolePermissions: RolePermissions,
   workDemands: WorkDemands,
   workLogs: WorkLogs,
+  myAssignedItems: MyAssignedItems,
   workLogHistory: WorkLogHistory,
   userDepartments: UserDepartments,
   users: Users,

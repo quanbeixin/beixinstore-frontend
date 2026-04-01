@@ -98,12 +98,26 @@ export const PRIVATE_ROUTES = [
     componentKey: 'workLogs',
     requiredPermission: 'worklog.view.self',
     page: {
-      title: '个人工作台',
+      title: '我的工作台',
       subtitle: '每日填报工作记录，关联需求与需求阶段。',
     },
     menu: {
-      section: 'main',
-      label: '个人工作台',
+      section: 'workbench',
+      label: '我的工作台',
+      icon: 'dashboard',
+    },
+  },
+  {
+    path: '/my-assigned-items',
+    componentKey: 'myAssignedItems',
+    requiredPermission: 'worklog.view.self',
+    page: {
+      title: '我的指派事项',
+      subtitle: '查看我指派给他人的所有事项。',
+    },
+    menu: {
+      section: 'workbench',
+      label: '我的指派事项',
       icon: 'dashboard',
     },
   },
