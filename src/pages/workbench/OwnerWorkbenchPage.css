@@ -173,38 +173,6 @@
   border-color: rgba(251, 146, 60, 0.25) !important;
 }
 
-.owner-waitlist-full-card .ant-card-body {
-  padding: 14px 18px;
-}
-
-.owner-waitlist-full-card:hover {
-  transform: none;
-  border-color: rgba(251, 146, 60, 0.35) !important;
-}
-
-.owner-unscheduled-full-card {
-  min-height: auto !important;
-  background:
-    linear-gradient(135deg, rgba(239, 246, 255, 0.5), rgba(219, 234, 254, 0.3)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.4)) !important;
-  border-color: rgba(59, 130, 246, 0.25) !important;
-}
-
-.owner-unscheduled-full-card .ant-card-body {
-  padding: 14px 18px;
-}
-
-.owner-unscheduled-full-card:hover {
-  transform: none;
-  border-color: rgba(59, 130, 246, 0.35) !important;
-}
-
-.owner-waitlist-content {
-  margin-top: 8px;
-  max-height: 80px;
-  overflow-y: auto;
-}
-
 .owner-member-section {
   margin-bottom: 16px;
 }

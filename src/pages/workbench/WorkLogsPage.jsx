@@ -3,6 +3,7 @@
   EditOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  QuestionCircleOutlined,
   FileTextOutlined,
   LeftOutlined,
   ReloadOutlined,
@@ -35,6 +36,7 @@ import {
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getDictItemsApi } from '../../api/configDict'
 import {
   createWorkLogApi,
   createLogDailyEntryApi,
@@ -56,6 +58,13 @@ import { getUnifiedStatusMeta } from '../../utils/workStatus'
 
 const { Text } = Typography
 const { RangePicker } = DatePicker
+const DEFAULT_SELF_TASK_DIFFICULTY_CODE = 'N1'
+const SELF_TASK_DIFFICULTY_HELP_TEXT = '关于事项的难易程度，请您根据自身实际能力，做出适宜的判断即可，默认为N1'
+const TASK_DIFFICULTY_FALLBACK_OPTIONS = ['N1', 'N2', 'N3', 'N4'].map((item) => ({
+  value: item,
+  label: item,
+}))
+const FOLLOWUP_EXCLUDED_DEMAND_STATUSES = new Set(['DONE', 'CANCELLED', 'TERMINATED'])
 const ITEM_STATUS_OPTIONS = [
   { label: '待开始', value: 'TODO' },
   { label: '进行中', value: 'IN_PROGRESS' },
@@ -378,6 +387,11 @@ function isDemandFollowupItemType(itemType) {
   return typeName.includes('需求跟进')
 }
 
+function shouldExcludeDemandForFollowup(demand) {
+  const status = String(demand?.status || '').trim().toUpperCase()
+  return FOLLOWUP_EXCLUDED_DEMAND_STATUSES.has(status)
+}
+
 function splitHoursAcrossCount(totalHours, count) {
   const total = Math.max(0, Number(toNumber(totalHours, 0)))
   const safeCount = Math.max(1, Number(count || 1))
@@ -646,6 +660,7 @@ function WorkLogs({ mode = 'dashboard' }) {
 
   const [itemTypes, setItemTypes] = useState([])
   const [demands, setDemands] = useState([])
+  const [taskDifficultyOptions, setTaskDifficultyOptions] = useState(TASK_DIFFICULTY_FALLBACK_OPTIONS)
   const [demandWorkflowNodeOptionsMap, setDemandWorkflowNodeOptionsMap] = useState({})
   const [logs, setLogs] = useState([])
   const [workbench, setWorkbench] = useState({
@@ -734,27 +749,31 @@ function WorkLogs({ mode = 'dashboard' }) {
     [itemTypes],
   )
 
-  const demandOptions = useMemo(
-    () =>
-      demands.map((item) => ({
-        value: item.id,
-        label: item.name || item.id,
-      })),
-    [demands],
-  )
-
   const quickDemandOptions = useMemo(
     () =>
-      demands.map((item) => {
-        const fullLabel = String(item?.name || item?.id || '').trim()
-        const shortLabel = truncateText(fullLabel, 28)
-        return {
+      demands
+        .filter((item) => !isDemandFollowupItemType(selectedItemType) || !shouldExcludeDemandForFollowup(item))
+        .map((item) => {
+          const fullLabel = String(item?.name || item?.id || '').trim()
+          const shortLabel = truncateText(fullLabel, 28)
+          return {
+            value: item.id,
+            fullLabel,
+            label: shortLabel === fullLabel ? fullLabel : <span title={fullLabel}>{shortLabel}</span>,
+          }
+        }),
+    [demands, selectedItemType],
+  )
+
+  const actualDemandOptions = useMemo(
+    () =>
+      demands
+        .filter((item) => !isDemandFollowupItemType(selectedActualItemType) || !shouldExcludeDemandForFollowup(item))
+        .map((item) => ({
           value: item.id,
-          fullLabel,
-          label: shortLabel === fullLabel ? fullLabel : <span title={fullLabel}>{shortLabel}</span>,
-        }
-      }),
-    [demands],
+          label: item.name || item.id,
+        })),
+    [demands, selectedActualItemType],
   )
 
   const isQuickBatchPhaseMode = Boolean(selectedDemandId) && isDemandFollowupItemType(selectedItemType)
@@ -1049,12 +1068,13 @@ function WorkLogs({ mode = 'dashboard' }) {
       const requests = [
         getWorkItemTypesApi({ enabled_only: 1 }),
         getWorkDemandsApi({ page: 1, pageSize: 1000 }),
+        getDictItemsApi('task_difficulty', { enabledOnly: true }).catch(() => null),
       ]
       if (!isHistoryPage) {
         requests.push(getMyWorkbenchApi())
       }
 
-      const [typeResult, demandResult, benchResult] = await Promise.all(requests)
+      const [typeResult, demandResult, dictResult, benchResult] = await Promise.all(requests)
 
       if (!typeResult?.success) {
         message.error(typeResult?.message || '获取事项类型失败')
@@ -1073,6 +1093,15 @@ function WorkLogs({ mode = 'dashboard' }) {
 
       setItemTypes(typeResult.data || [])
       setDemands(demandResult.data?.list || [])
+      if (dictResult?.success) {
+        const options = (dictResult.data || []).map((item) => ({
+          value: item.item_code,
+          label: item.item_name || item.item_code,
+        }))
+        setTaskDifficultyOptions(options.length > 0 ? options : TASK_DIFFICULTY_FALLBACK_OPTIONS)
+      } else {
+        setTaskDifficultyOptions(TASK_DIFFICULTY_FALLBACK_OPTIONS)
+      }
       if (!isHistoryPage) {
         setWorkbench(benchResult?.data || {})
       }
@@ -1247,6 +1276,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       expected_start_date: getTodayDateString(),
       expected_completion_date: getTodayDateString(),
       personal_estimate_hours: 1,
+      self_task_difficulty_code: DEFAULT_SELF_TASK_DIFFICULTY_CODE,
     })
     setIsQuickCompletionDateTouched(false)
     loadBase()
@@ -1321,6 +1351,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       log_status: editingLog.log_status || 'IN_PROGRESS',
       description: String(editingLog.description || ''),
       personal_estimate_hours: toNumber(editingLog.personal_estimate_hours, 0),
+      self_task_difficulty_code: editingLog.self_task_difficulty_code || DEFAULT_SELF_TASK_DIFFICULTY_CODE,
       actual_hours: toNumber(editingLog.actual_hours, 0),
       expected_start_date: toDateInputValue(editingLog.expected_start_date),
       expected_completion_date: toDateInputValue(editingLog.expected_completion_date),
@@ -1400,6 +1431,7 @@ function WorkLogs({ mode = 'dashboard' }) {
         expected_start_date: values.expected_start_date || values.log_date || getTodayDateString(),
         expected_completion_date: values.expected_completion_date || null,
         description: values.description,
+        self_task_difficulty_code: values.self_task_difficulty_code || DEFAULT_SELF_TASK_DIFFICULTY_CODE,
       }
       let successCount = 0
       let failedMessage = ''
@@ -1438,6 +1470,7 @@ function WorkLogs({ mode = 'dashboard' }) {
         expected_start_date: getTodayDateString(),
         expected_completion_date: getTodayDateString(),
         personal_estimate_hours: 1,
+        self_task_difficulty_code: DEFAULT_SELF_TASK_DIFFICULTY_CODE,
       })
       setIsQuickCompletionDateTouched(false)
       await reloadCurrentPageData()
@@ -1621,6 +1654,8 @@ function WorkLogs({ mode = 'dashboard' }) {
           log_status: String(editingLog.log_status || 'IN_PROGRESS').toUpperCase(),
           description: String(editingLog.description || ''),
           personal_estimate_hours: values.personal_estimate_hours,
+          self_task_difficulty_code:
+            values.self_task_difficulty_code || editingLog.self_task_difficulty_code || DEFAULT_SELF_TASK_DIFFICULTY_CODE,
           actual_hours:
             values.actual_hours === undefined || values.actual_hours === null || values.actual_hours === ''
               ? 0
@@ -1667,6 +1702,8 @@ function WorkLogs({ mode = 'dashboard' }) {
           log_status: selectedStatus,
           description: values.description,
           personal_estimate_hours: values.personal_estimate_hours,
+          self_task_difficulty_code:
+            values.self_task_difficulty_code || editingLog.self_task_difficulty_code || DEFAULT_SELF_TASK_DIFFICULTY_CODE,
           actual_hours: resolvedActualHours,
           expected_start_date: values.expected_start_date || null,
           expected_completion_date: values.expected_completion_date || null,
@@ -1696,6 +1733,15 @@ function WorkLogs({ mode = 'dashboard' }) {
       setActualSubmitting(false)
     }
   }
+
+  const selfTaskDifficultyLabel = (
+    <Space size={4}>
+      <span>个人评估难度</span>
+      <Tooltip title={SELF_TASK_DIFFICULTY_HELP_TEXT}>
+        <QuestionCircleOutlined style={{ color: '#8c8c8c' }} />
+      </Tooltip>
+    </Space>
+  )
 
   const handleUpdateItemStatus = async (record, nextStatus) => {
     if (!record?.id || !nextStatus) return
@@ -2343,6 +2389,21 @@ function WorkLogs({ mode = 'dashboard' }) {
                         rules={[{ required: true, message: '请输入预计整体用时' }]}
                       >
                         <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label={selfTaskDifficultyLabel}
+                        name="self_task_difficulty_code"
+                        rules={[{ required: true, message: '请选择个人评估难度' }]}
+                      >
+                        <Select
+                          showSearch
+                          options={taskDifficultyOptions}
+                          placeholder="请选择个人评估难度"
+                          optionFilterProp="label"
+                        />
                       </Form.Item>
                     </Col>
                   </Row>
@@ -3341,6 +3402,21 @@ function WorkLogs({ mode = 'dashboard' }) {
 
               <Col xs={24} md={12}>
                 <Form.Item
+                  label={selfTaskDifficultyLabel}
+                  name="self_task_difficulty_code"
+                  rules={[{ required: true, message: '请选择个人评估难度' }]}
+                >
+                  <Select
+                    showSearch
+                    options={taskDifficultyOptions}
+                    placeholder="请选择个人评估难度"
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              </Col>
+
+              <Col xs={24} md={12}>
+                <Form.Item
                   label="实际用时(h)"
                   name="actual_hours"
                   extra="默认 0.0；仅当状态为“已完成”且实际用时为 0.0 时，保存后会自动与预计整体用时一致"
@@ -3395,7 +3471,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                     <Select
                       allowClear
                       showSearch
-                      options={demandOptions}
+                      options={actualDemandOptions}
                       placeholder="请选择需求池中的需求（可选）"
                       optionFilterProp="label"
                       onChange={(next) => {
@@ -3453,6 +3529,21 @@ function WorkLogs({ mode = 'dashboard' }) {
                     rules={[{ required: true, message: '请输入预计整体用时' }]}
                   >
                     <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={selfTaskDifficultyLabel}
+                    name="self_task_difficulty_code"
+                    rules={[{ required: true, message: '请选择个人评估难度' }]}
+                  >
+                    <Select
+                      showSearch
+                      options={taskDifficultyOptions}
+                      placeholder="请选择个人评估难度"
+                      optionFilterProp="label"
+                    />
                   </Form.Item>
                 </Col>
 

@@ -23,6 +23,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd'
@@ -164,8 +165,6 @@ function OwnerWorkbench() {
         return
       }
       setNoAccess(false)
-      console.log('loadData返回的数据:', result.data)
-      console.log('owner_estimate_items:', result.data?.owner_estimate_items)
       setData(result.data || {})
       setLastLoadedAt(new Date())
       setSelectedRowKeys([])
@@ -251,17 +250,9 @@ function OwnerWorkbench() {
   const filledUsers = toNumber(overview.filled_users_today, 0)
   const scheduledFillRate =
     scheduledUsers > 0 ? Math.min(100, Math.max(0, (filledUsers / scheduledUsers) * 100)) : 100
-  const noFillMembers = useMemo(
-    () => (Array.isArray(data.no_fill_members) ? data.no_fill_members : EMPTY_ARRAY),
-    [data.no_fill_members],
-  )
   const teamMembers = useMemo(
     () => (Array.isArray(data.team_members) ? data.team_members : EMPTY_ARRAY),
     [data.team_members],
-  )
-  const unscheduledMembers = useMemo(
-    () => teamMembers.filter((member) => !member?.today_scheduled),
-    [teamMembers],
   )
   const sortedTeamMembers = useMemo(() => {
     const getStatusRank = (item) => {
@@ -425,14 +416,13 @@ function OwnerWorkbench() {
 
     try {
       const values = await estimateForm.validateFields()
-      console.log('提交的数据:', values)
+      const resolvedTaskDifficultyCode =
+        values.task_difficulty_code || editingItem?.task_difficulty_code || 'N1'
       setSavingEstimate(true)
       const result = await updateWorkLogOwnerEstimateApi(editingItem.id, {
         owner_estimate_hours: values.owner_estimate_hours,
-        task_difficulty_code: values.task_difficulty_code,
+        task_difficulty_code: resolvedTaskDifficultyCode,
       })
-
-      console.log('保存响应:', result)
       if (!result?.success) {
         message.error(result?.message || 'Owner 预估更新失败')
         return
@@ -481,6 +471,7 @@ function OwnerWorkbench() {
         try {
           const result = await updateWorkLogOwnerEstimateApi(item.id, {
             owner_estimate_hours: values.owner_estimate_hours,
+            task_difficulty_code: item?.task_difficulty_code || 'N1',
           })
           if (result?.success) successCount += 1
         } catch {
@@ -583,11 +574,30 @@ function OwnerWorkbench() {
     {
       title: '关联需求',
       key: 'demand',
+      width: 280,
       render: (_, row) =>
         row.demand_id ? (
-          <Button type="link" size="small" onClick={() => openDemandDetailInNewTab(row.demand_id)}>
-            {`${row.demand_id} - ${row.demand_name || '-'}`}
-          </Button>
+          <Tooltip title={`${row.demand_id} - ${row.demand_name || '-'}`}>
+            <Button
+              type="link"
+              size="small"
+              onClick={() => openDemandDetailInNewTab(row.demand_id)}
+              style={{ maxWidth: '100%', paddingInline: 0 }}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  verticalAlign: 'bottom',
+                }}
+              >
+                {`${row.demand_id} - ${row.demand_name || '-'}`}
+              </span>
+            </Button>
+          </Tooltip>
         ) : (
           '-'
         ),
@@ -602,7 +612,24 @@ function OwnerWorkbench() {
       title: '工作描述',
       dataIndex: 'description',
       key: 'description',
-      ellipsis: true,
+      width: 280,
+      render: (value) => {
+        const text = String(value || '').trim()
+        if (!text) return '-'
+        return (
+          <Tooltip title={text}>
+            <div
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {text}
+            </div>
+          </Tooltip>
+        )
+      },
     },
     {
       title: '来源',
@@ -824,50 +851,6 @@ function OwnerWorkbench() {
               <div className="owner-metric-value owner-metric-value--accent">
                 {toNumber(overview.total_assignable_hours_today, 0).toFixed(1)}
               </div>
-            </Card>
-          </Col>
-        </Row>
-        <Row gutter={[16, 16]}>
-          <Col span={24}>
-            <Card variant="borderless" className="owner-metric-card owner-waitlist-full-card">
-              <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                <Space>
-                  <WarningOutlined />
-                  <Text type="secondary">待填报名单（{noFillMembers.length}）</Text>
-                </Space>
-                {noFillMembers.length === 0 ? (
-                  <Text type="secondary">今日有安排成员均已填报</Text>
-                ) : (
-                  <Space wrap>
-                    {noFillMembers.map((member) => (
-                      <Tag color="orange" key={member.id}>
-                        {member.username || `用户${member.id}`}
-                      </Tag>
-                    ))}
-                  </Space>
-                )}
-              </Space>
-            </Card>
-          </Col>
-          <Col span={24}>
-            <Card variant="borderless" className="owner-metric-card owner-unscheduled-full-card">
-              <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                <Space>
-                  <TeamOutlined />
-                  <Text type="secondary">今日未安排人员（{unscheduledMembers.length}）</Text>
-                </Space>
-                {unscheduledMembers.length === 0 ? (
-                  <Text type="secondary">所有成员均已安排工作</Text>
-                ) : (
-                  <Space wrap>
-                    {unscheduledMembers.map((member) => (
-                      <Tag color="blue" key={member.user_id}>
-                        {member.username || `用户${member.user_id}`}
-                      </Tag>
-                    ))}
-                  </Space>
-                )}
-              </Space>
             </Card>
           </Col>
         </Row>
