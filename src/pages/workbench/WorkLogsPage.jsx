@@ -674,6 +674,7 @@ function WorkLogs({ mode = 'dashboard' }) {
   const [dailyEntryModalMode, setDailyEntryModalMode] = useState('today')
   const [detailModalOpen, setDetailModalOpen] = useState(false)
   const [hoursDetailModal, setHoursDetailModal] = useState({ open: false, type: 'planned' })
+  const [scheduledItemsModalOpen, setScheduledItemsModalOpen] = useState(false)
   const [dailyEntrySubmitting, setDailyEntrySubmitting] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [editingLog, setEditingLog] = useState(null)
@@ -2141,7 +2142,14 @@ function WorkLogs({ mode = 'dashboard' }) {
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col xs={24} sm={12} lg={4}>
-              <Card variant="borderless" style={SUMMARY_CARD_BASE_STYLE}>
+              <Card
+                variant="borderless"
+                hoverable
+                style={CLICKABLE_SUMMARY_CARD_STYLE(hoveredSummaryCard === 'scheduled')}
+                onClick={() => setScheduledItemsModalOpen(true)}
+                onMouseEnter={() => setHoveredSummaryCard('scheduled')}
+                onMouseLeave={() => setHoveredSummaryCard('')}
+              >
                 <Space>
                   <UnorderedListOutlined />
                   <Text type="secondary">今日应完成事项</Text>
@@ -2978,6 +2986,63 @@ function WorkLogs({ mode = 'dashboard' }) {
                   </Table.Summary.Cell>
                 </Table.Summary.Row>
               )}
+            />
+          )}
+        </Modal>
+      ) : null}
+
+      {!isHistoryPage ? (
+        <Modal
+          title={`今日应完成事项（${toNumber(workbench?.today?.scheduled_item_count_today, 0)}）`}
+          open={scheduledItemsModalOpen}
+          onCancel={() => setScheduledItemsModalOpen(false)}
+          footer={null}
+          width={880}
+        >
+          {todayPlannedDetailItems.length === 0 ? (
+            <Empty description="今日暂无应完成事项" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          ) : (
+            <Table
+              rowKey={(record) => `scheduled-${record.id}`}
+              size="small"
+              pagination={false}
+              dataSource={todayPlannedDetailItems}
+              scroll={{ x: 720 }}
+              columns={[
+                {
+                  title: '事项',
+                  key: 'item',
+                  render: (_, record) => (
+                    <div>
+                      <div style={{ fontWeight: 600, color: '#0f172a' }}>
+                        {record.description || record.item_type_name || '-'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#667085' }}>
+                        {record.item_type_name || '-'} · #{record.id}
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  title: '需求',
+                  key: 'demand',
+                  width: 220,
+                  render: (_, record) => record.demand_name || record.demand_id || '-',
+                },
+                {
+                  title: '关联节点',
+                  dataIndex: 'phase_name',
+                  key: 'phase_name',
+                  width: 180,
+                  render: (value) => value || '-',
+                },
+                {
+                  title: '今日计划(h)',
+                  key: 'hours',
+                  width: 120,
+                  render: (_, record) => toNumber(record?.today_planned_hours, 0).toFixed(1),
+                },
+              ]}
             />
           )}
         </Modal>

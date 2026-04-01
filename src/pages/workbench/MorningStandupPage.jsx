@@ -712,14 +712,6 @@ function MorningStandupBoard() {
           ),
       },
       {
-        title: '事项',
-        dataIndex: 'item_type_name',
-        key: 'item_type_name',
-        width: 100,
-        ellipsis: true,
-        render: (value, record) => (record?.row_type === 'phase_group' ? <Text type="secondary">-</Text> : value || '-'),
-      },
-      {
         title: '需求',
         dataIndex: 'demand_name',
         key: 'demand_name',
@@ -735,6 +727,17 @@ function MorningStandupBoard() {
           ) : (
             renderDemandNameWithLimit(value, 30)
           ),
+      },
+      {
+        title: '工作描述',
+        dataIndex: 'description',
+        key: 'description',
+        render: (value, record) => {
+          if (record?.row_type === 'phase_group') return <Text type="secondary">-</Text>
+          const fullText = String(value || '').trim()
+          if (!fullText) return '-'
+          return <span className="morning-prewrap-text">{fullText}</span>
+        },
       },
       {
         title: '预计开始',
@@ -768,6 +771,17 @@ function MorningStandupBoard() {
           ) : (
             <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>
           ),
+      },
+      {
+        title: '工作描述',
+        dataIndex: 'description',
+        key: 'description',
+        render: (value, record) => {
+          if (record?.row_type === 'phase_group') return <Text type="secondary">-</Text>
+          const fullText = String(value || '').trim()
+          if (!fullText) return '-'
+          return <span className="morning-prewrap-text">{fullText}</span>
+        },
       },
     ],
     [],

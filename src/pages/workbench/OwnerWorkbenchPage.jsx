@@ -565,13 +565,6 @@ function OwnerWorkbench() {
 
   const ownerEstimateColumns = [
     {
-      title: '事项ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 90,
-      render: (value) => <Tag color="blue">#{value}</Tag>,
-    },
-    {
       title: '成员',
       dataIndex: 'username',
       key: 'username',
@@ -586,7 +579,6 @@ function OwnerWorkbench() {
     {
       title: '关联需求',
       key: 'demand',
-      width: 240,
       render: (_, row) =>
         row.demand_id ? (
           <Button type="link" size="small" onClick={() => openDemandDetailInNewTab(row.demand_id)}>
@@ -601,6 +593,12 @@ function OwnerWorkbench() {
       key: 'phase',
       width: 150,
       render: (_, row) => row.phase_name || row.phase_key || '-',
+    },
+    {
+      title: '工作描述',
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
     },
     {
       title: '来源',
@@ -623,12 +621,6 @@ function OwnerWorkbench() {
       key: 'assigned_by_name',
       width: 120,
       render: (value) => value || '-',
-    },
-    {
-      title: '描述',
-      dataIndex: 'description',
-      key: 'description',
-      ellipsis: true,
     },
     {
       title: '个人预估(h)',
