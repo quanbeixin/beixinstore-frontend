@@ -164,6 +164,8 @@ function OwnerWorkbench() {
         return
       }
       setNoAccess(false)
+      console.log('loadData返回的数据:', result.data)
+      console.log('owner_estimate_items:', result.data?.owner_estimate_items)
       setData(result.data || {})
       setLastLoadedAt(new Date())
       setSelectedRowKeys([])
@@ -407,7 +409,7 @@ function OwnerWorkbench() {
         item?.owner_estimate_hours === null || item?.owner_estimate_hours === undefined
           ? undefined
           : toNumber(item.owner_estimate_hours, 0),
-      task_difficulty_code: item?.task_difficulty_code || undefined,
+      task_difficulty_code: item?.task_difficulty_code || 'N1',
     })
     setEstimateModalOpen(true)
   }
@@ -423,12 +425,14 @@ function OwnerWorkbench() {
 
     try {
       const values = await estimateForm.validateFields()
+      console.log('提交的数据:', values)
       setSavingEstimate(true)
       const result = await updateWorkLogOwnerEstimateApi(editingItem.id, {
         owner_estimate_hours: values.owner_estimate_hours,
         task_difficulty_code: values.task_difficulty_code,
       })
 
+      console.log('保存响应:', result)
       if (!result?.success) {
         message.error(result?.message || 'Owner 预估更新失败')
         return
@@ -1017,7 +1021,7 @@ function OwnerWorkbench() {
         forceRender
         destroyOnHidden
       >
-        <Form form={estimateForm} layout="vertical" className="owner-modal-form">
+        <Form form={estimateForm} layout="vertical" className="owner-modal-form" initialValues={{ task_difficulty_code: 'N1' }}>
           <Form.Item
             label="任务难度"
             name="task_difficulty_code"

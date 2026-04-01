@@ -238,6 +238,7 @@ function MorningStandupBoard() {
     readStoredViewMode(STANDUP_VIEW_MODE_STORAGE_KEYS.yesterdayDue, 'tree'),
   )
   const [unscheduledModalOpen, setUnscheduledModalOpen] = useState(false)
+  const [unfilledModalOpen, setUnfilledModalOpen] = useState(false)
   const [hoursDetailModal, setHoursDetailModal] = useState({ open: false, type: 'planned' })
   const [data, setData] = useState({
     tabs: [],
@@ -1126,28 +1127,33 @@ function MorningStandupBoard() {
       <Card
         variant="borderless"
         className="morning-board-section-card morning-board-shell-card morning-section-gap"
-        extra={
-          <Tag
-            className={`morning-board-refresh-tag ${loading ? 'morning-board-refresh-tag--loading' : ''}`}
-            icon={<ReloadOutlined />}
-            onClick={() => {
-              if (!loading) loadBoard(activeTabKey)
-            }}
-          >
-            刷新
-          </Tag>
-        }
       >
-        {tabItems.length > 0 ? (
-          <Tabs
-            className="morning-board-tabs"
-            activeKey={activeTabKey || tabItems[0]?.key}
-            items={tabItems}
-            onChange={handleTabChange}
-          />
-        ) : (
-          <Empty description="暂无可用部门数据" />
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
+          <div style={{ flex: '0 0 66.67%', overflow: 'hidden' }}>
+            {tabItems.length > 0 ? (
+              <Tabs
+                className="morning-board-tabs"
+                activeKey={activeTabKey || tabItems[0]?.key}
+                items={tabItems}
+                onChange={handleTabChange}
+                style={{ marginBottom: 0 }}
+              />
+            ) : (
+              <Empty description="暂无可用部门数据" style={{ margin: 0 }} />
+            )}
+          </div>
+          <div style={{ flex: '0 0 auto', marginLeft: 'auto' }}>
+            <Tag
+              className={`morning-board-refresh-tag ${loading ? 'morning-board-refresh-tag--loading' : ''}`}
+              icon={<ReloadOutlined />}
+              onClick={() => {
+                if (!loading) loadBoard(activeTabKey)
+              }}
+            >
+              刷新
+            </Tag>
+          </div>
+        </div>
 
         <Row gutter={[12, 12]} className="morning-summary-row morning-summary-row--top">
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>
@@ -1182,7 +1188,11 @@ function MorningStandupBoard() {
             </Card>
           </Col>
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>
-            <Card size="small" className="morning-summary-card">
+            <Card
+              size="small"
+              className="morning-summary-card morning-summary-card--clickable"
+              onClick={() => setUnfilledModalOpen(true)}
+            >
               <Space>
                 <WarningOutlined />
                 <Text type="secondary">有安排待填报</Text>
@@ -1250,29 +1260,6 @@ function MorningStandupBoard() {
           </Col>
         </Row>
       </Card>
-
-      <Row gutter={[12, 12]} className="morning-section-gap">
-        <Col span={24}>
-          <Card
-            size="small"
-            title="有安排待填报名单"
-            variant="borderless"
-            className="morning-board-section-card morning-waitlist-card"
-          >
-            {noFillMembers.length === 0 ? (
-              <Text type="secondary">今天有安排成员均已填报</Text>
-            ) : (
-              <Space wrap>
-                {noFillMembers.map((member) => (
-                  <Tag key={member.id} color="orange">
-                    {member.username}
-                  </Tag>
-                ))}
-              </Space>
-            )}
-          </Card>
-        </Col>
-      </Row>
 
       <Row gutter={[12, 12]} className="morning-section-gap">
         <Col span={24}>
@@ -1379,6 +1366,30 @@ function MorningStandupBoard() {
               const displayName = String(member?.username || '').trim() || `用户${Number(member?.user_id) || ''}`
               return (
                 <Tag key={member.user_id} color="blue">
+                  {displayName}
+                </Tag>
+              )
+            })}
+          </Space>
+        )}
+      </Modal>
+
+      <Modal
+        title={`有安排待填报成员（${noFillMembers.length}）`}
+        open={unfilledModalOpen}
+        onCancel={() => setUnfilledModalOpen(false)}
+        onOk={() => setUnfilledModalOpen(false)}
+        okText="关闭"
+        cancelButtonProps={{ style: { display: 'none' } }}
+      >
+        {noFillMembers.length === 0 ? (
+          <Empty description="今天有安排成员均已填报" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <Space wrap size={[8, 8]}>
+            {noFillMembers.map((member) => {
+              const displayName = String(member?.username || '').trim() || `用户${Number(member?.id) || ''}`
+              return (
+                <Tag key={member.id} color="orange">
                   {displayName}
                 </Tag>
               )
