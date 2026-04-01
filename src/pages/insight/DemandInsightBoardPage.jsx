@@ -659,7 +659,7 @@ function DemandInsightBoard() {
               title="偏差(实际-负责人预估)"
               value={toNumber(summary.variance_owner_hours, 0)}
               precision={1}
-              valueStyle={{ color: varianceColor(summary.variance_owner_hours) }}
+              styles={{ content: { color: varianceColor(summary.variance_owner_hours) } }}
               suffix="h"
             />
             <Text type="secondary">偏差率：{formatRate(summary.variance_owner_rate)}</Text>
@@ -671,7 +671,7 @@ function DemandInsightBoard() {
               title="偏差(实际-个人预估)"
               value={toNumber(summary.variance_personal_hours, 0)}
               precision={1}
-              valueStyle={{ color: varianceColor(summary.variance_personal_hours) }}
+              styles={{ content: { color: varianceColor(summary.variance_personal_hours) } }}
               suffix="h"
             />
             <Text type="secondary">偏差率：{formatRate(summary.variance_personal_rate)}</Text>

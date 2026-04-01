@@ -64,7 +64,6 @@ function MyAssignedItemsPage() {
     setEditingItem(item)
     form.setFieldsValue({
       description: item.description,
-      owner_estimate_hours: item.owner_estimate_hours,
       expected_start_date: item.expected_start_date,
       expected_completion_date: item.expected_completion_date,
       log_status: item.log_status,
@@ -138,14 +137,6 @@ function MyAssignedItemsPage() {
       key: 'phase',
       width: 150,
       render: (_, row) => row.phase_name || row.phase_key || '-',
-    },
-    {
-      title: 'Owner评估(h)',
-      dataIndex: 'owner_estimate_hours',
-      key: 'owner_estimate_hours',
-      width: 130,
-      render: (value) =>
-        value === null || value === undefined ? <Tag color="orange">待评估</Tag> : toNumber(value, 0).toFixed(1),
     },
     {
       title: '个人预估(h)',
@@ -229,9 +220,6 @@ function MyAssignedItemsPage() {
         <Form form={form} layout="vertical">
           <Form.Item label="工作描述" name="description" rules={[{ required: true, message: '请输入工作描述' }]}>
             <Input.TextArea rows={3} />
-          </Form.Item>
-          <Form.Item label="Owner评估(h)" name="owner_estimate_hours">
-            <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item label="预计开始日期" name="expected_start_date">
             <Input type="date" />

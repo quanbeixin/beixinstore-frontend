@@ -37,6 +37,13 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback
 }
 
+function formatNetEfficiencyValue(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return num.toFixed(2)
+}
+
 function toPositiveInt(value) {
   const num = Number(value)
   return Number.isInteger(num) && num > 0 ? num : null
@@ -218,7 +225,7 @@ function DepartmentEfficiencyDetailPage() {
     const params = new URLSearchParams()
     if (dateRange?.[0]) params.set('start_date', dateRange[0].format('YYYY-MM-DD'))
     if (dateRange?.[1]) params.set('end_date', dateRange[1].format('YYYY-MM-DD'))
-    navigate(`/efficiency/member/${userId}/detail?${params.toString()}`)
+    window.open(`/efficiency/member/${userId}/detail?${params.toString()}`, '_blank', 'noopener,noreferrer')
   }
 
   const memberColumns = [
@@ -344,7 +351,11 @@ function DepartmentEfficiencyDetailPage() {
     { label: '个人预估总工时(h)', value: toNumber(summary.total_personal_estimate_hours, 0).toFixed(1), note: '成员个人预估总和' },
     { label: '实际总工时(h)', value: toNumber(summary.total_actual_hours, 0).toFixed(1), note: '当前周期内实际投入汇总' },
     { label: '人均实际工时(h)', value: toNumber(summary.avg_actual_hours_per_member, 0).toFixed(1), note: '实际总工时 / 成员人数' },
-    { label: '净效率值', value: '-', note: '预留指标位，后续接入新口径' },
+    {
+      label: '净效率值',
+      value: formatNetEfficiencyValue(summary.net_efficiency_value),
+      note: `当前按公式口径计算，任务难度系数 ${toNumber(summary.task_difficulty_coefficient, 1).toFixed(2)}，职级权重系数 ${toNumber(summary.job_level_weight_coefficient, 1).toFixed(2)}`,
+    },
   ]
 
   return (

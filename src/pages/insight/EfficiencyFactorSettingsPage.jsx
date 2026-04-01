@@ -1,16 +1,55 @@
 import { ReloadOutlined, SaveOutlined } from '@ant-design/icons'
-import { Button, Card, Input, InputNumber, Space, Switch, Table, Tag, Typography, message } from 'antd'
+import { Alert, Button, Card, Input, InputNumber, Select, Space, Switch, Table, Tag, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getEfficiencyFactorSettingsApi, updateEfficiencyFactorSettingsApi } from '../../api/work'
 import { hasRole } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
 
 const { Paragraph, Text, Title } = Typography
+const DEFAULT_NET_FORMULA_VARIABLE_OPTIONS = [
+  { code: 'OWNER_HOURS', label: 'Owner预估总工时' },
+  { code: 'PERSONAL_HOURS', label: '个人预估总工时' },
+  { code: 'ACTUAL_HOURS', label: '实际总工时' },
+  { code: 'TASK_DIFFICULTY_COEFF', label: '任务难度系数' },
+  { code: 'JOB_LEVEL_COEFF', label: '职级权重系数' },
+]
+const DEFAULT_NET_FORMULA_OPERATOR_OPTIONS = [
+  { code: 'ADD', label: '+' },
+  { code: 'SUB', label: '-' },
+  { code: 'MUL', label: '×' },
+  { code: 'DIV', label: '÷' },
+]
+const DEFAULT_NET_FORMULA_EXPRESSION = ['ACTUAL_HOURS', 'MUL', 'TASK_DIFFICULTY_COEFF', 'DIV', 'JOB_LEVEL_COEFF']
 
 function toDecimal2(value, fallback = 1) {
   const num = Number(value)
   if (!Number.isFinite(num)) return fallback
   return Number(num.toFixed(2))
+}
+
+function normalizeFormulaExpression(expression = []) {
+  const tokens = Array.isArray(expression)
+    ? expression.map((item) => String(item || '').trim().toUpperCase()).filter(Boolean)
+    : []
+  return tokens.length > 0 ? tokens : [...DEFAULT_NET_FORMULA_EXPRESSION]
+}
+
+function buildFormulaPreview(expression = [], variableOptions = [], operatorOptions = []) {
+  const variableMap = new Map(
+    (Array.isArray(variableOptions) && variableOptions.length > 0 ? variableOptions : DEFAULT_NET_FORMULA_VARIABLE_OPTIONS).map((item) => [
+      item.code,
+      item.label,
+    ]),
+  )
+  const operatorMap = new Map(
+    (Array.isArray(operatorOptions) && operatorOptions.length > 0 ? operatorOptions : DEFAULT_NET_FORMULA_OPERATOR_OPTIONS).map((item) => [
+      item.code,
+      item.label,
+    ]),
+  )
+  return normalizeFormulaExpression(expression)
+    .map((token, index) => (index % 2 === 0 ? variableMap.get(token) || token : operatorMap.get(token) || token))
+    .join(' ')
 }
 
 function normalizeRows(rows = []) {
@@ -35,6 +74,14 @@ function EfficiencyFactorSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [jobLevelRows, setJobLevelRows] = useState([])
   const [taskDifficultyRows, setTaskDifficultyRows] = useState([])
+  const [netFormulaState, setNetFormulaState] = useState({
+    expression: [...DEFAULT_NET_FORMULA_EXPRESSION],
+    variable_options: DEFAULT_NET_FORMULA_VARIABLE_OPTIONS,
+    operator_options: DEFAULT_NET_FORMULA_OPERATOR_OPTIONS,
+    updated_at: null,
+    updated_by_name: null,
+    last_adjustment_record: '未调整',
+  })
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -46,6 +93,20 @@ function EfficiencyFactorSettingsPage() {
       }
       setJobLevelRows(normalizeRows(result?.data?.job_level_weights || []))
       setTaskDifficultyRows(normalizeRows(result?.data?.task_difficulty_weights || []))
+      setNetFormulaState({
+        expression: normalizeFormulaExpression(result?.data?.net_efficiency_formula?.expression),
+        variable_options:
+          result?.data?.net_efficiency_formula?.variable_options?.length > 0
+            ? result.data.net_efficiency_formula.variable_options
+            : DEFAULT_NET_FORMULA_VARIABLE_OPTIONS,
+        operator_options:
+          result?.data?.net_efficiency_formula?.operator_options?.length > 0
+            ? result.data.net_efficiency_formula.operator_options
+            : DEFAULT_NET_FORMULA_OPERATOR_OPTIONS,
+        updated_at: result?.data?.net_efficiency_formula?.updated_at || null,
+        updated_by_name: result?.data?.net_efficiency_formula?.updated_by_name || null,
+        last_adjustment_record: result?.data?.net_efficiency_formula?.last_adjustment_record || '未调整',
+      })
     } catch (error) {
       message.error(error?.message || '获取效能系数设置失败')
     } finally {
@@ -187,6 +248,51 @@ function EfficiencyFactorSettingsPage() {
     [unifiedColumns],
   )
 
+  const formulaVariableOptions = useMemo(
+    () => (netFormulaState.variable_options || []).map((item) => ({ value: item.code, label: item.label })),
+    [netFormulaState.variable_options],
+  )
+  const formulaOperatorOptions = useMemo(
+    () => (netFormulaState.operator_options || []).map((item) => ({ value: item.code, label: item.label })),
+    [netFormulaState.operator_options],
+  )
+  const formulaPreviewText = useMemo(
+    () => buildFormulaPreview(netFormulaState.expression, netFormulaState.variable_options, netFormulaState.operator_options),
+    [netFormulaState.expression, netFormulaState.operator_options, netFormulaState.variable_options],
+  )
+  const formulaOperandCount = Math.max(1, Math.ceil(normalizeFormulaExpression(netFormulaState.expression).length / 2))
+
+  const patchFormulaToken = useCallback((tokenIndex, nextValue) => {
+    setNetFormulaState((prev) => {
+      const nextExpression = normalizeFormulaExpression(prev.expression)
+      nextExpression[tokenIndex] = String(nextValue || '').trim().toUpperCase()
+      return { ...prev, expression: nextExpression }
+    })
+  }, [])
+
+  const handleAddFormulaStep = useCallback(() => {
+    setNetFormulaState((prev) => {
+      const nextExpression = normalizeFormulaExpression(prev.expression)
+      if (nextExpression.length >= 7) return prev
+      const fallbackVariable = prev.variable_options?.[0]?.code || DEFAULT_NET_FORMULA_VARIABLE_OPTIONS[0].code
+      return {
+        ...prev,
+        expression: [...nextExpression, 'MUL', fallbackVariable],
+      }
+    })
+  }, [])
+
+  const handleRemoveFormulaStep = useCallback(() => {
+    setNetFormulaState((prev) => {
+      const nextExpression = normalizeFormulaExpression(prev.expression)
+      if (nextExpression.length <= 1) return prev
+      return {
+        ...prev,
+        expression: nextExpression.slice(0, -2),
+      }
+    })
+  }, [])
+
   const handleSaveAll = async () => {
     if (!canManage) {
       message.warning('当前账号无权维护效能系数')
@@ -207,6 +313,9 @@ function EfficiencyFactorSettingsPage() {
           enabled: Number(item.enabled) === 1 ? 1 : 0,
           remark: item.remark || '',
         })),
+        net_efficiency_formula: {
+          expression: normalizeFormulaExpression(netFormulaState.expression),
+        },
       })
       if (!result?.success) {
         message.error(result?.message || '保存效能系数设置失败')
@@ -215,6 +324,20 @@ function EfficiencyFactorSettingsPage() {
       message.success('效能系数设置保存成功')
       setJobLevelRows(normalizeRows(result?.data?.job_level_weights || []))
       setTaskDifficultyRows(normalizeRows(result?.data?.task_difficulty_weights || []))
+      setNetFormulaState({
+        expression: normalizeFormulaExpression(result?.data?.net_efficiency_formula?.expression),
+        variable_options:
+          result?.data?.net_efficiency_formula?.variable_options?.length > 0
+            ? result.data.net_efficiency_formula.variable_options
+            : DEFAULT_NET_FORMULA_VARIABLE_OPTIONS,
+        operator_options:
+          result?.data?.net_efficiency_formula?.operator_options?.length > 0
+            ? result.data.net_efficiency_formula.operator_options
+            : DEFAULT_NET_FORMULA_OPERATOR_OPTIONS,
+        updated_at: result?.data?.net_efficiency_formula?.updated_at || null,
+        updated_by_name: result?.data?.net_efficiency_formula?.updated_by_name || null,
+        last_adjustment_record: result?.data?.net_efficiency_formula?.last_adjustment_record || '未调整',
+      })
     } catch (error) {
       message.error(error?.message || '保存效能系数设置失败')
     } finally {
@@ -253,11 +376,67 @@ function EfficiencyFactorSettingsPage() {
             效能系数设置
           </Title>
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            当前版本支持维护两组映射：职级权重系数、任务难度系数。保存后即时生效于配置层，不影响既有统计口径。
+            当前版本支持维护三类配置：职级权重系数、任务难度系数、净效率公式。保存后将同步影响排行页与详情页的净效率口径。
           </Paragraph>
           {!canManage ? (
             <Text type="secondary">当前账号仅可查看，修改需 `ADMIN` 或 `SUPER_ADMIN` 角色。</Text>
           ) : null}
+        </Space>
+      </Card>
+
+      <Card
+        variant="borderless"
+        title="净效率公式配置"
+        style={{ marginBottom: 12, borderRadius: 14 }}
+        styles={{ body: { padding: '12px 16px 16px 16px' } }}
+      >
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+          <Alert
+            showIcon
+            type="info"
+            title="净效率值由后端统一计算。这里保存后，部门人效排行、部门详情、个人人效详情会自动按同一公式生效。"
+          />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            {Array.from({ length: formulaOperandCount }).map((_, operandIndex) => {
+              const variableTokenIndex = operandIndex * 2
+              const operatorTokenIndex = variableTokenIndex - 1
+              return (
+                <Space key={`formula-token-${operandIndex}`} size={8} wrap>
+                  {operandIndex > 0 ? (
+                    <Select
+                      style={{ width: 96 }}
+                      value={normalizeFormulaExpression(netFormulaState.expression)[operatorTokenIndex]}
+                      options={formulaOperatorOptions}
+                      disabled={!canManage || saving}
+                      onChange={(value) => patchFormulaToken(operatorTokenIndex, value)}
+                    />
+                  ) : null}
+                  <Select
+                    style={{ width: 180 }}
+                    value={normalizeFormulaExpression(netFormulaState.expression)[variableTokenIndex]}
+                    options={formulaVariableOptions}
+                    disabled={!canManage || saving}
+                    onChange={(value) => patchFormulaToken(variableTokenIndex, value)}
+                  />
+                </Space>
+              )
+            })}
+            <Button onClick={handleAddFormulaStep} disabled={!canManage || saving || normalizeFormulaExpression(netFormulaState.expression).length >= 7}>
+              新增一步
+            </Button>
+            <Button onClick={handleRemoveFormulaStep} disabled={!canManage || saving || normalizeFormulaExpression(netFormulaState.expression).length <= 1}>
+              删除最后一步
+            </Button>
+          </div>
+          <div>
+            <Text type="secondary">公式预览：</Text>
+            <Text strong>{formulaPreviewText}</Text>
+          </div>
+          <div>
+            <Text type="secondary">最近调整：</Text>
+            <Text>{netFormulaState.last_adjustment_record || '未调整'}</Text>
+            {netFormulaState.updated_at ? <Text type="secondary">{`（${formatBeijingDateTime(netFormulaState.updated_at)}）`}</Text> : null}
+          </div>
         </Space>
       </Card>
 

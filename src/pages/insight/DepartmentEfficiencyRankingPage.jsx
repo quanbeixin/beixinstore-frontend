@@ -3,6 +3,7 @@ import {
   ArrowUpOutlined,
   DownloadOutlined,
   MinusOutlined,
+  QuestionCircleOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
 import {
@@ -19,6 +20,7 @@ import {
   Statistic,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd'
@@ -35,6 +37,13 @@ const { Text } = Typography
 function toNumber(value, fallback = 0) {
   const num = Number(value)
   return Number.isFinite(num) ? num : fallback
+}
+
+function formatNetEfficiencyValue(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return num.toFixed(2)
 }
 
 function getThisWeekRange() {
@@ -115,6 +124,8 @@ function DepartmentEfficiencyRankingPage() {
       total_owner_estimate_hours: 0,
       total_personal_estimate_hours: 0,
       total_actual_hours: 0,
+      net_efficiency_value: null,
+      net_efficiency_formula_text: '',
     },
     rows: [],
     filters: {},
@@ -171,6 +182,7 @@ function DepartmentEfficiencyRankingPage() {
         end_date: dateRange?.[1]?.format('YYYY-MM-DD'),
         keyword: String(keyword || '').trim() || undefined,
         sort_order: sortOrder,
+        completed_only: true,
       })
 
       if (!result?.success) {
@@ -219,10 +231,11 @@ function DepartmentEfficiencyRankingPage() {
   }
 
   const goMemberDetail = (row) => {
+    if (!row?.user_id) return
     const params = new URLSearchParams()
     if (dateRange?.[0]) params.set('start_date', dateRange[0].format('YYYY-MM-DD'))
     if (dateRange?.[1]) params.set('end_date', dateRange[1].format('YYYY-MM-DD'))
-    navigate(`/efficiency/member/${row?.user_id}/detail?${params.toString()}`)
+    window.open(`/efficiency/member/${row.user_id}/detail?${params.toString()}`, '_blank', 'noopener,noreferrer')
   }
 
   const goDepartmentDetail = () => {
@@ -235,6 +248,28 @@ function DepartmentEfficiencyRankingPage() {
 
   const summary = data.summary || {}
   const rows = Array.isArray(data.rows) ? data.rows : []
+  const summaryCardStyle = {
+    borderRadius: 14,
+    border: '1px solid #edf0f5',
+    boxShadow: '0 6px 18px rgba(15, 23, 42, 0.04)',
+  }
+  const summaryCardBodyStyle = {
+    padding: '12px 14px',
+  }
+  const summaryStatisticStyles = {
+    title: { fontSize: 12, color: '#667085', marginBottom: 6 },
+    content: { fontSize: 20, fontWeight: 600, lineHeight: 1.2, color: '#101828' },
+  }
+  const hoursSorter = (field) => (left, right) => toNumber(left?.[field], 0) - toNumber(right?.[field], 0)
+  const netEfficiencyFormulaTip = summary.net_efficiency_formula_text ? (
+    <Space orientation="vertical" size={2}>
+      <span>当前页统计范围：仅统计已完成事项</span>
+      <span>实际公式：实际总工时 = SUM(已完成事项的 actual_hours)</span>
+      <span>{`净效率值公式：${summary.net_efficiency_formula_text}`}</span>
+    </Space>
+  ) : (
+    '当前净效率值按已配置公式计算'
+  )
 
   const columns = [
     {
@@ -272,6 +307,8 @@ function DepartmentEfficiencyRankingPage() {
       dataIndex: 'total_owner_estimate_hours',
       key: 'total_owner_estimate_hours',
       width: 130,
+      sorter: hoursSorter('total_owner_estimate_hours'),
+      sortDirections: ['descend', 'ascend'],
       render: (value) => toNumber(value, 0).toFixed(1),
     },
     {
@@ -279,6 +316,8 @@ function DepartmentEfficiencyRankingPage() {
       dataIndex: 'total_personal_estimate_hours',
       key: 'total_personal_estimate_hours',
       width: 130,
+      sorter: hoursSorter('total_personal_estimate_hours'),
+      sortDirections: ['descend', 'ascend'],
       render: (value) => toNumber(value, 0).toFixed(1),
     },
     {
@@ -286,14 +325,24 @@ function DepartmentEfficiencyRankingPage() {
       dataIndex: 'total_actual_hours',
       key: 'total_actual_hours',
       width: 120,
+      sorter: hoursSorter('total_actual_hours'),
+      sortDirections: ['descend', 'ascend'],
       render: (value) => <Text strong>{toNumber(value, 0).toFixed(1)}</Text>,
     },
     {
-      title: '净效率值',
+      title: (
+        <Space size={4}>
+          <span>净效率值</span>
+          <Tooltip title={netEfficiencyFormulaTip}>
+            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
       dataIndex: 'net_efficiency_value',
       key: 'net_efficiency_value',
       width: 100,
-      render: () => <Text type="secondary">-</Text>,
+      render: (value) =>
+        value === null || value === undefined ? <Text type="secondary">-</Text> : <Text strong>{formatNetEfficiencyValue(value)}</Text>,
     },
     {
       title: '趋势',
@@ -394,8 +443,8 @@ function DepartmentEfficiencyRankingPage() {
             value={sortOrder}
             onChange={setSortOrder}
             options={[
-              { label: '工时降序', value: 'desc' },
-              { label: '工时升序', value: 'asc' },
+              { label: '净效率值降序', value: 'desc' },
+              { label: '净效率值升序', value: 'asc' },
             ]}
           />
         </Space>
@@ -426,31 +475,47 @@ function DepartmentEfficiencyRankingPage() {
         </Card>
       ) : (
         <>
-          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+          <Row gutter={[12, 12]} style={{ marginBottom: 14 }}>
             <Col xs={24} sm={12} xl={4}>
-              <Card variant="borderless">
-                <Statistic title="部门" value={summary.department_name || '-'} valueStyle={{ fontSize: 18 }} />
+              <Card variant="borderless" style={summaryCardStyle} styles={{ body: summaryCardBodyStyle }}>
+                <Statistic title="部门" value={summary.department_name || '-'} styles={summaryStatisticStyles} />
               </Card>
             </Col>
-            <Col xs={24} sm={12} xl={5}>
-              <Card variant="borderless">
-                <Statistic title="部门平均实际工时(h)" value={toNumber(summary.avg_actual_hours, 0)} precision={1} />
+            <Col xs={24} sm={12} xl={4}>
+              <Card variant="borderless" style={summaryCardStyle} styles={{ body: summaryCardBodyStyle }}>
+                <Statistic title="平均实际工时(h)" value={toNumber(summary.avg_actual_hours, 0)} precision={1} styles={summaryStatisticStyles} />
               </Card>
             </Col>
-            <Col xs={24} sm={12} xl={5}>
-              <Card variant="borderless">
-                <Statistic title="部门总实际工时(h)" value={toNumber(summary.total_actual_hours, 0)} precision={1} />
+            <Col xs={24} sm={12} xl={4}>
+              <Card variant="borderless" style={summaryCardStyle} styles={{ body: summaryCardBodyStyle }}>
+                <Statistic title="总实际工时(h)" value={toNumber(summary.total_actual_hours, 0)} precision={1} styles={summaryStatisticStyles} />
               </Card>
             </Col>
-            <Col xs={24} sm={12} xl={5}>
-              <Card variant="borderless">
-                <Statistic title="部门总Owner预估(h)" value={toNumber(summary.total_owner_estimate_hours, 0)} precision={1} />
+            <Col xs={24} sm={12} xl={4}>
+              <Card variant="borderless" style={summaryCardStyle} styles={{ body: summaryCardBodyStyle }}>
+                <Statistic title="净效率值" value={formatNetEfficiencyValue(summary.net_efficiency_value)} styles={summaryStatisticStyles} />
               </Card>
             </Col>
-            <Col xs={24} sm={12} xl={5}>
-              <Card variant="borderless">
-                <Statistic title="部门总个人预估(h)" value={toNumber(summary.total_personal_estimate_hours, 0)} precision={1} />
-                <Text type="secondary">成员数：{toNumber(summary.member_count, 0)}</Text>
+            <Col xs={24} sm={12} xl={4}>
+              <Card variant="borderless" style={summaryCardStyle} styles={{ body: summaryCardBodyStyle }}>
+                <Statistic title="总Owner预估(h)" value={toNumber(summary.total_owner_estimate_hours, 0)} precision={1} styles={summaryStatisticStyles} />
+              </Card>
+            </Col>
+            <Col xs={24} sm={12} xl={4}>
+              <Card variant="borderless" style={summaryCardStyle} styles={{ body: summaryCardBodyStyle }}>
+                <Statistic
+                  title={
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <span>总个人预估(h)</span>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        成员数 {toNumber(summary.member_count, 0)}
+                      </Text>
+                    </div>
+                  }
+                  value={toNumber(summary.total_personal_estimate_hours, 0)}
+                  precision={1}
+                  styles={summaryStatisticStyles}
+                />
               </Card>
             </Col>
           </Row>

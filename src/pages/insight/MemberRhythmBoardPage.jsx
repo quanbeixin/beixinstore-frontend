@@ -207,7 +207,7 @@ function MemberRhythmBoard() {
     const params = new URLSearchParams()
     if (dateRange?.[0]) params.set('start_date', dateRange[0].format('YYYY-MM-DD'))
     if (dateRange?.[1]) params.set('end_date', dateRange[1].format('YYYY-MM-DD'))
-    navigate(`/efficiency/member/${targetMemberUserId}/detail?${params.toString()}`)
+    window.open(`/efficiency/member/${targetMemberUserId}/detail?${params.toString()}`, '_blank', 'noopener,noreferrer')
   }
 
   const summary = data.summary || {}
@@ -230,6 +230,51 @@ function MemberRhythmBoard() {
         .slice(0, 10),
     [memberList],
   )
+
+  const summaryCards = [
+    {
+      key: 'member_count',
+      title: '成员数',
+      value: toNumber(summary.member_count, 0),
+    },
+    {
+      key: 'avg_actual_hours_per_day',
+      title: '日均实际用时(h)',
+      value: toNumber(summary.avg_actual_hours_per_day, 0),
+      precision: 1,
+    },
+    {
+      key: 'avg_saturation_rate',
+      title: '平均饱和度',
+      value: toNumber(summary.avg_saturation_rate, 0),
+      precision: 1,
+      suffix: '%',
+    },
+    {
+      key: 'overload_member_count',
+      title: '超负荷成员数',
+      value: toNumber(summary.overload_member_count, 0),
+      extra: `超负荷天数：${toNumber(summary.overload_day_count, 0)}`,
+    },
+    {
+      key: 'low_load_member_count',
+      title: '低负荷成员数',
+      value: toNumber(summary.low_load_member_count, 0),
+      extra: `低负荷天数：${toNumber(summary.low_load_day_count, 0)}`,
+    },
+    {
+      key: 'total_owner_estimate_hours',
+      title: '负责人预估总用时(h)',
+      value: toNumber(summary.total_owner_estimate_hours, 0),
+      precision: 1,
+    },
+    {
+      key: 'total_actual_hours',
+      title: '个人实际总用时(h)',
+      value: toNumber(summary.total_actual_hours, 0),
+      precision: 1,
+    },
+  ]
 
   const ownerOptions = useMemo(
     () =>
@@ -710,53 +755,40 @@ function MemberRhythmBoard() {
         ) : null}
       </Card>
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={12} xl={6}>
-          <Card variant="borderless">
-            <Statistic title="成员数" value={toNumber(summary.member_count, 0)} />
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
+        {summaryCards.map((item) => (
+          <Card
+            key={item.key}
+            size="small"
+            variant="borderless"
+            style={{ flex: '1 1 132px', minWidth: 132 }}
+            styles={{ body: { padding: '14px 14px 12px' } }}
+          >
+            <Statistic
+              title={item.title}
+              value={item.value}
+              precision={item.precision}
+              suffix={item.suffix}
+              styles={{
+                title: { fontSize: 12, marginBottom: 8 },
+                content: { fontSize: 22, lineHeight: 1.2 },
+              }}
+            />
+            {item.extra ? (
+              <Text type="secondary" style={{ display: 'block', marginTop: 6, fontSize: 12, lineHeight: 1.2 }}>
+                {item.extra}
+              </Text>
+            ) : null}
           </Card>
-        </Col>
-        <Col xs={24} sm={12} xl={6}>
-          <Card variant="borderless">
-            <Statistic title="总填报天数" value={toNumber(summary.total_filled_days, 0)} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} xl={6}>
-          <Card variant="borderless">
-            <Statistic title="日均实际用时(h)" value={toNumber(summary.avg_actual_hours_per_day, 0)} precision={1} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} xl={6}>
-          <Card variant="borderless">
-            <Statistic title="平均饱和度" value={toNumber(summary.avg_saturation_rate, 0)} precision={1} suffix="%" />
-          </Card>
-        </Col>
-      </Row>
-
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={12} xl={6}>
-          <Card variant="borderless">
-            <Statistic title="超负荷成员数" value={toNumber(summary.overload_member_count, 0)} />
-            <Text type="secondary">超负荷天数：{toNumber(summary.overload_day_count, 0)}</Text>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} xl={6}>
-          <Card variant="borderless">
-            <Statistic title="低负荷成员数" value={toNumber(summary.low_load_member_count, 0)} />
-            <Text type="secondary">低负荷天数：{toNumber(summary.low_load_day_count, 0)}</Text>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} xl={6}>
-          <Card variant="borderless">
-            <Statistic title="负责人预估总用时(h)" value={toNumber(summary.total_owner_estimate_hours, 0)} precision={1} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} xl={6}>
-          <Card variant="borderless">
-            <Statistic title="个人实际总用时(h)" value={toNumber(summary.total_actual_hours, 0)} precision={1} />
-          </Card>
-        </Col>
-      </Row>
+        ))}
+      </div>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} xl={12}>
@@ -819,7 +851,7 @@ function MemberRhythmBoard() {
       >
         <Space orientation="vertical" size={8}>
           <Text>1. 统计范围按筛选时间内 `work_logs.log_date` 计算。</Text>
-          <Text>2. 饱和度口径：`个人实际用时 / 8h`，当前按固定 8h/天计算。</Text>
+          <Text>2. 饱和度口径：`个人实际用时 / 8.5h`，当前按固定 8.5h/天计算。</Text>
           <Text>3. 超负荷：饱和度 {'>'} 100%；低负荷：饱和度 {'<'} 60%。</Text>
           <Text>4. 可从“需求数”直接联动到需求投入看板，继续追踪投入分布。</Text>
           <Text>5. 三类用时分别为：负责人预估、个人预估、个人实际。</Text>

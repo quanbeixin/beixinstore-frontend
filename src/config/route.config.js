@@ -39,21 +39,6 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
-    path: '/efficiency/demand',
-    componentKey: 'demandInsightBoard',
-    requiredPermission: null,
-    requiredRoles: ['SUPER_ADMIN'],
-    page: {
-      title: '需求投入看板',
-      subtitle: '按需求、阶段、参与人查看负责人预估、个人预估与个人实际投入。',
-    },
-    menu: {
-      section: 'efficiency',
-      label: '需求投入看板',
-      icon: 'dashboard',
-    },
-  },
-  {
     path: '/efficiency/member',
     componentKey: 'memberRhythmBoard',
     requiredPermission: null,
@@ -91,6 +76,21 @@ export const PRIVATE_ROUTES = [
       section: 'efficiency',
       label: '效能系数设置',
       icon: 'setting',
+    },
+  },
+  {
+    path: '/efficiency/demand',
+    componentKey: 'demandInsightBoard',
+    requiredPermission: null,
+    requiredRoles: ['SUPER_ADMIN'],
+    page: {
+      title: '需求投入看板',
+      subtitle: '按需求、阶段、参与人查看负责人预估、个人预估与个人实际投入。',
+    },
+    menu: {
+      section: 'efficiency',
+      label: '需求投入看板',
+      icon: 'dashboard',
     },
   },
   {

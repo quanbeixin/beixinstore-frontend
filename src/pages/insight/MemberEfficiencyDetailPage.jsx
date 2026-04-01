@@ -1,5 +1,4 @@
 import {
-  ArrowLeftOutlined,
   DownloadOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
@@ -30,6 +29,13 @@ const { Text } = Typography
 function toNumber(value, fallback = 0) {
   const num = Number(value)
   return Number.isFinite(num) ? num : fallback
+}
+
+function formatNetEfficiencyValue(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return num.toFixed(2)
 }
 
 function toPositiveInt(value) {
@@ -108,6 +114,7 @@ function MemberEfficiencyDetailPage() {
         user_id: userId,
         start_date: dateRange?.[0]?.format('YYYY-MM-DD'),
         end_date: dateRange?.[1]?.format('YYYY-MM-DD'),
+        completed_only: true,
       })
       if (!result?.success) {
         message.error(result?.message || '获取个人人效详情失败')
@@ -149,16 +156,20 @@ function MemberEfficiencyDetailPage() {
       return
     }
     const rows = [
-      ['日期', '事项类型', '事项状态', '关联需求', '阶段', 'Owner预估(h)', '个人预估(h)', '实际工时(h)', '描述'],
+      ['日期', '事项类型', '事项状态', '职级', 'Owner评估难易程度', '个人评估难易程度', '关联需求', '阶段', 'Owner预估(h)', '个人预估(h)', '实际工时(h)', '净效率值', '描述'],
       ...workItemList.map((item) => [
         item.log_date || '-',
         item.item_type_name || '-',
         item.log_status || '-',
+        summary.job_level_name || summary.job_level || '-',
+        item.task_difficulty_name || item.task_difficulty_code || '未评估',
+        item.self_task_difficulty_name || item.self_task_difficulty_code || '未评估',
         item.demand_name || item.demand_id || '-',
         item.phase_name || item.phase_key || '-',
         toNumber(item.owner_estimate_hours, 0).toFixed(1),
         toNumber(item.personal_estimate_hours, 0).toFixed(1),
         toNumber(item.actual_hours, 0).toFixed(1),
+        formatNetEfficiencyValue(item.net_efficiency_value),
         item.description || '-',
       ]),
     ]
@@ -254,6 +265,34 @@ function MemberEfficiencyDetailPage() {
       render: (value) => getLogStatusTag(value),
     },
     {
+      title: '职级',
+      key: 'job_level_name',
+      width: 110,
+      render: () => <Tag color="processing">{summary.job_level_name || summary.job_level || '-'}</Tag>,
+    },
+    {
+      title: 'Owner评估难易程度',
+      key: 'task_difficulty_name',
+      width: 150,
+      render: (_, row) =>
+        row.task_difficulty_name || row.task_difficulty_code ? (
+          <Tag color="gold">{row.task_difficulty_name || row.task_difficulty_code}</Tag>
+        ) : (
+          <Text type="secondary">未评估</Text>
+        ),
+    },
+    {
+      title: '个人评估难易程度',
+      key: 'self_task_difficulty_name',
+      width: 150,
+      render: (_, row) =>
+        row.self_task_difficulty_name || row.self_task_difficulty_code ? (
+          <Tag color="cyan">{row.self_task_difficulty_name || row.self_task_difficulty_code}</Tag>
+        ) : (
+          <Text type="secondary">未评估</Text>
+        ),
+    },
+    {
       title: '关联需求',
       key: 'demand',
       width: 220,
@@ -286,6 +325,14 @@ function MemberEfficiencyDetailPage() {
       render: (value) => <Text strong>{toNumber(value, 0).toFixed(1)}</Text>,
     },
     {
+      title: '净效率值',
+      dataIndex: 'net_efficiency_value',
+      key: 'net_efficiency_value',
+      width: 120,
+      render: (value) =>
+        value === null || value === undefined ? <Text type="secondary">-</Text> : <Text strong>{formatNetEfficiencyValue(value)}</Text>,
+    },
+    {
       title: '排期',
       key: 'schedule',
       width: 200,
@@ -305,7 +352,11 @@ function MemberEfficiencyDetailPage() {
     { label: '实际总工时(h)', value: toNumber(summary.total_actual_hours, 0).toFixed(1), note: '当前周期事项实际投入汇总' },
     { label: '填报天数', value: toNumber(summary.filled_days, 0), note: '当前周期产生有效记录的日期数' },
     { label: '日均实际工时(h)', value: toNumber(summary.avg_actual_hours_per_day, 0).toFixed(1), note: '实际总工时 / 有效填报天数' },
-    { label: '净效率值', value: '-', note: '预留指标位，后续接入新口径' },
+    {
+      label: '净效率值',
+      value: formatNetEfficiencyValue(summary.net_efficiency_value),
+      note: `当前按公式口径计算，任务难度系数 ${toNumber(summary.task_difficulty_coefficient, 1).toFixed(2)}，职级权重系数 ${toNumber(summary.job_level_weight_coefficient, 1).toFixed(2)}`,
+    },
   ]
 
   return (
@@ -326,7 +377,6 @@ function MemberEfficiencyDetailPage() {
               </div>
             </div>
             <div className="efficiency-detail-hero__actions">
-              <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/efficiency/member')}>返回成员洞察</Button>
               <Button icon={<ReloadOutlined />} loading={loading} onClick={loadData}>刷新</Button>
               <Button type="primary" icon={<DownloadOutlined />} onClick={handleExport}>导出</Button>
             </div>
@@ -431,7 +481,7 @@ function MemberEfficiencyDetailPage() {
                 dataSource={workItemList}
                 size="small"
                 className="efficiency-detail-table"
-                scroll={{ x: 1500 }}
+                scroll={{ x: 1640 }}
                 pagination={{ pageSize: 12, showSizeChanger: false, showTotal: (total) => `共 ${total} 条事项` }}
                 locale={{ emptyText: '当前范围暂无事项明细' }}
               />
