@@ -58,6 +58,16 @@ function MemberRhythmBoard() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const access = useMemo(() => getAccessSnapshot() || {}, [])
+  const isPrivilegedViewer = Boolean(access?.is_super_admin) || Boolean((access?.role_keys || []).includes('ADMIN'))
+  const managedDepartmentIds = useMemo(
+    () =>
+      Array.isArray(access?.managed_department_ids)
+        ? access.managed_department_ids
+            .map((item) => Number(item))
+            .filter((item) => Number.isInteger(item) && item > 0)
+        : [],
+    [access],
+  )
 
   const [loading, setLoading] = useState(false)
   const [filterLoading, setFilterLoading] = useState(false)
@@ -166,21 +176,17 @@ function MemberRhythmBoard() {
 
   useEffect(() => {
     if (departmentId) return
-    if (access?.is_super_admin || (access?.role_keys || []).includes('ADMIN')) return
-    const managedDepartmentIds = Array.isArray(access?.managed_department_ids)
-      ? access.managed_department_ids
-          .map((item) => Number(item))
-          .filter((item) => Number.isInteger(item) && item > 0)
-      : []
+    if (isPrivilegedViewer) return
     if (managedDepartmentIds.length > 0) {
       setDepartmentId(managedDepartmentIds[0])
     }
-  }, [access, departmentId])
+  }, [departmentId, isPrivilegedViewer, managedDepartmentIds])
 
   useEffect(() => {
     if (!queryReady) return
+    if (!departmentId && !isPrivilegedViewer && managedDepartmentIds.length > 0) return
     loadData()
-  }, [queryReady, loadData])
+  }, [departmentId, isPrivilegedViewer, loadData, managedDepartmentIds, queryReady])
 
   const handleResetFilters = () => {
     setKeyword('')

@@ -266,27 +266,32 @@ export function previewNoFillReminderApi() {
 }
 
 export function getInsightFilterOptionsApi() {
-  return request.get('/work/insight/filters')
+  return cachedRequest('insight-filters', () => request.get('/work/insight/filters'), 30000)
 }
 
 export function getDepartmentEfficiencyRankingApi(params) {
-  return request.get('/work/insight/department-ranking', { params })
+  const key = `insight-department-ranking-${JSON.stringify(params || {})}`
+  return cachedRequest(key, () => request.get('/work/insight/department-ranking', { params }), 1000)
 }
 
 export function getDepartmentEfficiencyDetailApi(params) {
-  return request.get('/work/insight/department-detail', { params })
+  const key = `insight-department-detail-${JSON.stringify(params || {})}`
+  return cachedRequest(key, () => request.get('/work/insight/department-detail', { params }), 1000)
 }
 
 export function getDemandInsightApi(params) {
-  return request.get('/work/insight/demand', { params })
+  const key = `insight-demand-${JSON.stringify(params || {})}`
+  return cachedRequest(key, () => request.get('/work/insight/demand', { params }), 1000)
 }
 
 export function getMemberInsightApi(params) {
-  return request.get('/work/insight/member', { params })
+  const key = `insight-member-${JSON.stringify(params || {})}`
+  return cachedRequest(key, () => request.get('/work/insight/member', { params }), 1000)
 }
 
 export function getMemberEfficiencyDetailApi(params) {
-  return request.get('/work/insight/member-detail', { params })
+  const key = `insight-member-detail-${JSON.stringify(params || {})}`
+  return cachedRequest(key, () => request.get('/work/insight/member-detail', { params }), 1000)
 }
 
 export function getMyAssignedItemsApi() {
