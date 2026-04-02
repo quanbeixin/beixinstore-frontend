@@ -13,7 +13,7 @@ import { Button, Card, Col, Empty, Modal, Progress, Row, Segmented, Select, Spac
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { executeAgentApi, getAgentOptionsApi } from '../../api/agent'
 import { getMorningStandupBoardApi } from '../../api/work'
-import { getCurrentUser } from '../../utils/access'
+import { getAccessSnapshot, getCurrentUser } from '../../utils/access'
 import { formatBeijingDate } from '../../utils/datetime'
 import { UNIFIED_WORK_STATUS, getUnifiedStatusMeta } from '../../utils/workStatus'
 import './MorningStandupPage.css'
@@ -234,6 +234,8 @@ function getTodayHoursDetailRows(items = [], type = 'planned') {
 
 function MorningStandupBoard() {
   const currentUser = useMemo(() => getCurrentUser(), [])
+  const access = useMemo(() => getAccessSnapshot(), [])
+  const canUseAiStandupAnalysis = Boolean(access?.is_super_admin)
   const [loading, setLoading] = useState(false)
   const [activeTabKey, setActiveTabKey] = useState('')
   const [activeAlignmentTab, setActiveAlignmentTab] = useState('in_progress')
@@ -334,6 +336,12 @@ function MorningStandupBoard() {
   }, [loadBoard])
 
   const loadAgentOptions = useCallback(async () => {
+    if (!canUseAiStandupAnalysis) {
+      setAgentOptions([])
+      setSelectedAgentId(null)
+      setAnalysisResult(null)
+      return
+    }
     setAgentOptionsLoading(true)
     try {
       const result = await getAgentOptionsApi(MORNING_STANDUP_AGENT_SCENE)
@@ -353,7 +361,7 @@ function MorningStandupBoard() {
     } finally {
       setAgentOptionsLoading(false)
     }
-  }, [])
+  }, [canUseAiStandupAnalysis])
 
   useEffect(() => {
     loadAgentOptions()
@@ -1263,84 +1271,86 @@ function MorningStandupBoard() {
           </div>
         </div>
 
-        <div className="morning-agent-panel">
-          <div className="morning-agent-panel__header">
-            <div>
-              <Space size={8} wrap>
-                <Tag color="cyan" icon={<RobotOutlined />}>
-                  AI 晨会分析
-                </Tag>
-                <Text strong>手动选择 Agent 执行当前晨会范围分析</Text>
-              </Space>
-              <div className="morning-agent-panel__hint">
-                当前会基于你正在查看的部门范围和事项对齐页签生成纯文本分析结果。
-              </div>
-            </div>
-            <Space wrap>
-              <Select
-                className="morning-agent-select"
-                placeholder="请选择 Agent"
-                loading={agentOptionsLoading}
-                value={selectedAgentId || undefined}
-                options={agentOptions.map((item) => ({
-                  value: item.id,
-                  label: `${item.agent_name} (${item.agent_code})`,
-                }))}
-                onChange={setSelectedAgentId}
-              />
-              <Button
-                type="primary"
-                icon={<ThunderboltOutlined />}
-                loading={analysisExecuting}
-                disabled={agentOptionsLoading || agentOptions.length === 0}
-                onClick={handleExecuteAnalysis}
-              >
-                执行分析
-              </Button>
-              <Button
-                icon={<CopyOutlined />}
-                disabled={!analysisResult?.response_text}
-                onClick={handleCopyAnalysis}
-              >
-                复制结果
-              </Button>
-              <Button
-                icon={<DeleteOutlined />}
-                disabled={!analysisResult}
-                onClick={() => setAnalysisResult(null)}
-              >
-                清空
-              </Button>
-            </Space>
-          </div>
-
-          {selectedAgentOption?.business_purpose ? (
-            <div className="morning-agent-panel__purpose">
-              <Text type="secondary">{`业务定位：${selectedAgentOption.business_purpose}`}</Text>
-            </div>
-          ) : null}
-
-          {agentOptions.length === 0 && !agentOptionsLoading ? (
-            <div className="morning-agent-empty">
-              暂无可用 Agent，请先前往系统设置中的 Agent 配置页面创建并启用晨会分析 Agent。
-            </div>
-          ) : null}
-
-          {analysisResult ? (
-            <div className="morning-agent-result">
-              <div className="morning-agent-result__meta">
-                <Space size={[8, 8]} wrap>
-                  <Tag color="blue">{analysisResult.agent_label || '已执行 Agent'}</Tag>
-                  <Tag>{analysisResult.tab_label || activeTabLabel}</Tag>
-                  <Tag color="geekblue">{analysisResult.alignment_label || activeAlignmentLabel}</Tag>
+        {canUseAiStandupAnalysis ? (
+          <div className="morning-agent-panel">
+            <div className="morning-agent-panel__header">
+              <div>
+                <Space size={8} wrap>
+                  <Tag color="cyan" icon={<RobotOutlined />}>
+                    AI 晨会分析
+                  </Tag>
+                  <Text strong>手动选择 Agent 执行当前晨会范围分析</Text>
                 </Space>
+                <div className="morning-agent-panel__hint">
+                  当前会基于你正在查看的部门范围和事项对齐页签生成纯文本分析结果。
+                </div>
               </div>
-              <Paragraph className="morning-agent-result__text">
-                {analysisResult.response_text || '本次未返回分析内容。'}
-              </Paragraph>
+              <Space wrap>
+                <Select
+                  className="morning-agent-select"
+                  placeholder="请选择 Agent"
+                  loading={agentOptionsLoading}
+                  value={selectedAgentId || undefined}
+                  options={agentOptions.map((item) => ({
+                    value: item.id,
+                    label: `${item.agent_name} (${item.agent_code})`,
+                  }))}
+                  onChange={setSelectedAgentId}
+                />
+                <Button
+                  type="primary"
+                  icon={<ThunderboltOutlined />}
+                  loading={analysisExecuting}
+                  disabled={agentOptionsLoading || agentOptions.length === 0}
+                  onClick={handleExecuteAnalysis}
+                >
+                  执行分析
+                </Button>
+                <Button
+                  icon={<CopyOutlined />}
+                  disabled={!analysisResult?.response_text}
+                  onClick={handleCopyAnalysis}
+                >
+                  复制结果
+                </Button>
+                <Button
+                  icon={<DeleteOutlined />}
+                  disabled={!analysisResult}
+                  onClick={() => setAnalysisResult(null)}
+                >
+                  清空
+                </Button>
+              </Space>
             </div>
-          ) : null}
-        </div>
+
+            {selectedAgentOption?.business_purpose ? (
+              <div className="morning-agent-panel__purpose">
+                <Text type="secondary">{`业务定位：${selectedAgentOption.business_purpose}`}</Text>
+              </div>
+            ) : null}
+
+            {agentOptions.length === 0 && !agentOptionsLoading ? (
+              <div className="morning-agent-empty">
+                暂无可用 Agent，请先前往系统设置中的 Agent 配置页面创建并启用晨会分析 Agent。
+              </div>
+            ) : null}
+
+            {analysisResult ? (
+              <div className="morning-agent-result">
+                <div className="morning-agent-result__meta">
+                  <Space size={[8, 8]} wrap>
+                    <Tag color="blue">{analysisResult.agent_label || '已执行 Agent'}</Tag>
+                    <Tag>{analysisResult.tab_label || activeTabLabel}</Tag>
+                    <Tag color="geekblue">{analysisResult.alignment_label || activeAlignmentLabel}</Tag>
+                  </Space>
+                </div>
+                <Paragraph className="morning-agent-result__text">
+                  {analysisResult.response_text || '本次未返回分析内容。'}
+                </Paragraph>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <Row gutter={[12, 12]} className="morning-summary-row morning-summary-row--top">
           <Col xs={24} sm={12} md={8} lg={6} xl={3}>

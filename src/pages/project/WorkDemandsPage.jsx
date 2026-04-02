@@ -65,7 +65,7 @@ import {
 import { DemandCommunicationPanel } from '../../modules/demand-communication'
 import { DemandBugPanel } from '../../modules/bug'
 import { WorkflowGraph } from '../../modules/workflow'
-import { getCurrentUser, getUserPreferences, hasPermission, hasRole } from '../../utils/access'
+import { getAccessSnapshot, getCurrentUser, getUserPreferences, hasPermission, hasRole } from '../../utils/access'
 import {
   formatBeijingDate,
   formatBeijingDateTime,
@@ -317,6 +317,8 @@ function WorkDemands() {
   const location = useLocation()
   const { id: routeDemandId } = useParams()
   const isDetailPage = Boolean(routeDemandId)
+  const access = useMemo(() => getAccessSnapshot(), [])
+  const canUseDemandPoolAnalysis = Boolean(access?.is_super_admin)
   const canView = hasPermission('demand.view')
   const canViewUsers = hasPermission('user.view')
   const canCreate = hasPermission('demand.create')
@@ -1063,7 +1065,12 @@ function WorkDemands() {
   }, [isDetailPage, loadDemands])
 
   const loadDemandAgentOptions = useCallback(async () => {
-    if (isDetailPage) return
+    if (isDetailPage || !canUseDemandPoolAnalysis) {
+      setAgentOptions([])
+      setSelectedAgentId(null)
+      setAnalysisResult(null)
+      return
+    }
     setAgentOptionsLoading(true)
     try {
       const result = await getAgentOptionsApi(DEMAND_POOL_AGENT_SCENE)
@@ -1083,7 +1090,7 @@ function WorkDemands() {
     } finally {
       setAgentOptionsLoading(false)
     }
-  }, [isDetailPage])
+  }, [canUseDemandPoolAnalysis, isDetailPage])
 
   useEffect(() => {
     loadDemandAgentOptions()
@@ -2338,83 +2345,85 @@ function WorkDemands() {
               </Space>
             </Space>
 
-            <div className="work-demand-list__agent-panel">
-              <div className="work-demand-list__agent-panel-header">
-                <div>
-                  <Space size={8} wrap>
-                    <Tag color="blue" icon={<RobotOutlined />}>
-                      AI 需求池分析
-                    </Tag>
-                    <Text strong>分析当前筛选结果中的需求状态、风险与重点项</Text>
-                  </Space>
-                  <div className="work-demand-list__agent-panel-hint">
-                    当前分析范围会跟随上方筛选条件、业务分组页签和“我负责/参与”视图一起变化。
-                  </div>
-                </div>
-                <Space wrap>
-                  <Select
-                    className="work-demand-list__agent-select"
-                    placeholder="请选择 Agent"
-                    loading={agentOptionsLoading}
-                    value={selectedAgentId || undefined}
-                    options={agentOptions.map((item) => ({
-                      value: item.id,
-                      label: `${item.agent_name} (${item.agent_code})`,
-                    }))}
-                    onChange={setSelectedAgentId}
-                  />
-                  <Button
-                    type="primary"
-                    icon={<ThunderboltOutlined />}
-                    loading={analysisExecuting}
-                    disabled={agentOptionsLoading || agentOptions.length === 0}
-                    onClick={handleExecuteDemandAnalysis}
-                  >
-                    执行分析
-                  </Button>
-                  <Button
-                    icon={<CopyOutlined />}
-                    disabled={!analysisResult?.response_text}
-                    onClick={handleCopyDemandAnalysis}
-                  >
-                    复制结果
-                  </Button>
-                  <Button
-                    icon={<DeleteOutlined />}
-                    disabled={!analysisResult}
-                    onClick={() => setAnalysisResult(null)}
-                  >
-                    清空
-                  </Button>
-                </Space>
-              </div>
-
-              {selectedDemandAgentOption?.business_purpose ? (
-                <div className="work-demand-list__agent-purpose">
-                  <Text type="secondary">{`业务定位：${selectedDemandAgentOption.business_purpose}`}</Text>
-                </div>
-              ) : null}
-
-              {agentOptions.length === 0 && !agentOptionsLoading ? (
-                <div className="work-demand-list__agent-empty">
-                  暂无可用 Agent，请先前往系统设置中的 Agent 配置页面创建并启用“需求池分析”场景 Agent。
-                </div>
-              ) : null}
-
-              {analysisResult ? (
-                <div className="work-demand-list__agent-result">
-                  <div className="work-demand-list__agent-result-meta">
-                    <Space size={[8, 8]} wrap>
-                      <Tag color="blue">{analysisResult.agent_label || '已执行 Agent'}</Tag>
-                      <Tag>{analysisResult.scope_label || '当前筛选范围'}</Tag>
+            {canUseDemandPoolAnalysis ? (
+              <div className="work-demand-list__agent-panel">
+                <div className="work-demand-list__agent-panel-header">
+                  <div>
+                    <Space size={8} wrap>
+                      <Tag color="blue" icon={<RobotOutlined />}>
+                        AI 需求池分析
+                      </Tag>
+                      <Text strong>分析当前筛选结果中的需求状态、风险与重点项</Text>
                     </Space>
+                    <div className="work-demand-list__agent-panel-hint">
+                      当前分析范围会跟随上方筛选条件、业务分组页签和“我负责/参与”视图一起变化。
+                    </div>
                   </div>
-                  <Paragraph className="work-demand-list__agent-result-text">
-                    {analysisResult.response_text || '本次未返回分析内容。'}
-                  </Paragraph>
+                  <Space wrap>
+                    <Select
+                      className="work-demand-list__agent-select"
+                      placeholder="请选择 Agent"
+                      loading={agentOptionsLoading}
+                      value={selectedAgentId || undefined}
+                      options={agentOptions.map((item) => ({
+                        value: item.id,
+                        label: `${item.agent_name} (${item.agent_code})`,
+                      }))}
+                      onChange={setSelectedAgentId}
+                    />
+                    <Button
+                      type="primary"
+                      icon={<ThunderboltOutlined />}
+                      loading={analysisExecuting}
+                      disabled={agentOptionsLoading || agentOptions.length === 0}
+                      onClick={handleExecuteDemandAnalysis}
+                    >
+                      执行分析
+                    </Button>
+                    <Button
+                      icon={<CopyOutlined />}
+                      disabled={!analysisResult?.response_text}
+                      onClick={handleCopyDemandAnalysis}
+                    >
+                      复制结果
+                    </Button>
+                    <Button
+                      icon={<DeleteOutlined />}
+                      disabled={!analysisResult}
+                      onClick={() => setAnalysisResult(null)}
+                    >
+                      清空
+                    </Button>
+                  </Space>
                 </div>
-              ) : null}
-            </div>
+
+                {selectedDemandAgentOption?.business_purpose ? (
+                  <div className="work-demand-list__agent-purpose">
+                    <Text type="secondary">{`业务定位：${selectedDemandAgentOption.business_purpose}`}</Text>
+                  </div>
+                ) : null}
+
+                {agentOptions.length === 0 && !agentOptionsLoading ? (
+                  <div className="work-demand-list__agent-empty">
+                    暂无可用 Agent，请先前往系统设置中的 Agent 配置页面创建并启用“需求池分析”场景 Agent。
+                  </div>
+                ) : null}
+
+                {analysisResult ? (
+                  <div className="work-demand-list__agent-result">
+                    <div className="work-demand-list__agent-result-meta">
+                      <Space size={[8, 8]} wrap>
+                        <Tag color="blue">{analysisResult.agent_label || '已执行 Agent'}</Tag>
+                        <Tag>{analysisResult.scope_label || '当前筛选范围'}</Tag>
+                      </Space>
+                    </div>
+                    <Paragraph className="work-demand-list__agent-result-text">
+                      {analysisResult.response_text || '本次未返回分析内容。'}
+                    </Paragraph>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </Card>
 
           <Card variant="borderless">
