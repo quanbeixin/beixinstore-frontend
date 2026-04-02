@@ -69,6 +69,9 @@ function Sidebar({ collapsed = false }) {
   if (location.pathname.startsWith('/work-demands/') && location.pathname !== '/work-demands') {
     selectedKey = '/work-demands'
   }
+  if (location.pathname.startsWith('/my-demands/') && location.pathname !== '/my-demands') {
+    selectedKey = '/my-demands'
+  }
   if (
     location.pathname.startsWith('/project-templates/') &&
     location.pathname !== '/project-templates'

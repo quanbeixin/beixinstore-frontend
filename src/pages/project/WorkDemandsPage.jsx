@@ -312,16 +312,20 @@ function getDemandListPhaseGroup(record) {
   return { phaseKey, phaseName }
 }
 
-function WorkDemands() {
+function WorkDemands({ pageMode = 'pool' } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const { id: routeDemandId } = useParams()
   const isDetailPage = Boolean(routeDemandId)
+  const isMyDemandsPage = pageMode === 'my'
+  const listBasePath = isMyDemandsPage ? '/my-demands' : '/work-demands'
+  const [myDemandTabKey, setMyDemandTabKey] = useState('owned')
   const access = useMemo(() => getAccessSnapshot(), [])
   const canUseDemandPoolAnalysis = Boolean(access?.is_super_admin)
   const canView = hasPermission('demand.view')
   const canViewUsers = hasPermission('user.view')
   const canCreate = hasPermission('demand.create')
+  const canCreateInCurrentPage = canCreate && !isMyDemandsPage
   const canUseProjectTemplates =
     canCreate || hasPermission('project.template.view') || hasPermission('project.template.manage')
   const canTransferOwner = hasPermission('demand.transfer_owner') || hasRole('ADMIN')
@@ -654,6 +658,13 @@ function WorkDemands() {
       { key: '__CANCELLED__', label: `已中止 (${Number(cancelledDemandCount || 0)})` },
     ],
     [businessGroupAllCount, businessGroupCountMap, businessGroupOptions, completedDemandCount, cancelledDemandCount],
+  )
+  const myDemandTabItems = useMemo(
+    () => [
+      { key: 'owned', label: '我创建的' },
+      { key: 'participated', label: '我参与的' },
+    ],
+    [],
   )
 
   const activeDemandTabKey = showCompletedTabOnly
@@ -989,7 +1000,11 @@ function WorkDemands() {
         params.updated_start_date = updatedRange[0].format('YYYY-MM-DD')
         params.updated_end_date = updatedRange[1].format('YYYY-MM-DD')
       }
-      if (scopeFilter === 'mine') params.mine = true
+      if (isMyDemandsPage) {
+        params.relation_scope = myDemandTabKey === 'participated' ? 'participated' : 'owned'
+      } else if (scopeFilter === 'mine') {
+        params.mine = true
+      }
 
       const result = await getWorkDemandsApi(params)
       if (!result?.success) {
@@ -1020,6 +1035,8 @@ function WorkDemands() {
     showCancelledTabOnly,
     ownerFilter,
     updatedRange,
+    isMyDemandsPage,
+    myDemandTabKey,
     scopeFilter,
   ])
 
@@ -1065,7 +1082,7 @@ function WorkDemands() {
   }, [isDetailPage, loadDemands])
 
   const loadDemandAgentOptions = useCallback(async () => {
-    if (isDetailPage || !canUseDemandPoolAnalysis) {
+    if (isDetailPage || isMyDemandsPage || !canUseDemandPoolAnalysis) {
       setAgentOptions([])
       setSelectedAgentId(null)
       setAnalysisResult(null)
@@ -1090,14 +1107,14 @@ function WorkDemands() {
     } finally {
       setAgentOptionsLoading(false)
     }
-  }, [canUseDemandPoolAnalysis, isDetailPage])
+  }, [canUseDemandPoolAnalysis, isDetailPage, isMyDemandsPage])
 
   useEffect(() => {
     loadDemandAgentOptions()
   }, [loadDemandAgentOptions])
 
   const openCreateModal = () => {
-    if (!canCreate) return
+    if (!canCreateInCurrentPage) return
     setEditingDemand(null)
     setModalOpen(true)
     form.resetFields()
@@ -1181,6 +1198,10 @@ function WorkDemands() {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
+      if (!editingDemand && !canCreateInCurrentPage) {
+        message.warning('我的需求页面不支持新建需求，请前往需求池创建。')
+        return
+      }
       if (values.template_id && selectedModalTemplateNodes.length === 0) {
         message.warning('当前参与角色未命中模板节点，请调整参与角色或模板配置')
         return
@@ -1308,9 +1329,9 @@ function WorkDemands() {
   const openDetailDrawer = useCallback(
     (record) => {
       if (!record?.id) return
-      navigate(`/work-demands/${record.id}`)
+      navigate(`${listBasePath}/${record.id}`)
     },
-    [navigate],
+    [listBasePath, navigate],
   )
 
   const closeDetailDrawer = useCallback(() => {
@@ -1336,8 +1357,8 @@ function WorkDemands() {
     setWorkflowParticipantUserIds([])
     setWorkflowDueAt(null)
     setWorkflowExpectedStartAt(null)
-    navigate('/work-demands')
-  }, [navigate])
+    navigate(listBasePath)
+  }, [listBasePath, navigate])
 
   useEffect(() => {
     if (!isDetailPage || !routeDemandId) return
@@ -1351,7 +1372,7 @@ function WorkDemands() {
         if (!active) return
         if (!result?.success || !result?.data) {
           message.error(result?.message || '需求详情加载失败')
-          navigate('/work-demands', { replace: true })
+          navigate(listBasePath, { replace: true })
           return
         }
 
@@ -1362,7 +1383,7 @@ function WorkDemands() {
       } catch (error) {
         if (!active) return
         message.error(error?.message || '需求详情加载失败')
-        navigate('/work-demands', { replace: true })
+        navigate(listBasePath, { replace: true })
       } finally {
         if (active) setDetailPageLoading(false)
       }
@@ -1377,6 +1398,7 @@ function WorkDemands() {
     routeDemandId,
     canEditDemandRecord,
     fetchDemandRelatedLogs,
+    listBasePath,
     loadDemandWorkflow,
     navigate,
   ])
@@ -2227,7 +2249,7 @@ function WorkDemands() {
                 <Button icon={<ReloadOutlined />} onClick={loadDemands} loading={loading}>
                   刷新
                 </Button>
-                {canCreate ? (
+                {canCreateInCurrentPage ? (
                   <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
                     新建需求
                   </Button>
@@ -2235,6 +2257,16 @@ function WorkDemands() {
               </Space>
             }
           >
+            {isMyDemandsPage ? (
+              <Tabs
+                activeKey={myDemandTabKey}
+                items={myDemandTabItems}
+                onChange={(activeKey) => {
+                  setMyDemandTabKey(activeKey === 'participated' ? 'participated' : 'owned')
+                  setPage(1)
+                }}
+              />
+            ) : null}
             <Tabs
               activeKey={activeDemandTabKey}
               items={businessGroupTabItems}
@@ -2304,19 +2336,21 @@ function WorkDemands() {
                   setPage(1)
                 }}
               />
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                style={{ width: 180 }}
-                placeholder="需求负责人"
-                options={ownerOptions}
-                value={ownerFilter}
-                onChange={(value) => {
-                  setOwnerFilter(value)
-                  setPage(1)
-                }}
-              />
+              {isMyDemandsPage ? null : (
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  style={{ width: 180 }}
+                  placeholder="需求负责人"
+                  options={ownerOptions}
+                  value={ownerFilter}
+                  onChange={(value) => {
+                    setOwnerFilter(value)
+                    setPage(1)
+                  }}
+                />
+              )}
               <RangePicker
                 style={{ width: 250 }}
                 value={updatedRange?.length ? updatedRange : null}
@@ -2326,18 +2360,20 @@ function WorkDemands() {
                 }}
                 placeholder={['更新开始', '更新结束']}
               />
-              <Select
-                style={{ width: 140 }}
-                value={scopeFilter}
-                options={[
-                  { label: '全部需求', value: 'all' },
-                  { label: '我负责/参与', value: 'mine' },
-                ]}
-                onChange={(value) => {
-                  setScopeFilter(value)
-                  setPage(1)
-                }}
-              />
+              {isMyDemandsPage ? null : (
+                <Select
+                  style={{ width: 140 }}
+                  value={scopeFilter}
+                  options={[
+                    { label: '全部需求', value: 'all' },
+                    { label: '我负责/参与', value: 'mine' },
+                  ]}
+                  onChange={(value) => {
+                    setScopeFilter(value)
+                    setPage(1)
+                  }}
+                />
+              )}
               <Button onClick={handleResetFilters}>重置筛选</Button>
               <Space size={6}>
                 <Text type="secondary">精简视图</Text>
@@ -2345,7 +2381,7 @@ function WorkDemands() {
               </Space>
             </Space>
 
-            {canUseDemandPoolAnalysis ? (
+            {!isMyDemandsPage && canUseDemandPoolAnalysis ? (
               <div className="work-demand-list__agent-panel">
                 <div className="work-demand-list__agent-panel-header">
                   <div>
@@ -2627,7 +2663,7 @@ function WorkDemands() {
                     </div>
                     <div className="work-demand-detail__hero-actions">
                       <Button icon={<LeftOutlined />} onClick={closeDetailDrawer}>
-                        返回需求池
+                        {isMyDemandsPage ? '返回我的需求' : '返回需求池'}
                       </Button>
                       {canEditDemandRecord(detailDemand) ? (
                         <>
@@ -2789,13 +2825,14 @@ function WorkDemands() {
                             />
                           </div>
                           <div className="work-demand-detail__field">
-                            <Text type="secondary">需求负责人</Text>
+                            <Text type="secondary">项目负责人</Text>
                             <Select
                               allowClear
                               showSearch
                               optionFilterProp="label"
                               value={detailProjectManager}
                               options={ownerOptions}
+                              placeholder="选择项目负责人（可选）"
                               onChange={(value) => setDetailProjectManager(value)}
                             />
                           </div>
@@ -3020,7 +3057,7 @@ function WorkDemands() {
         </Card>
       ) : null}
 
-      {!canCreate ? (
+      {!isMyDemandsPage && !canCreate ? (
         <div style={{ marginTop: 12, color: '#667085', display: 'flex', alignItems: 'center', gap: 8 }}>
           <UnorderedListOutlined />
           <span>当前账号无创建权限，只有管理员、超级管理员或产品角色可以新建需求。</span>

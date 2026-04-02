@@ -1379,7 +1379,9 @@ function WorkLogs({ mode = 'dashboard' }) {
     dailyEntryForm.setFieldsValue({
       entry_date: defaultEntryDate,
       actual_hours: defaultActualHours,
-      description: isDetailEdit ? String(operatingLog?.detail_entry_description || '') : '',
+      description: isDetailEdit
+        ? String(operatingLog?.detail_entry_description || '')
+        : '',
     })
   }, [dailyEntryForm, dailyEntryModalMode, dailyEntryModalOpen, operatingLog])
 
@@ -2033,11 +2035,10 @@ function WorkLogs({ mode = 'dashboard' }) {
         const rows = Array.isArray(value) ? value : []
         if (rows.length === 0) return <Text type="secondary">-</Text>
         const merged = rows
-          .map((item) => {
-            const desc = String(item?.description || '').trim()
-            return desc ? `${toNumber(item?.actual_hours, 0).toFixed(1)}h ${desc}` : `${toNumber(item?.actual_hours, 0).toFixed(1)}h`
-          })
+          .map((item) => String(item?.description || '').trim())
+          .filter(Boolean)
           .join('；')
+        if (!merged) return <Text type="secondary">无说明</Text>
 
         if (Array.from(merged).length <= 30) return merged
         return (
@@ -3622,8 +3623,8 @@ function WorkLogs({ mode = 'dashboard' }) {
           >
             <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item label="工作描述" name="description">
-            <Input.TextArea rows={3} maxLength={2000} placeholder="可填写今天具体做了什么（选填）" />
+          <Form.Item label="今日投入简述" name="description">
+            <Input.TextArea rows={3} maxLength={2000} placeholder="可填写今日投入简述（选填）" />
           </Form.Item>
         </Form>
       </Modal>

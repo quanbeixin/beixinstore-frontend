@@ -122,6 +122,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/my-demands',
+    componentKey: 'myDemands',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '我的需求',
+      subtitle: '集中查看我创建和我参与的需求，沿用需求池的展示字段与详情能力。',
+    },
+    menu: {
+      section: 'workbench',
+      label: '我的需求',
+      icon: 'dashboard',
+    },
+  },
+  {
     path: '/work-log-history',
     componentKey: 'workLogHistory',
     requiredPermission: 'worklog.view.self',
@@ -254,6 +268,15 @@ export const PRIVATE_ROUTES = [
     page: {
       title: '需求详情',
       subtitle: '查看单个需求的状态、流程和关联事项。',
+    },
+  },
+  {
+    path: '/my-demands/:id',
+    componentKey: 'myDemands',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '我的需求详情',
+      subtitle: '查看我创建或我参与的需求详情、流程和关联事项。',
     },
   },
   {
