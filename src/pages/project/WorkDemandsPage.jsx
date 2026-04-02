@@ -1,4 +1,15 @@
-﻿import { EditOutlined, LeftOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons'
+﻿import {
+  CopyOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  LeftOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  RobotOutlined,
+  SearchOutlined,
+  ThunderboltOutlined,
+  UnorderedListOutlined,
+} from '@ant-design/icons'
 import {
   Alert,
   Button,
@@ -23,6 +34,7 @@ import {
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { executeAgentApi, getAgentOptionsApi } from '../../api/agent'
 import { getDictItemsApi } from '../../api/configDict'
 import { getUsersApi } from '../../api/users'
 import {
@@ -62,8 +74,9 @@ import {
 import './WorkDemandsPage.css'
 
 const { Search } = Input
-const { Text } = Typography
+const { Paragraph, Text } = Typography
 const { RangePicker } = DatePicker
+const DEMAND_POOL_AGENT_SCENE = 'DEMAND_POOL_ANALYSIS'
 const WORKFLOW_ASSIGNEE_PAGE_SIZE = 500
 const WORKFLOW_ASSIGNEE_MAX_PAGES = 50
 const DEMAND_LIST_PAGE_SIZE = 1000
@@ -91,6 +104,16 @@ const HEALTH_STATUS_OPTIONS = [
   { label: '预警', value: 'yellow' },
   { label: '风险', value: 'red' },
 ]
+
+function formatDemandNodeSchedule(record) {
+  const plannedStart = formatBeijingDate(record?.current_node_planned_start_date)
+  const plannedEnd = formatBeijingDate(record?.current_node_planned_end_date)
+
+  if (plannedStart && plannedEnd) return `${plannedStart} ~ ${plannedEnd}`
+  if (plannedStart) return `${plannedStart} ~ -`
+  if (plannedEnd) return `- ~ ${plannedEnd}`
+  return '-'
+}
 
 const FALLBACK_PARTICIPANT_ROLE_OPTIONS = [
   { value: 'DEMAND_OWNER', label: '需求负责人' },
@@ -350,6 +373,11 @@ function WorkDemands() {
     const preferences = getUserPreferences()
     return Number(preferences?.demand_list_compact_default || 0) === 1
   })
+  const [agentOptionsLoading, setAgentOptionsLoading] = useState(false)
+  const [agentOptions, setAgentOptions] = useState([])
+  const [selectedAgentId, setSelectedAgentId] = useState(null)
+  const [analysisExecuting, setAnalysisExecuting] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState(null)
 
   const [detailPageLoading, setDetailPageLoading] = useState(false)
   const [detailDemand, setDetailDemand] = useState(null)
@@ -1033,6 +1061,33 @@ function WorkDemands() {
     if (isDetailPage) return
     loadDemands()
   }, [isDetailPage, loadDemands])
+
+  const loadDemandAgentOptions = useCallback(async () => {
+    if (isDetailPage) return
+    setAgentOptionsLoading(true)
+    try {
+      const result = await getAgentOptionsApi(DEMAND_POOL_AGENT_SCENE)
+      if (!result?.success) {
+        message.error(result?.message || '获取需求池分析 Agent 失败')
+        return
+      }
+      const options = Array.isArray(result?.data?.options) ? result.data.options : []
+      setAgentOptions(options)
+      setSelectedAgentId((prev) => {
+        if (options.some((item) => Number(item?.id) === Number(prev))) return prev
+        const firstId = Number(options?.[0]?.id || 0)
+        return firstId > 0 ? firstId : null
+      })
+    } catch (error) {
+      message.error(error?.message || '获取需求池分析 Agent 失败')
+    } finally {
+      setAgentOptionsLoading(false)
+    }
+  }, [isDetailPage])
+
+  useEffect(() => {
+    loadDemandAgentOptions()
+  }, [loadDemandAgentOptions])
 
   const openCreateModal = () => {
     if (!canCreate) return
@@ -1845,6 +1900,112 @@ function WorkDemands() {
     setPage(1)
   }
 
+  const selectedDemandAgentOption = useMemo(
+    () => agentOptions.find((item) => Number(item?.id) === Number(selectedAgentId)) || null,
+    [agentOptions, selectedAgentId],
+  )
+
+  const currentDemandPoolContextParams = useMemo(() => {
+    const activeTabLabel =
+      businessGroupTabItems.find((item) => item.key === activeDemandTabKey)?.label || '全部'
+    const selectedBusinessGroupLabel =
+      businessGroupOptions.find((item) => String(item.value || '') === String(businessGroupFilter || ''))?.label || ''
+    const selectedOwnerLabel =
+      ownerOptions.find((item) => Number(item.value) === Number(ownerFilter))?.label || ''
+
+    return {
+      keyword: keyword.trim(),
+      status: showCompletedTabOnly ? 'DONE' : showCancelledTabOnly ? 'CANCELLED' : statusFilter,
+      priority: priorityFilter,
+      priority_order: prioritySortOrder === 'ascend' ? 'asc' : prioritySortOrder === 'descend' ? 'desc' : '',
+      business_group_code: businessGroupFilter,
+      business_group_label: selectedBusinessGroupLabel,
+      owner_user_id: ownerFilter || null,
+      owner_label: selectedOwnerLabel,
+      updated_start_date:
+        Array.isArray(updatedRange) && updatedRange[0] ? updatedRange[0].format('YYYY-MM-DD') : '',
+      updated_end_date:
+        Array.isArray(updatedRange) && updatedRange[1] ? updatedRange[1].format('YYYY-MM-DD') : '',
+      updated_range_label:
+        Array.isArray(updatedRange) && updatedRange[0] && updatedRange[1]
+          ? `${updatedRange[0].format('YYYY-MM-DD')} ~ ${updatedRange[1].format('YYYY-MM-DD')}`
+          : '',
+      mine: scopeFilter === 'mine',
+      scope_label: scopeFilter === 'mine' ? '我负责/参与' : '全部需求',
+      completed_only: showCompletedTabOnly,
+      cancelled_only: showCancelledTabOnly,
+      exclude_completed: !showCompletedTabOnly && !showCancelledTabOnly,
+      exclude_cancelled: !showCompletedTabOnly && !showCancelledTabOnly,
+      active_tab_key: activeDemandTabKey,
+      active_tab_label: activeTabLabel,
+      compact_view: compactView,
+    }
+  }, [
+    activeDemandTabKey,
+    businessGroupFilter,
+    businessGroupOptions,
+    businessGroupTabItems,
+    compactView,
+    keyword,
+    ownerFilter,
+    ownerOptions,
+    priorityFilter,
+    prioritySortOrder,
+    scopeFilter,
+    showCancelledTabOnly,
+    showCompletedTabOnly,
+    statusFilter,
+    updatedRange,
+  ])
+
+  const handleExecuteDemandAnalysis = useCallback(async () => {
+    if (!selectedAgentId) {
+      message.warning('请先选择一个 Agent')
+      return
+    }
+
+    try {
+      setAnalysisExecuting(true)
+      const result = await executeAgentApi({
+        scene_code: DEMAND_POOL_AGENT_SCENE,
+        agent_id: selectedAgentId,
+        context_params: currentDemandPoolContextParams,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '执行需求池分析失败')
+        return
+      }
+      setAnalysisResult({
+        ...(result?.data || {}),
+        agent_label: selectedDemandAgentOption?.agent_name || result?.data?.agent_name || '',
+        scope_label: currentDemandPoolContextParams.active_tab_label || '当前筛选范围',
+      })
+      message.success('需求池分析已生成')
+    } catch (error) {
+      message.error(error?.message || '执行需求池分析失败')
+    } finally {
+      setAnalysisExecuting(false)
+    }
+  }, [currentDemandPoolContextParams, selectedAgentId, selectedDemandAgentOption])
+
+  const handleCopyDemandAnalysis = useCallback(async () => {
+    const text = String(analysisResult?.response_text || '').trim()
+    if (!text) {
+      message.warning('当前没有可复制的分析结果')
+      return
+    }
+    if (!navigator?.clipboard?.writeText) {
+      message.error('当前浏览器不支持复制')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      message.success('分析结果已复制')
+    } catch (error) {
+      message.error(error?.message || '复制失败')
+    }
+  }, [analysisResult?.response_text])
+
   const demandColumns = useMemo(() => {
     const columns = [
       {
@@ -1885,21 +2046,6 @@ function WorkDemands() {
         render: (value, record) => (record?.__group ? null : value || '-'),
       },
       {
-        title: '项目负责人',
-        dataIndex: 'project_manager_name',
-        key: 'project_manager_name',
-        width: 120,
-        render: (value, record) => (record?.__group ? null : value || '-'),
-      },
-      {
-        title: '健康度',
-        dataIndex: 'health_status',
-        key: 'health_status',
-        width: 100,
-        render: (value, record) =>
-          record?.__group ? null : <Tag color={getHealthTagColor(value)}>{getHealthLabel(value)}</Tag>,
-      },
-      {
         title: '业务组',
         dataIndex: 'business_group_name',
         key: 'business_group_name',
@@ -1929,6 +2075,21 @@ function WorkDemands() {
           ) : (
             <Tag>未开始</Tag>
           ),
+      },
+      {
+        title: '当前进行中节点',
+        dataIndex: 'current_node_name',
+        key: 'current_node_name',
+        width: 190,
+        ellipsis: true,
+        render: (_, record) => (record?.__group ? null : record?.current_node_name || record?.current_phase_name || '未开始'),
+      },
+      {
+        title: '节点排期',
+        key: 'current_node_schedule',
+        width: 190,
+        ellipsis: true,
+        render: (_, record) => (record?.__group ? null : formatDemandNodeSchedule(record)),
       },
       {
         title: '优先级',
@@ -2176,6 +2337,84 @@ function WorkDemands() {
                 <Switch checked={compactView} onChange={setCompactView} />
               </Space>
             </Space>
+
+            <div className="work-demand-list__agent-panel">
+              <div className="work-demand-list__agent-panel-header">
+                <div>
+                  <Space size={8} wrap>
+                    <Tag color="blue" icon={<RobotOutlined />}>
+                      AI 需求池分析
+                    </Tag>
+                    <Text strong>分析当前筛选结果中的需求状态、风险与重点项</Text>
+                  </Space>
+                  <div className="work-demand-list__agent-panel-hint">
+                    当前分析范围会跟随上方筛选条件、业务分组页签和“我负责/参与”视图一起变化。
+                  </div>
+                </div>
+                <Space wrap>
+                  <Select
+                    className="work-demand-list__agent-select"
+                    placeholder="请选择 Agent"
+                    loading={agentOptionsLoading}
+                    value={selectedAgentId || undefined}
+                    options={agentOptions.map((item) => ({
+                      value: item.id,
+                      label: `${item.agent_name} (${item.agent_code})`,
+                    }))}
+                    onChange={setSelectedAgentId}
+                  />
+                  <Button
+                    type="primary"
+                    icon={<ThunderboltOutlined />}
+                    loading={analysisExecuting}
+                    disabled={agentOptionsLoading || agentOptions.length === 0}
+                    onClick={handleExecuteDemandAnalysis}
+                  >
+                    执行分析
+                  </Button>
+                  <Button
+                    icon={<CopyOutlined />}
+                    disabled={!analysisResult?.response_text}
+                    onClick={handleCopyDemandAnalysis}
+                  >
+                    复制结果
+                  </Button>
+                  <Button
+                    icon={<DeleteOutlined />}
+                    disabled={!analysisResult}
+                    onClick={() => setAnalysisResult(null)}
+                  >
+                    清空
+                  </Button>
+                </Space>
+              </div>
+
+              {selectedDemandAgentOption?.business_purpose ? (
+                <div className="work-demand-list__agent-purpose">
+                  <Text type="secondary">{`业务定位：${selectedDemandAgentOption.business_purpose}`}</Text>
+                </div>
+              ) : null}
+
+              {agentOptions.length === 0 && !agentOptionsLoading ? (
+                <div className="work-demand-list__agent-empty">
+                  暂无可用 Agent，请先前往系统设置中的 Agent 配置页面创建并启用“需求池分析”场景 Agent。
+                </div>
+              ) : null}
+
+              {analysisResult ? (
+                <div className="work-demand-list__agent-result">
+                  <div className="work-demand-list__agent-result-meta">
+                    <Space size={[8, 8]} wrap>
+                      <Tag color="blue">{analysisResult.agent_label || '已执行 Agent'}</Tag>
+                      <Tag>{analysisResult.scope_label || '当前筛选范围'}</Tag>
+                    </Space>
+                  </div>
+                  <Paragraph className="work-demand-list__agent-result-text">
+                    {analysisResult.response_text || '本次未返回分析内容。'}
+                  </Paragraph>
+                </div>
+              ) : null}
+            </div>
           </Card>
 
           <Card variant="borderless">

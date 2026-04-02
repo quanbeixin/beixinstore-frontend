@@ -14,6 +14,7 @@ const AdminLayout = lazy(() => import('./layouts/AdminLayout'))
 const Users = lazy(() => import('./pages/system/UsersPage'))
 const Departments = lazy(() => import('./pages/system/DepartmentsPage'))
 const UserDepartments = lazy(() => import('./pages/system/UserDepartmentsPage'))
+const AgentConfig = lazy(() => import('./pages/system/AgentConfigPage'))
 const Options = lazy(() => import('./pages/system/OptionsPage'))
 const DemandInsightBoard = lazy(() => import('./pages/insight/DemandInsightBoardPage'))
 const EfficiencyFactorSettings = lazy(() => import('./pages/insight/EfficiencyFactorSettingsPage'))
@@ -42,6 +43,7 @@ const Register = lazy(() => import('./pages/auth/RegisterPage'))
 
 const PAGE_COMPONENTS = {
   departments: Departments,
+  agentConfig: AgentConfig,
   dictCenter: DictCenter,
   login: Login,
   menuVisibility: MenuVisibility,

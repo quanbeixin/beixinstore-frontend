@@ -233,6 +233,21 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/agent-config',
+    componentKey: 'agentConfig',
+    requiredPermission: null,
+    requiredRoles: ['ADMIN'],
+    page: {
+      title: 'Agent配置',
+      subtitle: '维护不同业务场景下可人工触发的 Agent、定位与 Prompt 配置。',
+    },
+    menu: {
+      section: 'system',
+      label: 'Agent配置',
+      icon: 'setting',
+    },
+  },
+  {
     path: '/work-demands/:id',
     componentKey: 'workDemands',
     requiredPermission: 'demand.view',
