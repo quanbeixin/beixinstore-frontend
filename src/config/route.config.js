@@ -233,6 +233,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/notification/rules',
+    componentKey: 'notificationRules',
+    requiredPermission: 'notification.rule.manage',
+    page: {
+      title: '通知规则',
+      subtitle: '维护通知中心规则配置与启停状态。',
+    },
+    menu: {
+      section: 'system',
+      label: '通知规则',
+      icon: 'setting',
+    },
+  },
+  {
     path: '/work-demands/:id',
     componentKey: 'workDemands',
     requiredPermission: 'demand.view',

@@ -2,6 +2,11 @@
 
 基于 React + TypeScript + Vite + Ant Design 的管理后台骨架。
 
+## 架构文档（统一维护）
+
+- 全系统整合架构文档位于后端仓库：`/Users/baopengfei/JS/beixinstore-backend/docs/system-architecture.md`
+- 要求：凡是涉及前端路由、权限、接口对接、workflow 交互变更，必须同步更新该文档。
+
 ## 技术栈
 
 - React 18
