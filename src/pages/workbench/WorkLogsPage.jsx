@@ -1362,6 +1362,8 @@ function WorkLogs({ mode = 'dashboard' }) {
   useEffect(() => {
     if (!dailyEntryModalOpen || !operatingLog) return
     const isDetailEdit = dailyEntryModalMode === 'detail'
+    const todayEntryDescription = String(operatingLog?.today_entry_description || '').trim()
+    const defaultTodayDescription = todayEntryDescription || String(operatingLog?.description || '').trim()
     const defaultEntryDate = isDetailEdit
       ? String(operatingLog?.entry_date || '').trim() || getTodayDateString()
       : getTodayDateString()
@@ -1381,7 +1383,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       actual_hours: defaultActualHours,
       description: isDetailEdit
         ? String(operatingLog?.detail_entry_description || '')
-        : '',
+        : defaultTodayDescription,
     })
   }, [dailyEntryForm, dailyEntryModalMode, dailyEntryModalOpen, operatingLog])
 
@@ -1508,8 +1510,27 @@ function WorkLogs({ mode = 'dashboard' }) {
     setEditingLog(null)
   }
 
-  const openDailyEntryModal = (record) => {
-    setOperatingLog(record)
+  const openDailyEntryModal = async (record) => {
+    if (!record?.id) return
+    let nextRecord = record
+    try {
+      const today = getTodayDateString()
+      const result = await getLogDailyEntriesApi(record.id, {
+        start_date: today,
+        end_date: today,
+      })
+      if (result?.success) {
+        const rows = Array.isArray(result.data) ? result.data : []
+        const latestTodayEntry = rows[0] || null
+        nextRecord = {
+          ...record,
+          today_entry_description: String(latestTodayEntry?.description || '').trim(),
+        }
+      }
+    } catch (error) {
+      // 回填失败时不阻塞弹窗打开，继续使用当前列表数据
+    }
+    setOperatingLog(nextRecord)
     setDailyEntryModalMode('today')
     setDailyEntryModalOpen(true)
   }

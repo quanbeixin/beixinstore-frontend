@@ -200,6 +200,12 @@
   padding: 0 2px;
 }
 
+.demand-node-inspector__task-aux-inline-label {
+  color: #8d98ad;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .demand-node-inspector__task-aux--editable .ant-picker {
   width: 276px;
   min-width: 0;

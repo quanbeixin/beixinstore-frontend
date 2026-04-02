@@ -201,6 +201,32 @@ function toNullableDateTimeValue(value) {
   return maybe.isValid() ? maybe : null
 }
 
+function deriveNodeScheduleFromTasks(tasks = []) {
+  const rows = Array.isArray(tasks) ? tasks : []
+  if (rows.length === 0) {
+    return { startAt: null, endAt: null }
+  }
+
+  let earliestStartAt = null
+  let latestEndAt = null
+
+  for (const item of rows) {
+    const startAt = toNullableDateTimeValue(item?.expected_start_date)
+    const endAt = toNullableDateTimeValue(item?.expected_completion_date || item?.due_at || item?.deadline)
+    if (!startAt || !endAt) {
+      return { startAt: null, endAt: null }
+    }
+    if (!earliestStartAt || startAt.isBefore(earliestStartAt)) {
+      earliestStartAt = startAt
+    }
+    if (!latestEndAt || endAt.isAfter(latestEndAt)) {
+      latestEndAt = endAt
+    }
+  }
+
+  return { startAt: earliestStartAt, endAt: latestEndAt }
+}
+
 function extractTemplateNodes(template) {
   if (!template) return []
   const config = template.node_config
@@ -416,7 +442,6 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [workflowQuickTaskSubmitting, setWorkflowQuickTaskSubmitting] = useState(false)
   const [detailStatus, setDetailStatus] = useState('')
   const [detailTabKey, setDetailTabKey] = useState('basic')
-  const selectedWorkflowNodeKeyRef = useRef('')
 
   const detailLogStats = useMemo(() => {
     const total = detailLogs.length
@@ -860,6 +885,11 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     return [...workflowTasks, ...manualLogs]
   }, [detailLogs, selectedWorkflowNode, workflowData])
 
+  const selectedWorkflowNodeDerivedSchedule = useMemo(
+    () => deriveNodeScheduleFromTasks(selectedWorkflowNodeTasks),
+    [selectedWorkflowNodeTasks],
+  )
+
   const selectedWorkflowNodeAssigneeIds = useMemo(() => {
     const nodeAssigneeUserId = Number(selectedWorkflowNode?.assignee_user_id)
     if (Number.isInteger(nodeAssigneeUserId) && nodeAssigneeUserId > 0) {
@@ -1265,7 +1295,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           pageSize: 200,
           demand_id: demandId,
         }
-        if (canViewTeamLogs) {
+        if (canManageWorkflow) {
+          params.scope = 'demand'
+        } else if (canViewTeamLogs) {
           params.scope = 'team'
         }
 
@@ -1281,7 +1313,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         setDetailLogsLoading(false)
       }
     },
-    [canViewSelfLogs, canViewTeamLogs],
+    [canManageWorkflow, canViewSelfLogs, canViewTeamLogs],
   )
 
   const loadDemandWorkflow = useCallback(
@@ -1432,28 +1464,24 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
   useEffect(() => {
     if (!selectedWorkflowNode) {
-      selectedWorkflowNodeKeyRef.current = ''
       setWorkflowParticipantUserIds([])
       setWorkflowDueAt(null)
       setWorkflowExpectedStartAt(null)
       return
     }
-    const normalizedNodeKey = String(selectedWorkflowNode.node_key || '').trim().toUpperCase()
-    const persistedExpectedStartAt = selectedWorkflowNode.planned_start_time || selectedWorkflowNode.expected_start_date || selectedWorkflowNode.expected_start_at
+    const manualPlannedStartAt = toNullableDateTimeValue(selectedWorkflowNode.planned_start_time)
+    const manualPlannedEndAt = toNullableDateTimeValue(selectedWorkflowNode.planned_end_time)
+    const hasManualSchedule = Boolean(manualPlannedStartAt || manualPlannedEndAt)
+    const nextStartAt = hasManualSchedule ? manualPlannedStartAt : selectedWorkflowNodeDerivedSchedule.startAt
+    const nextEndAt = hasManualSchedule ? manualPlannedEndAt : selectedWorkflowNodeDerivedSchedule.endAt
     if (selectedWorkflowNode.assignee_user_id) {
       setWorkflowParticipantUserIds([Number(selectedWorkflowNode.assignee_user_id)])
     } else {
       setWorkflowParticipantUserIds([])
     }
-    setWorkflowDueAt(selectedWorkflowNode.planned_end_time ? dayjs(selectedWorkflowNode.planned_end_time) : null)
-    setWorkflowExpectedStartAt((previousValue) => {
-      if (persistedExpectedStartAt) {
-        return dayjs(persistedExpectedStartAt)
-      }
-      return selectedWorkflowNodeKeyRef.current === normalizedNodeKey ? previousValue : null
-    })
-    selectedWorkflowNodeKeyRef.current = normalizedNodeKey
-  }, [selectedWorkflowNode])
+    setWorkflowDueAt(nextEndAt)
+    setWorkflowExpectedStartAt(nextStartAt)
+  }, [selectedWorkflowNode, selectedWorkflowNodeDerivedSchedule])
 
   useEffect(() => {
     if (!requestedWorkflowNodeKey) return
@@ -1817,9 +1845,17 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
     try {
       setWorkflowTaskUpdatingId(taskId)
-      const result = isManualLogTask
-        ? await updateWorkLogApi(manualLogId, nextPayload)
-        : await updateDemandWorkflowTaskHoursApi(detailDemand.id, taskId, nextPayload)
+      let result = null
+      if (isManualLogTask) {
+        const manualLogPayload = { ...nextPayload }
+        if (manualLogPayload.personal_estimated_hours !== undefined) {
+          manualLogPayload.personal_estimate_hours = manualLogPayload.personal_estimated_hours
+          delete manualLogPayload.personal_estimated_hours
+        }
+        result = await updateWorkLogApi(manualLogId, manualLogPayload)
+      } else {
+        result = await updateDemandWorkflowTaskHoursApi(detailDemand.id, taskId, nextPayload)
+      }
       if (!result?.success) {
         message.error(result?.message || '子任务更新失败')
         return false
