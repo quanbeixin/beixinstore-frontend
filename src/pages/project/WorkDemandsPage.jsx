@@ -1,4 +1,15 @@
-﻿import { EditOutlined, LeftOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons'
+﻿import {
+  CopyOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  LeftOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  RobotOutlined,
+  SearchOutlined,
+  ThunderboltOutlined,
+  UnorderedListOutlined,
+} from '@ant-design/icons'
 import {
   Alert,
   Button,
@@ -23,6 +34,7 @@ import {
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { executeAgentApi, getAgentOptionsApi } from '../../api/agent'
 import { getDictItemsApi } from '../../api/configDict'
 import { getUsersApi } from '../../api/users'
 import {
@@ -53,7 +65,7 @@ import {
 import { DemandCommunicationPanel } from '../../modules/demand-communication'
 import { DemandBugPanel } from '../../modules/bug'
 import { WorkflowGraph } from '../../modules/workflow'
-import { getCurrentUser, getUserPreferences, hasPermission, hasRole } from '../../utils/access'
+import { getAccessSnapshot, getCurrentUser, getUserPreferences, hasPermission, hasRole } from '../../utils/access'
 import {
   formatBeijingDate,
   formatBeijingDateTime,
@@ -62,8 +74,9 @@ import {
 import './WorkDemandsPage.css'
 
 const { Search } = Input
-const { Text } = Typography
+const { Paragraph, Text } = Typography
 const { RangePicker } = DatePicker
+const DEMAND_POOL_AGENT_SCENE = 'DEMAND_POOL_ANALYSIS'
 const WORKFLOW_ASSIGNEE_PAGE_SIZE = 500
 const WORKFLOW_ASSIGNEE_MAX_PAGES = 50
 const DEMAND_LIST_PAGE_SIZE = 1000
@@ -91,6 +104,16 @@ const HEALTH_STATUS_OPTIONS = [
   { label: '预警', value: 'yellow' },
   { label: '风险', value: 'red' },
 ]
+
+function formatDemandNodeSchedule(record) {
+  const plannedStart = formatBeijingDate(record?.current_node_planned_start_date)
+  const plannedEnd = formatBeijingDate(record?.current_node_planned_end_date)
+
+  if (plannedStart && plannedEnd) return `${plannedStart} ~ ${plannedEnd}`
+  if (plannedStart) return `${plannedStart} ~ -`
+  if (plannedEnd) return `- ~ ${plannedEnd}`
+  return '-'
+}
 
 const FALLBACK_PARTICIPANT_ROLE_OPTIONS = [
   { value: 'DEMAND_OWNER', label: '需求负责人' },
@@ -176,6 +199,32 @@ function toNullableDateTimeValue(value) {
   if (!value) return null
   const maybe = dayjs(value)
   return maybe.isValid() ? maybe : null
+}
+
+function deriveNodeScheduleFromTasks(tasks = []) {
+  const rows = Array.isArray(tasks) ? tasks : []
+  if (rows.length === 0) {
+    return { startAt: null, endAt: null }
+  }
+
+  let earliestStartAt = null
+  let latestEndAt = null
+
+  for (const item of rows) {
+    const startAt = toNullableDateTimeValue(item?.expected_start_date)
+    const endAt = toNullableDateTimeValue(item?.expected_completion_date || item?.due_at || item?.deadline)
+    if (!startAt || !endAt) {
+      return { startAt: null, endAt: null }
+    }
+    if (!earliestStartAt || startAt.isBefore(earliestStartAt)) {
+      earliestStartAt = startAt
+    }
+    if (!latestEndAt || endAt.isAfter(latestEndAt)) {
+      latestEndAt = endAt
+    }
+  }
+
+  return { startAt: earliestStartAt, endAt: latestEndAt }
 }
 
 function extractTemplateNodes(template) {
@@ -289,14 +338,20 @@ function getDemandListPhaseGroup(record) {
   return { phaseKey, phaseName }
 }
 
-function WorkDemands() {
+function WorkDemands({ pageMode = 'pool' } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const { id: routeDemandId } = useParams()
   const isDetailPage = Boolean(routeDemandId)
+  const isMyDemandsPage = pageMode === 'my'
+  const listBasePath = isMyDemandsPage ? '/my-demands' : '/work-demands'
+  const [myDemandTabKey, setMyDemandTabKey] = useState('owned')
+  const access = useMemo(() => getAccessSnapshot(), [])
+  const canUseDemandPoolAnalysis = Boolean(access?.is_super_admin)
   const canView = hasPermission('demand.view')
   const canViewUsers = hasPermission('user.view')
   const canCreate = hasPermission('demand.create')
+  const canCreateInCurrentPage = canCreate && !isMyDemandsPage
   const canUseProjectTemplates =
     canCreate || hasPermission('project.template.view') || hasPermission('project.template.manage')
   const canTransferOwner = hasPermission('demand.transfer_owner') || hasRole('ADMIN')
@@ -304,6 +359,7 @@ function WorkDemands() {
   const canViewTeamLogs = hasPermission('worklog.view.team')
   const canViewWorkflow = hasPermission('demand.workflow.view') || hasPermission('demand.view')
   const canManageWorkflow = hasPermission('demand.workflow.manage') || hasPermission('demand.manage')
+  const canViewDemandRelatedLogs = canViewSelfLogs || canViewTeamLogs || canManageWorkflow
   const canForceReplaceWorkflow = canManageWorkflow && hasRole('SUPER_ADMIN')
   const currentUser = getCurrentUser()
 
@@ -350,6 +406,11 @@ function WorkDemands() {
     const preferences = getUserPreferences()
     return Number(preferences?.demand_list_compact_default || 0) === 1
   })
+  const [agentOptionsLoading, setAgentOptionsLoading] = useState(false)
+  const [agentOptions, setAgentOptions] = useState([])
+  const [selectedAgentId, setSelectedAgentId] = useState(null)
+  const [analysisExecuting, setAnalysisExecuting] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState(null)
 
   const [detailPageLoading, setDetailPageLoading] = useState(false)
   const [detailDemand, setDetailDemand] = useState(null)
@@ -382,7 +443,6 @@ function WorkDemands() {
   const [workflowQuickTaskSubmitting, setWorkflowQuickTaskSubmitting] = useState(false)
   const [detailStatus, setDetailStatus] = useState('')
   const [detailTabKey, setDetailTabKey] = useState('basic')
-  const selectedWorkflowNodeKeyRef = useRef('')
 
   const detailLogStats = useMemo(() => {
     const total = detailLogs.length
@@ -625,6 +685,13 @@ function WorkDemands() {
     ],
     [businessGroupAllCount, businessGroupCountMap, businessGroupOptions, completedDemandCount, cancelledDemandCount],
   )
+  const myDemandTabItems = useMemo(
+    () => [
+      { key: 'owned', label: '我创建的' },
+      { key: 'participated', label: '我参与的' },
+    ],
+    [],
+  )
 
   const activeDemandTabKey = showCompletedTabOnly
     ? '__DONE__'
@@ -819,6 +886,11 @@ function WorkDemands() {
     return [...workflowTasks, ...manualLogs]
   }, [detailLogs, selectedWorkflowNode, workflowData])
 
+  const selectedWorkflowNodeDerivedSchedule = useMemo(
+    () => deriveNodeScheduleFromTasks(selectedWorkflowNodeTasks),
+    [selectedWorkflowNodeTasks],
+  )
+
   const selectedWorkflowNodeAssigneeIds = useMemo(() => {
     const nodeAssigneeUserId = Number(selectedWorkflowNode?.assignee_user_id)
     if (Number.isInteger(nodeAssigneeUserId) && nodeAssigneeUserId > 0) {
@@ -959,7 +1031,11 @@ function WorkDemands() {
         params.updated_start_date = updatedRange[0].format('YYYY-MM-DD')
         params.updated_end_date = updatedRange[1].format('YYYY-MM-DD')
       }
-      if (scopeFilter === 'mine') params.mine = true
+      if (isMyDemandsPage) {
+        params.relation_scope = myDemandTabKey === 'participated' ? 'participated' : 'owned'
+      } else if (scopeFilter === 'mine') {
+        params.mine = true
+      }
 
       const result = await getWorkDemandsApi(params)
       if (!result?.success) {
@@ -990,6 +1066,8 @@ function WorkDemands() {
     showCancelledTabOnly,
     ownerFilter,
     updatedRange,
+    isMyDemandsPage,
+    myDemandTabKey,
     scopeFilter,
   ])
 
@@ -1034,8 +1112,40 @@ function WorkDemands() {
     loadDemands()
   }, [isDetailPage, loadDemands])
 
+  const loadDemandAgentOptions = useCallback(async () => {
+    if (isDetailPage || isMyDemandsPage || !canUseDemandPoolAnalysis) {
+      setAgentOptions([])
+      setSelectedAgentId(null)
+      setAnalysisResult(null)
+      return
+    }
+    setAgentOptionsLoading(true)
+    try {
+      const result = await getAgentOptionsApi(DEMAND_POOL_AGENT_SCENE)
+      if (!result?.success) {
+        message.error(result?.message || '获取需求池分析 Agent 失败')
+        return
+      }
+      const options = Array.isArray(result?.data?.options) ? result.data.options : []
+      setAgentOptions(options)
+      setSelectedAgentId((prev) => {
+        if (options.some((item) => Number(item?.id) === Number(prev))) return prev
+        const firstId = Number(options?.[0]?.id || 0)
+        return firstId > 0 ? firstId : null
+      })
+    } catch (error) {
+      message.error(error?.message || '获取需求池分析 Agent 失败')
+    } finally {
+      setAgentOptionsLoading(false)
+    }
+  }, [canUseDemandPoolAnalysis, isDetailPage, isMyDemandsPage])
+
+  useEffect(() => {
+    loadDemandAgentOptions()
+  }, [loadDemandAgentOptions])
+
   const openCreateModal = () => {
-    if (!canCreate) return
+    if (!canCreateInCurrentPage) return
     setEditingDemand(null)
     setModalOpen(true)
     form.resetFields()
@@ -1119,6 +1229,10 @@ function WorkDemands() {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
+      if (!editingDemand && !canCreateInCurrentPage) {
+        message.warning('我的需求页面不支持新建需求，请前往需求池创建。')
+        return
+      }
       if (values.template_id && selectedModalTemplateNodes.length === 0) {
         message.warning('当前参与角色未命中模板节点，请调整参与角色或模板配置')
         return
@@ -1170,7 +1284,7 @@ function WorkDemands() {
 
   const fetchDemandRelatedLogs = useCallback(
     async (demandId) => {
-      if (!demandId || !canViewSelfLogs) {
+      if (!demandId || !canViewDemandRelatedLogs) {
         setDetailLogs([])
         return
       }
@@ -1182,7 +1296,9 @@ function WorkDemands() {
           pageSize: 200,
           demand_id: demandId,
         }
-        if (canViewTeamLogs) {
+        if (canManageWorkflow) {
+          params.scope = 'demand'
+        } else if (canViewTeamLogs) {
           params.scope = 'team'
         }
 
@@ -1198,7 +1314,7 @@ function WorkDemands() {
         setDetailLogsLoading(false)
       }
     },
-    [canViewSelfLogs, canViewTeamLogs],
+    [canManageWorkflow, canViewDemandRelatedLogs, canViewTeamLogs],
   )
 
   const loadDemandWorkflow = useCallback(
@@ -1246,9 +1362,9 @@ function WorkDemands() {
   const openDetailDrawer = useCallback(
     (record) => {
       if (!record?.id) return
-      navigate(`/work-demands/${record.id}`)
+      navigate(`${listBasePath}/${record.id}`)
     },
-    [navigate],
+    [listBasePath, navigate],
   )
 
   const closeDetailDrawer = useCallback(() => {
@@ -1274,8 +1390,8 @@ function WorkDemands() {
     setWorkflowParticipantUserIds([])
     setWorkflowDueAt(null)
     setWorkflowExpectedStartAt(null)
-    navigate('/work-demands')
-  }, [navigate])
+    navigate(listBasePath)
+  }, [listBasePath, navigate])
 
   useEffect(() => {
     if (!isDetailPage || !routeDemandId) return
@@ -1289,7 +1405,7 @@ function WorkDemands() {
         if (!active) return
         if (!result?.success || !result?.data) {
           message.error(result?.message || '需求详情加载失败')
-          navigate('/work-demands', { replace: true })
+          navigate(listBasePath, { replace: true })
           return
         }
 
@@ -1300,7 +1416,7 @@ function WorkDemands() {
       } catch (error) {
         if (!active) return
         message.error(error?.message || '需求详情加载失败')
-        navigate('/work-demands', { replace: true })
+        navigate(listBasePath, { replace: true })
       } finally {
         if (active) setDetailPageLoading(false)
       }
@@ -1315,6 +1431,7 @@ function WorkDemands() {
     routeDemandId,
     canEditDemandRecord,
     fetchDemandRelatedLogs,
+    listBasePath,
     loadDemandWorkflow,
     navigate,
   ])
@@ -1348,28 +1465,24 @@ function WorkDemands() {
 
   useEffect(() => {
     if (!selectedWorkflowNode) {
-      selectedWorkflowNodeKeyRef.current = ''
       setWorkflowParticipantUserIds([])
       setWorkflowDueAt(null)
       setWorkflowExpectedStartAt(null)
       return
     }
-    const normalizedNodeKey = String(selectedWorkflowNode.node_key || '').trim().toUpperCase()
-    const persistedExpectedStartAt = selectedWorkflowNode.planned_start_time || selectedWorkflowNode.expected_start_date || selectedWorkflowNode.expected_start_at
+    const manualPlannedStartAt = toNullableDateTimeValue(selectedWorkflowNode.planned_start_time)
+    const manualPlannedEndAt = toNullableDateTimeValue(selectedWorkflowNode.planned_end_time)
+    const hasManualSchedule = Boolean(manualPlannedStartAt || manualPlannedEndAt)
+    const nextStartAt = hasManualSchedule ? manualPlannedStartAt : selectedWorkflowNodeDerivedSchedule.startAt
+    const nextEndAt = hasManualSchedule ? manualPlannedEndAt : selectedWorkflowNodeDerivedSchedule.endAt
     if (selectedWorkflowNode.assignee_user_id) {
       setWorkflowParticipantUserIds([Number(selectedWorkflowNode.assignee_user_id)])
     } else {
       setWorkflowParticipantUserIds([])
     }
-    setWorkflowDueAt(selectedWorkflowNode.planned_end_time ? dayjs(selectedWorkflowNode.planned_end_time) : null)
-    setWorkflowExpectedStartAt((previousValue) => {
-      if (persistedExpectedStartAt) {
-        return dayjs(persistedExpectedStartAt)
-      }
-      return selectedWorkflowNodeKeyRef.current === normalizedNodeKey ? previousValue : null
-    })
-    selectedWorkflowNodeKeyRef.current = normalizedNodeKey
-  }, [selectedWorkflowNode])
+    setWorkflowDueAt(nextEndAt)
+    setWorkflowExpectedStartAt(nextStartAt)
+  }, [selectedWorkflowNode, selectedWorkflowNodeDerivedSchedule])
 
   useEffect(() => {
     if (!requestedWorkflowNodeKey) return
@@ -1733,9 +1846,17 @@ function WorkDemands() {
 
     try {
       setWorkflowTaskUpdatingId(taskId)
-      const result = isManualLogTask
-        ? await updateWorkLogApi(manualLogId, nextPayload)
-        : await updateDemandWorkflowTaskHoursApi(detailDemand.id, taskId, nextPayload)
+      let result = null
+      if (isManualLogTask) {
+        const manualLogPayload = { ...nextPayload }
+        if (manualLogPayload.personal_estimated_hours !== undefined) {
+          manualLogPayload.personal_estimate_hours = manualLogPayload.personal_estimated_hours
+          delete manualLogPayload.personal_estimated_hours
+        }
+        result = await updateWorkLogApi(manualLogId, manualLogPayload)
+      } else {
+        result = await updateDemandWorkflowTaskHoursApi(detailDemand.id, taskId, nextPayload)
+      }
       if (!result?.success) {
         message.error(result?.message || '子任务更新失败')
         return false
@@ -1845,6 +1966,112 @@ function WorkDemands() {
     setPage(1)
   }
 
+  const selectedDemandAgentOption = useMemo(
+    () => agentOptions.find((item) => Number(item?.id) === Number(selectedAgentId)) || null,
+    [agentOptions, selectedAgentId],
+  )
+
+  const currentDemandPoolContextParams = useMemo(() => {
+    const activeTabLabel =
+      businessGroupTabItems.find((item) => item.key === activeDemandTabKey)?.label || '全部'
+    const selectedBusinessGroupLabel =
+      businessGroupOptions.find((item) => String(item.value || '') === String(businessGroupFilter || ''))?.label || ''
+    const selectedOwnerLabel =
+      ownerOptions.find((item) => Number(item.value) === Number(ownerFilter))?.label || ''
+
+    return {
+      keyword: keyword.trim(),
+      status: showCompletedTabOnly ? 'DONE' : showCancelledTabOnly ? 'CANCELLED' : statusFilter,
+      priority: priorityFilter,
+      priority_order: prioritySortOrder === 'ascend' ? 'asc' : prioritySortOrder === 'descend' ? 'desc' : '',
+      business_group_code: businessGroupFilter,
+      business_group_label: selectedBusinessGroupLabel,
+      owner_user_id: ownerFilter || null,
+      owner_label: selectedOwnerLabel,
+      updated_start_date:
+        Array.isArray(updatedRange) && updatedRange[0] ? updatedRange[0].format('YYYY-MM-DD') : '',
+      updated_end_date:
+        Array.isArray(updatedRange) && updatedRange[1] ? updatedRange[1].format('YYYY-MM-DD') : '',
+      updated_range_label:
+        Array.isArray(updatedRange) && updatedRange[0] && updatedRange[1]
+          ? `${updatedRange[0].format('YYYY-MM-DD')} ~ ${updatedRange[1].format('YYYY-MM-DD')}`
+          : '',
+      mine: scopeFilter === 'mine',
+      scope_label: scopeFilter === 'mine' ? '我负责/参与' : '全部需求',
+      completed_only: showCompletedTabOnly,
+      cancelled_only: showCancelledTabOnly,
+      exclude_completed: !showCompletedTabOnly && !showCancelledTabOnly,
+      exclude_cancelled: !showCompletedTabOnly && !showCancelledTabOnly,
+      active_tab_key: activeDemandTabKey,
+      active_tab_label: activeTabLabel,
+      compact_view: compactView,
+    }
+  }, [
+    activeDemandTabKey,
+    businessGroupFilter,
+    businessGroupOptions,
+    businessGroupTabItems,
+    compactView,
+    keyword,
+    ownerFilter,
+    ownerOptions,
+    priorityFilter,
+    prioritySortOrder,
+    scopeFilter,
+    showCancelledTabOnly,
+    showCompletedTabOnly,
+    statusFilter,
+    updatedRange,
+  ])
+
+  const handleExecuteDemandAnalysis = useCallback(async () => {
+    if (!selectedAgentId) {
+      message.warning('请先选择一个 Agent')
+      return
+    }
+
+    try {
+      setAnalysisExecuting(true)
+      const result = await executeAgentApi({
+        scene_code: DEMAND_POOL_AGENT_SCENE,
+        agent_id: selectedAgentId,
+        context_params: currentDemandPoolContextParams,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '执行需求池分析失败')
+        return
+      }
+      setAnalysisResult({
+        ...(result?.data || {}),
+        agent_label: selectedDemandAgentOption?.agent_name || result?.data?.agent_name || '',
+        scope_label: currentDemandPoolContextParams.active_tab_label || '当前筛选范围',
+      })
+      message.success('需求池分析已生成')
+    } catch (error) {
+      message.error(error?.message || '执行需求池分析失败')
+    } finally {
+      setAnalysisExecuting(false)
+    }
+  }, [currentDemandPoolContextParams, selectedAgentId, selectedDemandAgentOption])
+
+  const handleCopyDemandAnalysis = useCallback(async () => {
+    const text = String(analysisResult?.response_text || '').trim()
+    if (!text) {
+      message.warning('当前没有可复制的分析结果')
+      return
+    }
+    if (!navigator?.clipboard?.writeText) {
+      message.error('当前浏览器不支持复制')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      message.success('分析结果已复制')
+    } catch (error) {
+      message.error(error?.message || '复制失败')
+    }
+  }, [analysisResult?.response_text])
+
   const demandColumns = useMemo(() => {
     const columns = [
       {
@@ -1885,21 +2112,6 @@ function WorkDemands() {
         render: (value, record) => (record?.__group ? null : value || '-'),
       },
       {
-        title: '项目负责人',
-        dataIndex: 'project_manager_name',
-        key: 'project_manager_name',
-        width: 120,
-        render: (value, record) => (record?.__group ? null : value || '-'),
-      },
-      {
-        title: '健康度',
-        dataIndex: 'health_status',
-        key: 'health_status',
-        width: 100,
-        render: (value, record) =>
-          record?.__group ? null : <Tag color={getHealthTagColor(value)}>{getHealthLabel(value)}</Tag>,
-      },
-      {
         title: '业务组',
         dataIndex: 'business_group_name',
         key: 'business_group_name',
@@ -1929,6 +2141,21 @@ function WorkDemands() {
           ) : (
             <Tag>未开始</Tag>
           ),
+      },
+      {
+        title: '当前进行中节点',
+        dataIndex: 'current_node_name',
+        key: 'current_node_name',
+        width: 190,
+        ellipsis: true,
+        render: (_, record) => (record?.__group ? null : record?.current_node_name || record?.current_phase_name || '未开始'),
+      },
+      {
+        title: '节点排期',
+        key: 'current_node_schedule',
+        width: 190,
+        ellipsis: true,
+        render: (_, record) => (record?.__group ? null : formatDemandNodeSchedule(record)),
       },
       {
         title: '优先级',
@@ -2059,7 +2286,7 @@ function WorkDemands() {
                 <Button icon={<ReloadOutlined />} onClick={loadDemands} loading={loading}>
                   刷新
                 </Button>
-                {canCreate ? (
+                {canCreateInCurrentPage ? (
                   <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
                     新建需求
                   </Button>
@@ -2067,6 +2294,16 @@ function WorkDemands() {
               </Space>
             }
           >
+            {isMyDemandsPage ? (
+              <Tabs
+                activeKey={myDemandTabKey}
+                items={myDemandTabItems}
+                onChange={(activeKey) => {
+                  setMyDemandTabKey(activeKey === 'participated' ? 'participated' : 'owned')
+                  setPage(1)
+                }}
+              />
+            ) : null}
             <Tabs
               activeKey={activeDemandTabKey}
               items={businessGroupTabItems}
@@ -2136,19 +2373,21 @@ function WorkDemands() {
                   setPage(1)
                 }}
               />
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                style={{ width: 180 }}
-                placeholder="需求负责人"
-                options={ownerOptions}
-                value={ownerFilter}
-                onChange={(value) => {
-                  setOwnerFilter(value)
-                  setPage(1)
-                }}
-              />
+              {isMyDemandsPage ? null : (
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  style={{ width: 180 }}
+                  placeholder="需求负责人"
+                  options={ownerOptions}
+                  value={ownerFilter}
+                  onChange={(value) => {
+                    setOwnerFilter(value)
+                    setPage(1)
+                  }}
+                />
+              )}
               <RangePicker
                 style={{ width: 250 }}
                 value={updatedRange?.length ? updatedRange : null}
@@ -2158,24 +2397,106 @@ function WorkDemands() {
                 }}
                 placeholder={['更新开始', '更新结束']}
               />
-              <Select
-                style={{ width: 140 }}
-                value={scopeFilter}
-                options={[
-                  { label: '全部需求', value: 'all' },
-                  { label: '我负责/参与', value: 'mine' },
-                ]}
-                onChange={(value) => {
-                  setScopeFilter(value)
-                  setPage(1)
-                }}
-              />
+              {isMyDemandsPage ? null : (
+                <Select
+                  style={{ width: 140 }}
+                  value={scopeFilter}
+                  options={[
+                    { label: '全部需求', value: 'all' },
+                    { label: '我负责/参与', value: 'mine' },
+                  ]}
+                  onChange={(value) => {
+                    setScopeFilter(value)
+                    setPage(1)
+                  }}
+                />
+              )}
               <Button onClick={handleResetFilters}>重置筛选</Button>
               <Space size={6}>
                 <Text type="secondary">精简视图</Text>
                 <Switch checked={compactView} onChange={setCompactView} />
               </Space>
             </Space>
+
+            {!isMyDemandsPage && canUseDemandPoolAnalysis ? (
+              <div className="work-demand-list__agent-panel">
+                <div className="work-demand-list__agent-panel-header">
+                  <div>
+                    <Space size={8} wrap>
+                      <Tag color="blue" icon={<RobotOutlined />}>
+                        AI 需求池分析
+                      </Tag>
+                      <Text strong>分析当前筛选结果中的需求状态、风险与重点项</Text>
+                    </Space>
+                    <div className="work-demand-list__agent-panel-hint">
+                      当前分析范围会跟随上方筛选条件、业务分组页签和“我负责/参与”视图一起变化。
+                    </div>
+                  </div>
+                  <Space wrap>
+                    <Select
+                      className="work-demand-list__agent-select"
+                      placeholder="请选择 Agent"
+                      loading={agentOptionsLoading}
+                      value={selectedAgentId || undefined}
+                      options={agentOptions.map((item) => ({
+                        value: item.id,
+                        label: `${item.agent_name} (${item.agent_code})`,
+                      }))}
+                      onChange={setSelectedAgentId}
+                    />
+                    <Button
+                      type="primary"
+                      icon={<ThunderboltOutlined />}
+                      loading={analysisExecuting}
+                      disabled={agentOptionsLoading || agentOptions.length === 0}
+                      onClick={handleExecuteDemandAnalysis}
+                    >
+                      执行分析
+                    </Button>
+                    <Button
+                      icon={<CopyOutlined />}
+                      disabled={!analysisResult?.response_text}
+                      onClick={handleCopyDemandAnalysis}
+                    >
+                      复制结果
+                    </Button>
+                    <Button
+                      icon={<DeleteOutlined />}
+                      disabled={!analysisResult}
+                      onClick={() => setAnalysisResult(null)}
+                    >
+                      清空
+                    </Button>
+                  </Space>
+                </div>
+
+                {selectedDemandAgentOption?.business_purpose ? (
+                  <div className="work-demand-list__agent-purpose">
+                    <Text type="secondary">{`业务定位：${selectedDemandAgentOption.business_purpose}`}</Text>
+                  </div>
+                ) : null}
+
+                {agentOptions.length === 0 && !agentOptionsLoading ? (
+                  <div className="work-demand-list__agent-empty">
+                    暂无可用 Agent，请先前往系统设置中的 Agent 配置页面创建并启用“需求池分析”场景 Agent。
+                  </div>
+                ) : null}
+
+                {analysisResult ? (
+                  <div className="work-demand-list__agent-result">
+                    <div className="work-demand-list__agent-result-meta">
+                      <Space size={[8, 8]} wrap>
+                        <Tag color="blue">{analysisResult.agent_label || '已执行 Agent'}</Tag>
+                        <Tag>{analysisResult.scope_label || '当前筛选范围'}</Tag>
+                      </Space>
+                    </div>
+                    <Paragraph className="work-demand-list__agent-result-text">
+                      {analysisResult.response_text || '本次未返回分析内容。'}
+                    </Paragraph>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </Card>
 
           <Card variant="borderless">
@@ -2379,7 +2700,7 @@ function WorkDemands() {
                     </div>
                     <div className="work-demand-detail__hero-actions">
                       <Button icon={<LeftOutlined />} onClick={closeDetailDrawer}>
-                        返回需求池
+                        {isMyDemandsPage ? '返回我的需求' : '返回需求池'}
                       </Button>
                       {canEditDemandRecord(detailDemand) ? (
                         <>
@@ -2541,13 +2862,14 @@ function WorkDemands() {
                             />
                           </div>
                           <div className="work-demand-detail__field">
-                            <Text type="secondary">需求负责人</Text>
+                            <Text type="secondary">项目负责人</Text>
                             <Select
                               allowClear
                               showSearch
                               optionFilterProp="label"
                               value={detailProjectManager}
                               options={ownerOptions}
+                              placeholder="选择项目负责人（可选）"
                               onChange={(value) => setDetailProjectManager(value)}
                             />
                           </div>
@@ -2692,7 +3014,7 @@ function WorkDemands() {
                         dataSource={filteredDetailLogs}
                         pagination={false}
                         locale={{
-                          emptyText: canViewSelfLogs ? '当前筛选下暂无关联事项' : '当前账号无工作记录查看权限',
+                          emptyText: canViewDemandRelatedLogs ? '当前筛选下暂无关联事项' : '当前账号无工作记录查看权限',
                         }}
                         scroll={{ x: 980 }}
                         columns={[
@@ -2772,7 +3094,7 @@ function WorkDemands() {
         </Card>
       ) : null}
 
-      {!canCreate ? (
+      {!isMyDemandsPage && !canCreate ? (
         <div style={{ marginTop: 12, color: '#667085', display: 'flex', alignItems: 'center', gap: 8 }}>
           <UnorderedListOutlined />
           <span>当前账号无创建权限，只有管理员、超级管理员或产品角色可以新建需求。</span>

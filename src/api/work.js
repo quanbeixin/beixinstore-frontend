@@ -245,7 +245,12 @@ export function updateWorkLogOwnerEstimateApi(logId, payload) {
   return request.put(`/work/logs/${logId}/owner-estimate`, payload)
 }
 
-export function getMyWorkbenchApi() {
+export function getMyWorkbenchApi(options = {}) {
+  const force = Boolean(options?.force)
+  if (force) {
+    clearCache('workbench-me')
+    return request.get('/work/workbench/me')
+  }
   return cachedRequest('workbench-me', () => request.get('/work/workbench/me'))
 }
 

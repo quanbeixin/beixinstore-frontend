@@ -60,12 +60,34 @@ function formatHours(value) {
   return `${num.toFixed(1)} h`
 }
 
+function resolveTaskActualHours(item, draft) {
+  const actualHours = Number(item?.actual_hours)
+  if (Number.isFinite(actualHours) && actualHours >= 0) return actualHours
+
+  const fallbackHours = Number(draft?.personal_estimated_hours ?? item?.personal_estimated_hours)
+  if (Number.isFinite(fallbackHours) && fallbackHours >= 0) return fallbackHours
+  return null
+}
+
 function calcStageTotalEstimatedHours(tasks = []) {
   const total = (tasks || []).reduce((sum, item) => {
     const hours = Number(item?.personal_estimated_hours)
     if (!Number.isFinite(hours) || hours < 0) return sum
     return sum + hours
   }, 0)
+  return Number(total.toFixed(2))
+}
+
+function calcStageTotalActualHours(tasks = []) {
+  let total = 0
+  let hasActualHours = false
+  ;(tasks || []).forEach((item) => {
+    const hours = Number(item?.actual_hours)
+    if (!Number.isFinite(hours) || hours < 0) return
+    total += hours
+    hasActualHours = true
+  })
+  if (!hasActualHours) return null
   return Number(total.toFixed(2))
 }
 
@@ -140,6 +162,7 @@ function DemandNodeInspector({
   const summaryTitle = getDemandWorkflowNodeDisplayName(node)
   const normalizedNodeStatus = String(node?.status || '').toUpperCase()
   const stageTotalEstimatedHours = calcStageTotalEstimatedHours(selectedWorkflowNodeTasks)
+  const stageTotalActualHours = calcStageTotalActualHours(selectedWorkflowNodeTasks)
   const scheduleValue =
     workflowExpectedStartAt || workflowDueAt ? [workflowExpectedStartAt || null, workflowDueAt || null] : null
   const canEditArrangement = canManageWorkflow && canAssignSelectedWorkflowNode && !workflowSubmitting
@@ -354,8 +377,10 @@ function DemandNodeInspector({
                     快速添加任务
                   </Button>
                 ) : null}
-                <span className="demand-node-inspector__label">阶段整体用时</span>
+                <span className="demand-node-inspector__label">阶段整体预估</span>
                 <Text className="demand-node-inspector__value-text">{formatHours(stageTotalEstimatedHours)}</Text>
+                <span className="demand-node-inspector__label">阶段实际用时</span>
+                <Text className="demand-node-inspector__value-text">{formatHours(stageTotalActualHours)}</Text>
               </div>
             </div>
 
@@ -391,8 +416,10 @@ function DemandNodeInspector({
                       '-',
                     )
                     const taskEstimatedHours = formatHours(taskDraft.personal_estimated_hours)
+                    const taskActualHours = formatHours(resolveTaskActualHours(item, taskDraft))
                     const isTaskUpdating = String(workflowTaskUpdatingId || '') === String(taskId)
                     const isTaskClosed = normalizedStatus === 'DONE' || normalizedStatus === 'CANCELLED'
+                    const isTaskDone = normalizedStatus === 'DONE'
                     const isTaskDirty = isTaskDraftDirty(baseTaskDraft, taskDraft)
                     const isManualLogTask = String(item?.source_type || '').trim().toUpperCase() === 'MANUAL_LOG'
                     const canEditManualLogTask =
@@ -404,7 +431,7 @@ function DemandNodeInspector({
                     const canEditCurrentTask =
                       (isManualLogTask ? canEditManualLogTask : canEditTaskDetails) && !isTaskUpdating && !isTaskClosed
                     const canSaveCurrentTask = canEditCurrentTask && isTaskDirty
-                    const canShowTaskEditor = canManageWorkflow || canEditManualLogTask
+                    const canShowTaskEditor = (canManageWorkflow || canEditManualLogTask) && !isTaskClosed
 
                     return (
                       <div key={String(item.id)} className="demand-node-inspector__task-item">
@@ -415,7 +442,9 @@ function DemandNodeInspector({
                             className={`demand-node-inspector__task-aux${canShowTaskEditor ? ' demand-node-inspector__task-aux--editable' : ''}`}
                           >
                             <span className="demand-node-inspector__task-aux-text">{`排期 ${taskStartDate} ~ ${taskEndDate}`}</span>
-                            <span className="demand-node-inspector__task-aux-text">{`预估 ${taskEstimatedHours}`}</span>
+                            <span className="demand-node-inspector__task-aux-text">
+                              {isTaskDone ? `实际用时 ${taskActualHours}` : `预估 ${taskEstimatedHours}`}
+                            </span>
                             {canShowTaskEditor ? (
                               <>
                                 <span className="demand-node-inspector__task-aux-divider">|</span>
@@ -433,6 +462,7 @@ function DemandNodeInspector({
                                     })
                                   }}
                                 />
+                                <span className="demand-node-inspector__task-aux-inline-label">预估用时</span>
                                 <InputNumber
                                   size="small"
                                   min={0}

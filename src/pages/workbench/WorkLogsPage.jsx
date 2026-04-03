@@ -429,6 +429,14 @@ function getDisplayStatusMeta(record) {
   return getUnifiedStatusMeta(record)
 }
 
+function getSelfTaskDifficultyDisplay(item) {
+  const difficultyName = String(item?.self_task_difficulty_name || '').trim()
+  const difficultyCode = String(item?.self_task_difficulty_code || '').trim().toUpperCase()
+  if (difficultyName) return difficultyName
+  if (difficultyCode) return difficultyCode
+  return ''
+}
+
 function isOverdueDate(value) {
   const date = formatDateOnly(value)
   if (!date || date === '-') return false
@@ -950,11 +958,13 @@ function WorkLogs({ mode = 'dashboard' }) {
         const workflowTodo = demandId ? workflowTodoByDemandId.get(demandId) || null : null
         const workflowNodeName = String(workflowTodo?.node_name || workflowTodo?.task_title || '').trim()
         const followupNodeLabel = isDemandFollowupItem(item) && workflowNodeName ? workflowNodeName : ''
+        const difficultyText = getSelfTaskDifficultyDisplay(item)
         const text = `${item?.item_type_name || ''} ${item?.demand_id || ''} ${item?.phase_name || ''} ${
           item?.description || ''
         } ${item?.assigned_by_name || ''} ${
           item?.task_source || ''
         } ${item?.expected_start_date || ''} ${item?.expected_completion_date || ''} ${followupNodeLabel}`.toLowerCase()
+          + ` ${difficultyText}`.toLowerCase()
         return text.includes(keyword)
       })
       .sort((a, b) => {
@@ -1062,7 +1072,7 @@ function WorkLogs({ mode = 'dashboard' }) {
     ].join('\n')
   }, [weeklyReport, weeklyRange.end_date, weeklyRange.start_date, weeklySummary, weeklyTopItems])
 
-  const loadBase = useCallback(async () => {
+  const loadBase = useCallback(async ({ forceWorkbench = false } = {}) => {
     setLoadingBase(true)
     try {
       const requests = [
@@ -1071,7 +1081,7 @@ function WorkLogs({ mode = 'dashboard' }) {
         getDictItemsApi('task_difficulty', { enabledOnly: true }).catch(() => null),
       ]
       if (!isHistoryPage) {
-        requests.push(getMyWorkbenchApi())
+        requests.push(getMyWorkbenchApi({ force: forceWorkbench }))
       }
 
       const [typeResult, demandResult, dictResult, benchResult] = await Promise.all(requests)
@@ -1362,6 +1372,8 @@ function WorkLogs({ mode = 'dashboard' }) {
   useEffect(() => {
     if (!dailyEntryModalOpen || !operatingLog) return
     const isDetailEdit = dailyEntryModalMode === 'detail'
+    const todayEntryDescription = String(operatingLog?.today_entry_description || '').trim()
+    const defaultTodayDescription = todayEntryDescription || String(operatingLog?.description || '').trim()
     const defaultEntryDate = isDetailEdit
       ? String(operatingLog?.entry_date || '').trim() || getTodayDateString()
       : getTodayDateString()
@@ -1379,7 +1391,9 @@ function WorkLogs({ mode = 'dashboard' }) {
     dailyEntryForm.setFieldsValue({
       entry_date: defaultEntryDate,
       actual_hours: defaultActualHours,
-      description: isDetailEdit ? String(operatingLog?.detail_entry_description || '') : '',
+      description: isDetailEdit
+        ? String(operatingLog?.detail_entry_description || '')
+        : defaultTodayDescription,
     })
   }, [dailyEntryForm, dailyEntryModalMode, dailyEntryModalOpen, operatingLog])
 
@@ -1388,7 +1402,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       await Promise.all([loadBase(), loadLogs()])
       return
     }
-    await loadBase()
+    await loadBase({ forceWorkbench: true })
   }, [isHistoryPage, loadBase, loadLogs])
 
   const handleRefresh = async () => {
@@ -1472,6 +1486,8 @@ function WorkLogs({ mode = 'dashboard' }) {
         personal_estimate_hours: 1,
         self_task_difficulty_code: DEFAULT_SELF_TASK_DIFFICULTY_CODE,
       })
+      setActiveItemKeyword('')
+      setActiveItemStatusFilter('ALL')
       setIsQuickCompletionDateTouched(false)
       await reloadCurrentPageData()
     } catch (error) {
@@ -1506,8 +1522,27 @@ function WorkLogs({ mode = 'dashboard' }) {
     setEditingLog(null)
   }
 
-  const openDailyEntryModal = (record) => {
-    setOperatingLog(record)
+  const openDailyEntryModal = async (record) => {
+    if (!record?.id) return
+    let nextRecord = record
+    try {
+      const today = getTodayDateString()
+      const result = await getLogDailyEntriesApi(record.id, {
+        start_date: today,
+        end_date: today,
+      })
+      if (result?.success) {
+        const rows = Array.isArray(result.data) ? result.data : []
+        const latestTodayEntry = rows[0] || null
+        nextRecord = {
+          ...record,
+          today_entry_description: String(latestTodayEntry?.description || '').trim(),
+        }
+      }
+    } catch {
+      // 回填失败时不阻塞弹窗打开，继续使用当前列表数据
+    }
+    setOperatingLog(nextRecord)
     setDailyEntryModalMode('today')
     setDailyEntryModalOpen(true)
   }
@@ -1906,6 +1941,13 @@ function WorkLogs({ mode = 'dashboard' }) {
       width: 140,
     },
     {
+      title: '个人难度评估',
+      dataIndex: 'self_task_difficulty_name',
+      key: 'self_task_difficulty_name',
+      width: 140,
+      render: (_, record) => getSelfTaskDifficultyDisplay(record) || '-',
+    },
+    {
       title: '指派人',
       dataIndex: 'assigned_by_name',
       key: 'assigned_by_name',
@@ -2033,11 +2075,10 @@ function WorkLogs({ mode = 'dashboard' }) {
         const rows = Array.isArray(value) ? value : []
         if (rows.length === 0) return <Text type="secondary">-</Text>
         const merged = rows
-          .map((item) => {
-            const desc = String(item?.description || '').trim()
-            return desc ? `${toNumber(item?.actual_hours, 0).toFixed(1)}h ${desc}` : `${toNumber(item?.actual_hours, 0).toFixed(1)}h`
-          })
+          .map((item) => String(item?.description || '').trim())
+          .filter(Boolean)
           .join('；')
+        if (!merged) return <Text type="secondary">无说明</Text>
 
         if (Array.from(merged).length <= 30) return merged
         return (
@@ -2663,6 +2704,15 @@ function WorkLogs({ mode = 'dashboard' }) {
                                       return <Tag color={meta.color}>{meta.label}</Tag>
                                     })()}
                                     <Tag color="geekblue">{item.item_type_name || '事项'}</Tag>
+                                    {(() => {
+                                      const difficultyLabel = getSelfTaskDifficultyDisplay(item)
+                                      if (!difficultyLabel) return null
+                                      return (
+                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                          个人难度：{difficultyLabel}
+                                        </Text>
+                                      )
+                                    })()}
                                     {item.task_source === 'WORKFLOW_AUTO' && followupNodeLabel ? (
                                       <Tag color="cyan">{followupNodeLabel}</Tag>
                                     ) : null}
@@ -3622,8 +3672,8 @@ function WorkLogs({ mode = 'dashboard' }) {
           >
             <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item label="工作描述" name="description">
-            <Input.TextArea rows={3} maxLength={2000} placeholder="可填写今天具体做了什么（选填）" />
+          <Form.Item label="今日投入简述" name="description">
+            <Input.TextArea rows={3} maxLength={2000} placeholder="可填写今日投入简述（选填）" />
           </Form.Item>
         </Form>
       </Modal>

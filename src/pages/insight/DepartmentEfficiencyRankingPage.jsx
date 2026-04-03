@@ -1,8 +1,5 @@
 import {
-  ArrowDownOutlined,
-  ArrowUpOutlined,
   DownloadOutlined,
-  MinusOutlined,
   QuestionCircleOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
@@ -33,6 +30,7 @@ import { formatBeijingDate } from '../../utils/datetime'
 
 const { RangePicker } = DatePicker
 const { Text } = Typography
+const ALL_DEPARTMENTS_VALUE = '__ALL__'
 
 function toNumber(value, fallback = 0) {
   const num = Number(value)
@@ -63,7 +61,7 @@ function getDefaultCustomRange() {
 }
 
 function buildCsvContent(rows = []) {
-  const headers = ['排名', '员工姓名', '职级', 'Owner预估总工时(h)', '个人预估总工时(h)', '实际总工时(h)', '净效率值', '趋势', '最近填报日期']
+  const headers = ['排名', '员工姓名', '职级', 'Owner预估总工时(h)', '个人预估总工时(h)', '实际总工时(h)', '净效率值', '最近填报日期']
   const csvRows = rows.map((row) => [
     row.rank,
     row.username || '-',
@@ -72,7 +70,6 @@ function buildCsvContent(rows = []) {
     toNumber(row.total_personal_estimate_hours, 0).toFixed(1),
     toNumber(row.total_actual_hours, 0).toFixed(1),
     row.net_efficiency_value === null || row.net_efficiency_value === undefined ? '-' : row.net_efficiency_value,
-    row.trend_direction === 'UP' ? '上升' : row.trend_direction === 'DOWN' ? '下降' : '持平',
     row.last_log_date || '-',
   ])
 
@@ -111,7 +108,7 @@ function DepartmentEfficiencyRankingPage() {
   const [filterLoading, setFilterLoading] = useState(false)
   const [periodType, setPeriodType] = useState('custom')
   const [dateRange, setDateRange] = useState(getDefaultCustomRange)
-  const [departmentId, setDepartmentId] = useState()
+  const [departmentId, setDepartmentId] = useState(ALL_DEPARTMENTS_VALUE)
   const [keyword, setKeyword] = useState('')
   const [sortOrder, setSortOrder] = useState('desc')
   const [filters, setFilters] = useState({ departments: [] })
@@ -136,10 +133,21 @@ function DepartmentEfficiencyRankingPage() {
       value: item.id,
       label: item.name,
     }))
-    if (canViewAllDepartments) return baseOptions
-    const managedSet = new Set(managedDepartmentIds)
-    return baseOptions.filter((item) => managedSet.has(Number(item.value)))
+    const visibleOptions = canViewAllDepartments
+      ? baseOptions
+      : (() => {
+          const managedSet = new Set(managedDepartmentIds)
+          return baseOptions.filter((item) => managedSet.has(Number(item.value)))
+        })()
+    if (visibleOptions.length === 0) return []
+    return [{ value: ALL_DEPARTMENTS_VALUE, label: '全部' }, ...visibleOptions]
   }, [canViewAllDepartments, filters.departments, managedDepartmentIds])
+
+  const selectedDepartmentId = useMemo(() => {
+    const id = Number(departmentId)
+    return Number.isInteger(id) && id > 0 ? id : null
+  }, [departmentId])
+  const isAllDepartmentsSelected = departmentId === ALL_DEPARTMENTS_VALUE
 
   const loadFilters = useCallback(async () => {
     setFilterLoading(true)
@@ -162,22 +170,23 @@ function DepartmentEfficiencyRankingPage() {
   }, [loadFilters])
 
   useEffect(() => {
-    if (departmentId) return
-    if (departmentOptions.length === 1) {
-      setDepartmentId(departmentOptions[0].value)
+    if (departmentId === ALL_DEPARTMENTS_VALUE || selectedDepartmentId) return
+    if (departmentOptions.length === 0) return
+    if (departmentOptions.some((item) => item.value === ALL_DEPARTMENTS_VALUE)) {
+      setDepartmentId(ALL_DEPARTMENTS_VALUE)
       return
     }
-    if (!canViewAllDepartments && departmentOptions.length > 0) {
+    if (!canViewAllDepartments) {
       setDepartmentId(departmentOptions[0].value)
     }
-  }, [canViewAllDepartments, departmentId, departmentOptions])
+  }, [canViewAllDepartments, departmentId, departmentOptions, selectedDepartmentId])
 
   const loadData = useCallback(async () => {
-    if (!departmentId) return
+    if (!isAllDepartmentsSelected && !selectedDepartmentId) return
     setLoading(true)
     try {
       const result = await getDepartmentEfficiencyRankingApi({
-        department_id: departmentId,
+        department_id: selectedDepartmentId || undefined,
         start_date: dateRange?.[0]?.format('YYYY-MM-DD'),
         end_date: dateRange?.[1]?.format('YYYY-MM-DD'),
         keyword: String(keyword || '').trim() || undefined,
@@ -196,12 +205,12 @@ function DepartmentEfficiencyRankingPage() {
     } finally {
       setLoading(false)
     }
-  }, [dateRange, departmentId, keyword, sortOrder])
+  }, [dateRange, isAllDepartmentsSelected, keyword, selectedDepartmentId, sortOrder])
 
   useEffect(() => {
-    if (!departmentId) return
+    if (!isAllDepartmentsSelected && !selectedDepartmentId) return
     loadData()
-  }, [departmentId, loadData])
+  }, [isAllDepartmentsSelected, selectedDepartmentId, loadData])
 
   const handlePeriodChange = (value) => {
     setPeriodType(value)
@@ -239,11 +248,11 @@ function DepartmentEfficiencyRankingPage() {
   }
 
   const goDepartmentDetail = () => {
-    if (!departmentId) return
+    if (!selectedDepartmentId) return
     const params = new URLSearchParams()
     if (dateRange?.[0]) params.set('start_date', dateRange[0].format('YYYY-MM-DD'))
     if (dateRange?.[1]) params.set('end_date', dateRange[1].format('YYYY-MM-DD'))
-    navigate(`/efficiency/department/${departmentId}/detail?${params.toString()}`)
+    navigate(`/efficiency/department/${selectedDepartmentId}/detail?${params.toString()}`)
   }
 
   const summary = data.summary || {}
@@ -345,36 +354,6 @@ function DepartmentEfficiencyRankingPage() {
         value === null || value === undefined ? <Text type="secondary">-</Text> : <Text strong>{formatNetEfficiencyValue(value)}</Text>,
     },
     {
-      title: '趋势',
-      key: 'trend',
-      width: 140,
-      render: (_, row) => {
-        const delta = toNumber(row.trend_delta_actual_hours, 0).toFixed(1)
-        if (row.trend_direction === 'UP') {
-          return (
-            <Space size={4}>
-              <ArrowUpOutlined style={{ color: '#cf1322' }} />
-              <Text style={{ color: '#cf1322' }}>+{delta}h</Text>
-            </Space>
-          )
-        }
-        if (row.trend_direction === 'DOWN') {
-          return (
-            <Space size={4}>
-              <ArrowDownOutlined style={{ color: '#1677ff' }} />
-              <Text style={{ color: '#1677ff' }}>{delta}h</Text>
-            </Space>
-          )
-        }
-        return (
-          <Space size={4}>
-            <MinusOutlined style={{ color: '#98a2b3' }} />
-            <Text type="secondary">持平</Text>
-          </Space>
-        )
-      },
-    },
-    {
       title: '最近填报',
       dataIndex: 'last_log_date',
       key: 'last_log_date',
@@ -401,7 +380,7 @@ function DepartmentEfficiencyRankingPage() {
         style={{ marginBottom: 16 }}
         extra={
           <Space>
-            <Button type="primary" ghost onClick={goDepartmentDetail} disabled={!departmentId}>
+            <Button type="primary" ghost onClick={goDepartmentDetail} disabled={!selectedDepartmentId}>
               查看部门详情
             </Button>
             <Button icon={<ReloadOutlined />} loading={loading} onClick={loadData}>
@@ -457,7 +436,7 @@ function DepartmentEfficiencyRankingPage() {
               placeholder="请选择部门"
               options={departmentOptions}
               value={departmentId}
-              onChange={setDepartmentId}
+              onChange={(value) => setDepartmentId(value || ALL_DEPARTMENTS_VALUE)}
             />
             <Text type="secondary">
               当前周期：{data.filters?.start_date || '-'} ~ {data.filters?.end_date || '-'}
@@ -469,7 +448,7 @@ function DepartmentEfficiencyRankingPage() {
         </div>
       </Card>
 
-      {!departmentId ? (
+      {!isAllDepartmentsSelected && !selectedDepartmentId ? (
         <Card variant="borderless">
           <Empty description="请先选择部门后查看排行数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         </Card>

@@ -68,6 +68,8 @@ function getSearchText(item) {
     item?.assigned_by_name,
     item?.phase_name,
     item?.phase_key,
+    item?.self_task_difficulty_name,
+    item?.self_task_difficulty_code,
     item?.task_difficulty_name,
     item?.task_difficulty_code,
     item?.task_source,
@@ -684,6 +686,18 @@ function OwnerWorkbench() {
           <Tag color="processing">{row.task_difficulty_name || row.task_difficulty_code}</Tag>
         ) : (
           <Text type="secondary">未评估</Text>
+        ),
+    },
+    {
+      title: '个人评估难度',
+      dataIndex: 'self_task_difficulty_name',
+      key: 'self_task_difficulty_name',
+      width: 120,
+      render: (_, row) =>
+        row?.self_task_difficulty_name || row?.self_task_difficulty_code ? (
+          <Tag color="cyan">{row.self_task_difficulty_name || row.self_task_difficulty_code}</Tag>
+        ) : (
+          <Text type="secondary">-</Text>
         ),
     },
     {

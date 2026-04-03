@@ -14,6 +14,7 @@ const AdminLayout = lazy(() => import('./layouts/AdminLayout'))
 const Users = lazy(() => import('./pages/system/UsersPage'))
 const Departments = lazy(() => import('./pages/system/DepartmentsPage'))
 const UserDepartments = lazy(() => import('./pages/system/UserDepartmentsPage'))
+const AgentConfig = lazy(() => import('./pages/system/AgentConfigPage'))
 const Options = lazy(() => import('./pages/system/OptionsPage'))
 const DemandInsightBoard = lazy(() => import('./pages/insight/DemandInsightBoardPage'))
 const EfficiencyFactorSettings = lazy(() => import('./pages/insight/EfficiencyFactorSettingsPage'))
@@ -27,6 +28,7 @@ const ProjectTemplateDetail = lazy(() => import('./pages/project/ProjectTemplate
 const NotificationConfig = lazy(() => import('./pages/project/NotificationConfigPage'))
 const NotificationRules = lazy(() => import('./pages/notification/NotificationRulesPage'))
 const WorkLogs = lazy(() => import('./pages/workbench/WorkLogsPage'))
+const MyDemands = lazy(() => import('./pages/workbench/MyDemandsPage'))
 const MyAssignedItems = lazy(() => import('./pages/workbench/MyAssignedItemsPage'))
 const WorkLogHistory = lazy(() => import('./pages/workbench/WorkLogHistoryPage'))
 const MorningStandupBoard = lazy(() => import('./pages/workbench/MorningStandupPage'))
@@ -43,6 +45,7 @@ const Register = lazy(() => import('./pages/auth/RegisterPage'))
 
 const PAGE_COMPONENTS = {
   departments: Departments,
+  agentConfig: AgentConfig,
   dictCenter: DictCenter,
   login: Login,
   menuVisibility: MenuVisibility,
@@ -67,6 +70,7 @@ const PAGE_COMPONENTS = {
   rolePermissions: RolePermissions,
   workDemands: WorkDemands,
   workLogs: WorkLogs,
+  myDemands: MyDemands,
   myAssignedItems: MyAssignedItems,
   workLogHistory: WorkLogHistory,
   userDepartments: UserDepartments,
