@@ -1,4 +1,4 @@
-﻿import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+﻿import { CopyOutlined, FileTextOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import {
   Button,
   Card,
@@ -13,6 +13,7 @@ import {
   Statistic,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd'
@@ -54,6 +55,29 @@ function getDefaultDateRange() {
   return [dayjs().add(-30, 'day'), dayjs()]
 }
 
+function formatRate(value) {
+  return `${toNumber(value, 0).toFixed(1)}%`
+}
+
+function buildTopMembersText(rows = [], limit = 5, order = 'desc') {
+  const source = Array.isArray(rows) ? rows : []
+  const normalized = [...source].sort((a, b) => {
+    const aVal = toNumber(a?.avg_saturation_rate, 0)
+    const bVal = toNumber(b?.avg_saturation_rate, 0)
+    return order === 'asc' ? aVal - bVal : bVal - aVal
+  })
+  const picked = normalized.slice(0, limit)
+  if (picked.length === 0) return '无'
+  return picked
+    .map((item, index) => {
+      const username = String(item?.username || `成员#${item?.user_id || '-'}`).trim()
+      const saturation = formatRate(item?.avg_saturation_rate)
+      const actualHours = toNumber(item?.total_actual_hours, 0).toFixed(1)
+      return `${index + 1}. ${username}｜饱和度 ${saturation}｜实际 ${actualHours}h`
+    })
+    .join('\n')
+}
+
 function MemberRhythmBoard() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -73,6 +97,7 @@ function MemberRhythmBoard() {
   const [filterLoading, setFilterLoading] = useState(false)
   const [queryReady, setQueryReady] = useState(false)
   const [metricModalOpen, setMetricModalOpen] = useState(false)
+  const [weeklyReportModalOpen, setWeeklyReportModalOpen] = useState(false)
 
   const [keyword, setKeyword] = useState('')
   const [departmentId, setDepartmentId] = useState()
@@ -216,7 +241,10 @@ function MemberRhythmBoard() {
     window.open(`/efficiency/member/${targetMemberUserId}/detail?${params.toString()}`, '_blank', 'noopener,noreferrer')
   }
 
-  const summary = data.summary || {}
+  const summary = useMemo(
+    () => (data.summary && typeof data.summary === 'object' ? data.summary : {}),
+    [data.summary],
+  )
   const memberList = useMemo(() => (Array.isArray(data.member_list) ? data.member_list : []), [data.member_list])
 
   const overloadTop10 = useMemo(
@@ -335,6 +363,135 @@ function MemberRhythmBoard() {
       ),
     [filters.business_groups],
   )
+
+  const weeklyReportText = useMemo(() => {
+    const startDateText = dateRange?.[0]?.format('YYYY-MM-DD') || '-'
+    const endDateText = dateRange?.[1]?.format('YYYY-MM-DD') || '-'
+    const departmentLabel = departmentId ? departmentLabelById.get(Number(departmentId)) || `部门#${departmentId}` : '全部'
+    const ownerLabel = ownerUserId ? ownerLabelById.get(Number(ownerUserId)) || `用户#${ownerUserId}` : '全部'
+    const memberLabel = memberUserId ? ownerLabelById.get(Number(memberUserId)) || `用户#${memberUserId}` : '全部'
+    const businessGroupLabel = businessGroupCode
+      ? businessGroupLabelByCode.get(String(businessGroupCode)) || String(businessGroupCode)
+      : '全部'
+    const keywordText = String(keyword || '').trim() || '无'
+    const reportDateTime = dayjs().format('YYYY-MM-DD HH:mm:ss')
+    const memberCount = toNumber(summary.member_count, 0)
+    const filledDays = toNumber(summary.total_filled_days, 0)
+    const avgSaturation = formatRate(summary.avg_saturation_rate)
+    const actualHours = toNumber(summary.total_actual_hours, 0).toFixed(1)
+    const ownerEstimateHours = toNumber(summary.total_owner_estimate_hours, 0).toFixed(1)
+    const personalEstimateHours = toNumber(summary.total_personal_estimate_hours, 0).toFixed(1)
+    const avgActualPerDay = toNumber(summary.avg_actual_hours_per_day, 0).toFixed(1)
+    const overloadMemberCount = toNumber(summary.overload_member_count, 0)
+    const overloadDayCount = toNumber(summary.overload_day_count, 0)
+    const lowLoadMemberCount = toNumber(summary.low_load_member_count, 0)
+    const lowLoadDayCount = toNumber(summary.low_load_day_count, 0)
+
+    const topActualMembers = [...memberList]
+      .sort((a, b) => toNumber(b?.total_actual_hours, 0) - toNumber(a?.total_actual_hours, 0))
+      .slice(0, 10)
+
+    const topActualMembersText =
+      topActualMembers.length > 0
+        ? topActualMembers
+            .map((item, index) => {
+              const username = String(item?.username || `成员#${item?.user_id || '-'}`).trim()
+              const saturation = formatRate(item?.avg_saturation_rate)
+              const memberActual = toNumber(item?.total_actual_hours, 0).toFixed(1)
+              const memberFilledDays = toNumber(item?.filled_days, 0)
+              return `${index + 1}. ${username}｜实际 ${memberActual}h｜饱和度 ${saturation}｜填报 ${memberFilledDays} 天`
+            })
+            .join('\n')
+        : '无'
+
+    return [
+      `【成员工作节奏周报】${startDateText} ~ ${endDateText}`,
+      `生成时间：${reportDateTime}`,
+      '',
+      '【筛选范围】',
+      `- 部门：${departmentLabel}`,
+      `- 需求负责人：${ownerLabel}`,
+      `- 成员：${memberLabel}`,
+      `- 业务组：${businessGroupLabel}`,
+      `- 关键词：${keywordText}`,
+      '',
+      '【一、整体概览】',
+      `- 成员数：${memberCount}`,
+      `- 填报天数总计：${filledDays}`,
+      `- 负责人预估总用时：${ownerEstimateHours}h`,
+      `- 个人预估总用时：${personalEstimateHours}h`,
+      `- 个人实际总用时：${actualHours}h`,
+      `- 日均实际用时：${avgActualPerDay}h`,
+      `- 平均饱和度：${avgSaturation}`,
+      '',
+      '【二、异常关注】',
+      `- 超负荷成员：${overloadMemberCount} 人（超负荷天数 ${overloadDayCount}）`,
+      `- 低负荷成员：${lowLoadMemberCount} 人（低负荷天数 ${lowLoadDayCount}）`,
+      '- 过载TOP5：',
+      buildTopMembersText(overloadTop10, 5, 'desc'),
+      '- 低载TOP5：',
+      buildTopMembersText(lowLoadTop10, 5, 'asc'),
+      '',
+      '【三、成员投入TOP10（按实际工时）】',
+      topActualMembersText,
+      '',
+      '【四、管理建议（自动）】',
+      overloadMemberCount > 0
+        ? '- 对过载成员优先检查在途需求与截止日期，必要时做任务分担。'
+        : '- 当前暂无明显过载成员，可保持当前分配策略。',
+      lowLoadMemberCount > 0
+        ? '- 对低载成员可补充可并行事项，提升本周资源利用率。'
+        : '- 当前暂无明显低载成员，整体负载较均衡。',
+      '- 建议结合“成员工作节奏明细”下钻到按日数据，确认异常是否持续出现。',
+      '',
+      '（口径：按筛选时间内 work_logs.log_date 统计，饱和度=个人实际/8.5h）',
+    ].join('\n')
+  }, [
+    businessGroupCode,
+    businessGroupLabelByCode,
+    dateRange,
+    departmentId,
+    departmentLabelById,
+    keyword,
+    lowLoadTop10,
+    memberList,
+    memberUserId,
+    overloadTop10,
+    ownerLabelById,
+    ownerUserId,
+    summary,
+  ])
+
+  const handleCopyWeeklyReport = useCallback(async () => {
+    if (!weeklyReportText) {
+      message.warning('暂无可复制的周报内容')
+      return
+    }
+    if (navigator?.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(weeklyReportText)
+        message.success('周报已复制')
+        return
+      } catch {
+        // 降级到 execCommand
+      }
+    }
+    const textarea = document.createElement('textarea')
+    textarea.value = weeklyReportText
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+    try {
+      document.execCommand('copy')
+      message.success('周报已复制')
+    } catch {
+      message.error('复制失败，请手动复制')
+    } finally {
+      document.body.removeChild(textarea)
+    }
+  }, [weeklyReportText])
 
   const activeFilterTags = useMemo(() => {
     const tags = []
@@ -455,6 +612,8 @@ function MemberRhythmBoard() {
       dataIndex: 'total_actual_hours',
       key: 'total_actual_hours',
       width: 120,
+      sorter: (a, b) => toNumber(a?.total_actual_hours, 0) - toNumber(b?.total_actual_hours, 0),
+      sortDirections: ['descend', 'ascend'],
       render: (value) => toNumber(value, 0).toFixed(1),
     },
     {
@@ -462,6 +621,8 @@ function MemberRhythmBoard() {
       dataIndex: 'avg_actual_hours_per_day',
       key: 'avg_actual_hours_per_day',
       width: 120,
+      sorter: (a, b) => toNumber(a?.avg_actual_hours_per_day, 0) - toNumber(b?.avg_actual_hours_per_day, 0),
+      sortDirections: ['descend', 'ascend'],
       render: (value) => toNumber(value, 0).toFixed(1),
     },
     {
@@ -469,6 +630,8 @@ function MemberRhythmBoard() {
       dataIndex: 'avg_saturation_rate',
       key: 'avg_saturation_rate',
       width: 110,
+      sorter: (a, b) => toNumber(a?.avg_saturation_rate, 0) - toNumber(b?.avg_saturation_rate, 0),
+      sortDirections: ['descend', 'ascend'],
       render: (value) => getSaturationTag(value),
     },
     {
@@ -676,6 +839,15 @@ function MemberRhythmBoard() {
             <Button icon={<QuestionCircleOutlined />} onClick={() => setMetricModalOpen(true)}>
               口径说明
             </Button>
+            <Tooltip title="按当前筛选条件生成本周/当前周期周报文案">
+              <Button
+                icon={<FileTextOutlined />}
+                onClick={() => setWeeklyReportModalOpen(true)}
+                disabled={memberList.length === 0}
+              >
+                生成周报
+              </Button>
+            </Tooltip>
             <Button icon={<ReloadOutlined />} loading={loading} onClick={loadData}>
               刷新
             </Button>
@@ -862,6 +1034,28 @@ function MemberRhythmBoard() {
           <Text>4. 可从“需求数”直接联动到需求投入看板，继续追踪投入分布。</Text>
           <Text>5. 三类用时分别为：负责人预估、个人预估、个人实际。</Text>
         </Space>
+      </Modal>
+
+      <Modal
+        open={weeklyReportModalOpen}
+        title="成员工作节奏周报"
+        width={880}
+        onCancel={() => setWeeklyReportModalOpen(false)}
+        footer={[
+          <Button key="copy" icon={<CopyOutlined />} onClick={handleCopyWeeklyReport}>
+            复制周报
+          </Button>,
+          <Button key="close" type="primary" onClick={() => setWeeklyReportModalOpen(false)}>
+            关闭
+          </Button>,
+        ]}
+      >
+        <Input.TextArea
+          value={weeklyReportText}
+          readOnly
+          autoSize={{ minRows: 20, maxRows: 28 }}
+          style={{ fontFamily: 'SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
+        />
       </Modal>
     </div>
   )

@@ -3661,9 +3661,9 @@ function WorkLogs({ mode = 'dashboard' }) {
             <Input type="date" />
           </Form.Item>
           <Form.Item
-            label="实际用时(h)"
+            label="今日实际投入(h)"
             name="actual_hours"
-            rules={[{ required: true, message: '请输入实际用时' }]}
+            rules={[{ required: true, message: '请输入今日实际投入' }]}
             extra={
               dailyEntryModalIsDetailEdit
                 ? '可直接调整投入日期与工时；若改到其他日期，周报会按新日期重新归属'

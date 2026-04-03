@@ -142,6 +142,38 @@ const DETAIL_LOG_FILTER_OPTIONS = [
   { label: '未完成', value: 'PENDING' },
   { label: '已逾期', value: 'OVERDUE' },
 ]
+const DEMAND_GROUP_COLLAPSE_STATE_KEY_PREFIX = 'work_demands_group_collapsed_state'
+
+function readCollapsedGroupKeys(storageKey) {
+  if (typeof window === 'undefined' || !storageKey) return []
+  try {
+    const raw = window.sessionStorage.getItem(storageKey)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+function writeCollapsedGroupKeys(storageKey, keys = []) {
+  if (typeof window === 'undefined' || !storageKey) return
+  try {
+    const normalized = Array.from(
+      new Set(
+        (Array.isArray(keys) ? keys : [])
+          .map((item) => String(item || '').trim())
+          .filter(Boolean),
+      ),
+    )
+    window.sessionStorage.setItem(storageKey, JSON.stringify(normalized))
+  } catch {
+    // 忽略存储失败，避免影响主流程
+  }
+}
 
 function getStatusTagColor(status) {
   if (status === 'DONE') return 'success'
@@ -345,6 +377,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const isDetailPage = Boolean(routeDemandId)
   const isMyDemandsPage = pageMode === 'my'
   const listBasePath = isMyDemandsPage ? '/my-demands' : '/work-demands'
+  const groupCollapseStorageKey = `${DEMAND_GROUP_COLLAPSE_STATE_KEY_PREFIX}:${listBasePath}`
   const [myDemandTabKey, setMyDemandTabKey] = useState('owned')
   const access = useMemo(() => getAccessSnapshot(), [])
   const canUseDemandPoolAnalysis = Boolean(access?.is_super_admin)
@@ -443,6 +476,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [workflowQuickTaskSubmitting, setWorkflowQuickTaskSubmitting] = useState(false)
   const [detailStatus, setDetailStatus] = useState('')
   const [detailTabKey, setDetailTabKey] = useState('basic')
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState(() => readCollapsedGroupKeys(groupCollapseStorageKey))
 
   const detailLogStats = useMemo(() => {
     const total = detailLogs.length
@@ -763,6 +797,34 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN')
     })
   }, [demands])
+
+  const groupedDemandKeys = useMemo(
+    () =>
+      groupedDemands
+        .filter((item) => Boolean(item?.__group))
+        .map((item) => String(item.id || '').trim())
+        .filter(Boolean),
+    [groupedDemands],
+  )
+
+  useEffect(() => {
+    const availableSet = new Set(groupedDemandKeys)
+    setCollapsedGroupKeys((prev) => {
+      const normalizedPrev = Array.isArray(prev) ? prev : []
+      const cleaned = normalizedPrev.filter((key) => availableSet.has(String(key || '').trim()))
+      if (cleaned.length === normalizedPrev.length) return normalizedPrev
+      return cleaned
+    })
+  }, [groupedDemandKeys])
+
+  useEffect(() => {
+    writeCollapsedGroupKeys(groupCollapseStorageKey, collapsedGroupKeys)
+  }, [groupCollapseStorageKey, collapsedGroupKeys])
+
+  const expandedGroupKeys = useMemo(() => {
+    const collapsedSet = new Set((collapsedGroupKeys || []).map((item) => String(item || '').trim()))
+    return groupedDemandKeys.filter((key) => !collapsedSet.has(key))
+  }, [collapsedGroupKeys, groupedDemandKeys])
 
   const templateByIdMap = useMemo(() => {
     const map = new Map()
@@ -2505,7 +2567,19 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               loading={loading}
               columns={demandColumns}
               dataSource={groupedDemands}
-              defaultExpandAllRows
+              expandable={{
+                rowExpandable: (record) => Boolean(record?.__group),
+                expandedRowKeys: expandedGroupKeys,
+                onExpandedRowsChange: (nextExpandedRows) => {
+                  const expandedSet = new Set(
+                    (Array.isArray(nextExpandedRows) ? nextExpandedRows : [])
+                      .map((item) => String(item || '').trim())
+                      .filter(Boolean),
+                  )
+                  const nextCollapsed = groupedDemandKeys.filter((key) => !expandedSet.has(key))
+                  setCollapsedGroupKeys(nextCollapsed)
+                },
+              }}
               indentSize={18}
               scroll={{ x: compactView ? 1820 : 2380 }}
               pagination={false}
