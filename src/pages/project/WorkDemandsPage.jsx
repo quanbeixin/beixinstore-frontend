@@ -359,6 +359,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const canViewTeamLogs = hasPermission('worklog.view.team')
   const canViewWorkflow = hasPermission('demand.workflow.view') || hasPermission('demand.view')
   const canManageWorkflow = hasPermission('demand.workflow.manage') || hasPermission('demand.manage')
+  const canViewDemandRelatedLogs = canViewSelfLogs || canViewTeamLogs || canManageWorkflow
   const canForceReplaceWorkflow = canManageWorkflow && hasRole('SUPER_ADMIN')
   const currentUser = getCurrentUser()
 
@@ -1283,7 +1284,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
   const fetchDemandRelatedLogs = useCallback(
     async (demandId) => {
-      if (!demandId || !canViewSelfLogs) {
+      if (!demandId || !canViewDemandRelatedLogs) {
         setDetailLogs([])
         return
       }
@@ -1313,7 +1314,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         setDetailLogsLoading(false)
       }
     },
-    [canManageWorkflow, canViewSelfLogs, canViewTeamLogs],
+    [canManageWorkflow, canViewDemandRelatedLogs, canViewTeamLogs],
   )
 
   const loadDemandWorkflow = useCallback(
@@ -3013,7 +3014,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                         dataSource={filteredDetailLogs}
                         pagination={false}
                         locale={{
-                          emptyText: canViewSelfLogs ? '当前筛选下暂无关联事项' : '当前账号无工作记录查看权限',
+                          emptyText: canViewDemandRelatedLogs ? '当前筛选下暂无关联事项' : '当前账号无工作记录查看权限',
                         }}
                         scroll={{ x: 980 }}
                         columns={[

@@ -429,6 +429,14 @@ function getDisplayStatusMeta(record) {
   return getUnifiedStatusMeta(record)
 }
 
+function getSelfTaskDifficultyDisplay(item) {
+  const difficultyName = String(item?.self_task_difficulty_name || '').trim()
+  const difficultyCode = String(item?.self_task_difficulty_code || '').trim().toUpperCase()
+  if (difficultyName) return difficultyName
+  if (difficultyCode) return difficultyCode
+  return ''
+}
+
 function isOverdueDate(value) {
   const date = formatDateOnly(value)
   if (!date || date === '-') return false
@@ -950,11 +958,13 @@ function WorkLogs({ mode = 'dashboard' }) {
         const workflowTodo = demandId ? workflowTodoByDemandId.get(demandId) || null : null
         const workflowNodeName = String(workflowTodo?.node_name || workflowTodo?.task_title || '').trim()
         const followupNodeLabel = isDemandFollowupItem(item) && workflowNodeName ? workflowNodeName : ''
+        const difficultyText = getSelfTaskDifficultyDisplay(item)
         const text = `${item?.item_type_name || ''} ${item?.demand_id || ''} ${item?.phase_name || ''} ${
           item?.description || ''
         } ${item?.assigned_by_name || ''} ${
           item?.task_source || ''
         } ${item?.expected_start_date || ''} ${item?.expected_completion_date || ''} ${followupNodeLabel}`.toLowerCase()
+          + ` ${difficultyText}`.toLowerCase()
         return text.includes(keyword)
       })
       .sort((a, b) => {
@@ -1062,7 +1072,7 @@ function WorkLogs({ mode = 'dashboard' }) {
     ].join('\n')
   }, [weeklyReport, weeklyRange.end_date, weeklyRange.start_date, weeklySummary, weeklyTopItems])
 
-  const loadBase = useCallback(async () => {
+  const loadBase = useCallback(async ({ forceWorkbench = false } = {}) => {
     setLoadingBase(true)
     try {
       const requests = [
@@ -1071,7 +1081,7 @@ function WorkLogs({ mode = 'dashboard' }) {
         getDictItemsApi('task_difficulty', { enabledOnly: true }).catch(() => null),
       ]
       if (!isHistoryPage) {
-        requests.push(getMyWorkbenchApi())
+        requests.push(getMyWorkbenchApi({ force: forceWorkbench }))
       }
 
       const [typeResult, demandResult, dictResult, benchResult] = await Promise.all(requests)
@@ -1392,7 +1402,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       await Promise.all([loadBase(), loadLogs()])
       return
     }
-    await loadBase()
+    await loadBase({ forceWorkbench: true })
   }, [isHistoryPage, loadBase, loadLogs])
 
   const handleRefresh = async () => {
@@ -1476,6 +1486,8 @@ function WorkLogs({ mode = 'dashboard' }) {
         personal_estimate_hours: 1,
         self_task_difficulty_code: DEFAULT_SELF_TASK_DIFFICULTY_CODE,
       })
+      setActiveItemKeyword('')
+      setActiveItemStatusFilter('ALL')
       setIsQuickCompletionDateTouched(false)
       await reloadCurrentPageData()
     } catch (error) {
@@ -1527,7 +1539,7 @@ function WorkLogs({ mode = 'dashboard' }) {
           today_entry_description: String(latestTodayEntry?.description || '').trim(),
         }
       }
-    } catch (error) {
+    } catch {
       // 回填失败时不阻塞弹窗打开，继续使用当前列表数据
     }
     setOperatingLog(nextRecord)
@@ -1927,6 +1939,13 @@ function WorkLogs({ mode = 'dashboard' }) {
       dataIndex: 'item_type_name',
       key: 'item_type_name',
       width: 140,
+    },
+    {
+      title: '个人难度评估',
+      dataIndex: 'self_task_difficulty_name',
+      key: 'self_task_difficulty_name',
+      width: 140,
+      render: (_, record) => getSelfTaskDifficultyDisplay(record) || '-',
     },
     {
       title: '指派人',
@@ -2685,6 +2704,15 @@ function WorkLogs({ mode = 'dashboard' }) {
                                       return <Tag color={meta.color}>{meta.label}</Tag>
                                     })()}
                                     <Tag color="geekblue">{item.item_type_name || '事项'}</Tag>
+                                    {(() => {
+                                      const difficultyLabel = getSelfTaskDifficultyDisplay(item)
+                                      if (!difficultyLabel) return null
+                                      return (
+                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                          个人难度：{difficultyLabel}
+                                        </Text>
+                                      )
+                                    })()}
                                     {item.task_source === 'WORKFLOW_AUTO' && followupNodeLabel ? (
                                       <Tag color="cyan">{followupNodeLabel}</Tag>
                                     ) : null}
