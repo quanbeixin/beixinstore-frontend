@@ -1,18 +1,9 @@
 import {
-  BoldOutlined,
   DeleteOutlined,
   EditOutlined,
-  EllipsisOutlined,
-  FontColorsOutlined,
-  ItalicOutlined,
-  OrderedListOutlined,
   PlusOutlined,
-  RedoOutlined,
   ReloadOutlined,
   SendOutlined,
-  StrikethroughOutlined,
-  UndoOutlined,
-  UnorderedListOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -33,7 +24,7 @@ import {
   Typography,
   message,
 } from 'antd'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getDictItemsApi } from '../../api/configDict'
 import { getOptionsApi } from '../../api/options'
 import { getUsersApi } from '../../api/users'
@@ -92,6 +83,12 @@ const CONDITION_FIELD_OPTIONS_BY_EVENT = {
     { label: '任务ID', value: 'task_id' },
     { label: '完成人ID', value: 'operator_id' },
     { label: '任务状态', value: 'status' },
+    { label: '业务线ID', value: 'business_line_id' },
+  ],
+  bug_create: [
+    { label: '缺陷ID', value: 'bug_id' },
+    { label: '严重级别', value: 'severity' },
+    { label: '优先级', value: 'priority' },
     { label: '业务线ID', value: 'business_line_id' },
   ],
   bug_assign: [
@@ -165,6 +162,7 @@ const EVENT_TYPE_OPTIONS = [
   { label: '任务截止提醒', value: 'task_deadline' },
   { label: '任务完成', value: 'task_complete' },
   { label: '周报发送', value: 'weekly_report_send' },
+  { label: 'Bug创建', value: 'bug_create' },
   { label: 'Bug指派', value: 'bug_assign' },
   { label: 'Bug状态变更', value: 'bug_status_change' },
   { label: 'Bug已修复', value: 'bug_fixed' },
@@ -184,6 +182,31 @@ const CHANNEL_LABEL_MAP = {
 const RECEIVER_TYPE_LABEL_MAP = {
   user: '用户',
   role: '角色',
+  field: '字段映射',
+}
+
+const RECEIVER_FIELD_LABEL_MAP = {
+  assignee_id: '被指派人',
+  operator_id: '操作人',
+  reporter_id: '提交人',
+  user_id: '成员',
+  owner_user_id: '负责人',
+}
+
+const RECEIVER_FIELD_CANDIDATE_KEYS = new Set(Object.keys(RECEIVER_FIELD_LABEL_MAP))
+
+function getReceiverFieldLabel(fieldKey) {
+  const key = String(fieldKey || '').trim()
+  if (!key) return ''
+  return RECEIVER_FIELD_LABEL_MAP[key] || key
+}
+
+const DEFAULT_RECEIVER_FIELD_BY_EVENT = {
+  bug_assign: 'assignee_id',
+  bug_create: 'assignee_id',
+  bug_status_change: 'assignee_id',
+  bug_fixed: 'assignee_id',
+  bug_reopen: 'assignee_id',
 }
 
 const BASE_VARIABLE_OPTIONS = [
@@ -237,6 +260,16 @@ const EVENT_VARIABLE_OPTIONS_BY_EVENT = {
     { label: '任务状态', value: 'status' },
     { label: '完成人ID', value: 'operator_id' },
     { label: '操作人姓名', value: 'operator_name' },
+  ],
+  bug_create: [
+    { label: '缺陷ID', value: 'bug_id' },
+    { label: '缺陷编号', value: 'bug_no' },
+    { label: '缺陷标题', value: 'bug_title' },
+    { label: '缺陷内容', value: 'bug_content' },
+    { label: '严重级别', value: 'severity' },
+    { label: '优先级', value: 'priority' },
+    { label: '提交人姓名', value: 'reporter_name' },
+    { label: '接收人姓名', value: 'assignee_name' },
   ],
   bug_assign: [
     { label: '缺陷ID', value: 'bug_id' },
@@ -353,389 +386,6 @@ function mentionsTextToStorageText(value) {
   })
 }
 
-function escapeHtml(input) {
-  return String(input || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
-
-function markdownToEditorHtml(value) {
-  const lines = String(value || '').split('\n')
-  let html = ''
-  let inUl = false
-  let inOl = false
-
-  const closeLists = () => {
-    if (inUl) html += '</ul>'
-    if (inOl) html += '</ol>'
-    inUl = false
-    inOl = false
-  }
-
-  const renderInline = (text) =>
-    escapeHtml(text)
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/~~([^~]+)~~/g, '<del>$1</del>')
-      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-
-  lines.forEach((rawLine) => {
-    const line = String(rawLine || '')
-    const ulMatch = line.match(/^\s*-\s+(.+)$/)
-    const olMatch = line.match(/^\s*\d+\.\s+(.+)$/)
-
-    if (ulMatch) {
-      if (inOl) {
-        html += '</ol>'
-        inOl = false
-      }
-      if (!inUl) {
-        html += '<ul style="margin:0 0 8px 20px;padding:0;">'
-        inUl = true
-      }
-      html += `<li>${renderInline(ulMatch[1])}</li>`
-      return
-    }
-
-    if (olMatch) {
-      if (inUl) {
-        html += '</ul>'
-        inUl = false
-      }
-      if (!inOl) {
-        html += '<ol style="margin:0 0 8px 20px;padding:0;">'
-        inOl = true
-      }
-      html += `<li>${renderInline(olMatch[1])}</li>`
-      return
-    }
-
-    closeLists()
-    if (!line.trim()) {
-      html += '<div><br/></div>'
-    } else {
-      html += `<div>${renderInline(line)}</div>`
-    }
-  })
-
-  closeLists()
-  return html || '<div><br/></div>'
-}
-
-function normalizeInlineFromElement(node) {
-  if (!node) return ''
-  if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || ''
-  if (node.nodeType !== Node.ELEMENT_NODE) return ''
-
-  const tagName = (node.tagName || '').toLowerCase()
-  if (tagName === 'br') return '\n'
-
-  const childrenText = Array.from(node.childNodes || []).map((child) => normalizeInlineFromElement(child)).join('')
-
-  if (tagName === 'strong' || tagName === 'b') return `**${childrenText}**`
-  if (tagName === 'em' || tagName === 'i') return `*${childrenText}*`
-  if (tagName === 'del' || tagName === 's' || tagName === 'strike') return `~~${childrenText}~~`
-
-  return childrenText
-}
-
-function editorHtmlToMarkdown(html) {
-  const container = document.createElement('div')
-  container.innerHTML = html || ''
-  const lines = []
-
-  Array.from(container.childNodes || []).forEach((node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = (node.nodeValue || '').trim()
-      if (text) lines.push(text)
-      return
-    }
-
-    if (node.nodeType !== Node.ELEMENT_NODE) return
-    const tagName = (node.tagName || '').toLowerCase()
-
-    if (tagName === 'ul' || tagName === 'ol') {
-      const isOrdered = tagName === 'ol'
-      Array.from(node.querySelectorAll(':scope > li')).forEach((li, index) => {
-        const line = normalizeInlineFromElement(li).replace(/\n/g, ' ').trim()
-        if (!line) return
-        lines.push(`${isOrdered ? `${index + 1}.` : '-'} ${line}`)
-      })
-      return
-    }
-
-    const line = normalizeInlineFromElement(node).replace(/\n/g, '').trim()
-    lines.push(line)
-  })
-
-  return lines.join('\n').replace(/\n{3,}/g, '\n\n').slice(0, 10000)
-}
-
-function getCaretTextOffset(rootEl) {
-  const selection = window.getSelection()
-  if (!selection || selection.rangeCount === 0) return 0
-  const range = selection.getRangeAt(0).cloneRange()
-  range.selectNodeContents(rootEl)
-  range.setEnd(selection.anchorNode, selection.anchorOffset)
-  return range.toString().length
-}
-
-function setCaretAtTextOffset(rootEl, targetOffset) {
-  const selection = window.getSelection()
-  if (!selection) return
-  const range = document.createRange()
-  let offset = Math.max(0, targetOffset)
-  let positioned = false
-
-  const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null)
-  while (walker.nextNode()) {
-    const node = walker.currentNode
-    const length = (node.nodeValue || '').length
-    if (offset <= length) {
-      range.setStart(node, offset)
-      range.collapse(true)
-      positioned = true
-      break
-    }
-    offset -= length
-  }
-
-  if (!positioned) {
-    range.selectNodeContents(rootEl)
-    range.collapse(false)
-  }
-
-  selection.removeAllRanges()
-  selection.addRange(range)
-}
-
-function normalizeEditorListStyle(editorEl) {
-  if (!editorEl) return
-  editorEl.querySelectorAll('ol, ul').forEach((list) => {
-    list.style.margin = '6px 0 10px 24px'
-    list.style.paddingLeft = '14px'
-  })
-}
-
-function RichMentionsEditor({ value, onChange, options, placeholder, maxLength = 300 }) {
-  const wrapperRef = useRef(null)
-  const editorRef = useRef(null)
-  const content = String(value || '')
-  const lastMarkdownRef = useRef(content)
-  const [showMentionMenu, setShowMentionMenu] = useState(false)
-  const [mentionQuery, setMentionQuery] = useState('')
-  const [mentionStart, setMentionStart] = useState(-1)
-  const [caretOffset, setCaretOffset] = useState(0)
-
-  useEffect(() => {
-    const editor = editorRef.current
-    if (!editor) return
-    // Avoid resetting caret while user is typing. Repaint only when value changes externally.
-    if (content === lastMarkdownRef.current) return
-
-    const wasFocused = document.activeElement === editor
-    const cursor = wasFocused ? getCaretTextOffset(editor) : 0
-    editor.innerHTML = markdownToEditorHtml(content)
-    normalizeEditorListStyle(editor)
-    lastMarkdownRef.current = content
-
-    if (wasFocused) {
-      setCaretAtTextOffset(editor, cursor)
-    }
-  }, [content])
-
-  const syncToForm = useCallback(() => {
-    const editor = editorRef.current
-    if (!editor) return
-    normalizeEditorListStyle(editor)
-    const markdown = editorHtmlToMarkdown(editor.innerHTML)
-    lastMarkdownRef.current = markdown
-    onChange?.(markdown.slice(0, maxLength))
-
-    const offset = getCaretTextOffset(editor)
-    setCaretOffset(offset)
-    const prefix = markdown.slice(0, offset)
-    const match = prefix.match(/@([\u4e00-\u9fa5A-Za-z0-9_]*)$/)
-    if (match) {
-      setShowMentionMenu(true)
-      setMentionQuery(match[1] || '')
-      setMentionStart(offset - match[0].length)
-    } else {
-      setShowMentionMenu(false)
-      setMentionQuery('')
-      setMentionStart(-1)
-    }
-  }, [maxLength, onChange])
-
-  const execCommand = useCallback(
-    (command) => {
-      const editor = editorRef.current
-      if (!editor) return
-      editor.focus()
-      document.execCommand(command, false, null)
-      syncToForm()
-    },
-    [syncToForm],
-  )
-
-  const insertMention = useCallback(
-    (label) => {
-      const source = String(value || '')
-      const start = mentionStart >= 0 ? mentionStart : caretOffset
-      const next = `${source.slice(0, start)}@${label} ${source.slice(caretOffset)}`
-      onChange?.(next.slice(0, maxLength))
-      setShowMentionMenu(false)
-      setMentionQuery('')
-      requestAnimationFrame(() => {
-        const editor = editorRef.current
-        if (!editor) return
-        editor.focus()
-        setCaretAtTextOffset(editor, Math.min(start + label.length + 2, next.length))
-      })
-    },
-    [caretOffset, maxLength, mentionStart, onChange, value],
-  )
-
-  const filteredOptions = useMemo(() => {
-    const query = String(mentionQuery || '').trim()
-    if (!query) return options.slice(0, 12)
-    return options.filter((item) => String(item.label || '').includes(query)).slice(0, 12)
-  }, [mentionQuery, options])
-
-  const toolbarButtonStyle = {
-    border: 'none',
-    background: 'transparent',
-    color: '#1f2329',
-  }
-
-  return (
-    <div
-      ref={wrapperRef}
-      style={{
-        border: '1px solid #2f54eb',
-        borderRadius: 10,
-        overflow: 'hidden',
-        background: '#fff',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '8px 10px',
-          borderBottom: '1px solid #e6e8eb',
-          background: '#fff',
-        }}
-      >
-        <Button size="small" type="text" icon={<UndoOutlined />} style={toolbarButtonStyle} onClick={() => execCommand('undo')} />
-        <Button size="small" type="text" icon={<RedoOutlined />} style={toolbarButtonStyle} onClick={() => execCommand('redo')} />
-        <div style={{ width: 1, height: 20, background: '#e6e8eb', margin: '0 4px' }} />
-        <Button size="small" type="text" disabled icon={<FontColorsOutlined />} style={toolbarButtonStyle} />
-        <Button size="small" type="text" icon={<BoldOutlined />} style={toolbarButtonStyle} onClick={() => execCommand('bold')} />
-        <Button size="small" type="text" icon={<ItalicOutlined />} style={toolbarButtonStyle} onClick={() => execCommand('italic')} />
-        <Button
-          size="small"
-          type="text"
-          icon={<StrikethroughOutlined />}
-          style={toolbarButtonStyle}
-          onClick={() => execCommand('strikeThrough')}
-        />
-        <div style={{ width: 1, height: 20, background: '#e6e8eb', margin: '0 4px' }} />
-        <Button
-          size="small"
-          type="text"
-          icon={<OrderedListOutlined />}
-          style={toolbarButtonStyle}
-          onClick={() => execCommand('insertOrderedList')}
-        />
-        <Button
-          size="small"
-          type="text"
-          icon={<UnorderedListOutlined />}
-          style={toolbarButtonStyle}
-          onClick={() => execCommand('insertUnorderedList')}
-        />
-        <Button size="small" type="text" disabled icon={<EllipsisOutlined />} style={toolbarButtonStyle} />
-      </div>
-
-      <div style={{ position: 'relative', padding: '10px 12px 0' }}>
-        {!content ? (
-          <div
-            style={{
-              position: 'absolute',
-              left: 12,
-              top: 14,
-              color: '#b8bfc8',
-              pointerEvents: 'none',
-            }}
-          >
-            {placeholder}
-          </div>
-        ) : null}
-        <div
-          style={{
-            minHeight: 210,
-            border: 'none',
-            outline: 'none',
-            color: '#1f2329',
-            lineHeight: 1.7,
-            wordBreak: 'break-word',
-            whiteSpace: 'pre-wrap',
-          }}
-          contentEditable
-          suppressContentEditableWarning
-          ref={editorRef}
-          onInput={syncToForm}
-          onKeyUp={syncToForm}
-          onClick={syncToForm}
-          data-placeholder={placeholder}
-        />
-
-        {showMentionMenu && filteredOptions.length > 0 ? (
-          <div
-            style={{
-              position: 'absolute',
-              left: 12,
-              bottom: 10,
-              zIndex: 30,
-              maxHeight: 220,
-              overflowY: 'auto',
-              width: 240,
-              background: '#fff',
-              border: '1px solid #d9d9d9',
-              borderRadius: 8,
-              boxShadow: '0 6px 16px rgba(0,0,0,0.12)',
-            }}
-          >
-            {filteredOptions.map((item) => (
-              <div
-                key={item.value}
-                role="button"
-                tabIndex={0}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  insertMention(item.value)
-                }}
-                style={{
-                  padding: '8px 10px',
-                  cursor: 'pointer',
-                }}
-              >
-                {item.label}
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
-
-      <div style={{ textAlign: 'right', color: '#8f959e', fontSize: 12, padding: '2px 12px 10px' }}>
-        {content.length}/{maxLength}
-      </div>
-    </div>
-  )
-}
-
 function parseConditionFromJson(conditionConfigJson) {
   const condition = safeParseJson(conditionConfigJson, null)
   const first = condition?.items?.[0]
@@ -795,6 +445,7 @@ function parseReceiverFromJson(receiverConfigJson) {
   return {
     receiver_roles: roleValues,
     receiver_users: userValues,
+    receiver_field_user_id: String(receiver?.user_id_field || '').trim(),
   }
 }
 
@@ -852,6 +503,20 @@ function buildMockEventData(sceneCode, businessLineId, now) {
       priority: 'P1',
       assignee_name: '张三',
       reporter_name: '李四',
+    }
+  }
+
+  if (sceneCode === 'bug_create') {
+    return {
+      ...base,
+      bug_id: 10000,
+      bug_no: 'BUG-10000',
+      bug_title: '提交后提示成功但数据未落库',
+      bug_content: '在创建需求时，页面提示成功，但刷新后记录不存在。',
+      severity: 'high',
+      priority: 'P1',
+      reporter_name: '李四',
+      assignee_name: '张三',
     }
   }
 
@@ -956,7 +621,8 @@ function NotificationRulesPage() {
   const [sendControlLoading, setSendControlLoading] = useState(false)
   const [sendControlSaving, setSendControlSaving] = useState(false)
   const [sendControlMode, setSendControlMode] = useState('shadow')
-  const [sendControlOpenIds, setSendControlOpenIds] = useState('')
+  const [sendControlOpenIds, setSendControlOpenIds] = useState([])
+  const [sendControlSelectedUserIds, setSendControlSelectedUserIds] = useState([])
   const [sendControlChatIds, setSendControlChatIds] = useState('')
   const [form] = Form.useForm()
   const selectedEventType = Form.useWatch('scene_code', form)
@@ -978,6 +644,23 @@ function NotificationRulesPage() {
         value: item.label,
         label: item.label,
       })
+    })
+    return Array.from(dedup.values())
+  }, [selectedEventType])
+  const receiverFieldOptions = useMemo(() => {
+    const eventVars = EVENT_VARIABLE_OPTIONS_BY_EVENT[selectedEventType] || []
+    const vars = eventVars.filter((item) => RECEIVER_FIELD_CANDIDATE_KEYS.has(String(item?.value || '').trim()))
+    const merged = [
+      ...Array.from(RECEIVER_FIELD_CANDIDATE_KEYS).map((key) => ({ label: getReceiverFieldLabel(key), value: key })),
+      ...vars.map((item) => ({
+        label: getReceiverFieldLabel(item.value),
+        value: String(item.value || ''),
+      })),
+    ]
+    const dedup = new Map()
+    merged.forEach((item) => {
+      if (!item?.value || dedup.has(item.value)) return
+      dedup.set(item.value, item)
     })
     return Array.from(dedup.values())
   }, [selectedEventType])
@@ -1012,7 +695,7 @@ function NotificationRulesPage() {
       }
       const data = result.data || {}
       setSendControlMode(String(data.mode || 'shadow'))
-      setSendControlOpenIds(Array.isArray(data.whitelist_open_ids) ? data.whitelist_open_ids.join(',') : '')
+      setSendControlOpenIds(Array.isArray(data.whitelist_open_ids) ? data.whitelist_open_ids : [])
       setSendControlChatIds(Array.isArray(data.whitelist_chat_ids) ? data.whitelist_chat_ids.join(',') : '')
     } catch (error) {
       message.error(error?.message || '获取发送控制配置失败')
@@ -1062,6 +745,7 @@ function NotificationRulesPage() {
           .map((item) => ({
             label: item?.real_name ? `${item.real_name} (${item.username || item.id})` : String(item?.username || item?.id || ''),
             value: Number(item?.id || 0),
+            openId: String(item?.feishu_open_id || item?.feishuOpenId || '').trim(),
           }))
           .filter((item) => item.label && Number.isInteger(item.value) && item.value > 0)
 
@@ -1077,6 +761,65 @@ function NotificationRulesPage() {
   }, [])
 
   useEffect(() => {
+    const openIdToUserId = new Map()
+    userOptions.forEach((item) => {
+      const openId = String(item?.openId || '').trim()
+      if (!openId) return
+      openIdToUserId.set(openId, item.value)
+    })
+
+    const selected = Array.from(
+      new Set(
+        (sendControlOpenIds || [])
+          .map((openId) => openIdToUserId.get(String(openId || '').trim()))
+          .filter((id) => Number.isInteger(id) && id > 0),
+      ),
+    )
+    setSendControlSelectedUserIds(selected)
+  }, [sendControlOpenIds, userOptions])
+
+  const handleSendControlUsersChange = (userIds) => {
+    const ids = Array.isArray(userIds) ? userIds : []
+    setSendControlSelectedUserIds(ids)
+
+    const userIdToOpenId = new Map()
+    userOptions.forEach((item) => {
+      if (!Number.isInteger(item?.value) || item.value <= 0) return
+      const openId = String(item?.openId || '').trim()
+      if (!openId) return
+      userIdToOpenId.set(item.value, openId)
+    })
+    const openIds = Array.from(
+      new Set(
+        ids
+          .map((id) => userIdToOpenId.get(id))
+          .filter((item) => Boolean(item)),
+      ),
+    )
+    setSendControlOpenIds(openIds)
+  }
+
+  const sendControlUserWhitelistOptions = useMemo(
+    () =>
+      userOptions
+        .filter((item) => Boolean(String(item?.openId || '').trim()))
+        .map((item) => ({
+          label: `${item.label}（已绑定OpenID）`,
+          value: item.value,
+        })),
+    [userOptions],
+  )
+
+  const unmatchedWhitelistOpenIdCount = useMemo(() => {
+    const matchedOpenIds = new Set(
+      userOptions
+        .map((item) => String(item?.openId || '').trim())
+        .filter(Boolean),
+    )
+    return (sendControlOpenIds || []).filter((item) => !matchedOpenIds.has(String(item || '').trim())).length
+  }, [sendControlOpenIds, userOptions])
+
+  useEffect(() => {
     const currentField = form.getFieldValue('condition_field')
     if (!currentField) return
 
@@ -1090,6 +833,36 @@ function NotificationRulesPage() {
     if (isConditionValueRequired) return
     form.setFieldValue('condition_value', undefined)
   }, [form, isConditionValueRequired])
+
+  useEffect(() => {
+    const receiverType = String(selectedReceiverType || 'role')
+    if (receiverType === 'field') {
+      form.setFieldsValue({
+        receiver_roles: [],
+        receiver_users: [],
+      })
+      return
+    }
+    if (receiverType === 'user') {
+      form.setFieldsValue({
+        receiver_roles: [],
+        receiver_field_user_id: undefined,
+      })
+      return
+    }
+    form.setFieldsValue({
+      receiver_users: [],
+      receiver_field_user_id: undefined,
+    })
+  }, [form, selectedReceiverType])
+
+  useEffect(() => {
+    if (selectedReceiverType !== 'field') return
+    const current = String(form.getFieldValue('receiver_field_user_id') || '').trim()
+    if (current) return
+    const nextDefault = DEFAULT_RECEIVER_FIELD_BY_EVENT[selectedEventType] || 'operator_id'
+    form.setFieldValue('receiver_field_user_id', nextDefault)
+  }, [form, selectedEventType, selectedReceiverType])
 
   useEffect(() => {
     let active = true
@@ -1164,9 +937,19 @@ function NotificationRulesPage() {
 
     const selectedRoles = Array.isArray(values.receiver_roles) ? values.receiver_roles : []
     const selectedUsers = Array.isArray(values.receiver_users) ? values.receiver_users : []
-    const receiverConfig = {
-      roles: selectedRoles,
-      user_ids: selectedUsers,
+    let receiverConfig = {}
+    if (values.receiver_type === 'field') {
+      receiverConfig = {
+        user_id_field: String(values.receiver_field_user_id || '').trim() || 'operator_id',
+      }
+    } else if (values.receiver_type === 'user') {
+      receiverConfig = {
+        user_ids: selectedUsers,
+      }
+    } else {
+      receiverConfig = {
+        roles: selectedRoles,
+      }
     }
 
     let conditionConfig = null
@@ -1279,9 +1062,10 @@ function NotificationRulesPage() {
 
     const processed = Number(result?.data?.processed_count || 0)
     const matched = Number(result?.data?.matched_count || 0)
-    const failedItems = Array.isArray(result?.data?.results)
-      ? result.data.results.filter((item) => item?.status !== 'success')
-      : []
+    const resultItems = Array.isArray(result?.data?.results) ? result.data.results : []
+    const failedItems = resultItems.filter((item) => item?.status === 'failed')
+    const skippedItems = resultItems.filter((item) => item?.status === 'skipped')
+    const partialItems = resultItems.filter((item) => item?.status === 'partial_success')
 
     if (processed === 0 || matched === 0) {
       message.warning('已触发事件，但未命中可执行规则')
@@ -1290,6 +1074,24 @@ function NotificationRulesPage() {
 
     if (failedItems.length > 0) {
       message.error(`已触发 ${processed} 条，失败 ${failedItems.length} 条，请检查接收人或规则文案配置`)
+      return
+    }
+
+    if (partialItems.length > 0 || skippedItems.length > 0) {
+      const skippedCount = skippedItems.length
+      const partialCount = partialItems.length
+
+      if (partialCount > 0 && skippedCount > 0) {
+        message.warning(`已触发 ${processed} 条，部分成功 ${partialCount} 条，策略跳过 ${skippedCount} 条`)
+        return
+      }
+
+      if (partialCount > 0) {
+        message.warning(`已触发 ${processed} 条，部分成功 ${partialCount} 条，请检查通知日志详情`)
+        return
+      }
+
+      message.warning(`已触发 ${processed} 条，策略跳过 ${skippedCount} 条（当前发送模式可能为 shadow/whitelist）`)
       return
     }
 
@@ -1436,13 +1238,25 @@ function NotificationRulesPage() {
             />
           </Col>
           <Col span={8}>
-            <div style={{ marginBottom: 8, fontWeight: 500 }}>用户白名单 OpenID（逗号分隔）</div>
-            <Input
-              value={sendControlOpenIds}
-              onChange={(e) => setSendControlOpenIds(e.target.value)}
-              placeholder="ou_xxx,ou_yyy"
+            <div style={{ marginBottom: 8, fontWeight: 500 }}>用户白名单</div>
+            <Select
+              mode="multiple"
+              showSearch
+              optionFilterProp="label"
+              value={sendControlSelectedUserIds}
+              options={sendControlUserWhitelistOptions}
+              onChange={handleSendControlUsersChange}
+              placeholder="选择白名单用户（仅展示已绑定OpenID用户可选）"
               disabled={sendControlMode === 'shadow' || sendControlMode === 'live'}
+              style={{ width: '100%' }}
             />
+            <div style={{ marginTop: 6 }}>
+              <Text type="secondary">
+                {unmatchedWhitelistOpenIdCount > 0
+                  ? `当前白名单中有 ${unmatchedWhitelistOpenIdCount} 个OpenID未匹配到用户（可在用户管理中补充绑定后再选择）`
+                  : '仅可选择已绑定OpenID的用户'}
+              </Text>
+            </div>
           </Col>
           <Col span={8}>
             <div style={{ marginBottom: 8, fontWeight: 500 }}>群白名单 ChatID（逗号分隔）</div>
@@ -1585,9 +1399,10 @@ function NotificationRulesPage() {
                   rules={[{ required: true, message: '请输入通知内容' }]}
                   extra="输入 @ 可选择当前事件可用变量，系统会自动替换为真实值"
                 >
-                  <RichMentionsEditor
+                  <Mentions
+                    prefix="@"
                     options={variableMentionOptions}
-                    maxLength={300}
+                    rows={8}
                     placeholder="请输入（输入 @ 可引用动态值）"
                   />
                 </Form.Item>
@@ -1625,6 +1440,20 @@ function NotificationRulesPage() {
                       optionFilterProp="label"
                       placeholder="选择接收用户"
                       options={userOptions}
+                    />
+                  </Form.Item>
+                ) : selectedReceiverType === 'field' ? (
+                  <Form.Item
+                    name="receiver_field_user_id"
+                    label="接收人来源"
+                    rules={[{ required: true, message: '请选择通知要发给谁' }]}
+                    extra="系统会根据该字段自动找到对应人员并发送通知。"
+                  >
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      placeholder="请选择通知接收人（如：被指派人）"
+                      options={receiverFieldOptions}
                     />
                   </Form.Item>
                 ) : (
