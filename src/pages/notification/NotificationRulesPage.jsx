@@ -25,8 +25,6 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getDictItemsApi } from '../../api/configDict'
-import { getOptionsApi } from '../../api/options'
 import { getUsersApi } from '../../api/users'
 import {
   createNotificationRuleApi,
@@ -44,10 +42,15 @@ const { Text } = Typography
 
 const CHANNEL_OPTIONS = [{ label: '飞书', value: 'feishu' }]
 const RECEIVER_TYPE_OPTIONS = [
-  { label: '角色', value: 'role' },
+  { label: '业务角色', value: 'role' },
   { label: '用户', value: 'user' },
   { label: '飞书群', value: 'chat' },
+  { label: '需求绑定群', value: 'demand_group' },
   { label: '字段映射', value: 'field' },
+]
+const BUSINESS_ROLE_OPTIONS = [
+  { label: '需求处理人', value: 'demand_owner' },
+  { label: '节点负责人', value: 'node_owner' },
 ]
 
 const CONDITION_FIELD_OPTIONS_BY_EVENT = {
@@ -269,8 +272,9 @@ const CHANNEL_LABEL_MAP = {
 
 const RECEIVER_TYPE_LABEL_MAP = {
   user: '用户',
-  role: '角色',
+  role: '业务角色',
   chat: '飞书群',
+  demand_group: '需求绑定群',
   field: '字段映射',
 }
 
@@ -650,7 +654,9 @@ function parseDedupFromJson(dedupConfigJson) {
 
 function parseReceiverFromJson(receiverConfigJson) {
   const receiver = safeParseJson(receiverConfigJson, {})
-  const roleValues = Array.isArray(receiver?.roles)
+  const roleValues = Array.isArray(receiver?.business_roles)
+    ? receiver.business_roles.map((item) => String(item || '').trim()).filter(Boolean)
+    : Array.isArray(receiver?.roles)
     ? receiver.roles.map((item) => (typeof item === 'object' ? item.id : item)).filter(Boolean)
     : []
   const userValues = Array.isArray(receiver?.user_ids)
@@ -667,6 +673,7 @@ function parseReceiverFromJson(receiverConfigJson) {
     receiver_roles: roleValues,
     receiver_users: userValues,
     receiver_chat_ids: chatValues,
+    receiver_use_demand_bound_chat: receiver?.use_demand_bound_chat === true,
     receiver_field_user_id: String(receiver?.user_id_field || '').trim(),
   }
 }
@@ -717,6 +724,8 @@ function buildMockEventData(sceneCode, businessLineId, now) {
     return {
       ...base,
       bug_id: 10001,
+      demand_id: 'REQ20260407001',
+      assignee_id: 96,
       bug_no: 'BUG-10001',
       bug_title: '登录后偶发白屏',
       bug_content: '用户点击“工作台”后页面偶发白屏，需要刷新恢复。',
@@ -845,6 +854,7 @@ function buildMockEventData(sceneCode, businessLineId, now) {
     return {
       ...base,
       bug_id: 10000,
+      demand_id: 'REQ20260407001',
       bug_no: 'BUG-10000',
       bug_title: '提交后提示成功但数据未落库',
       bug_content: '在创建需求时，页面提示成功，但刷新后记录不存在。',
@@ -859,6 +869,7 @@ function buildMockEventData(sceneCode, businessLineId, now) {
     return {
       ...base,
       bug_id: 10002,
+      demand_id: 'REQ20260407001',
       bug_no: 'BUG-10002',
       bug_title: '筛选条件切换后数据未刷新',
       bug_content: '切换业务线筛选条件后，列表仍显示旧数据。',
@@ -872,6 +883,7 @@ function buildMockEventData(sceneCode, businessLineId, now) {
     return {
       ...base,
       bug_id: 10003,
+      demand_id: 'REQ20260407001',
       bug_no: 'BUG-10003',
       bug_title: '导出按钮无响应',
       bug_content: '点击导出后无下载动作，控制台无报错。',
@@ -885,6 +897,7 @@ function buildMockEventData(sceneCode, businessLineId, now) {
     return {
       ...base,
       bug_id: 10004,
+      demand_id: 'REQ20260407001',
       bug_no: 'BUG-10004',
       bug_title: '详情页评论重复展示',
       bug_content: '同一条评论在详情页出现两次。',
@@ -931,6 +944,7 @@ function buildMockEventData(sceneCode, businessLineId, now) {
       demand_name: '通知中心测试需求',
       node_id: 321,
       node_name: '测试节点',
+      assignee_id: 96,
       assignee_name: '测试用户',
       operator_name: '管理员',
       reject_reason: sceneCode === 'node_reject' ? '信息不完整' : undefined,
@@ -945,8 +959,6 @@ function NotificationRulesPage() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [rules, setRules] = useState([])
-  const [businessLineOptions, setBusinessLineOptions] = useState([])
-  const [roleOptions, setRoleOptions] = useState([])
   const [userOptions, setUserOptions] = useState([])
   const [chatOptionsLoading, setChatOptionsLoading] = useState(false)
   const [feishuChatOptions, setFeishuChatOptions] = useState([])
@@ -1081,31 +1093,6 @@ function NotificationRulesPage() {
     let active = true
     ;(async () => {
       try {
-        const result = await getDictItemsApi('business_group', { enabledOnly: true })
-        if (!active || !result?.success) return
-
-        const options = (result.data || [])
-          .map((item) => ({
-            label: item?.item_name || item?.label || '',
-            value: Number(item?.id || 0),
-          }))
-          .filter((item) => item.label && Number.isInteger(item.value) && item.value > 0)
-
-        setBusinessLineOptions(options)
-      } catch {
-        // keep page available even when dictionary service is temporarily unavailable
-      }
-    })()
-
-    return () => {
-      active = false
-    }
-  }, [])
-
-  useEffect(() => {
-    let active = true
-    ;(async () => {
-      try {
         const result = await getUsersApi({ page: 1, pageSize: 300 })
         if (!active || !result?.success) return
 
@@ -1211,6 +1198,7 @@ function NotificationRulesPage() {
         receiver_roles: [],
         receiver_users: [],
         receiver_chat_ids: [],
+        receiver_use_demand_bound_chat: false,
       })
       return
     }
@@ -1219,6 +1207,17 @@ function NotificationRulesPage() {
         receiver_roles: [],
         receiver_users: [],
         receiver_field_user_id: undefined,
+        receiver_use_demand_bound_chat: false,
+      })
+      return
+    }
+    if (receiverType === 'demand_group') {
+      form.setFieldsValue({
+        receiver_roles: [],
+        receiver_users: [],
+        receiver_chat_ids: [],
+        receiver_field_user_id: undefined,
+        receiver_use_demand_bound_chat: true,
       })
       return
     }
@@ -1227,6 +1226,7 @@ function NotificationRulesPage() {
         receiver_roles: [],
         receiver_chat_ids: [],
         receiver_field_user_id: undefined,
+        receiver_use_demand_bound_chat: false,
       })
       return
     }
@@ -1234,6 +1234,7 @@ function NotificationRulesPage() {
       receiver_users: [],
       receiver_chat_ids: [],
       receiver_field_user_id: undefined,
+      receiver_use_demand_bound_chat: false,
     })
   }, [form, selectedReceiverType])
 
@@ -1250,31 +1251,6 @@ function NotificationRulesPage() {
     const nextDefault = DEFAULT_RECEIVER_FIELD_BY_EVENT[selectedEventType] || 'operator_id'
     form.setFieldValue('receiver_field_user_id', nextDefault)
   }, [form, selectedEventType, selectedReceiverType])
-
-  useEffect(() => {
-    let active = true
-    ;(async () => {
-      try {
-        const result = await getOptionsApi('roles')
-        if (!active || !result?.success) return
-
-        const options = (result.data || [])
-          .map((item) => ({
-            label: item?.name || '',
-            value: item?.id,
-          }))
-          .filter((item) => item.label && (typeof item.value === 'number' || typeof item.value === 'string'))
-
-        setRoleOptions(options)
-      } catch {
-        // keep page usable even if role options fail
-      }
-    })()
-
-    return () => {
-      active = false
-    }
-  }, [])
 
   const openCreate = () => {
     setEditingRule(null)
@@ -1332,6 +1308,10 @@ function NotificationRulesPage() {
       receiverConfig = {
         user_id_field: String(values.receiver_field_user_id || '').trim() || 'operator_id',
       }
+    } else if (values.receiver_type === 'demand_group') {
+      receiverConfig = {
+        use_demand_bound_chat: true,
+      }
     } else if (values.receiver_type === 'chat') {
       receiverConfig = {
         chat_ids: selectedChatIds,
@@ -1342,7 +1322,7 @@ function NotificationRulesPage() {
       }
     } else {
       receiverConfig = {
-        roles: selectedRoles,
+        business_roles: selectedRoles,
       }
     }
 
@@ -1438,7 +1418,7 @@ function NotificationRulesPage() {
       scene_code: values.scene_code,
       message_title: mentionsTextToStorageText(values.message_title),
       message_content: mentionsTextToStorageText(values.message_content),
-      business_line_id: values.business_line_id ?? null,
+      business_line_id: null,
       channel_type: values.channel_type,
       receiver_type: values.receiver_type,
       receiver_config_json: receiverConfig,
@@ -1818,7 +1798,7 @@ function NotificationRulesPage() {
           </Row>
 
           <Row gutter={12}>
-            <Col span={12}>
+            <Col span={24}>
               <Form.Item
                 name="scene_code"
                 label="事件类型"
@@ -1830,17 +1810,6 @@ function NotificationRulesPage() {
                   placeholder="请选择事件类型"
                   options={EVENT_TYPE_OPTIONS}
                   optionFilterProp="label"
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="business_line_id" label="业务线（可选）">
-                <Select
-                  allowClear
-                  showSearch
-                  placeholder="为空表示全局"
-                  optionFilterProp="label"
-                  options={businessLineOptions}
                 />
               </Form.Item>
             </Col>
@@ -1924,6 +1893,12 @@ function NotificationRulesPage() {
                       options={feishuChatOptions}
                     />
                   </Form.Item>
+                ) : selectedReceiverType === 'demand_group' ? (
+                  <Form.Item label="接收飞书群（自动）">
+                    <Text type="secondary">
+                      系统会自动识别事件所属需求（缺陷会自动回溯到关联需求），并发送到该需求“绑定现有群”设置的飞书群。
+                    </Text>
+                  </Form.Item>
                 ) : selectedReceiverType === 'field' ? (
                   <Form.Item
                     name="receiver_field_user_id"
@@ -1939,14 +1914,14 @@ function NotificationRulesPage() {
                     />
                   </Form.Item>
                 ) : (
-                  <Form.Item name="receiver_roles" label="接收角色（可选）">
+                  <Form.Item name="receiver_roles" label="接收业务角色（可选）">
                     <Select
                       mode="multiple"
                       allowClear
                       showSearch
                       optionFilterProp="label"
-                      placeholder="选择接收角色"
-                      options={roleOptions}
+                      placeholder="选择接收业务角色"
+                      options={BUSINESS_ROLE_OPTIONS}
                     />
                   </Form.Item>
                 )}
