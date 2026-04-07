@@ -419,6 +419,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/integrations/feishu-user-bindings',
+    componentKey: 'feishuUserBindings',
+    requiredPermission: 'option.view',
+    page: {
+      title: '飞书账号映射',
+      subtitle: '将系统用户与飞书通讯录快照人工绑定，为后续消息通知提供准确 open_id。',
+    },
+    menu: {
+      section: 'integration',
+      label: '飞书账号映射',
+      icon: 'api',
+    },
+  },
+  {
     path: '/archive-demands',
     componentKey: 'archiveDemands',
     requiredPermission: 'archive.view',
