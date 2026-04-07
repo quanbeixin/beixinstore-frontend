@@ -44,6 +44,7 @@ const SECTION_LABELS = {
   main: '主导航',
   project: '项目管理',
   system: '系统设置',
+  integration: '第三方接入',
 }
 
 function toPositiveInt(value) {
@@ -210,7 +211,7 @@ function MenuVisibility() {
 
     const sections = Object.values(sectionMap).filter((section) => section.items.length > 0)
     const orderedSections = []
-    const preferredOrder = ['main', 'project', 'system']
+    const preferredOrder = ['main', 'project', 'system', 'integration']
 
     preferredOrder.forEach((key) => {
       const section = sections.find((item) => item.key === key)

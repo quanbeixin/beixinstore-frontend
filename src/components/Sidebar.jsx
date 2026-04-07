@@ -1,4 +1,5 @@
 ﻿import {
+  ApiOutlined,
   ApartmentOutlined,
   DashboardOutlined,
   SafetyCertificateOutlined,
@@ -12,6 +13,7 @@ import { MENU_SECTIONS } from '../config/menu.config'
 import { canAccessRoute } from '../utils/access'
 
 const iconMap = {
+  api: <ApiOutlined />,
   apartment: <ApartmentOutlined />,
   dashboard: <DashboardOutlined />,
   safety: <SafetyCertificateOutlined />,
