@@ -59,6 +59,7 @@ import { getUnifiedStatusMeta } from '../../utils/workStatus'
 const { Text } = Typography
 const { RangePicker } = DatePicker
 const DEFAULT_SELF_TASK_DIFFICULTY_CODE = 'N1'
+const DAILY_ACTUAL_WARNING_LIMIT_HOURS = 9
 const SELF_TASK_DIFFICULTY_HELP_TEXT = '关于事项的难易程度，请您根据自身实际能力，做出适宜的判断即可，默认为N1'
 const TASK_DIFFICULTY_FALLBACK_OPTIONS = ['N1', 'N2', 'N3', 'N4'].map((item) => ({
   value: item,
@@ -695,6 +696,7 @@ function WorkLogs({ mode = 'dashboard' }) {
   const [actualModalMode, setActualModalMode] = useState('full')
   const [dailyEntryModalOpen, setDailyEntryModalOpen] = useState(false)
   const [dailyEntryModalMode, setDailyEntryModalMode] = useState('today')
+  const [dailyEntrySubmitIntent, setDailyEntrySubmitIntent] = useState('save')
   const [detailModalOpen, setDetailModalOpen] = useState(false)
   const [hoursDetailModal, setHoursDetailModal] = useState({ open: false, type: 'planned' })
   const [scheduledItemsModalOpen, setScheduledItemsModalOpen] = useState(false)
@@ -738,6 +740,7 @@ function WorkLogs({ mode = 'dashboard' }) {
   const selectedActualPhaseKey = Form.useWatch('phase_key', actualForm)
   const actualModalIsQuickEdit = actualModalMode === 'quick'
   const dailyEntryModalIsDetailEdit = dailyEntryModalMode === 'detail'
+  const dailyEntryCompletesItem = dailyEntryModalMode === 'today' && dailyEntrySubmitIntent === 'complete'
 
   const selectedItemType = useMemo(
     () => itemTypes.find((item) => Number(item.id) === Number(selectedTypeId)) || null,
@@ -1379,6 +1382,9 @@ function WorkLogs({ mode = 'dashboard' }) {
       : getTodayDateString()
     const hasDetailActual = Number.isFinite(Number(operatingLog?.detail_entry_actual_hours))
     const hasTodayActual = Number.isFinite(Number(operatingLog?.today_actual_hours))
+    const suggestedCompletionHours = toNumber(operatingLog?.today_planned_hours, 0) > 0
+      ? toNumber(operatingLog?.today_planned_hours, 0)
+      : toNumber(operatingLog?.personal_estimate_hours, 0)
     const defaultActualHours = isDetailEdit
       ? hasDetailActual
         ? toNumber(operatingLog?.detail_entry_actual_hours, 0)
@@ -1387,7 +1393,9 @@ function WorkLogs({ mode = 'dashboard' }) {
         ? toNumber(operatingLog?.today_actual_hours, 0)
         : toNumber(operatingLog?.today_planned_hours, 0) > 0
           ? toNumber(operatingLog?.today_planned_hours, 0)
-          : 0
+          : dailyEntryCompletesItem
+            ? suggestedCompletionHours
+            : 0
     dailyEntryForm.setFieldsValue({
       entry_date: defaultEntryDate,
       actual_hours: defaultActualHours,
@@ -1395,7 +1403,7 @@ function WorkLogs({ mode = 'dashboard' }) {
         ? String(operatingLog?.detail_entry_description || '')
         : defaultTodayDescription,
     })
-  }, [dailyEntryForm, dailyEntryModalMode, dailyEntryModalOpen, operatingLog])
+  }, [dailyEntryCompletesItem, dailyEntryForm, dailyEntryModalMode, dailyEntryModalOpen, operatingLog])
 
   const reloadCurrentPageData = useCallback(async () => {
     if (isHistoryPage) {
@@ -1522,30 +1530,59 @@ function WorkLogs({ mode = 'dashboard' }) {
     setEditingLog(null)
   }
 
-  const openDailyEntryModal = async (record) => {
-    if (!record?.id) return
-    let nextRecord = record
-    try {
-      const today = getTodayDateString()
-      const result = await getLogDailyEntriesApi(record.id, {
-        start_date: today,
-        end_date: today,
-      })
-      if (result?.success) {
-        const rows = Array.isArray(result.data) ? result.data : []
-        const latestTodayEntry = rows[0] || null
-        nextRecord = {
-          ...record,
-          today_entry_description: String(latestTodayEntry?.description || '').trim(),
-        }
-      }
-    } catch {
-      // 回填失败时不阻塞弹窗打开，继续使用当前列表数据
+  const fetchTodayEntrySnapshot = useCallback(async (record) => {
+    if (!record?.id) return { rows: [], latestEntry: null, record }
+
+    const today = getTodayDateString()
+    const result = await getLogDailyEntriesApi(record.id, {
+      start_date: today,
+      end_date: today,
+    })
+
+    if (!result?.success) {
+      throw new Error(result?.message || '获取今日投入失败')
     }
-    setOperatingLog(nextRecord)
-    setDailyEntryModalMode('today')
-    setDailyEntryModalOpen(true)
-  }
+
+    const rows = Array.isArray(result.data) ? result.data : []
+    const latestTodayEntry = rows[0] || null
+
+    return {
+      rows,
+      latestEntry: latestTodayEntry,
+      record: {
+        ...record,
+        today_entry_id: latestTodayEntry?.id || null,
+        today_entry_count: rows.length,
+        today_entry_actual_hours:
+          latestTodayEntry?.actual_hours === undefined || latestTodayEntry?.actual_hours === null
+            ? null
+            : toNumber(latestTodayEntry.actual_hours, 0),
+        today_entry_description: String(latestTodayEntry?.description || '').trim(),
+      },
+    }
+  }, [])
+
+  const openDailyEntryModal = useCallback(
+    async (record, options = {}) => {
+      if (!record?.id) return
+
+      const intent = options.intent === 'complete' ? 'complete' : 'save'
+      let nextRecord = record
+
+      try {
+        const snapshot = await fetchTodayEntrySnapshot(record)
+        nextRecord = snapshot.record
+      } catch {
+        // 回填失败时不阻塞弹窗打开，继续使用当前列表数据
+      }
+
+      setOperatingLog(nextRecord)
+      setDailyEntryModalMode('today')
+      setDailyEntrySubmitIntent(intent)
+      setDailyEntryModalOpen(true)
+    },
+    [fetchTodayEntrySnapshot],
+  )
 
   const openDetailDayEntryModal = (timelineRow) => {
     if (!detailLog?.id || !timelineRow?.date) return
@@ -1562,6 +1599,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       detail_entry_count: Number(timelineRow?.entry_count || 0),
     })
     setDailyEntryModalMode('detail')
+    setDailyEntrySubmitIntent('save')
     setDailyEntryModalOpen(true)
   }
 
@@ -1569,8 +1607,88 @@ function WorkLogs({ mode = 'dashboard' }) {
     dailyEntryForm.resetFields()
     setDailyEntryModalOpen(false)
     setDailyEntryModalMode('today')
+    setDailyEntrySubmitIntent('save')
     setOperatingLog(null)
   }
+
+  const resolveTodayActualHoursTotal = useCallback(async () => {
+    const cachedTotal = Number(workbench?.today?.actual_hours_today)
+    if (!isHistoryPage && Number.isFinite(cachedTotal)) {
+      return toNumber(cachedTotal, 0)
+    }
+
+    const result = await getMyWorkbenchApi()
+    if (!result?.success) {
+      throw new Error(result?.message || '获取今日投入汇总失败')
+    }
+
+    return toNumber(result?.data?.today?.actual_hours_today, 0)
+  }, [isHistoryPage, workbench?.today?.actual_hours_today])
+
+  const confirmExcessDailyActualHours = useCallback(async (projectedHours) => {
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: '今日投入已超过 9 小时',
+        content: `当前保存后，今日实际投入将达到 ${toNumber(projectedHours, 0).toFixed(1)} 小时。辛苦校准今日事项后再填报，确认无误后可继续保存。`,
+        okText: '仍然保存',
+        cancelText: '返回校准',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      })
+    })
+  }, [])
+
+  const ensureDailyActualHoursWithinNotice = useCallback(
+    async ({ entryDate, actualHours }) => {
+      const todayDate = getTodayDateString()
+      if (String(entryDate || '').trim() !== todayDate) return true
+
+      const currentTodayActualHours = await resolveTodayActualHoursTotal()
+      let existingEntryHours = 0
+
+      if (dailyEntryModalMode === 'detail') {
+        if (String(operatingLog?.entry_date || '').trim() === todayDate) {
+          existingEntryHours = toNumber(operatingLog?.detail_entry_actual_hours, 0)
+        }
+      } else {
+        existingEntryHours = toNumber(operatingLog?.today_entry_actual_hours, 0)
+      }
+
+      const projectedHours = toNumber(currentTodayActualHours, 0) - existingEntryHours + toNumber(actualHours, 0)
+      if (projectedHours <= DAILY_ACTUAL_WARNING_LIMIT_HOURS) {
+        return true
+      }
+
+      return confirmExcessDailyActualHours(projectedHours)
+    },
+    [
+      confirmExcessDailyActualHours,
+      dailyEntryModalMode,
+      operatingLog?.detail_entry_actual_hours,
+      operatingLog?.entry_date,
+      operatingLog?.today_entry_actual_hours,
+      resolveTodayActualHoursTotal,
+    ],
+  )
+
+  const submitLogStatusUpdate = useCallback(
+    async (record, nextStatus) => {
+      const result = await updateWorkLogApi(record.id, {
+        log_status: nextStatus,
+      })
+
+      if (!result?.success) {
+        return {
+          success: false,
+          message: result?.message || '更新事项状态失败',
+        }
+      }
+
+      await reloadCurrentPageData()
+      return { success: true }
+    },
+    [reloadCurrentPageData],
+  )
 
   const loadDetailTimeline = useCallback(async (record) => {
     if (!record?.id) return false
@@ -1629,6 +1747,13 @@ function WorkLogs({ mode = 'dashboard' }) {
         message.warning('不能填写未来日期的投入')
         return
       }
+      const canContinue = await ensureDailyActualHoursWithinNotice({
+        entryDate,
+        actualHours: values.actual_hours,
+      })
+      if (!canContinue) {
+        return
+      }
       const isDetailUpdate = dailyEntryModalMode === 'detail' && Number(operatingLog?.detail_entry_id) > 0
       const payload = {
         entry_date: entryDate,
@@ -1645,17 +1770,30 @@ function WorkLogs({ mode = 'dashboard' }) {
 
       const savedEntryDate = entryDate
       const todayDate = getTodayDateString()
+      closeDailyEntryModal()
+      if (dailyEntryCompletesItem) {
+        setStatusSubmittingId(operatingLog.id)
+        const completeResult = await submitLogStatusUpdate(operatingLog, 'DONE')
+        setStatusSubmittingId(null)
+
+        if (!completeResult.success) {
+          await reloadCurrentPageData()
+          message.warning(completeResult.message || '今日投入已保存，但事项未成功标记为已完成，请重试')
+          return
+        }
+
+        message.success('今日投入已登记，事项已完成')
+        return
+      }
+
+      await reloadCurrentPageData()
       if (dailyEntryModalMode === 'detail') {
         message.success(isDetailUpdate ? '当日投入已调整' : '当日投入已补填')
+      } else if (savedEntryDate && savedEntryDate !== todayDate) {
+        message.success('投入已登记（仅填报日期为今天时会联动今日汇总）')
       } else {
-        if (savedEntryDate && savedEntryDate !== todayDate) {
-          message.success('投入已登记（仅填报日期为今天时会联动今日汇总）')
-        } else {
-          message.success('今日投入已登记')
-        }
+        message.success('今日投入已登记')
       }
-      closeDailyEntryModal()
-      await reloadCurrentPageData()
       if (detailModalOpen && detailLog?.id) {
         setDetailLoading(true)
         try {
@@ -1784,17 +1922,25 @@ function WorkLogs({ mode = 'dashboard' }) {
 
     try {
       setStatusSubmittingId(record.id)
-      const result = await updateWorkLogApi(record.id, {
-        log_status: nextStatus,
-      })
+      const normalizedNextStatus = String(nextStatus || '').trim().toUpperCase()
+      if (normalizedNextStatus === 'DONE') {
+        const snapshot = await fetchTodayEntrySnapshot(record)
+        if ((snapshot.rows || []).length === 0) {
+          setOperatingLog(snapshot.record)
+          setDailyEntryModalMode('today')
+          setDailyEntrySubmitIntent('complete')
+          setDailyEntryModalOpen(true)
+          return
+        }
+      }
 
-      if (!result?.success) {
-        message.error(result?.message || '更新事项状态失败')
+      const statusResult = await submitLogStatusUpdate(record, normalizedNextStatus)
+      if (!statusResult.success) {
+        message.error(statusResult.message || '更新事项状态失败')
         return
       }
 
       message.success('事项状态已更新')
-      await reloadCurrentPageData()
     } catch (error) {
       message.error(error?.message || '更新事项状态失败')
     } finally {
@@ -3641,14 +3787,16 @@ function WorkLogs({ mode = 'dashboard' }) {
               ? `${Number(operatingLog?.detail_entry_count || 0) > 0 ? '调整投入日期/工时' : '补填当日投入'}：#${operatingLog.id}`
               : '调整投入日期/工时'
             : operatingLog
-              ? `填报今日投入：#${operatingLog.id}`
-              : '填报今日投入'
+              ? `${dailyEntryCompletesItem ? '完成前补填今日投入' : '填报今日投入'}：#${operatingLog.id}`
+              : dailyEntryCompletesItem
+                ? '完成前补填今日投入'
+                : '填报今日投入'
         }
         open={dailyEntryModalOpen}
         onCancel={closeDailyEntryModal}
         onOk={handleCreateDailyEntry}
         confirmLoading={dailyEntrySubmitting}
-        okText="保存"
+        okText={dailyEntryCompletesItem ? '保存并完成' : '保存'}
         cancelText="取消"
         destroyOnHidden
       >
@@ -3658,15 +3806,17 @@ function WorkLogs({ mode = 'dashboard' }) {
             name="entry_date"
             rules={[{ required: true, message: '请选择投入日期' }]}
           >
-            <Input type="date" />
+            <Input type="date" disabled={dailyEntryCompletesItem} />
           </Form.Item>
           <Form.Item
-            label="实际用时(h)"
+            label="今日实际投入(h)"
             name="actual_hours"
-            rules={[{ required: true, message: '请输入实际用时' }]}
+            rules={[{ required: true, message: '请输入今日实际投入' }]}
             extra={
               dailyEntryModalIsDetailEdit
                 ? '可直接调整投入日期与工时；若改到其他日期，周报会按新日期重新归属'
+                : dailyEntryCompletesItem
+                  ? '完成事项前需先确认今天在这条事项上的实际投入；保存后会自动标记为已完成'
                 : '同一事项在同一天重复填报时，以最后一次提交为准（不会累加）'
             }
           >

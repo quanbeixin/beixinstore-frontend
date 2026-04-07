@@ -81,16 +81,47 @@ function truncateText(value, maxLength = 8) {
   return `${chars.slice(0, maxLength).join('')}...`
 }
 
-function renderDemandNameWithLimit(value, maxLength = 30) {
-  const fullText = String(value || '').trim()
+function openDemandDetailInNewTab(demandId) {
+  const normalizedDemandId = String(demandId || '').trim()
+  if (!normalizedDemandId) return
+  window.open(`/work-demands/${encodeURIComponent(normalizedDemandId)}`, '_blank', 'noopener,noreferrer')
+}
+
+function renderDemandNameWithLimit(value, maxLength = 30, demandId = '') {
+  const normalizedDemandId = String(demandId || '').trim()
+  const fullText = String(value || normalizedDemandId || '').trim()
   if (!fullText) return '-'
   const shortText = truncateText(fullText, maxLength)
+  const textNode = <span className="morning-nowrap-text">{shortText}</span>
+
+  if (!normalizedDemandId) {
+    if (shortText === fullText) {
+      return <span className="morning-nowrap-text">{fullText}</span>
+    }
+    return (
+      <Tooltip title={fullText}>
+        <span className="morning-nowrap-text">{shortText}</span>
+      </Tooltip>
+    )
+  }
+
+  const linkNode = (
+    <Button
+      type="link"
+      size="small"
+      style={{ paddingInline: 0, height: 'auto' }}
+      onClick={() => openDemandDetailInNewTab(normalizedDemandId)}
+    >
+      {textNode}
+    </Button>
+  )
+
   if (shortText === fullText) {
-    return <span className="morning-nowrap-text">{fullText}</span>
+    return linkNode
   }
   return (
     <Tooltip title={fullText}>
-      <span className="morning-nowrap-text">{shortText}</span>
+      {linkNode}
     </Tooltip>
   )
 }
@@ -299,7 +330,7 @@ function MorningStandupBoard() {
     no_fill_members: [],
   })
 
-  const loadBoard = useCallback(async (tabKey = '') => {
+  const loadBoard = useCallback(async (tabKey = '', options = {}) => {
     setLoading(true)
     try {
       const params = {}
@@ -313,7 +344,9 @@ function MorningStandupBoard() {
         params.department_id = departmentId
       }
 
-      const result = await getMorningStandupBoardApi(params)
+      const result = await getMorningStandupBoardApi(params, {
+        force: options?.force === true,
+      })
       if (!result?.success) {
         message.error(result?.message || '获取晨会看板失败')
         return
@@ -485,7 +518,7 @@ function MorningStandupBoard() {
           ) : (
             <Space size={4} wrap={false}>
               {record?.demand_priority ? <Tag color="volcano">{record.demand_priority}</Tag> : null}
-              <span>{renderDemandNameWithLimit(value, 30)}</span>
+              <span>{renderDemandNameWithLimit(value, 30, record?.demand_id)}</span>
             </Space>
           ),
       },
@@ -771,7 +804,7 @@ function MorningStandupBoard() {
               <Tag color="blue">{`昨日完成 ${toNumber(record?.prev_workday_done_count, 0)}`}</Tag>
             </Space>
           ) : (
-            renderDemandNameWithLimit(value, 30)
+            renderDemandNameWithLimit(value, 30, record?.demand_id)
           ),
       },
       {
@@ -918,7 +951,7 @@ function MorningStandupBoard() {
         dataIndex: 'demand_name',
         key: 'demand_name',
         width: 280,
-        render: (value) => renderDemandNameWithLimit(value, 30),
+        render: (value, record) => renderDemandNameWithLimit(value, 30, record?.demand_id),
       },
       {
         title: '预计开始',
@@ -1263,7 +1296,7 @@ function MorningStandupBoard() {
               className={`morning-board-refresh-tag ${loading ? 'morning-board-refresh-tag--loading' : ''}`}
               icon={<ReloadOutlined />}
               onClick={() => {
-                if (!loading) loadBoard(activeTabKey)
+                if (!loading) loadBoard(activeTabKey, { force: true })
               }}
             >
               刷新
@@ -1628,7 +1661,7 @@ function MorningStandupBoard() {
                 title: '需求',
                 key: 'demand',
                 width: 180,
-                render: (_, record) => record.demand_name || record.demand_id || '-',
+                render: (_, record) => renderDemandNameWithLimit(record.demand_name || record.demand_id, 24, record.demand_id),
               },
               {
                 title: '阶段',

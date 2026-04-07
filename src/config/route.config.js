@@ -18,6 +18,7 @@ export const PRIVATE_ROUTES = [
     componentKey: 'departmentEfficiencyRanking',
     requiredPermission: null,
     requiredRoles: ['ADMIN'],
+    allowDepartmentManager: true,
     page: {
       title: '部门人效排行',
       subtitle: '按部门查看成员投入排行、预估工时与实际工时分布。',
@@ -33,6 +34,7 @@ export const PRIVATE_ROUTES = [
     componentKey: 'departmentEfficiencyDetail',
     requiredPermission: null,
     requiredRoles: ['ADMIN'],
+    allowDepartmentManager: true,
     page: {
       title: '部门人效详情',
       subtitle: '查看单个部门在指定周期内的成员投入结构、重点需求与波动情况。',
@@ -43,6 +45,7 @@ export const PRIVATE_ROUTES = [
     componentKey: 'memberRhythmBoard',
     requiredPermission: null,
     requiredRoles: ['ADMIN'],
+    allowDepartmentManager: true,
     page: {
       title: '成员工作节奏',
       subtitle: '按成员和日期观察工作饱和度与投入节奏。',
@@ -58,6 +61,7 @@ export const PRIVATE_ROUTES = [
     componentKey: 'memberEfficiencyDetail',
     requiredPermission: null,
     requiredRoles: ['ADMIN'],
+    allowDepartmentManager: true,
     page: {
       title: '个人人效详情',
       subtitle: '查看单个成员在指定周期内的投入结构、需求汇总与事项明细。',
@@ -187,6 +191,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/launch-plan',
+    componentKey: 'launchPlan',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '上线计划表',
+      subtitle: '按预期上线时间树形查看近期上线与延期需求。',
+    },
+    menu: {
+      section: 'project',
+      label: '上线计划表',
+      icon: 'tool',
+    },
+  },
+  {
     path: '/project-templates',
     componentKey: 'projectTemplates',
     requiredPermission: 'project.template.view',
@@ -282,6 +300,15 @@ export const PRIVATE_ROUTES = [
     page: {
       title: '需求详情',
       subtitle: '查看单个需求的状态、流程和关联事项。',
+    },
+  },
+  {
+    path: '/launch-plan/:id',
+    componentKey: 'launchPlan',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '上线计划详情',
+      subtitle: '查看需求详情、流程与关联事项。',
     },
   },
   {

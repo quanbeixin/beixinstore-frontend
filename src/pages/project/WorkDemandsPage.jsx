@@ -88,7 +88,9 @@ const STATUS_OPTIONS = [
   { label: '已中止', value: 'CANCELLED' },
 ]
 
-const NON_COMPLETED_STATUS_OPTIONS = STATUS_OPTIONS.filter((item) => item.value !== 'DONE')
+const NON_COMPLETED_STATUS_OPTIONS = STATUS_OPTIONS.filter(
+  (item) => item.value !== 'DONE' && item.value !== 'CANCELLED',
+)
 const COMPLETED_TAB_STATUS_OPTIONS = STATUS_OPTIONS.filter((item) => item.value === 'DONE')
 const CANCELLED_TAB_STATUS_OPTIONS = STATUS_OPTIONS.filter((item) => item.value === 'CANCELLED')
 
@@ -142,6 +144,38 @@ const DETAIL_LOG_FILTER_OPTIONS = [
   { label: '未完成', value: 'PENDING' },
   { label: '已逾期', value: 'OVERDUE' },
 ]
+const DEMAND_GROUP_COLLAPSE_STATE_KEY_PREFIX = 'work_demands_group_collapsed_state'
+
+function readCollapsedGroupKeys(storageKey) {
+  if (typeof window === 'undefined' || !storageKey) return []
+  try {
+    const raw = window.sessionStorage.getItem(storageKey)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+function writeCollapsedGroupKeys(storageKey, keys = []) {
+  if (typeof window === 'undefined' || !storageKey) return
+  try {
+    const normalized = Array.from(
+      new Set(
+        (Array.isArray(keys) ? keys : [])
+          .map((item) => String(item || '').trim())
+          .filter(Boolean),
+      ),
+    )
+    window.sessionStorage.setItem(storageKey, JSON.stringify(normalized))
+  } catch {
+    // 忽略存储失败，避免影响主流程
+  }
+}
 
 function getStatusTagColor(status) {
   if (status === 'DONE') return 'success'
@@ -338,20 +372,31 @@ function getDemandListPhaseGroup(record) {
   return { phaseKey, phaseName }
 }
 
+function isLaunchPlanOverdueDemand(record) {
+  if (!record) return false
+  const status = String(record?.status || '').trim().toUpperCase()
+  if (status === 'DONE' || status === 'CANCELLED') return false
+  const expectedReleaseDate = formatBeijingDate(record?.expected_release_date, '')
+  if (!expectedReleaseDate) return false
+  return expectedReleaseDate < getBeijingTodayDateString()
+}
+
 function WorkDemands({ pageMode = 'pool' } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const { id: routeDemandId } = useParams()
   const isDetailPage = Boolean(routeDemandId)
   const isMyDemandsPage = pageMode === 'my'
-  const listBasePath = isMyDemandsPage ? '/my-demands' : '/work-demands'
+  const isLaunchPlanPage = pageMode === 'launchPlan'
+  const listBasePath = isMyDemandsPage ? '/my-demands' : isLaunchPlanPage ? '/launch-plan' : '/work-demands'
+  const groupCollapseStorageKey = `${DEMAND_GROUP_COLLAPSE_STATE_KEY_PREFIX}:${listBasePath}`
   const [myDemandTabKey, setMyDemandTabKey] = useState('owned')
   const access = useMemo(() => getAccessSnapshot(), [])
   const canUseDemandPoolAnalysis = Boolean(access?.is_super_admin)
   const canView = hasPermission('demand.view')
   const canViewUsers = hasPermission('user.view')
   const canCreate = hasPermission('demand.create')
-  const canCreateInCurrentPage = canCreate && !isMyDemandsPage
+  const canCreateInCurrentPage = canCreate && !isMyDemandsPage && !isLaunchPlanPage
   const canUseProjectTemplates =
     canCreate || hasPermission('project.template.view') || hasPermission('project.template.manage')
   const canTransferOwner = hasPermission('demand.transfer_owner') || hasRole('ADMIN')
@@ -443,6 +488,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [workflowQuickTaskSubmitting, setWorkflowQuickTaskSubmitting] = useState(false)
   const [detailStatus, setDetailStatus] = useState('')
   const [detailTabKey, setDetailTabKey] = useState('basic')
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState(() => readCollapsedGroupKeys(groupCollapseStorageKey))
 
   const detailLogStats = useMemo(() => {
     const total = detailLogs.length
@@ -722,7 +768,35 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   }, [participantRoleOptions])
 
   const groupedDemands = useMemo(() => {
-    const sortedRows = [...(demands || [])].sort((a, b) => {
+    const sourceRows = isLaunchPlanPage
+      ? (demands || []).filter((item) => Boolean(formatBeijingDate(item?.expected_release_date, '')))
+      : demands || []
+
+    const sortedRows = [...sourceRows].sort((a, b) => {
+      if (isLaunchPlanPage) {
+        const releaseDateA = dayjs(a?.expected_release_date).valueOf()
+        const releaseDateB = dayjs(b?.expected_release_date).valueOf()
+        if (releaseDateA !== releaseDateB) {
+          return (Number.isFinite(releaseDateA) ? releaseDateA : Number.MAX_SAFE_INTEGER) -
+            (Number.isFinite(releaseDateB) ? releaseDateB : Number.MAX_SAFE_INTEGER)
+        }
+
+        const overdueDiff = Number(isLaunchPlanOverdueDemand(b)) - Number(isLaunchPlanOverdueDemand(a))
+        if (overdueDiff !== 0) return overdueDiff
+
+        const priorityRank = { P0: 0, P1: 1, P2: 2, P3: 3 }
+        const priorityDiff =
+          (priorityRank[String(a?.priority || '').toUpperCase()] ?? 99) -
+          (priorityRank[String(b?.priority || '').toUpperCase()] ?? 99)
+        if (priorityDiff !== 0) return priorityDiff
+
+        const updatedAtA = dayjs(a?.updated_at).valueOf()
+        const updatedAtB = dayjs(b?.updated_at).valueOf()
+        if (Number.isFinite(updatedAtA) || Number.isFinite(updatedAtB)) {
+          return (Number.isFinite(updatedAtB) ? updatedAtB : 0) - (Number.isFinite(updatedAtA) ? updatedAtA : 0)
+        }
+      }
+
       const createdAtA = dayjs(a?.created_at).valueOf()
       const createdAtB = dayjs(b?.created_at).valueOf()
       if (Number.isFinite(createdAtA) || Number.isFinite(createdAtB)) {
@@ -733,27 +807,52 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
     const groupMap = new Map()
     sortedRows.forEach((item) => {
-      const { phaseKey, phaseName } = getDemandListPhaseGroup(item)
-      if (!groupMap.has(phaseKey)) {
-        groupMap.set(phaseKey, {
-          id: `phase-group-${phaseKey}`,
+      const groupMeta = isLaunchPlanPage
+        ? {
+            groupKey: String(item?.expected_release_date || '').trim() || '__UNSCHEDULED__',
+            groupName: formatBeijingDate(item?.expected_release_date) || '未设置预期上线时间',
+          }
+        : (() => {
+            const { phaseKey, phaseName } = getDemandListPhaseGroup(item)
+            return { groupKey: phaseKey, groupName: phaseName }
+          })()
+
+      if (!groupMap.has(groupMeta.groupKey)) {
+        groupMap.set(groupMeta.groupKey, {
+          id: isLaunchPlanPage ? `release-group-${groupMeta.groupKey}` : `phase-group-${groupMeta.groupKey}`,
           __group: true,
-          current_phase_key: phaseKey,
-          current_phase_name: phaseName,
-          name: phaseName,
+          current_phase_key: isLaunchPlanPage ? '' : groupMeta.groupKey,
+          current_phase_name: isLaunchPlanPage ? '' : groupMeta.groupName,
+          expected_release_date: isLaunchPlanPage ? groupMeta.groupKey : '',
+          name: groupMeta.groupName,
           children: [],
-          __sortTime: 0,
+          __sortTime: isLaunchPlanPage ? Number.MAX_SAFE_INTEGER : 0,
+          __overdueCount: 0,
         })
       }
-      const group = groupMap.get(phaseKey)
+      const group = groupMap.get(groupMeta.groupKey)
       group.children.push(item)
-      const createdAt = dayjs(item?.created_at).valueOf()
-      if (Number.isFinite(createdAt) && createdAt > group.__sortTime) {
-        group.__sortTime = createdAt
+      if (isLaunchPlanPage) {
+        const expectedReleaseDate = dayjs(item?.expected_release_date).valueOf()
+        if (Number.isFinite(expectedReleaseDate) && expectedReleaseDate < group.__sortTime) {
+          group.__sortTime = expectedReleaseDate
+        }
+        if (isLaunchPlanOverdueDemand(item)) {
+          group.__overdueCount += 1
+        }
+      } else {
+        const createdAt = dayjs(item?.created_at).valueOf()
+        if (Number.isFinite(createdAt) && createdAt > group.__sortTime) {
+          group.__sortTime = createdAt
+        }
       }
     })
 
     return Array.from(groupMap.values()).sort((a, b) => {
+      if (isLaunchPlanPage) {
+        if (a.__sortTime !== b.__sortTime) return b.__sortTime - a.__sortTime
+        return String(b.name || '').localeCompare(String(a.name || ''), 'zh-CN')
+      }
       const aIsFallbackGroup = String(a?.current_phase_name || '').trim() === '-'
       const bIsFallbackGroup = String(b?.current_phase_name || '').trim() === '-'
       if (aIsFallbackGroup !== bIsFallbackGroup) {
@@ -762,7 +861,35 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       if (a.__sortTime !== b.__sortTime) return b.__sortTime - a.__sortTime
       return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN')
     })
-  }, [demands])
+  }, [demands, isLaunchPlanPage])
+
+  const groupedDemandKeys = useMemo(
+    () =>
+      groupedDemands
+        .filter((item) => Boolean(item?.__group))
+        .map((item) => String(item.id || '').trim())
+        .filter(Boolean),
+    [groupedDemands],
+  )
+
+  useEffect(() => {
+    const availableSet = new Set(groupedDemandKeys)
+    setCollapsedGroupKeys((prev) => {
+      const normalizedPrev = Array.isArray(prev) ? prev : []
+      const cleaned = normalizedPrev.filter((key) => availableSet.has(String(key || '').trim()))
+      if (cleaned.length === normalizedPrev.length) return normalizedPrev
+      return cleaned
+    })
+  }, [groupedDemandKeys])
+
+  useEffect(() => {
+    writeCollapsedGroupKeys(groupCollapseStorageKey, collapsedGroupKeys)
+  }, [groupCollapseStorageKey, collapsedGroupKeys])
+
+  const expandedGroupKeys = useMemo(() => {
+    const collapsedSet = new Set((collapsedGroupKeys || []).map((item) => String(item || '').trim()))
+    return groupedDemandKeys.filter((key) => !collapsedSet.has(key))
+  }, [collapsedGroupKeys, groupedDemandKeys])
 
   const templateByIdMap = useMemo(() => {
     const map = new Map()
@@ -1026,6 +1153,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         params.exclude_completed = true
         params.exclude_cancelled = true
       }
+      if (isLaunchPlanPage) {
+        params.expected_release_only = true
+        params.order_by_expected_release_date = true
+      }
       if (ownerFilter) params.owner_user_id = ownerFilter
       if (Array.isArray(updatedRange) && updatedRange.length === 2 && updatedRange[0] && updatedRange[1]) {
         params.updated_start_date = updatedRange[0].format('YYYY-MM-DD')
@@ -1067,6 +1198,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     ownerFilter,
     updatedRange,
     isMyDemandsPage,
+    isLaunchPlanPage,
     myDemandTabKey,
     scopeFilter,
   ])
@@ -1972,8 +2104,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   )
 
   const currentDemandPoolContextParams = useMemo(() => {
-    const activeTabLabel =
-      businessGroupTabItems.find((item) => item.key === activeDemandTabKey)?.label || '全部'
+    const activeTabLabel = isLaunchPlanPage
+      ? '上线计划表'
+      : businessGroupTabItems.find((item) => item.key === activeDemandTabKey)?.label || '全部'
     const selectedBusinessGroupLabel =
       businessGroupOptions.find((item) => String(item.value || '') === String(businessGroupFilter || ''))?.label || ''
     const selectedOwnerLabel =
@@ -2005,6 +2138,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       active_tab_key: activeDemandTabKey,
       active_tab_label: activeTabLabel,
       compact_view: compactView,
+      expected_release_only: isLaunchPlanPage,
     }
   }, [
     activeDemandTabKey,
@@ -2012,6 +2146,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     businessGroupOptions,
     businessGroupTabItems,
     compactView,
+    isLaunchPlanPage,
     keyword,
     ownerFilter,
     ownerOptions,
@@ -2092,9 +2227,18 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         render: (value, record) => (
           record?.__group ? (
             <Space size={8}>
-              <Tag color={getDemandPhaseTagColor(record?.current_phase_key, record?.current_phase_name)}>
-                {record?.current_phase_name || '未开始'}
-              </Tag>
+              {isLaunchPlanPage ? (
+                <>
+                  <Tag color={Number(record?.__overdueCount || 0) > 0 ? 'error' : 'geekblue'}>
+                    {record?.name || '未设置预期上线时间'}
+                  </Tag>
+                  {Number(record?.__overdueCount || 0) > 0 ? <Tag color="error">{`延期 ${record.__overdueCount}`}</Tag> : null}
+                </>
+              ) : (
+                <Tag color={getDemandPhaseTagColor(record?.current_phase_key, record?.current_phase_name)}>
+                  {record?.current_phase_name || '未开始'}
+                </Tag>
+              )}
               <Text strong>{Number(record?.children?.length || 0)} 条需求</Text>
             </Space>
           ) : (
@@ -2125,7 +2269,12 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         key: 'status',
         width: 120,
         render: (value, record) =>
-          record?.__group ? null : <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>,
+          record?.__group ? null : (
+            <Space size={4} wrap>
+              <Tag color={getStatusTagColor(value)}>{getStatusLabel(value)}</Tag>
+              {isLaunchPlanPage && isLaunchPlanOverdueDemand(record) ? <Tag color="error">延期</Tag> : null}
+            </Space>
+          ),
       },
       {
         title: '需求阶段',
@@ -2172,7 +2321,13 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         dataIndex: 'expected_release_date',
         key: 'expected_release_date',
         width: 130,
-        render: (value, record) => (record?.__group ? null : formatBeijingDate(value)),
+        render: (value, record) =>
+          record?.__group ? null : (
+            <Space size={4} wrap>
+              <span>{formatBeijingDate(value)}</span>
+              {isLaunchPlanPage && isLaunchPlanOverdueDemand(record) ? <Tag color="error">延期</Tag> : null}
+            </Space>
+          ),
       },
     ]
 
@@ -2266,6 +2421,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   }, [
     canTransferOwner,
     compactView,
+    isLaunchPlanPage,
     prioritySortOrder,
     openDetailDrawer,
     openEditModal,
@@ -2304,31 +2460,33 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                 }}
               />
             ) : null}
-            <Tabs
-              activeKey={activeDemandTabKey}
-              items={businessGroupTabItems}
-              onChange={(activeKey) => {
-                if (activeKey === '__DONE__') {
-                  setShowCompletedTabOnly(true)
-                  setShowCancelledTabOnly(false)
-                  setBusinessGroupFilter('')
-                  setStatusFilter('')
-                } else if (activeKey === '__CANCELLED__') {
-                  setShowCompletedTabOnly(false)
-                  setShowCancelledTabOnly(true)
-                  setBusinessGroupFilter('')
-                  setStatusFilter('')
-                } else {
-                  setShowCompletedTabOnly(false)
-                  setShowCancelledTabOnly(false)
-                  setBusinessGroupFilter(activeKey === '__ALL__' ? '' : activeKey)
-                  if (statusFilter === 'DONE' || statusFilter === 'CANCELLED') {
+            {isLaunchPlanPage ? null : (
+              <Tabs
+                activeKey={activeDemandTabKey}
+                items={businessGroupTabItems}
+                onChange={(activeKey) => {
+                  if (activeKey === '__DONE__') {
+                    setShowCompletedTabOnly(true)
+                    setShowCancelledTabOnly(false)
+                    setBusinessGroupFilter('')
                     setStatusFilter('')
+                  } else if (activeKey === '__CANCELLED__') {
+                    setShowCompletedTabOnly(false)
+                    setShowCancelledTabOnly(true)
+                    setBusinessGroupFilter('')
+                    setStatusFilter('')
+                  } else {
+                    setShowCompletedTabOnly(false)
+                    setShowCancelledTabOnly(false)
+                    setBusinessGroupFilter(activeKey === '__ALL__' ? '' : activeKey)
+                    if (statusFilter === 'DONE' || statusFilter === 'CANCELLED') {
+                      setStatusFilter('')
+                    }
                   }
-                }
-                setPage(1)
-              }}
-            />
+                  setPage(1)
+                }}
+              />
+            )}
             <Space wrap>
               <Search
                 allowClear
@@ -2418,7 +2576,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               </Space>
             </Space>
 
-            {!isMyDemandsPage && canUseDemandPoolAnalysis ? (
+            {!isMyDemandsPage && !isLaunchPlanPage && canUseDemandPoolAnalysis ? (
               <div className="work-demand-list__agent-panel">
                 <div className="work-demand-list__agent-panel-header">
                   <div>
@@ -2505,7 +2663,19 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               loading={loading}
               columns={demandColumns}
               dataSource={groupedDemands}
-              defaultExpandAllRows
+              expandable={{
+                rowExpandable: (record) => Boolean(record?.__group),
+                expandedRowKeys: expandedGroupKeys,
+                onExpandedRowsChange: (nextExpandedRows) => {
+                  const expandedSet = new Set(
+                    (Array.isArray(nextExpandedRows) ? nextExpandedRows : [])
+                      .map((item) => String(item || '').trim())
+                      .filter(Boolean),
+                  )
+                  const nextCollapsed = groupedDemandKeys.filter((key) => !expandedSet.has(key))
+                  setCollapsedGroupKeys(nextCollapsed)
+                },
+              }}
               indentSize={18}
               scroll={{ x: compactView ? 1820 : 2380 }}
               pagination={false}
@@ -2700,7 +2870,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                     </div>
                     <div className="work-demand-detail__hero-actions">
                       <Button icon={<LeftOutlined />} onClick={closeDetailDrawer}>
-                        {isMyDemandsPage ? '返回我的需求' : '返回需求池'}
+                        {isMyDemandsPage ? '返回我的需求' : isLaunchPlanPage ? '返回上线计划表' : '返回需求池'}
                       </Button>
                       {canEditDemandRecord(detailDemand) ? (
                         <>
@@ -3094,7 +3264,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         </Card>
       ) : null}
 
-      {!isMyDemandsPage && !canCreate ? (
+      {!isMyDemandsPage && !isLaunchPlanPage && !canCreate ? (
         <div style={{ marginTop: 12, color: '#667085', display: 'flex', alignItems: 'center', gap: 8 }}>
           <UnorderedListOutlined />
           <span>当前账号无创建权限，只有管理员、超级管理员或产品角色可以新建需求。</span>

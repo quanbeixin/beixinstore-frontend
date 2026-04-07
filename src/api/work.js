@@ -262,8 +262,21 @@ export function getOwnerWorkbenchApi() {
   return request.get('/work/workbench/owner')
 }
 
-export function getMorningStandupBoardApi(params) {
-  return request.get('/work/workbench/morning', { params })
+export function getMorningStandupBoardApi(params, options = {}) {
+  const normalizedParams = params || {}
+  const cacheKey = `morning-standup-${JSON.stringify(normalizedParams)}`
+  const requestFn = () =>
+    request.get('/work/workbench/morning', {
+      params: normalizedParams,
+      timeout: 30000,
+    })
+
+  if (options?.force) {
+    clearCache(cacheKey)
+    return requestFn()
+  }
+
+  return cachedRequest(cacheKey, requestFn, 15000)
 }
 
 export function previewNoFillReminderApi() {

@@ -334,7 +334,7 @@ export function setMenuVisibilityAccessMap(value, options = {}) {
   return map
 }
 
-function canAccessRouteByCachedRule(route, menuKey) {
+function canAccessRouteByCachedRule(route, menuKey, access) {
   const rulesMap = getMenuVisibilityRulesMap()
   const rule = rulesMap[menuKey]
   if (!rule) return true
@@ -347,8 +347,23 @@ function canAccessRouteByCachedRule(route, menuKey) {
     return hasAnyRole(rule.role_keys)
   }
 
-  // Department-based scope should rely on backend computed result.
-  return true
+  if (rule.scope_type === MENU_SCOPE_TYPES.DEPT_MEMBERS) {
+    const currentUser = getCurrentUser()
+    const userDepartmentId = toPositiveInt(currentUser?.department_id)
+    const departmentIdSet = new Set(normalizeDepartmentIds(rule.department_ids))
+    return Boolean(userDepartmentId) && departmentIdSet.has(userDepartmentId)
+  }
+
+  if (rule.scope_type === MENU_SCOPE_TYPES.DEPT_MANAGERS) {
+    const managedDepartmentIds = Array.isArray(access?.managed_department_ids)
+      ? access.managed_department_ids
+      : []
+    const departmentIdSet = new Set(normalizeDepartmentIds(rule.department_ids))
+
+    return managedDepartmentIds.some((departmentId) => departmentIdSet.has(toPositiveInt(departmentId)))
+  }
+
+  return false
 }
 
 export function canAccessRoute(route) {
@@ -362,7 +377,9 @@ export function canAccessRoute(route) {
   }
 
   const passPermission = hasPermission(route.requiredPermission)
-  const passRole = hasAnyRole(route.requiredRoles)
+  const passRole =
+    hasAnyRole(route.requiredRoles) ||
+    (route.allowDepartmentManager === true && Boolean(access?.is_department_manager))
   if (!passPermission || !passRole) return false
 
   if (!menuKey) return true
@@ -377,7 +394,7 @@ export function canAccessRoute(route) {
     return Boolean(accessMap[menuKey])
   }
 
-  return canAccessRouteByCachedRule(route, menuKey)
+  return canAccessRouteByCachedRule(route, menuKey, access)
 }
 
 export function setAuthStorage({ token, user, access, remember }) {
