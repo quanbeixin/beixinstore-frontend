@@ -31,6 +31,7 @@ import { getUsersApi } from '../../api/users'
 import {
   createNotificationRuleApi,
   deleteNotificationRuleApi,
+  getFeishuChatOptionsApi,
   getNotificationSendControlApi,
   getNotificationRulesApi,
   triggerNotificationEventApi,
@@ -45,6 +46,7 @@ const CHANNEL_OPTIONS = [{ label: '飞书', value: 'feishu' }]
 const RECEIVER_TYPE_OPTIONS = [
   { label: '角色', value: 'role' },
   { label: '用户', value: 'user' },
+  { label: '飞书群', value: 'chat' },
   { label: '字段映射', value: 'field' },
 ]
 
@@ -83,6 +85,48 @@ const CONDITION_FIELD_OPTIONS_BY_EVENT = {
     { label: '任务ID', value: 'task_id' },
     { label: '完成人ID', value: 'operator_id' },
     { label: '任务状态', value: 'status' },
+    { label: '业务线ID', value: 'business_line_id' },
+  ],
+  demand_create: [
+    { label: '需求ID', value: 'demand_id' },
+    { label: '需求状态', value: 'status' },
+    { label: '优先级', value: 'priority' },
+    { label: '业务线ID', value: 'business_line_id' },
+  ],
+  demand_assign: [
+    { label: '需求ID', value: 'demand_id' },
+    { label: '原负责人', value: 'from_owner_name' },
+    { label: '新负责人', value: 'to_owner_name' },
+    { label: '业务线ID', value: 'business_line_id' },
+  ],
+  demand_status_change: [
+    { label: '需求ID', value: 'demand_id' },
+    { label: '旧状态', value: 'from_status' },
+    { label: '新状态', value: 'to_status' },
+    { label: '业务线ID', value: 'business_line_id' },
+  ],
+  worklog_create: [
+    { label: '事项ID', value: 'worklog_id' },
+    { label: '事项状态', value: 'status' },
+    { label: '事项类型', value: 'item_type_name' },
+    { label: '业务线ID', value: 'business_line_id' },
+  ],
+  worklog_assign: [
+    { label: '事项ID', value: 'worklog_id' },
+    { label: '原接收人', value: 'from_assignee_name' },
+    { label: '新接收人', value: 'to_assignee_name' },
+    { label: '业务线ID', value: 'business_line_id' },
+  ],
+  worklog_status_change: [
+    { label: '事项ID', value: 'worklog_id' },
+    { label: '旧状态', value: 'from_status' },
+    { label: '新状态', value: 'to_status' },
+    { label: '业务线ID', value: 'business_line_id' },
+  ],
+  worklog_deadline_remind: [
+    { label: '事项ID', value: 'worklog_id' },
+    { label: '事项状态', value: 'status' },
+    { label: '距到期小时', value: 'hours_to_deadline' },
     { label: '业务线ID', value: 'business_line_id' },
   ],
   bug_create: [
@@ -146,6 +190,39 @@ const CONDITION_OPERATOR_OPTIONS = [
 
 const CONDITION_OPERATORS_WITHOUT_VALUE = new Set(['is_empty', 'is_not_empty'])
 
+const TRIGGER_MODE_OPTIONS = [
+  { label: '按字段触发', value: 'event' },
+  { label: '按时间触发', value: 'schedule' },
+  { label: '按到期触发', value: 'deadline' },
+]
+
+const SCHEDULE_FREQUENCY_OPTIONS = [
+  { label: '每小时', value: 'hourly' },
+  { label: '每日', value: 'daily' },
+  { label: '每周', value: 'weekly' },
+  { label: '每月', value: 'monthly' },
+]
+
+const WEEKDAY_OPTIONS = [
+  { label: '周一', value: 1 },
+  { label: '周二', value: 2 },
+  { label: '周三', value: 3 },
+  { label: '周四', value: 4 },
+  { label: '周五', value: 5 },
+  { label: '周六', value: 6 },
+  { label: '周日', value: 7 },
+]
+
+const DEADLINE_TARGET_OPTIONS = [{ label: '事项到期', value: 'worklog' }]
+const DEADLINE_OFFSET_TYPE_OPTIONS = [
+  { label: '到期前', value: 'before' },
+  { label: '到期后', value: 'after' },
+]
+const DEADLINE_OFFSET_UNIT_OPTIONS = [
+  { label: '小时', value: 'hour' },
+  { label: '天', value: 'day' },
+]
+
 const DEDUP_KEY_FIELD_OPTIONS = [
   { label: '业务线', value: 'business_line_id' },
   { label: '事件类型', value: 'event_type' },
@@ -162,6 +239,17 @@ const EVENT_TYPE_OPTIONS = [
   { label: '任务截止提醒', value: 'task_deadline' },
   { label: '任务完成', value: 'task_complete' },
   { label: '周报发送', value: 'weekly_report_send' },
+  { label: '需求创建', value: 'demand_create' },
+  { label: '需求指派', value: 'demand_assign' },
+  { label: '需求状态变更', value: 'demand_status_change' },
+  { label: '事项创建', value: 'worklog_create' },
+  { label: '事项指派', value: 'worklog_assign' },
+  { label: '事项状态变更', value: 'worklog_status_change' },
+  { label: '事项到期提醒', value: 'worklog_deadline_remind' },
+  { label: '每小时定时', value: 'schedule_hourly' },
+  { label: '每日定时', value: 'schedule_daily' },
+  { label: '每周定时', value: 'schedule_weekly' },
+  { label: '每月定时', value: 'schedule_monthly' },
   { label: 'Bug创建', value: 'bug_create' },
   { label: 'Bug指派', value: 'bug_assign' },
   { label: 'Bug状态变更', value: 'bug_status_change' },
@@ -182,6 +270,7 @@ const CHANNEL_LABEL_MAP = {
 const RECEIVER_TYPE_LABEL_MAP = {
   user: '用户',
   role: '角色',
+  chat: '飞书群',
   field: '字段映射',
 }
 
@@ -191,6 +280,11 @@ const RECEIVER_FIELD_LABEL_MAP = {
   reporter_id: '提交人',
   user_id: '成员',
   owner_user_id: '负责人',
+  to_owner_user_id: '新负责人',
+  from_owner_user_id: '原负责人',
+  project_manager_id: '项目经理',
+  to_assignee_id: '新接收人',
+  from_assignee_id: '原接收人',
 }
 
 const RECEIVER_FIELD_CANDIDATE_KEYS = new Set(Object.keys(RECEIVER_FIELD_LABEL_MAP))
@@ -202,6 +296,13 @@ function getReceiverFieldLabel(fieldKey) {
 }
 
 const DEFAULT_RECEIVER_FIELD_BY_EVENT = {
+  demand_create: 'owner_user_id',
+  demand_assign: 'to_owner_user_id',
+  demand_status_change: 'owner_user_id',
+  worklog_create: 'user_id',
+  worklog_assign: 'to_assignee_id',
+  worklog_status_change: 'user_id',
+  worklog_deadline_remind: 'user_id',
   bug_assign: 'assignee_id',
   bug_create: 'assignee_id',
   bug_status_change: 'assignee_id',
@@ -260,6 +361,90 @@ const EVENT_VARIABLE_OPTIONS_BY_EVENT = {
     { label: '任务状态', value: 'status' },
     { label: '完成人ID', value: 'operator_id' },
     { label: '操作人姓名', value: 'operator_name' },
+  ],
+  demand_create: [
+    { label: '需求ID', value: 'demand_id' },
+    { label: '需求名称', value: 'demand_name' },
+    { label: '需求状态', value: 'status' },
+    { label: '优先级', value: 'priority' },
+    { label: '负责人ID', value: 'owner_user_id' },
+    { label: '负责人姓名', value: 'owner_name' },
+    { label: '业务线名称', value: 'business_line_name' },
+  ],
+  worklog_deadline_remind: [
+    { label: '事项ID', value: 'worklog_id' },
+    { label: '事项标题', value: 'task_title' },
+    { label: '事项内容', value: 'task_content' },
+    { label: '事项状态', value: 'status' },
+    { label: '接收人ID', value: 'user_id' },
+    { label: '接收人姓名', value: 'user_name' },
+    { label: '需求ID', value: 'demand_id' },
+    { label: '需求名称', value: 'demand_name' },
+    { label: '预计完成日期', value: 'expected_completion_date' },
+    { label: '距到期小时', value: 'hours_to_deadline' },
+    { label: '业务线名称', value: 'business_line_name' },
+  ],
+  schedule_hourly: [
+    { label: '触发时间', value: 'schedule_bucket' },
+  ],
+  schedule_daily: [
+    { label: '触发时间', value: 'schedule_bucket' },
+  ],
+  schedule_weekly: [
+    { label: '触发时间', value: 'schedule_bucket' },
+  ],
+  schedule_monthly: [
+    { label: '触发时间', value: 'schedule_bucket' },
+  ],
+  demand_assign: [
+    { label: '需求ID', value: 'demand_id' },
+    { label: '需求名称', value: 'demand_name' },
+    { label: '原负责人ID', value: 'from_owner_user_id' },
+    { label: '原负责人姓名', value: 'from_owner_name' },
+    { label: '新负责人ID', value: 'to_owner_user_id' },
+    { label: '新负责人姓名', value: 'to_owner_name' },
+    { label: '操作人姓名', value: 'operator_name' },
+    { label: '业务线名称', value: 'business_line_name' },
+  ],
+  demand_status_change: [
+    { label: '需求ID', value: 'demand_id' },
+    { label: '需求名称', value: 'demand_name' },
+    { label: '旧状态', value: 'from_status' },
+    { label: '新状态', value: 'to_status' },
+    { label: '负责人姓名', value: 'owner_name' },
+    { label: '操作人姓名', value: 'operator_name' },
+    { label: '业务线名称', value: 'business_line_name' },
+  ],
+  worklog_create: [
+    { label: '事项ID', value: 'worklog_id' },
+    { label: '事项标题', value: 'task_title' },
+    { label: '事项内容', value: 'task_content' },
+    { label: '事项状态', value: 'status' },
+    { label: '事项类型', value: 'item_type_name' },
+    { label: '接收人ID', value: 'user_id' },
+    { label: '接收人姓名', value: 'user_name' },
+    { label: '需求ID', value: 'demand_id' },
+    { label: '需求名称', value: 'demand_name' },
+    { label: '业务线名称', value: 'business_line_name' },
+  ],
+  worklog_assign: [
+    { label: '事项ID', value: 'worklog_id' },
+    { label: '事项标题', value: 'task_title' },
+    { label: '原接收人ID', value: 'from_assignee_id' },
+    { label: '原接收人姓名', value: 'from_assignee_name' },
+    { label: '新接收人ID', value: 'to_assignee_id' },
+    { label: '新接收人姓名', value: 'to_assignee_name' },
+    { label: '指派人姓名', value: 'assigned_by_name' },
+    { label: '业务线名称', value: 'business_line_name' },
+  ],
+  worklog_status_change: [
+    { label: '事项ID', value: 'worklog_id' },
+    { label: '事项标题', value: 'task_title' },
+    { label: '旧状态', value: 'from_status' },
+    { label: '新状态', value: 'to_status' },
+    { label: '接收人姓名', value: 'user_name' },
+    { label: '操作人姓名', value: 'operator_name' },
+    { label: '业务线名称', value: 'business_line_name' },
   ],
   bug_create: [
     { label: '缺陷ID', value: 'bug_id' },
@@ -335,13 +520,31 @@ const VARIABLE_ALIAS_BY_KEY = {
   remaining_hours: '剩余小时',
   task_id: '任务ID',
   bug_id: '缺陷ID',
+  owner_user_id: '负责人ID',
+  owner_name: '负责人姓名',
+  from_owner_user_id: '原负责人ID',
+  from_owner_name: '原负责人姓名',
+  to_owner_user_id: '新负责人ID',
+  to_owner_name: '新负责人姓名',
+  business_line_name: '业务线名称',
+  worklog_id: '事项ID',
+  task_title: '标题',
+  task_content: '事项内容',
+  item_type_name: '事项类型',
+  from_assignee_id: '原接收人ID',
+  from_assignee_name: '原接收人姓名',
+  to_assignee_id: '新接收人ID',
+  to_assignee_name: '新接收人姓名',
+  assigned_by_name: '指派人姓名',
+  expected_completion_date: '预计完成日期',
+  hours_to_deadline: '距到期小时',
+  schedule_bucket: '触发时间',
   severity: '严重级别',
   from_status: '旧状态',
   to_status: '新状态',
   reopen_reason: '重开原因',
   operator_id: '操作人ID',
   reject_reason: '驳回原因',
-  task_title: '任务标题',
   bug_no: '缺陷编号',
   bug_title: '缺陷标题',
   bug_content: '缺陷内容',
@@ -388,29 +591,43 @@ function mentionsTextToStorageText(value) {
 
 function parseConditionFromJson(conditionConfigJson) {
   const condition = safeParseJson(conditionConfigJson, null)
-  const first = condition?.items?.[0]
-  if (!first || typeof first !== 'object') {
-    return {
-      condition_enabled: false,
-      condition_field: undefined,
-      condition_operator: 'eq',
-      condition_value: '',
-    }
-  }
+  const normalized = condition && typeof condition === 'object' ? condition : {}
+  const triggerMode = String(normalized.trigger_mode || '').trim().toLowerCase() || 'event'
+  const fieldCondition = normalized.field_condition && typeof normalized.field_condition === 'object'
+    ? normalized.field_condition
+    : normalized
 
-  const operator = String(first.operator || 'eq')
+  const first = fieldCondition?.items?.[0]
+  const hasFieldCondition = Boolean(first && typeof first === 'object')
+  const operator = String(first?.operator || 'eq')
   const value =
     operator === 'in' || operator === 'nin'
-      ? (Array.isArray(first.value) ? first.value.join(', ') : '')
-      : first.value === undefined || first.value === null
+      ? (Array.isArray(first?.value) ? first.value.join(', ') : '')
+      : first?.value === undefined || first?.value === null
         ? ''
         : String(first.value)
 
+  const scheduleConfig = normalized.schedule && typeof normalized.schedule === 'object' ? normalized.schedule : {}
+  const deadlineConfig = normalized.deadline && typeof normalized.deadline === 'object' ? normalized.deadline : {}
+
   return {
-    condition_enabled: true,
-    condition_field: first.field || undefined,
+    trigger_mode: triggerMode,
+    condition_enabled: hasFieldCondition,
+    condition_field: first?.field || undefined,
     condition_operator: operator,
     condition_value: value,
+    schedule_frequency: String(scheduleConfig.frequency || 'daily'),
+    schedule_interval_hours: Number(scheduleConfig.interval_hours || 1),
+    schedule_hour: Number(scheduleConfig.hour || 9),
+    schedule_minute: Number(scheduleConfig.minute || 0),
+    schedule_weekdays: Array.isArray(scheduleConfig.weekdays) && scheduleConfig.weekdays.length > 0 ? scheduleConfig.weekdays : [1],
+    schedule_day_of_month: Number(scheduleConfig.day_of_month || 1),
+    schedule_timezone: String(scheduleConfig.timezone || 'Asia/Shanghai'),
+    deadline_target: String(deadlineConfig.target || 'worklog'),
+    deadline_offset_type: String(deadlineConfig.offset_type || 'before'),
+    deadline_offset_value: Number(deadlineConfig.offset_value || 2),
+    deadline_offset_unit: String(deadlineConfig.offset_unit || 'hour'),
+    deadline_window_minutes: Number(deadlineConfig.window_minutes || 5),
   }
 }
 
@@ -442,9 +659,14 @@ function parseReceiverFromJson(receiverConfigJson) {
       ? receiver.users.map((item) => (typeof item === 'object' ? item.id : item)).filter(Boolean)
       : []
 
+  const chatValues = Array.isArray(receiver?.chat_ids)
+    ? receiver.chat_ids.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+
   return {
     receiver_roles: roleValues,
     receiver_users: userValues,
+    receiver_chat_ids: chatValues,
     receiver_field_user_id: String(receiver?.user_id_field || '').trim(),
   }
 }
@@ -503,6 +725,119 @@ function buildMockEventData(sceneCode, businessLineId, now) {
       priority: 'P1',
       assignee_name: '张三',
       reporter_name: '李四',
+    }
+  }
+
+  if (sceneCode === 'demand_create') {
+    return {
+      ...base,
+      demand_id: 'REQ20260403001',
+      demand_name: '通知中心联通需求',
+      status: 'TODO',
+      priority: 'P1',
+      owner_user_id: 80,
+      owner_name: '权贝鑫',
+      operator_name: '管理员',
+      business_line_name: '零售业务线',
+    }
+  }
+
+  if (sceneCode === 'demand_assign') {
+    return {
+      ...base,
+      demand_id: 'REQ20260403002',
+      demand_name: '飞书通知接入',
+      from_owner_user_id: 80,
+      from_owner_name: '权贝鑫',
+      to_owner_user_id: 96,
+      to_owner_name: 'bpf',
+      operator_name: '管理员',
+      business_line_name: '零售业务线',
+    }
+  }
+
+  if (sceneCode === 'demand_status_change') {
+    return {
+      ...base,
+      demand_id: 'REQ20260403003',
+      demand_name: '需求状态流转联调',
+      from_status: 'TODO',
+      to_status: 'IN_PROGRESS',
+      owner_name: '权贝鑫',
+      operator_name: '管理员',
+      business_line_name: '零售业务线',
+    }
+  }
+
+  if (sceneCode === 'worklog_create') {
+    return {
+      ...base,
+      worklog_id: 9001,
+      task_title: '补充需求评审纪要',
+      task_content: '梳理本周需求评审结论并更新文档',
+      status: 'IN_PROGRESS',
+      item_type_name: '需求开发',
+      user_id: 96,
+      user_name: 'bpf',
+      demand_id: 'REQ20260403005',
+      demand_name: '通知中心优化',
+      business_line_name: '零售业务线',
+    }
+  }
+
+  if (sceneCode === 'worklog_assign') {
+    return {
+      ...base,
+      worklog_id: 9002,
+      task_title: '补齐通知联调',
+      from_assignee_id: 80,
+      from_assignee_name: '权贝鑫',
+      to_assignee_id: 96,
+      to_assignee_name: 'bpf',
+      assigned_by_name: '管理员',
+      business_line_name: '零售业务线',
+    }
+  }
+
+  if (sceneCode === 'worklog_status_change') {
+    return {
+      ...base,
+      worklog_id: 9003,
+      task_title: '修复消息发送异常',
+      from_status: 'TODO',
+      to_status: 'DONE',
+      user_name: 'bpf',
+      operator_name: '管理员',
+      business_line_name: '零售业务线',
+    }
+  }
+
+  if (sceneCode === 'worklog_deadline_remind') {
+    return {
+      ...base,
+      worklog_id: 9004,
+      task_title: '本周回归测试',
+      task_content: '完成本周核心流程回归',
+      status: 'IN_PROGRESS',
+      user_id: 96,
+      user_name: 'bpf',
+      demand_id: 'REQ20260403008',
+      demand_name: '通知中心稳定性优化',
+      expected_completion_date: '2026-04-05',
+      hours_to_deadline: 2,
+      business_line_name: '零售业务线',
+    }
+  }
+
+  if (
+    sceneCode === 'schedule_hourly' ||
+    sceneCode === 'schedule_daily' ||
+    sceneCode === 'schedule_weekly' ||
+    sceneCode === 'schedule_monthly'
+  ) {
+    return {
+      ...base,
+      schedule_bucket: new Date(now).toISOString(),
     }
   }
 
@@ -613,6 +948,8 @@ function NotificationRulesPage() {
   const [businessLineOptions, setBusinessLineOptions] = useState([])
   const [roleOptions, setRoleOptions] = useState([])
   const [userOptions, setUserOptions] = useState([])
+  const [chatOptionsLoading, setChatOptionsLoading] = useState(false)
+  const [feishuChatOptions, setFeishuChatOptions] = useState([])
   const [keyword, setKeyword] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingRule, setEditingRule] = useState(null)
@@ -623,12 +960,15 @@ function NotificationRulesPage() {
   const [sendControlMode, setSendControlMode] = useState('shadow')
   const [sendControlOpenIds, setSendControlOpenIds] = useState([])
   const [sendControlSelectedUserIds, setSendControlSelectedUserIds] = useState([])
-  const [sendControlChatIds, setSendControlChatIds] = useState('')
+  const [sendControlChatIds, setSendControlChatIds] = useState([])
   const [form] = Form.useForm()
   const selectedEventType = Form.useWatch('scene_code', form)
   const selectedReceiverType = Form.useWatch('receiver_type', form)
+  const selectedTriggerMode = Form.useWatch('trigger_mode', form)
+  const selectedScheduleFrequency = Form.useWatch('schedule_frequency', form)
   const selectedConditionOperator = Form.useWatch('condition_operator', form)
-  const isConditionValueRequired = !CONDITION_OPERATORS_WITHOUT_VALUE.has(String(selectedConditionOperator || ''))
+  const isConditionValueRequired =
+    selectedTriggerMode === 'event' && !CONDITION_OPERATORS_WITHOUT_VALUE.has(String(selectedConditionOperator || ''))
 
   const activeConditionFieldOptions = useMemo(
     () => CONDITION_FIELD_OPTIONS_BY_EVENT[selectedEventType] || DEFAULT_CONDITION_FIELD_OPTIONS,
@@ -696,11 +1036,40 @@ function NotificationRulesPage() {
       const data = result.data || {}
       setSendControlMode(String(data.mode || 'shadow'))
       setSendControlOpenIds(Array.isArray(data.whitelist_open_ids) ? data.whitelist_open_ids : [])
-      setSendControlChatIds(Array.isArray(data.whitelist_chat_ids) ? data.whitelist_chat_ids.join(',') : '')
+      setSendControlChatIds(Array.isArray(data.whitelist_chat_ids) ? data.whitelist_chat_ids : [])
     } catch (error) {
       message.error(error?.message || '获取发送控制配置失败')
     } finally {
       setSendControlLoading(false)
+    }
+  }, [])
+
+  const loadFeishuChatOptions = useCallback(async (keywordText = '') => {
+    setChatOptionsLoading(true)
+    try {
+      const result = await getFeishuChatOptionsApi({
+        page_size: 100,
+        keyword: keywordText || undefined,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '获取飞书群失败')
+        return
+      }
+
+      const items = Array.isArray(result?.data?.items) ? result.data.items : []
+      const options = items.map((item) => {
+        const chatId = String(item?.chat_id || '').trim()
+        const name = String(item?.name || '').trim() || chatId
+        return {
+          label: `${name}（${chatId}）`,
+          value: chatId,
+        }
+      })
+      setFeishuChatOptions(options)
+    } catch (error) {
+      message.error(error?.message || '获取飞书群失败')
+    } finally {
+      setChatOptionsLoading(false)
     }
   }, [])
 
@@ -830,9 +1199,10 @@ function NotificationRulesPage() {
   }, [activeConditionFieldOptions, form])
 
   useEffect(() => {
+    if (selectedTriggerMode !== 'event') return
     if (isConditionValueRequired) return
     form.setFieldValue('condition_value', undefined)
-  }, [form, isConditionValueRequired])
+  }, [form, isConditionValueRequired, selectedTriggerMode])
 
   useEffect(() => {
     const receiverType = String(selectedReceiverType || 'role')
@@ -840,21 +1210,38 @@ function NotificationRulesPage() {
       form.setFieldsValue({
         receiver_roles: [],
         receiver_users: [],
+        receiver_chat_ids: [],
+      })
+      return
+    }
+    if (receiverType === 'chat') {
+      form.setFieldsValue({
+        receiver_roles: [],
+        receiver_users: [],
+        receiver_field_user_id: undefined,
       })
       return
     }
     if (receiverType === 'user') {
       form.setFieldsValue({
         receiver_roles: [],
+        receiver_chat_ids: [],
         receiver_field_user_id: undefined,
       })
       return
     }
     form.setFieldsValue({
       receiver_users: [],
+      receiver_chat_ids: [],
       receiver_field_user_id: undefined,
     })
   }, [form, selectedReceiverType])
+
+  useEffect(() => {
+    if (selectedReceiverType !== 'chat') return
+    if (feishuChatOptions.length > 0) return
+    loadFeishuChatOptions()
+  }, [selectedReceiverType, feishuChatOptions.length, loadFeishuChatOptions])
 
   useEffect(() => {
     if (selectedReceiverType !== 'field') return
@@ -937,10 +1324,17 @@ function NotificationRulesPage() {
 
     const selectedRoles = Array.isArray(values.receiver_roles) ? values.receiver_roles : []
     const selectedUsers = Array.isArray(values.receiver_users) ? values.receiver_users : []
+    const selectedChatIds = Array.isArray(values.receiver_chat_ids)
+      ? values.receiver_chat_ids.map((item) => String(item || '').trim()).filter(Boolean)
+      : []
     let receiverConfig = {}
     if (values.receiver_type === 'field') {
       receiverConfig = {
         user_id_field: String(values.receiver_field_user_id || '').trim() || 'operator_id',
+      }
+    } else if (values.receiver_type === 'chat') {
+      receiverConfig = {
+        chat_ids: selectedChatIds,
       }
     } else if (values.receiver_type === 'user') {
       receiverConfig = {
@@ -952,7 +1346,9 @@ function NotificationRulesPage() {
       }
     }
 
-    let conditionConfig = null
+    const triggerMode = String(values.trigger_mode || 'event')
+
+    let fieldCondition = null
     if (values.condition_enabled) {
       if (!values.condition_field) {
         message.error('请先选择条件字段')
@@ -979,10 +1375,10 @@ function NotificationRulesPage() {
         !needsConditionValue
           ? null
           : operator === 'in' || operator === 'nin'
-          ? splitCommaValues(values.condition_value)
-          : String(values.condition_value).trim()
+            ? splitCommaValues(values.condition_value)
+            : String(values.condition_value).trim()
 
-      conditionConfig = {
+      fieldCondition = {
         logic: 'and',
         items: [
           {
@@ -991,6 +1387,38 @@ function NotificationRulesPage() {
             value: conditionValue,
           },
         ],
+      }
+    }
+
+    let conditionConfig = null
+    if (triggerMode === 'event') {
+      conditionConfig = fieldCondition
+    } else if (triggerMode === 'schedule') {
+      const frequency = String(values.schedule_frequency || 'daily')
+      conditionConfig = {
+        trigger_mode: 'schedule',
+        schedule: {
+          frequency,
+          timezone: String(values.schedule_timezone || 'Asia/Shanghai'),
+          interval_hours: Number(values.schedule_interval_hours || 1),
+          hour: Number(values.schedule_hour || 9),
+          minute: Number(values.schedule_minute || 0),
+          weekdays: Array.isArray(values.schedule_weekdays) ? values.schedule_weekdays : [1],
+          day_of_month: Number(values.schedule_day_of_month || 1),
+        },
+        field_condition: fieldCondition,
+      }
+    } else if (triggerMode === 'deadline') {
+      conditionConfig = {
+        trigger_mode: 'deadline',
+        deadline: {
+          target: String(values.deadline_target || 'worklog'),
+          offset_type: String(values.deadline_offset_type || 'before'),
+          offset_value: Number(values.deadline_offset_value || 2),
+          offset_unit: String(values.deadline_offset_unit || 'hour'),
+          window_minutes: Number(values.deadline_window_minutes || 5),
+        },
+        field_condition: fieldCondition,
       }
     }
 
@@ -1023,6 +1451,16 @@ function NotificationRulesPage() {
       is_enabled: values.is_enabled ? 1 : 0,
     }
 
+    const sceneCode = String(values.scene_code || '')
+    if (triggerMode === 'schedule' && !sceneCode.startsWith('schedule_')) {
+      message.error('按时间触发时，请选择“每小时/每日/每周/每月定时”事件类型')
+      return
+    }
+    if (triggerMode === 'deadline' && sceneCode !== 'worklog_deadline_remind') {
+      message.error('按到期触发时，请选择“事项到期提醒”事件类型')
+      return
+    }
+
     setSaving(true)
     const result = editingRule
       ? await updateNotificationRuleApi(editingRule.id, payload)
@@ -1047,9 +1485,31 @@ function NotificationRulesPage() {
 
     setSendingRuleId(rule.id)
     const now = Date.now()
+    const conditionConfig = safeParseJson(rule?.condition_config_json, null)
+    const triggerMode = String(conditionConfig?.trigger_mode || '').toLowerCase()
+    const baseData = buildMockEventData(String(rule.scene_code), rule.business_line_id, now)
+    const contextData =
+      triggerMode === 'schedule'
+        ? {
+            __schedule_context: {
+              matched: true,
+              trigger_time: new Date(now).toISOString(),
+            },
+          }
+        : triggerMode === 'deadline'
+          ? {
+              __deadline_context: {
+                matched: true,
+                trigger_time: new Date(now).toISOString(),
+              },
+            }
+          : {}
     const payload = {
       eventType: String(rule.scene_code),
-      data: buildMockEventData(String(rule.scene_code), rule.business_line_id, now),
+      data: {
+        ...baseData,
+        ...contextData,
+      },
     }
 
     const result = await triggerNotificationEventApi(payload)
@@ -1259,12 +1719,20 @@ function NotificationRulesPage() {
             </div>
           </Col>
           <Col span={8}>
-            <div style={{ marginBottom: 8, fontWeight: 500 }}>群白名单 ChatID（逗号分隔）</div>
-            <Input
+            <div style={{ marginBottom: 8, fontWeight: 500 }}>群白名单</div>
+            <Select
+              mode="multiple"
+              showSearch
+              filterOption={false}
+              onSearch={(value) => loadFeishuChatOptions(value)}
+              onFocus={() => loadFeishuChatOptions()}
+              notFoundContent={chatOptionsLoading ? '加载中...' : '暂无可选飞书群'}
               value={sendControlChatIds}
-              onChange={(e) => setSendControlChatIds(e.target.value)}
-              placeholder="oc_xxx,oc_yyy"
+              onChange={(value) => setSendControlChatIds(Array.isArray(value) ? value : [])}
+              placeholder="选择白名单飞书群（仅显示当前应用可访问的群）"
               disabled={sendControlMode === 'shadow' || sendControlMode === 'live'}
+              options={feishuChatOptions}
+              style={{ width: '100%' }}
             />
           </Col>
         </Row>
@@ -1442,6 +1910,20 @@ function NotificationRulesPage() {
                       options={userOptions}
                     />
                   </Form.Item>
+                ) : selectedReceiverType === 'chat' ? (
+                  <Form.Item name="receiver_chat_ids" label="接收飞书群（可选）">
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      showSearch
+                      filterOption={false}
+                      onSearch={(value) => loadFeishuChatOptions(value)}
+                      onFocus={() => loadFeishuChatOptions()}
+                      notFoundContent={chatOptionsLoading ? '加载中...' : '暂无可选飞书群'}
+                      placeholder="选择飞书群（只显示当前应用可访问的群）"
+                      options={feishuChatOptions}
+                    />
+                  </Form.Item>
                 ) : selectedReceiverType === 'field' ? (
                   <Form.Item
                     name="receiver_field_user_id"
@@ -1476,12 +1958,96 @@ function NotificationRulesPage() {
           <Card size="small" title="条件配置（可选）" style={{ marginTop: 12 }}>
             <Row gutter={12}>
               <Col span={8}>
+                <Form.Item name="trigger_mode" label="触发方式" rules={[{ required: true }]}>
+                  <Select options={TRIGGER_MODE_OPTIONS} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
                 <Form.Item name="condition_enabled" label="启用条件" valuePropName="checked">
                   <Switch />
                 </Form.Item>
               </Col>
-              <Col span={16} />
+              <Col span={8} />
             </Row>
+
+            {selectedTriggerMode === 'schedule' ? (
+              <Row gutter={12}>
+                <Col span={8}>
+                  <Form.Item name="schedule_frequency" label="计划周期" rules={[{ required: true }]}>
+                    <Select options={SCHEDULE_FREQUENCY_OPTIONS} />
+                  </Form.Item>
+                </Col>
+                {selectedScheduleFrequency === 'hourly' ? (
+                  <Col span={8}>
+                    <Form.Item name="schedule_interval_hours" label="每隔几小时">
+                      <InputNumber min={1} max={24} precision={0} style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                ) : (
+                  <Col span={8}>
+                    <Form.Item name="schedule_hour" label="小时（0-23）">
+                      <InputNumber min={0} max={23} precision={0} style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                )}
+                <Col span={8}>
+                  <Form.Item name="schedule_minute" label="分钟（0-59）">
+                    <InputNumber min={0} max={59} precision={0} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+
+                {selectedScheduleFrequency === 'weekly' ? (
+                  <Col span={12}>
+                    <Form.Item name="schedule_weekdays" label="每周几">
+                      <Select mode="multiple" allowClear options={WEEKDAY_OPTIONS} />
+                    </Form.Item>
+                  </Col>
+                ) : null}
+                {selectedScheduleFrequency === 'monthly' ? (
+                  <Col span={12}>
+                    <Form.Item name="schedule_day_of_month" label="每月几号">
+                      <InputNumber min={1} max={31} precision={0} style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                ) : null}
+                <Col span={12}>
+                  <Form.Item name="schedule_timezone" label="时区">
+                    <Input disabled />
+                  </Form.Item>
+                </Col>
+              </Row>
+            ) : null}
+
+            {selectedTriggerMode === 'deadline' ? (
+              <Row gutter={12}>
+                <Col span={6}>
+                  <Form.Item name="deadline_target" label="提醒对象">
+                    <Select options={DEADLINE_TARGET_OPTIONS} />
+                  </Form.Item>
+                </Col>
+                <Col span={6}>
+                  <Form.Item name="deadline_offset_type" label="提醒时机">
+                    <Select options={DEADLINE_OFFSET_TYPE_OPTIONS} />
+                  </Form.Item>
+                </Col>
+                <Col span={6}>
+                  <Form.Item name="deadline_offset_value" label="数值">
+                    <InputNumber min={0} max={720} precision={0} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={6}>
+                  <Form.Item name="deadline_offset_unit" label="单位">
+                    <Select options={DEADLINE_OFFSET_UNIT_OPTIONS} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="deadline_window_minutes" label="触发窗口（分钟）">
+                    <InputNumber min={1} max={120} precision={0} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            ) : null}
+
             <Row gutter={12}>
               <Col span={8}>
                 <Form.Item name="condition_field" label="条件字段">

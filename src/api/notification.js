@@ -55,3 +55,7 @@ export function getNotificationSendControlApi() {
 export function updateNotificationSendControlApi(payload) {
   return normalizeApiResult(request.put('/notification/rules/send-control', payload))
 }
+
+export function getFeishuChatOptionsApi(params) {
+  return normalizeApiResult(request.get('/notification/rules/feishu/chats', { params }))
+}
