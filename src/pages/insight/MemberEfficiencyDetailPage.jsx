@@ -150,6 +150,83 @@ function MemberEfficiencyDetailPage() {
   const phaseDistribution = Array.isArray(data.phase_distribution) ? data.phase_distribution : []
   const totalPhaseHours = phaseDistribution.reduce((sum, item) => sum + toNumber(item.actual_hours, 0), 0)
 
+  const demandPhaseMap = new Map()
+  const demandLatestDescriptionMap = new Map()
+  workItemList.forEach((item) => {
+    const demandKey = String(item.demand_id || '').trim()
+    if (!demandKey) return
+
+    const itemDescription = String(item.description || '').trim()
+    const itemLogDate = String(item.log_date || '').trim()
+    const currentDemandDesc = demandLatestDescriptionMap.get(demandKey)
+    if (itemDescription) {
+      if (
+        !currentDemandDesc
+        || !currentDemandDesc.logDate
+        || (itemLogDate && dayjs(itemLogDate).isAfter(dayjs(currentDemandDesc.logDate)))
+      ) {
+        demandLatestDescriptionMap.set(demandKey, {
+          description: itemDescription,
+          logDate: itemLogDate || null,
+        })
+      }
+    }
+
+    if (!demandPhaseMap.has(demandKey)) {
+      demandPhaseMap.set(demandKey, new Map())
+    }
+
+    const phaseNameText = String(item.phase_name || '').trim()
+    const phaseKeyText = String(item.phase_key || '').trim()
+    const phaseCode = phaseKeyText || phaseNameText || 'NO_PHASE'
+    const phaseMap = demandPhaseMap.get(demandKey)
+    const phaseMapKey = `${phaseCode}|${phaseNameText || '未分阶段'}`
+    const current = phaseMap.get(phaseMapKey)
+
+    if (!current) {
+      phaseMap.set(phaseMapKey, {
+        key: `phase-${demandKey}-${phaseCode}-${phaseMap.size + 1}`,
+        __isPhase: true,
+        demand_id: item.demand_id,
+        phase_key: phaseKeyText || null,
+        phase_name: phaseNameText || phaseKeyText || '未分阶段',
+        total_owner_estimate_hours: toNumber(item.owner_estimate_hours, 0),
+        total_personal_estimate_hours: toNumber(item.personal_estimate_hours, 0),
+        total_actual_hours: toNumber(item.actual_hours, 0),
+        variance_personal_hours: toNumber(item.actual_hours, 0) - toNumber(item.personal_estimate_hours, 0),
+        last_log_date: itemLogDate || null,
+        description: itemDescription || '',
+      })
+      return
+    }
+
+    current.total_owner_estimate_hours += toNumber(item.owner_estimate_hours, 0)
+    current.total_personal_estimate_hours += toNumber(item.personal_estimate_hours, 0)
+    current.total_actual_hours += toNumber(item.actual_hours, 0)
+    current.variance_personal_hours = current.total_actual_hours - current.total_personal_estimate_hours
+
+    if (!current.last_log_date || (itemLogDate && dayjs(itemLogDate).isAfter(dayjs(current.last_log_date)))) {
+      current.last_log_date = itemLogDate || current.last_log_date
+      if (itemDescription) {
+        current.description = itemDescription
+      }
+    } else if (!current.description && itemDescription) {
+      current.description = itemDescription
+    }
+  })
+
+  const demandSummaryTreeData = demandSummaryList.map((item, index) => {
+    const demandKey = String(item.demand_id || '').trim()
+    const children = demandKey && demandPhaseMap.has(demandKey) ? Array.from(demandPhaseMap.get(demandKey).values()) : []
+    return {
+      ...item,
+      description: String(item.description || '').trim() || demandLatestDescriptionMap.get(demandKey)?.description || '',
+      key: `demand-${demandKey || index + 1}`,
+      __isPhase: false,
+      children,
+    }
+  })
+
   const handleExport = () => {
     if (workItemList.length === 0) {
       message.warning('当前没有可导出的事项明细')
@@ -183,24 +260,40 @@ function MemberEfficiencyDetailPage() {
       dataIndex: 'demand_name',
       key: 'demand_name',
       render: (value, row) => (
-        <Space orientation="vertical" size={2}>
-          <Text strong>{value || row.demand_id || '-'}</Text>
-          <Text type="secondary">{row.demand_id || '-'}</Text>
-        </Space>
+        row.__isPhase ? (
+          <Space size={6}>
+            <Tag color="geekblue">{row.phase_name || row.phase_key || '未分阶段'}</Tag>
+            {row.phase_key ? <Text type="secondary">{row.phase_key}</Text> : null}
+          </Space>
+        ) : (
+          <Space orientation="vertical" size={2}>
+            <Text strong>{value || row.demand_id || '-'}</Text>
+            <Text type="secondary">{row.demand_id || '-'}</Text>
+          </Space>
+        )
       ),
+    },
+    {
+      title: '描述',
+      dataIndex: 'description',
+      key: 'description',
+      width: 220,
+      ellipsis: true,
+      render: (value, row) => (row.__isPhase ? value || '-' : '-'),
     },
     {
       title: '业务组',
       dataIndex: 'business_group_name',
       key: 'business_group_name',
       width: 140,
-      render: (value) => value || '-',
+      render: (value, row) => (row.__isPhase ? '-' : value || '-'),
     },
     {
       title: '阶段数',
       dataIndex: 'phase_count',
       key: 'phase_count',
       width: 90,
+      render: (value, row) => (row.__isPhase ? '-' : value),
     },
     {
       title: 'Owner预估(h)',
@@ -451,18 +544,21 @@ function MemberEfficiencyDetailPage() {
 
             <Card
               title="需求汇总"
-              extra={<span className="efficiency-detail-toolbar__hint">按当前成员在需求上的累计投入汇总</span>}
+              extra={<span className="efficiency-detail-toolbar__hint">按当前成员在需求上的累计投入汇总，展开可查看阶段聚合</span>}
               variant="borderless"
               className="efficiency-detail-section"
             >
               <Table
-                rowKey="demand_id"
+                rowKey="key"
                 loading={loading}
                 columns={demandColumns}
-                dataSource={demandSummaryList}
+                dataSource={demandSummaryTreeData}
                 size="small"
                 className="efficiency-detail-table"
                 scroll={{ x: 1080 }}
+                expandable={{
+                  rowExpandable: (record) => Array.isArray(record.children) && record.children.length > 0,
+                }}
                 pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (total) => `共 ${total} 条需求` }}
                 locale={{ emptyText: '当前范围暂无需求汇总数据' }}
               />
