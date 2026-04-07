@@ -39,6 +39,8 @@ const RolePermissions = lazy(() => import('./pages/system/RolePermissionsPage'))
 const MenuVisibility = lazy(() => import('./pages/system/MenuVisibilityPage'))
 const ArchiveDemands = lazy(() => import('./pages/project/ArchiveDemandsPage'))
 const DictCenter = lazy(() => import('./pages/system/DictCenterPage'))
+const FeishuContacts = lazy(() => import('./pages/integration/FeishuContactsPage'))
+const FeishuUserBindings = lazy(() => import('./pages/integration/FeishuUserBindingsPage'))
 const BugList = lazy(() => import('./pages/bug/BugListPage'))
 const BugDetail = lazy(() => import('./pages/bug/BugDetailPage'))
 const Login = lazy(() => import('./pages/auth/LoginPage'))
@@ -48,6 +50,8 @@ const PAGE_COMPONENTS = {
   departments: Departments,
   agentConfig: AgentConfig,
   dictCenter: DictCenter,
+  feishuContacts: FeishuContacts,
+  feishuUserBindings: FeishuUserBindings,
   login: Login,
   menuVisibility: MenuVisibility,
   archiveDemands: ArchiveDemands,

@@ -707,6 +707,13 @@ function OwnerWorkbench() {
       },
     },
     {
+      title: '预计完成日期',
+      dataIndex: 'expected_completion_date',
+      key: 'expected_completion_date',
+      width: 130,
+      render: (value) => formatBeijingDate(value),
+    },
+    {
       title: '指派人',
       dataIndex: 'assigned_by_name',
       key: 'assigned_by_name',
@@ -728,11 +735,12 @@ function OwnerWorkbench() {
       render: (value) => toNumber(value, 0).toFixed(1),
     },
     {
-      title: '预计完成日期',
-      dataIndex: 'expected_completion_date',
-      key: 'expected_completion_date',
+      title: 'Owner评估(h)',
+      dataIndex: 'owner_estimate_hours',
+      key: 'owner_estimate_hours',
       width: 130,
-      render: (value) => formatBeijingDate(value),
+      render: (value) =>
+        value === null || value === undefined ? <Tag color="orange">待评估</Tag> : toNumber(value, 0).toFixed(1),
     },
     {
       title: 'Owner评估难度',
@@ -757,14 +765,6 @@ function OwnerWorkbench() {
         ) : (
           <Text type="secondary">-</Text>
         ),
-    },
-    {
-      title: 'Owner评估(h)',
-      dataIndex: 'owner_estimate_hours',
-      key: 'owner_estimate_hours',
-      width: 130,
-      render: (value) =>
-        value === null || value === undefined ? <Tag color="orange">待评估</Tag> : toNumber(value, 0).toFixed(1),
     },
     {
       title: 'Owner评估时间',
