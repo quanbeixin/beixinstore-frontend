@@ -55,6 +55,18 @@ function getDefaultDateRange() {
   return [dayjs().add(-30, 'day'), dayjs()]
 }
 
+function getTodayDateRange() {
+  const today = dayjs()
+  return [today, today]
+}
+
+function getThisWeekToTodayDateRange() {
+  const today = dayjs()
+  const weekday = today.day()
+  const daysFromMonday = weekday === 0 ? 6 : weekday - 1
+  return [today.subtract(daysFromMonday, 'day'), today]
+}
+
 function formatRate(value) {
   return `${toNumber(value, 0).toFixed(1)}%`
 }
@@ -221,6 +233,24 @@ function MemberRhythmBoard() {
     setBusinessGroupCode(undefined)
     setDateRange(getDefaultDateRange())
   }
+
+  const activeDateShortcut = useMemo(() => {
+    const startText = dateRange?.[0]?.format('YYYY-MM-DD') || ''
+    const endText = dateRange?.[1]?.format('YYYY-MM-DD') || ''
+    if (!startText || !endText) return ''
+
+    const [todayStart, todayEnd] = getTodayDateRange()
+    if (startText === todayStart.format('YYYY-MM-DD') && endText === todayEnd.format('YYYY-MM-DD')) {
+      return 'today'
+    }
+
+    const [weekStart, weekEnd] = getThisWeekToTodayDateRange()
+    if (startText === weekStart.format('YYYY-MM-DD') && endText === weekEnd.format('YYYY-MM-DD')) {
+      return 'this_week'
+    }
+
+    return ''
+  }, [dateRange])
 
   const goDemandInsight = (targetMemberUserId) => {
     const params = new URLSearchParams()
@@ -855,6 +885,20 @@ function MemberRhythmBoard() {
         }
       >
         <Space wrap size={12}>
+          <Space.Compact>
+            <Button
+              type={activeDateShortcut === 'today' ? 'primary' : 'default'}
+              onClick={() => setDateRange(getTodayDateRange())}
+            >
+              本日
+            </Button>
+            <Button
+              type={activeDateShortcut === 'this_week' ? 'primary' : 'default'}
+              onClick={() => setDateRange(getThisWeekToTodayDateRange())}
+            >
+              本周
+            </Button>
+          </Space.Compact>
           <RangePicker
             value={dateRange}
             onChange={(values) => setDateRange(values && values.length === 2 ? values : getDefaultDateRange())}

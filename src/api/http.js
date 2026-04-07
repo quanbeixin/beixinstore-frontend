@@ -75,9 +75,11 @@ instance.interceptors.response.use(
     // 网络错误
     if (!error.response) {
       console.error('[API] Network Error:', requestUrl, error.message)
+      const isTimeout =
+        error.code === 'ECONNABORTED' || String(error.message || '').toLowerCase().includes('timeout')
       return Promise.reject({
         status: 0,
-        message: '网络连接失败，请检查网络',
+        message: isTimeout ? '请求超时，请稍后重试' : '网络连接失败，请检查网络',
         data: null,
       })
     }

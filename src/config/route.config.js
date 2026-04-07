@@ -191,6 +191,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/launch-plan',
+    componentKey: 'launchPlan',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '上线计划表',
+      subtitle: '按预期上线时间树形查看近期上线与延期需求。',
+    },
+    menu: {
+      section: 'project',
+      label: '上线计划表',
+      icon: 'tool',
+    },
+  },
+  {
     path: '/project-templates',
     componentKey: 'projectTemplates',
     requiredPermission: 'project.template.view',
@@ -272,6 +286,15 @@ export const PRIVATE_ROUTES = [
     page: {
       title: '需求详情',
       subtitle: '查看单个需求的状态、流程和关联事项。',
+    },
+  },
+  {
+    path: '/launch-plan/:id',
+    componentKey: 'launchPlan',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '上线计划详情',
+      subtitle: '查看需求详情、流程与关联事项。',
     },
   },
   {

@@ -330,7 +330,7 @@ function MorningStandupBoard() {
     no_fill_members: [],
   })
 
-  const loadBoard = useCallback(async (tabKey = '') => {
+  const loadBoard = useCallback(async (tabKey = '', options = {}) => {
     setLoading(true)
     try {
       const params = {}
@@ -344,7 +344,9 @@ function MorningStandupBoard() {
         params.department_id = departmentId
       }
 
-      const result = await getMorningStandupBoardApi(params)
+      const result = await getMorningStandupBoardApi(params, {
+        force: options?.force === true,
+      })
       if (!result?.success) {
         message.error(result?.message || '获取晨会看板失败')
         return
@@ -1294,7 +1296,7 @@ function MorningStandupBoard() {
               className={`morning-board-refresh-tag ${loading ? 'morning-board-refresh-tag--loading' : ''}`}
               icon={<ReloadOutlined />}
               onClick={() => {
-                if (!loading) loadBoard(activeTabKey)
+                if (!loading) loadBoard(activeTabKey, { force: true })
               }}
             >
               刷新

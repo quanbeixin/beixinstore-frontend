@@ -47,6 +47,7 @@ import './OwnerWorkbenchPage.css'
 
 const { Text } = Typography
 const EMPTY_ARRAY = []
+const DONE_RECENT_DAYS = 15
 const OWNER_ITEM_STATUS_OPTIONS = [
   { label: '待开始', value: 'TODO' },
   { label: '进行中', value: 'IN_PROGRESS' },
@@ -56,6 +57,28 @@ const OWNER_ITEM_STATUS_OPTIONS = [
 function toNumber(value, fallback = 0) {
   const num = Number(value)
   return Number.isFinite(num) ? num : fallback
+}
+
+function toDateSortValue(value) {
+  const text = String(value || '').trim()
+  if (!text) return 0
+  const parsed = new Date(text.replace(' ', 'T')).getTime()
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function toDateOnlySortValue(value) {
+  const text = String(value || '').trim().slice(0, 10)
+  if (!text) return 0
+  const parsed = new Date(`${text}T00:00:00+08:00`).getTime()
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function isWithinRecentDays(value, days, todayValue = getBeijingTodayDateString()) {
+  const targetTs = toDateOnlySortValue(value)
+  const todayTs = toDateOnlySortValue(todayValue)
+  if (!targetTs || !todayTs) return false
+  const diffDays = Math.floor((todayTs - targetTs) / (24 * 60 * 60 * 1000))
+  return diffDays >= 0 && diffDays < days
 }
 
 function getSearchText(item) {
@@ -124,6 +147,8 @@ function OwnerWorkbench() {
   const [phaseFilter, setPhaseFilter] = useState()
   const [statusFilter, setStatusFilter] = useState()
   const [pendingOnly, setPendingOnly] = useState(true)
+  const [pendingOnlyTouched, setPendingOnlyTouched] = useState(false)
+  const [doneRecentOnly, setDoneRecentOnly] = useState(true)
   const [selectedRowKeys, setSelectedRowKeys] = useState([])
 
   const [estimateForm] = Form.useForm()
@@ -353,17 +378,50 @@ function OwnerWorkbench() {
     [itemTypes, assignItemTypeId],
   )
 
+  const normalizedStatusFilter = String(statusFilter || '').trim().toUpperCase()
+  const isDoneStatusSelected = normalizedStatusFilter === 'DONE'
+
   const filteredOwnerEstimateItems = useMemo(() => {
     const q = keyword.trim().toLowerCase()
-    return ownerEstimateItems.filter((item) => {
-      if (pendingOnly && item.owner_estimate_hours !== null && item.owner_estimate_hours !== undefined) return false
+    const todayValue = getBeijingTodayDateString()
+    const effectivePendingOnly = pendingOnly && !isDoneStatusSelected
+    const filteredItems = ownerEstimateItems.filter((item) => {
+      if (effectivePendingOnly && item.owner_estimate_hours !== null && item.owner_estimate_hours !== undefined) return false
       if (memberFilter && Number(item.user_id) !== Number(memberFilter)) return false
       if (phaseFilter && String(item.phase_key || '') !== String(phaseFilter)) return false
       if (statusFilter && String(item?.log_status || 'IN_PROGRESS') !== String(statusFilter)) return false
+      if (
+        isDoneStatusSelected &&
+        doneRecentOnly &&
+        !isWithinRecentDays(item?.log_completed_at || item?.log_date, DONE_RECENT_DAYS, todayValue)
+      ) {
+        return false
+      }
       if (q && !getSearchText(item).includes(q)) return false
       return true
     })
-  }, [ownerEstimateItems, keyword, memberFilter, phaseFilter, statusFilter, pendingOnly])
+
+    if (!isDoneStatusSelected) return filteredItems
+
+    return [...filteredItems].sort((a, b) => {
+      const completedAtDiff = toDateSortValue(b?.log_completed_at) - toDateSortValue(a?.log_completed_at)
+      if (completedAtDiff !== 0) return completedAtDiff
+
+      const estimatedAtDiff = toDateSortValue(b?.owner_estimated_at) - toDateSortValue(a?.owner_estimated_at)
+      if (estimatedAtDiff !== 0) return estimatedAtDiff
+
+      return Number(b?.id || 0) - Number(a?.id || 0)
+    })
+  }, [
+    ownerEstimateItems,
+    keyword,
+    memberFilter,
+    phaseFilter,
+    statusFilter,
+    pendingOnly,
+    isDoneStatusSelected,
+    doneRecentOnly,
+  ])
 
   // Owner工作台提醒统计
   const ownerReminderStats = useMemo(() => {
@@ -677,7 +735,7 @@ function OwnerWorkbench() {
       render: (value) => formatBeijingDate(value),
     },
     {
-      title: '任务难度',
+      title: 'Owner评估难度',
       dataIndex: 'task_difficulty_name',
       key: 'task_difficulty_name',
       width: 110,
@@ -967,13 +1025,44 @@ function OwnerWorkbench() {
             placeholder="筛选状态"
             options={OWNER_ITEM_STATUS_OPTIONS}
             value={statusFilter}
-            onChange={setStatusFilter}
+            onChange={(value) => {
+              const nextIsDone = String(value || '').trim().toUpperCase() === 'DONE'
+              const prevIsDone = isDoneStatusSelected
+              setStatusFilter(value)
+              if (nextIsDone) {
+                setPendingOnly(false)
+                setDoneRecentOnly(true)
+                return
+              }
+              if (prevIsDone && !pendingOnlyTouched) {
+                setPendingOnly(true)
+              }
+              if (prevIsDone) {
+                setDoneRecentOnly(true)
+              }
+            }}
             className="owner-filter-input owner-filter-input--status"
           />
           <Space className="owner-toggle-group">
             <Text type="secondary">仅看待评估</Text>
-            <Switch checked={pendingOnly} onChange={setPendingOnly} />
+            <Switch
+              checked={pendingOnly}
+              disabled={isDoneStatusSelected}
+              onChange={(checked) => {
+                setPendingOnlyTouched(true)
+                setPendingOnly(checked)
+              }}
+            />
+            {isDoneStatusSelected ? (
+              <Text type="secondary">已完成事项默认展示最近15天，关闭后可查看更早记录</Text>
+            ) : null}
           </Space>
+          {isDoneStatusSelected ? (
+            <Space className="owner-toggle-group">
+              <Text type="secondary">{`仅看近${DONE_RECENT_DAYS}天已完成`}</Text>
+              <Switch checked={doneRecentOnly} onChange={setDoneRecentOnly} />
+            </Space>
+          ) : null}
           <Button onClick={() => setSelectedRowKeys([])}>清空勾选</Button>
           <Button type="primary" disabled={selectedRowKeys.length === 0} onClick={openBatchModal}>
             批量评估
