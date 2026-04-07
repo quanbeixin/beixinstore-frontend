@@ -1,4 +1,4 @@
-﻿import { ArrowRightOutlined, LockOutlined, UserOutlined } from '@ant-design/icons'
+import { ArrowRightOutlined, LockOutlined, UserOutlined } from '@ant-design/icons'
 import { Button, Checkbox, Form, Input, message } from 'antd'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'

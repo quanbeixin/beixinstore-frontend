@@ -1,4 +1,4 @@
-﻿import {
+import {
   ArrowRightOutlined,
   EditOutlined,
   CheckCircleOutlined,

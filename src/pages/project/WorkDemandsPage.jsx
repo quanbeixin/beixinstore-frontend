@@ -1,4 +1,4 @@
-﻿import {
+import {
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,

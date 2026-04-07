@@ -1,4 +1,4 @@
-﻿import {
+import {
   AlertOutlined,
   EditOutlined,
   PlusOutlined,

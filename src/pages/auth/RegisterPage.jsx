@@ -1,4 +1,4 @@
-﻿import { ArrowRightOutlined, LockOutlined, MailOutlined, UserOutlined } from '@ant-design/icons'
+import { ArrowRightOutlined, LockOutlined, MailOutlined, UserOutlined } from '@ant-design/icons'
 import { Button, Card, Divider, Form, Input, message } from 'antd'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'

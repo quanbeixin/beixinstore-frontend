@@ -1,4 +1,4 @@
-﻿import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import {
   Button,
   Card,

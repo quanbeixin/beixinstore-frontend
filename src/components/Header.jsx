@@ -1,4 +1,4 @@
-﻿import { LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, UserOutlined } from '@ant-design/icons'
+import { LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, UserOutlined } from '@ant-design/icons'
 import { Avatar, Button, Layout, Space, Typography } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { clearAuthStorage, getCurrentUser } from '../utils/access'

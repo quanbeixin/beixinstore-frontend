@@ -1,4 +1,4 @@
-﻿import {
+import {
   DollarOutlined,
   FallOutlined,
   RiseOutlined,

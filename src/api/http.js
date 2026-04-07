@@ -1,4 +1,4 @@
-﻿import axios from 'axios'
+import axios from 'axios'
 import { clearAuthStorage, getToken } from '../utils/access'
 
 const instance = axios.create({

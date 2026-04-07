@@ -1,4 +1,4 @@
-﻿import { PRIVATE_ROUTES } from './route.config'
+import { PRIVATE_ROUTES } from './route.config'
 
 const SECTION_META = {
   main: { key: 'main' },

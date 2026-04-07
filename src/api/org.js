@@ -1,4 +1,4 @@
-﻿import { request } from './http'
+import { request } from './http'
 
 export function getDepartmentsApi(params = { mode: 'tree' }) {
   return request.get('/org/departments', { params })

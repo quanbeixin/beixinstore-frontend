@@ -1,4 +1,4 @@
-﻿import { CopyOutlined, FileTextOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import { CopyOutlined, FileTextOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import {
   Button,
   Card,

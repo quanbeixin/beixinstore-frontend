@@ -1,4 +1,4 @@
-﻿import { Card, Col, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Typography, message, Button } from 'antd'
+import { Card, Col, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Typography, message, Button } from 'antd'
 import { useEffect, useState } from 'react'
 import {
   getPreferencesApi,

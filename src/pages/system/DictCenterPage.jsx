@@ -1,4 +1,4 @@
-﻿import {
+import {
   DatabaseOutlined,
   DeleteOutlined,
   EditOutlined,

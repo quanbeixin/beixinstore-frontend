@@ -6,14 +6,18 @@ import {
   SendOutlined,
 } from '@ant-design/icons'
 import {
+  Alert,
   Button,
   Card,
   Col,
+  Collapse,
   Drawer,
   Form,
+  Grid,
   Input,
   InputNumber,
   Mentions,
+  Modal,
   Popconfirm,
   Row,
   Select,
@@ -52,6 +56,10 @@ const BUSINESS_ROLE_OPTIONS = [
   { label: '需求处理人', value: 'demand_owner' },
   { label: '节点负责人', value: 'node_owner' },
 ]
+const BUSINESS_ROLE_LABEL_MAP = BUSINESS_ROLE_OPTIONS.reduce((acc, item) => {
+  acc[item.value] = item.label
+  return acc
+}, {})
 
 const CONDITION_FIELD_OPTIONS_BY_EVENT = {
   node_assign: [
@@ -956,6 +964,7 @@ function buildMockEventData(sceneCode, businessLineId, now) {
 }
 
 function NotificationRulesPage() {
+  const screens = Grid.useBreakpoint()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [rules, setRules] = useState([])
@@ -976,8 +985,13 @@ function NotificationRulesPage() {
   const [form] = Form.useForm()
   const selectedEventType = Form.useWatch('scene_code', form)
   const selectedReceiverType = Form.useWatch('receiver_type', form)
+  const selectedReceiverRoles = Form.useWatch('receiver_roles', form)
+  const selectedReceiverUsers = Form.useWatch('receiver_users', form)
+  const selectedReceiverChatIds = Form.useWatch('receiver_chat_ids', form)
+  const selectedReceiverFieldUserId = Form.useWatch('receiver_field_user_id', form)
   const selectedTriggerMode = Form.useWatch('trigger_mode', form)
   const selectedScheduleFrequency = Form.useWatch('schedule_frequency', form)
+  const conditionEnabled = Form.useWatch('condition_enabled', form)
   const selectedConditionOperator = Form.useWatch('condition_operator', form)
   const isConditionValueRequired =
     selectedTriggerMode === 'event' && !CONDITION_OPERATORS_WITHOUT_VALUE.has(String(selectedConditionOperator || ''))
@@ -1016,6 +1030,26 @@ function NotificationRulesPage() {
     })
     return Array.from(dedup.values())
   }, [selectedEventType])
+  const filteredEventTypeOptions = useMemo(() => {
+    const triggerMode = String(selectedTriggerMode || 'event')
+    if (triggerMode === 'schedule') {
+      return EVENT_TYPE_OPTIONS.filter((item) => String(item?.value || '').startsWith('schedule_'))
+    }
+    if (triggerMode === 'deadline') {
+      return EVENT_TYPE_OPTIONS.filter((item) => String(item?.value || '') === 'worklog_deadline_remind')
+    }
+    return EVENT_TYPE_OPTIONS.filter((item) => !String(item?.value || '').startsWith('schedule_'))
+  }, [selectedTriggerMode])
+  const selectedTriggerModeTip = useMemo(() => {
+    const triggerMode = String(selectedTriggerMode || 'event')
+    if (triggerMode === 'schedule') {
+      return '当前为按时间触发，仅可选择“每小时/每日/每周/每月定时”事件。'
+    }
+    if (triggerMode === 'deadline') {
+      return '当前为按到期触发，仅可选择“事项到期提醒”事件。'
+    }
+    return '当前为按字段触发，可选择业务事件类型。'
+  }, [selectedTriggerMode])
 
   const loadRules = useCallback(async () => {
     setLoading(true)
@@ -1160,7 +1194,7 @@ function NotificationRulesPage() {
       userOptions
         .filter((item) => Boolean(String(item?.openId || '').trim()))
         .map((item) => ({
-          label: `${item.label}（已绑定OpenID）`,
+          label: `${item.label}（已绑定飞书账号）`,
           value: item.value,
         })),
     [userOptions],
@@ -1174,6 +1208,37 @@ function NotificationRulesPage() {
     )
     return (sendControlOpenIds || []).filter((item) => !matchedOpenIds.has(String(item || '').trim())).length
   }, [sendControlOpenIds, userOptions])
+  const receiverSummaryText = useMemo(() => {
+    const receiverType = String(selectedReceiverType || 'role')
+    if (receiverType === 'demand_group') {
+      return '需求绑定群（系统自动识别）'
+    }
+    if (receiverType === 'field') {
+      const fieldLabel = getReceiverFieldLabel(selectedReceiverFieldUserId)
+      return fieldLabel ? `字段映射：${fieldLabel}` : '字段映射'
+    }
+    if (receiverType === 'chat') {
+      const ids = Array.isArray(selectedReceiverChatIds) ? selectedReceiverChatIds : []
+      return ids.length > 0 ? `飞书群 ${ids.length} 个` : '飞书群（未选择）'
+    }
+    if (receiverType === 'user') {
+      const selectedIds = new Set(Array.isArray(selectedReceiverUsers) ? selectedReceiverUsers : [])
+      const names = userOptions
+        .filter((item) => selectedIds.has(item.value))
+        .map((item) => item.label)
+      return names.length > 0 ? `用户：${names.join('、')}` : '用户（未选择）'
+    }
+    const roles = Array.isArray(selectedReceiverRoles) ? selectedReceiverRoles : []
+    const roleLabels = roles.map((item) => BUSINESS_ROLE_LABEL_MAP[item] || item).filter(Boolean)
+    return roleLabels.length > 0 ? `业务角色：${roleLabels.join('、')}` : '业务角色（未选择）'
+  }, [
+    selectedReceiverType,
+    selectedReceiverFieldUserId,
+    selectedReceiverChatIds,
+    selectedReceiverUsers,
+    selectedReceiverRoles,
+    userOptions,
+  ])
 
   useEffect(() => {
     const currentField = form.getFieldValue('condition_field')
@@ -1252,6 +1317,24 @@ function NotificationRulesPage() {
     form.setFieldValue('receiver_field_user_id', nextDefault)
   }, [form, selectedEventType, selectedReceiverType])
 
+  useEffect(() => {
+    const sceneCode = String(form.getFieldValue('scene_code') || '')
+    if (!sceneCode) return
+
+    const triggerMode = String(selectedTriggerMode || 'event')
+    if (triggerMode === 'schedule' && !sceneCode.startsWith('schedule_')) {
+      form.setFieldValue('scene_code', undefined)
+      return
+    }
+    if (triggerMode === 'deadline' && sceneCode !== 'worklog_deadline_remind') {
+      form.setFieldValue('scene_code', undefined)
+      return
+    }
+    if (triggerMode === 'event' && sceneCode.startsWith('schedule_')) {
+      form.setFieldValue('scene_code', undefined)
+    }
+  }, [form, selectedTriggerMode])
+
   const openCreate = () => {
     setEditingRule(null)
     form.setFieldsValue(normalizeRuleFormValue(null))
@@ -1324,6 +1407,19 @@ function NotificationRulesPage() {
       receiverConfig = {
         business_roles: selectedRoles,
       }
+    }
+
+    if (values.receiver_type === 'role' && selectedRoles.length === 0) {
+      message.error('请至少选择一个业务角色')
+      return
+    }
+    if (values.receiver_type === 'user' && selectedUsers.length === 0) {
+      message.error('请至少选择一个接收用户')
+      return
+    }
+    if (values.receiver_type === 'chat' && selectedChatIds.length === 0) {
+      message.error('请至少选择一个接收飞书群')
+      return
     }
 
     const triggerMode = String(values.trigger_mode || 'event')
@@ -1580,6 +1676,22 @@ function NotificationRulesPage() {
     loadRules()
   }
 
+  const handleToggleEnabledWithConfirm = (rule, checked) => {
+    const nextEnabled = checked ? 1 : 0
+    const currentEnabled = Number(rule?.is_enabled) === 1 ? 1 : 0
+    if (nextEnabled === currentEnabled) return
+
+    Modal.confirm({
+      title: checked ? '确认启用该规则？' : '确认停用该规则？',
+      content: checked
+        ? `启用后将按规则“${rule?.rule_name || '-'}”开始发送通知。`
+        : `停用后规则“${rule?.rule_name || '-'}”将不再发送通知。`,
+      okText: checked ? '确认启用' : '确认停用',
+      cancelText: '取消',
+      onOk: () => handleToggleEnabled(rule, checked),
+    })
+  }
+
   const columns = [
     {
       title: '规则名称',
@@ -1617,7 +1729,7 @@ function NotificationRulesPage() {
           checkedChildren="启用"
           unCheckedChildren="停用"
           loading={togglingRuleId === row.id}
-          onChange={(checked) => handleToggleEnabled(row, checked)}
+          onClick={(checked) => handleToggleEnabledWithConfirm(row, checked)}
         />
       ),
     },
@@ -1659,61 +1771,75 @@ function NotificationRulesPage() {
       ),
     },
   ]
+  const tableColumns = screens?.lg
+    ? columns
+    : columns.filter((item) =>
+        ['rule_name', 'scene_code', 'is_enabled', 'actions'].includes(String(item.dataIndex || item.key || '')),
+      )
 
   return (
     <div style={{ padding: 12 }}>
       <Card variant="borderless" style={{ marginBottom: 12 }} loading={sendControlLoading} title="发送控制（当前环境）">
         <Row gutter={12}>
           <Col span={8}>
-            <div style={{ marginBottom: 8, fontWeight: 500 }}>发送模式</div>
-            <Select
-              style={{ width: '100%' }}
-              value={sendControlMode}
-              options={[
-                { label: 'shadow（只记录，不真实发送）', value: 'shadow' },
-                { label: 'whitelist（仅白名单发送）', value: 'whitelist' },
-                { label: 'live（全量真实发送）', value: 'live' },
-              ]}
-              onChange={(value) => setSendControlMode(value)}
-            />
+            <Form layout="vertical">
+              <Form.Item label="发送模式" style={{ marginBottom: 0 }}>
+                <Select
+                  style={{ width: '100%' }}
+                  value={sendControlMode}
+                  options={[
+                    { label: '仅记录（不发送）', value: 'shadow' },
+                    { label: '白名单发送（仅白名单）', value: 'whitelist' },
+                    { label: '全量发送（正式）', value: 'live' },
+                  ]}
+                  onChange={(value) => setSendControlMode(value)}
+                />
+              </Form.Item>
+            </Form>
           </Col>
           <Col span={8}>
-            <div style={{ marginBottom: 8, fontWeight: 500 }}>用户白名单</div>
-            <Select
-              mode="multiple"
-              showSearch
-              optionFilterProp="label"
-              value={sendControlSelectedUserIds}
-              options={sendControlUserWhitelistOptions}
-              onChange={handleSendControlUsersChange}
-              placeholder="选择白名单用户（仅展示已绑定OpenID用户可选）"
-              disabled={sendControlMode === 'shadow' || sendControlMode === 'live'}
-              style={{ width: '100%' }}
-            />
+            <Form layout="vertical">
+              <Form.Item label="用户白名单" style={{ marginBottom: 0 }}>
+                <Select
+                  mode="multiple"
+                  showSearch
+                  optionFilterProp="label"
+                  value={sendControlSelectedUserIds}
+                  options={sendControlUserWhitelistOptions}
+                  onChange={handleSendControlUsersChange}
+                  placeholder="选择白名单用户（仅展示已绑定飞书账号用户）"
+                  disabled={sendControlMode === 'shadow' || sendControlMode === 'live'}
+                  style={{ width: '100%' }}
+                />
+              </Form.Item>
+            </Form>
             <div style={{ marginTop: 6 }}>
               <Text type="secondary">
                 {unmatchedWhitelistOpenIdCount > 0
-                  ? `当前白名单中有 ${unmatchedWhitelistOpenIdCount} 个OpenID未匹配到用户（可在用户管理中补充绑定后再选择）`
-                  : '仅可选择已绑定OpenID的用户'}
+                  ? `当前白名单中有 ${unmatchedWhitelistOpenIdCount} 个飞书账号标识未匹配到系统用户（可在用户管理中补充绑定后再选择）`
+                  : '仅可选择已绑定飞书账号的用户'}
               </Text>
             </div>
           </Col>
           <Col span={8}>
-            <div style={{ marginBottom: 8, fontWeight: 500 }}>群白名单</div>
-            <Select
-              mode="multiple"
-              showSearch
-              filterOption={false}
-              onSearch={(value) => loadFeishuChatOptions(value)}
-              onFocus={() => loadFeishuChatOptions()}
-              notFoundContent={chatOptionsLoading ? '加载中...' : '暂无可选飞书群'}
-              value={sendControlChatIds}
-              onChange={(value) => setSendControlChatIds(Array.isArray(value) ? value : [])}
-              placeholder="选择白名单飞书群（仅显示当前应用可访问的群）"
-              disabled={sendControlMode === 'shadow' || sendControlMode === 'live'}
-              options={feishuChatOptions}
-              style={{ width: '100%' }}
-            />
+            <Form layout="vertical">
+              <Form.Item label="群白名单" style={{ marginBottom: 0 }}>
+                <Select
+                  mode="multiple"
+                  showSearch
+                  filterOption={false}
+                  onSearch={(value) => loadFeishuChatOptions(value)}
+                  onFocus={() => loadFeishuChatOptions()}
+                  notFoundContent={chatOptionsLoading ? '加载中...' : '暂无可选飞书群'}
+                  value={sendControlChatIds}
+                  onChange={(value) => setSendControlChatIds(Array.isArray(value) ? value : [])}
+                  placeholder="选择白名单飞书群（仅显示当前应用可访问的群）"
+                  disabled={sendControlMode === 'shadow' || sendControlMode === 'live'}
+                  options={feishuChatOptions}
+                  style={{ width: '100%' }}
+                />
+              </Form.Item>
+            </Form>
           </Col>
         </Row>
         <Row style={{ marginTop: 12 }}>
@@ -1722,7 +1848,7 @@ function NotificationRulesPage() {
               <Button type="primary" loading={sendControlSaving} onClick={handleSaveSendControl}>
                 保存发送控制
               </Button>
-              <Text type="secondary">建议日常联调用 `shadow`，灰度联调用 `whitelist`，上线后再切 `live`。</Text>
+              <Text type="secondary">建议：调试阶段用“仅记录”，灰度阶段用“白名单发送”，正式上线后再切“全量发送”。</Text>
             </Space>
           </Col>
         </Row>
@@ -1760,10 +1886,10 @@ function NotificationRulesPage() {
           <Table
             rowKey="id"
             loading={loading}
-            columns={columns}
+            columns={tableColumns}
             dataSource={rules}
             pagination={{ pageSize: 10 }}
-            scroll={{ x: 1200 }}
+            scroll={screens?.lg ? { x: 1200 } : undefined}
           />
         </Space>
       </Card>
@@ -1803,12 +1929,12 @@ function NotificationRulesPage() {
                 name="scene_code"
                 label="事件类型"
                 rules={[{ required: true, message: '请选择事件类型' }]}
-                extra="事件类型用于匹配触发时机。系统收到同类型事件时，才会执行该规则。"
+                extra={selectedTriggerModeTip}
               >
                 <Select
                   showSearch
                   placeholder="请选择事件类型"
-                  options={EVENT_TYPE_OPTIONS}
+                  options={filteredEventTypeOptions}
                   optionFilterProp="label"
                 />
               </Form.Item>
@@ -1869,7 +1995,11 @@ function NotificationRulesPage() {
             <Row gutter={12}>
               <Col span={24}>
                 {selectedReceiverType === 'user' ? (
-                  <Form.Item name="receiver_users" label="接收用户（可选）">
+                  <Form.Item
+                    name="receiver_users"
+                    label="接收用户"
+                    rules={[{ required: true, message: '请至少选择一个接收用户' }]}
+                  >
                     <Select
                       mode="multiple"
                       allowClear
@@ -1880,7 +2010,11 @@ function NotificationRulesPage() {
                     />
                   </Form.Item>
                 ) : selectedReceiverType === 'chat' ? (
-                  <Form.Item name="receiver_chat_ids" label="接收飞书群（可选）">
+                  <Form.Item
+                    name="receiver_chat_ids"
+                    label="接收飞书群"
+                    rules={[{ required: true, message: '请至少选择一个接收飞书群' }]}
+                  >
                     <Select
                       mode="multiple"
                       allowClear
@@ -1914,7 +2048,11 @@ function NotificationRulesPage() {
                     />
                   </Form.Item>
                 ) : (
-                  <Form.Item name="receiver_roles" label="接收业务角色（可选）">
+                  <Form.Item
+                    name="receiver_roles"
+                    label="接收业务角色"
+                    rules={[{ required: true, message: '请至少选择一个业务角色' }]}
+                  >
                     <Select
                       mode="multiple"
                       allowClear
@@ -1927,7 +2065,6 @@ function NotificationRulesPage() {
                 )}
               </Col>
             </Row>
-            <Text type="secondary">系统将自动使用后台内置的飞书应用发送，无需填写技术参数。</Text>
           </Card>
 
           <Card size="small" title="条件配置（可选）" style={{ marginTop: 12 }}>
@@ -2023,80 +2160,104 @@ function NotificationRulesPage() {
               </Row>
             ) : null}
 
-            <Row gutter={12}>
-              <Col span={8}>
-                <Form.Item name="condition_field" label="条件字段">
-                  <Select
-                    allowClear
-                    placeholder={selectedEventType ? '选择该事件的条件字段' : '请先选择事件类型'}
-                    options={activeConditionFieldOptions}
-                    disabled={!selectedEventType}
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item name="condition_operator" label="运算符">
-                  <Select allowClear placeholder="选择运算符" options={CONDITION_OPERATOR_OPTIONS} />
-                </Form.Item>
-              </Col>
-              {isConditionValueRequired ? (
+            {conditionEnabled ? (
+              <Row gutter={12}>
                 <Col span={8}>
-                  <Form.Item name="condition_value" label="条件值">
-                    <Input placeholder="例如：high 或 urgent,high" />
+                  <Form.Item name="condition_field" label="条件字段">
+                    <Select
+                      allowClear
+                      placeholder={selectedEventType ? '选择该事件的条件字段' : '请先选择事件类型'}
+                      options={activeConditionFieldOptions}
+                      disabled={!selectedEventType}
+                    />
                   </Form.Item>
                 </Col>
-              ) : null}
-            </Row>
+                <Col span={8}>
+                  <Form.Item name="condition_operator" label="运算符">
+                    <Select allowClear placeholder="选择运算符" options={CONDITION_OPERATOR_OPTIONS} />
+                  </Form.Item>
+                </Col>
+                {isConditionValueRequired ? (
+                  <Col span={8}>
+                    <Form.Item name="condition_value" label="条件值">
+                      <Input placeholder="例如：high 或 urgent,high" />
+                    </Form.Item>
+                  </Col>
+                ) : null}
+              </Row>
+            ) : (
+              <Text type="secondary">当前未启用附加条件，规则会在触发方式命中后直接执行。</Text>
+            )}
           </Card>
+          <Alert
+            showIcon
+            type="info"
+            style={{ marginTop: 12 }}
+            message="保存前摘要"
+            description={`事件类型：${EVENT_TYPE_LABEL_MAP[String(selectedEventType || '').toLowerCase()] || '未选择'}；接收配置：${receiverSummaryText}`}
+          />
 
-          <Card size="small" title="去重配置（可选）" style={{ marginTop: 12 }}>
-            <Row gutter={12}>
-              <Col span={8}>
-                <Form.Item name="dedup_enabled" label="启用去重" valuePropName="checked">
-                  <Switch />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item name="dedup_window_sec" label="去重时间窗（秒）">
-                  <InputNumber min={60} max={86400} precision={0} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item name="dedup_key_fields" label="去重字段">
-                  <Select
-                    mode="multiple"
-                    allowClear
-                    showSearch
-                    optionFilterProp="label"
-                    placeholder="选择去重字段"
-                    options={DEDUP_KEY_FIELD_OPTIONS}
-                  />
-                </Form.Item>
-              </Col>
-            </Row>
-          </Card>
+          <Collapse
+            style={{ marginTop: 12 }}
+            items={[
+              {
+                key: 'advanced',
+                label: '高级配置（去重 / 重试 / 优先级 / 备注）',
+                children: (
+                  <>
+                    <Card size="small" title="去重配置（可选）">
+                      <Row gutter={12}>
+                        <Col span={8}>
+                          <Form.Item name="dedup_enabled" label="启用去重" valuePropName="checked">
+                            <Switch />
+                          </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                          <Form.Item name="dedup_window_sec" label="去重时间窗（秒）">
+                            <InputNumber min={60} max={86400} precision={0} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                          <Form.Item name="dedup_key_fields" label="去重字段">
+                            <Select
+                              mode="multiple"
+                              allowClear
+                              showSearch
+                              optionFilterProp="label"
+                              placeholder="选择去重字段"
+                              options={DEDUP_KEY_FIELD_OPTIONS}
+                            />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    </Card>
 
-          <Row gutter={12}>
-            <Col span={8}>
-              <Form.Item name="retry_count" label="重试次数">
-                <InputNumber min={0} max={10} precision={0} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="retry_interval_sec" label="重试间隔秒（可选）">
-                <InputNumber min={0} max={86400} precision={0} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="priority" label="优先级">
-                <InputNumber min={0} max={99999} precision={0} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
+                    <Row gutter={12} style={{ marginTop: 12 }}>
+                      <Col span={8}>
+                        <Form.Item name="retry_count" label="重试次数">
+                          <InputNumber min={0} max={10} precision={0} style={{ width: '100%' }} />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item name="retry_interval_sec" label="重试间隔秒（可选）">
+                          <InputNumber min={0} max={86400} precision={0} style={{ width: '100%' }} />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item name="priority" label="优先级">
+                          <InputNumber min={0} max={99999} precision={0} style={{ width: '100%' }} />
+                        </Form.Item>
+                      </Col>
+                    </Row>
 
-          <Form.Item name="remark" label="备注（可选)">
-            <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} />
-          </Form.Item>
+                    <Form.Item name="remark" label="备注（可选)">
+                      <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} />
+                    </Form.Item>
+                  </>
+                ),
+              },
+            ]}
+          />
 
           <Text type="secondary">提示：页面配置会自动转换为系统内部 JSON，无需手写。</Text>
         </Form>

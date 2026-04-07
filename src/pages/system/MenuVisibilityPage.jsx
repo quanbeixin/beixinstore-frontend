@@ -1,4 +1,4 @@
-﻿import {
+import {
   ApartmentOutlined,
   FilterOutlined,
   GlobalOutlined,

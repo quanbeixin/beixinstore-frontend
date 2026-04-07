@@ -1,4 +1,4 @@
-﻿export const PUBLIC_ROUTES = [
+export const PUBLIC_ROUTES = [
   {
     path: '/login',
     componentKey: 'login',
@@ -248,20 +248,6 @@ export const PRIVATE_ROUTES = [
     page: {
       title: 'Bug详情',
       subtitle: '查看缺陷详情、状态流转、历史和附件。',
-    },
-  },
-  {
-    path: '/notification-config',
-    componentKey: 'notificationConfig',
-    requiredPermission: 'notification.config.view',
-    page: {
-      title: '通知配置',
-      subtitle: '维护项目管理关键场景的通知规则与接收角色。',
-    },
-    menu: {
-      section: 'system',
-      label: '通知配置',
-      icon: 'setting',
     },
   },
   {

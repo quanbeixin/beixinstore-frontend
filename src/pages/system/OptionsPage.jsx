@@ -1,4 +1,4 @@
-﻿import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import {
   Button,
   Form,

@@ -1,4 +1,4 @@
-﻿import { request } from './http'
+import { request } from './http'
 
 export function getRbacRolesApi() {
   return request.get('/rbac/roles')

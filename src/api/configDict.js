@@ -1,4 +1,4 @@
-﻿import { request } from './http'
+import { request } from './http'
 
 export function getDictTypesApi(params) {
   return request.get('/config/dict/types', { params })
