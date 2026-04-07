@@ -22,6 +22,7 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Radio,
   Select,
   Space,
   Switch,
@@ -36,6 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { executeAgentApi, getAgentOptionsApi } from '../../api/agent'
 import { getDictItemsApi } from '../../api/configDict'
+import { getFeishuChatOptionsApi } from '../../api/notification'
 import { getUsersApi } from '../../api/users'
 import {
   assignDemandWorkflowNodeApi,
@@ -105,6 +107,12 @@ const HEALTH_STATUS_OPTIONS = [
   { label: '健康', value: 'green' },
   { label: '预警', value: 'yellow' },
   { label: '风险', value: 'red' },
+]
+
+const DEMAND_GROUP_CHAT_MODE_OPTIONS = [
+  { label: '自动拉群', value: 'auto' },
+  { label: '不拉群', value: 'none' },
+  { label: '绑定现有群', value: 'bind' },
 ]
 
 function formatDemandNodeSchedule(record) {
@@ -333,6 +341,20 @@ function normalizeParticipantRoles(value) {
   )
 }
 
+function normalizeParticipantRoleUserMap(value, participantRoles = []) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const roleSet = new Set(normalizeParticipantRoles(participantRoles))
+  const result = {}
+  Object.entries(value).forEach(([roleKey, userIdRaw]) => {
+    const role = String(roleKey || '').trim().replace(/\s+/g, '_').toUpperCase()
+    const userId = Number(userIdRaw)
+    if (!role || !roleSet.has(role)) return
+    if (!Number.isInteger(userId) || userId <= 0) return
+    result[role] = userId
+  })
+  return result
+}
+
 function filterTemplateNodesByParticipantRoles(nodes, participantRoles = []) {
   const normalizedDemandRoles = normalizeParticipantRoles(participantRoles)
   const demandRoleSet = new Set(normalizedDemandRoles)
@@ -411,8 +433,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [form] = Form.useForm()
   const modalTemplateId = Form.useWatch('template_id', form)
   const modalParticipantRoles = Form.useWatch('participant_roles', form)
+  const modalParticipantRoleUserMap = Form.useWatch('participant_role_user_map', form)
   const modalOwnerUserId = Form.useWatch('owner_user_id', form)
   const modalProjectManager = Form.useWatch('project_manager', form)
+  const modalGroupChatMode = Form.useWatch('group_chat_mode', form)
 
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -456,6 +480,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [selectedAgentId, setSelectedAgentId] = useState(null)
   const [analysisExecuting, setAnalysisExecuting] = useState(false)
   const [analysisResult, setAnalysisResult] = useState(null)
+  const [feishuChatOptionsLoading, setFeishuChatOptionsLoading] = useState(false)
+  const [feishuChatOptions, setFeishuChatOptions] = useState([])
 
   const [detailPageLoading, setDetailPageLoading] = useState(false)
   const [detailDemand, setDetailDemand] = useState(null)
@@ -466,6 +492,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [detailName, setDetailName] = useState('')
   const [detailTemplateId, setDetailTemplateId] = useState()
   const [detailParticipantRoles, setDetailParticipantRoles] = useState(DEFAULT_DEMAND_PARTICIPANT_ROLES)
+  const [detailParticipantRoleUserMap, setDetailParticipantRoleUserMap] = useState({})
   const [detailProjectManager, setDetailProjectManager] = useState()
   const [detailBusinessGroupCode, setDetailBusinessGroupCode] = useState(undefined)
   const [detailHealthStatus, setDetailHealthStatus] = useState('green')
@@ -475,6 +502,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [detailDocLink, setDetailDocLink] = useState('')
   const [detailUiDesignLink, setDetailUiDesignLink] = useState('')
   const [detailTestCaseLink, setDetailTestCaseLink] = useState('')
+  const [detailGroupChatMode, setDetailGroupChatMode] = useState('none')
+  const [detailGroupChatId, setDetailGroupChatId] = useState(undefined)
   const [workflowLoading, setWorkflowLoading] = useState(false)
   const [workflowSubmitting, setWorkflowSubmitting] = useState(false)
   const [workflowReplacing, setWorkflowReplacing] = useState(false)
@@ -766,6 +795,34 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     })
     return map
   }, [participantRoleOptions])
+
+  const ownerLabelMap = useMemo(() => {
+    const map = new Map()
+    ownerOptions.forEach((item) => {
+      map.set(Number(item.value), String(item.label || '').trim() || `用户${item.value}`)
+    })
+    return map
+  }, [ownerOptions])
+
+  const modalRoleAssignmentRows = useMemo(() => {
+    const normalizedRoles = normalizeParticipantRoles(modalParticipantRoles)
+    const mapValue = normalizeParticipantRoleUserMap(modalParticipantRoleUserMap, normalizedRoles)
+    return normalizedRoles.map((roleKey) => ({
+      roleKey,
+      roleLabel: participantRoleLabelMap.get(roleKey) || roleKey,
+      userId: mapValue[roleKey] || undefined,
+    }))
+  }, [modalParticipantRoles, modalParticipantRoleUserMap, participantRoleLabelMap])
+
+  const detailRoleAssignmentRows = useMemo(() => {
+    const normalizedRoles = normalizeParticipantRoles(detailParticipantRoles)
+    const mapValue = normalizeParticipantRoleUserMap(detailParticipantRoleUserMap, normalizedRoles)
+    return normalizedRoles.map((roleKey) => ({
+      roleKey,
+      roleLabel: participantRoleLabelMap.get(roleKey) || roleKey,
+      userId: mapValue[roleKey] || undefined,
+    }))
+  }, [detailParticipantRoles, detailParticipantRoleUserMap, participantRoleLabelMap])
 
   const groupedDemands = useMemo(() => {
     const sourceRows = isLaunchPlanPage
@@ -1276,6 +1333,38 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     loadDemandAgentOptions()
   }, [loadDemandAgentOptions])
 
+  const loadFeishuChatOptions = useCallback(async (keywordText = '') => {
+    setFeishuChatOptionsLoading(true)
+    try {
+      const result = await getFeishuChatOptionsApi({
+        page_size: 100,
+        keyword: String(keywordText || '').trim() || undefined,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '获取飞书群失败')
+        return
+      }
+
+      const items = Array.isArray(result?.data?.items) ? result.data.items : []
+      const options = items
+        .map((item) => {
+          const chatId = String(item?.chat_id || '').trim()
+          if (!chatId) return null
+          const name = String(item?.name || '').trim() || chatId
+          return {
+            label: `${name}（${chatId}）`,
+            value: chatId,
+          }
+        })
+        .filter(Boolean)
+      setFeishuChatOptions(options)
+    } catch (error) {
+      message.error(error?.message || '获取飞书群失败')
+    } finally {
+      setFeishuChatOptionsLoading(false)
+    }
+  }, [])
+
   const openCreateModal = () => {
     if (!canCreateInCurrentPage) return
     setEditingDemand(null)
@@ -1287,6 +1376,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       owner_user_id: defaultOwnerId,
       template_id: defaultProjectTemplateId,
       participant_roles: DEFAULT_DEMAND_PARTICIPANT_ROLES,
+      participant_role_user_map: {},
       project_manager: defaultOwnerId,
       health_status: 'green',
       actual_start_time: dayjs(),
@@ -1294,6 +1384,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       doc_link: '',
       ui_design_link: '',
       test_case_link: '',
+      group_chat_mode: 'none',
+      group_chat_id: undefined,
       business_group_code: undefined,
       expected_release_date: null,
       status: 'TODO',
@@ -1318,6 +1410,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         Array.isArray(record.participant_roles) && record.participant_roles.length > 0
           ? record.participant_roles
           : DEFAULT_DEMAND_PARTICIPANT_ROLES,
+      participant_role_user_map: normalizeParticipantRoleUserMap(
+        record.participant_role_user_map,
+        Array.isArray(record.participant_roles) ? record.participant_roles : DEFAULT_DEMAND_PARTICIPANT_ROLES,
+      ),
       project_manager: record.project_manager ? Number(record.project_manager) : undefined,
       health_status: record.health_status || 'green',
       actual_start_time: toNullableDateTimeValue(record.actual_start_time),
@@ -1325,6 +1421,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       doc_link: record.doc_link || '',
       ui_design_link: record.ui_design_link || '',
       test_case_link: record.test_case_link || '',
+      group_chat_mode: record.group_chat_mode || 'none',
+      group_chat_id: record.group_chat_id || undefined,
       business_group_code: record.business_group_code || undefined,
       expected_release_date: record.expected_release_date ? dayjs(record.expected_release_date) : null,
       status: record.status,
@@ -1358,6 +1456,29 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     form.setFieldValue('project_manager', hasNextOwner ? nextOwnerId : undefined)
   }, [modalOpen, editingDemand, modalOwnerUserId, modalProjectManager, form])
 
+  useEffect(() => {
+    if (!modalOpen) return
+    if (modalGroupChatMode === 'bind') return
+    form.setFieldValue('group_chat_id', undefined)
+  }, [modalOpen, modalGroupChatMode, form])
+
+  useEffect(() => {
+    if (!modalOpen) return
+    const normalizedRoles = normalizeParticipantRoles(modalParticipantRoles)
+    const currentMap = normalizeParticipantRoleUserMap(
+      form.getFieldValue('participant_role_user_map'),
+      normalizedRoles,
+    )
+    form.setFieldValue('participant_role_user_map', currentMap)
+  }, [modalOpen, modalParticipantRoles, form])
+
+  useEffect(() => {
+    if (!modalOpen) return
+    if (modalGroupChatMode !== 'bind') return
+    if (feishuChatOptions.length > 0) return
+    loadFeishuChatOptions()
+  }, [modalOpen, modalGroupChatMode, feishuChatOptions.length, loadFeishuChatOptions])
+
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
@@ -1376,6 +1497,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         management_mode: 'advanced',
         template_id: values.template_id,
         participant_roles: normalizeParticipantRoles(values.participant_roles),
+        participant_role_user_map: normalizeParticipantRoleUserMap(
+          form.getFieldValue('participant_role_user_map'),
+          values.participant_roles,
+        ),
         project_manager: values.project_manager ?? null,
         health_status: values.health_status || 'green',
         actual_start_time: values.actual_start_time ? values.actual_start_time.format('YYYY-MM-DD') : null,
@@ -1383,6 +1508,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         doc_link: values.doc_link || null,
         ui_design_link: values.ui_design_link || null,
         test_case_link: values.test_case_link || null,
+        group_chat_mode: values.group_chat_mode || 'none',
+        group_chat_id: values.group_chat_mode === 'bind' ? values.group_chat_id || null : null,
         business_group_code: values.business_group_code ?? null,
         expected_release_date: values.expected_release_date ? values.expected_release_date.format('YYYY-MM-DD') : null,
         status: values.status,
@@ -1413,6 +1540,21 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setSubmitting(false)
     }
   }
+
+  const handleModalRoleUserChange = useCallback((roleKey, userId) => {
+    const normalizedRole = String(roleKey || '').trim().toUpperCase()
+    if (!normalizedRole) return
+    const currentMap = normalizeParticipantRoleUserMap(
+      form.getFieldValue('participant_role_user_map'),
+      modalParticipantRoles,
+    )
+    if (!userId) {
+      delete currentMap[normalizedRole]
+    } else {
+      currentMap[normalizedRole] = Number(userId)
+    }
+    form.setFieldValue('participant_role_user_map', currentMap)
+  }, [form, modalParticipantRoles])
 
   const fetchDemandRelatedLogs = useCallback(
     async (demandId) => {
@@ -1634,6 +1776,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setDetailName('')
       setDetailTemplateId(undefined)
       setDetailParticipantRoles(['DEMAND_OWNER'])
+      setDetailParticipantRoleUserMap({})
       setDetailProjectManager(undefined)
       setDetailBusinessGroupCode(undefined)
       setDetailHealthStatus('green')
@@ -1643,6 +1786,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setDetailDocLink('')
       setDetailUiDesignLink('')
       setDetailTestCaseLink('')
+      setDetailGroupChatMode('none')
+      setDetailGroupChatId(undefined)
       return
     }
     setDetailName(detailDemand.name || '')
@@ -1651,6 +1796,14 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       Array.isArray(detailDemand.participant_roles) && detailDemand.participant_roles.length > 0
         ? detailDemand.participant_roles
         : DEFAULT_DEMAND_PARTICIPANT_ROLES,
+    )
+    setDetailParticipantRoleUserMap(
+      normalizeParticipantRoleUserMap(
+        detailDemand.participant_role_user_map,
+        Array.isArray(detailDemand.participant_roles) && detailDemand.participant_roles.length > 0
+          ? detailDemand.participant_roles
+          : DEFAULT_DEMAND_PARTICIPANT_ROLES,
+      ),
     )
     setDetailProjectManager(detailDemand.project_manager ? Number(detailDemand.project_manager) : undefined)
     setDetailBusinessGroupCode(detailDemand.business_group_code || undefined)
@@ -1661,6 +1814,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setDetailDocLink(detailDemand.doc_link || '')
     setDetailUiDesignLink(detailDemand.ui_design_link || '')
     setDetailTestCaseLink(detailDemand.test_case_link || '')
+    setDetailGroupChatMode(detailDemand.group_chat_mode || 'none')
+    setDetailGroupChatId(detailDemand.group_chat_id || undefined)
 
     if (!canEditDemandRecord(detailDemand)) {
       setDetailStatus('')
@@ -1668,6 +1823,23 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     }
     setDetailStatus(detailDemand.status || 'TODO')
   }, [isDetailPage, detailDemand, canEditDemandRecord, defaultProjectTemplateId])
+
+  useEffect(() => {
+    if (detailGroupChatMode === 'bind') return
+    setDetailGroupChatId(undefined)
+  }, [detailGroupChatMode])
+
+  useEffect(() => {
+    const normalizedRoles = normalizeParticipantRoles(detailParticipantRoles)
+    setDetailParticipantRoleUserMap((prev) => normalizeParticipantRoleUserMap(prev, normalizedRoles))
+  }, [detailParticipantRoles])
+
+  useEffect(() => {
+    if (!isDetailPage || !detailDemand) return
+    if (detailGroupChatMode !== 'bind') return
+    if (feishuChatOptions.length > 0) return
+    loadFeishuChatOptions()
+  }, [isDetailPage, detailDemand, detailGroupChatMode, feishuChatOptions.length, loadFeishuChatOptions])
 
   const refreshListAndDetail = useCallback(async (nextDetail) => {
     if (!isDetailPage) {
@@ -1733,6 +1905,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         management_mode: 'advanced',
         template_id: detailTemplateId,
         participant_roles: normalizedDetailParticipantRoles,
+        participant_role_user_map: normalizeParticipantRoleUserMap(
+          detailParticipantRoleUserMap,
+          normalizedDetailParticipantRoles,
+        ),
         project_manager: detailProjectManager ?? null,
         business_group_code: detailBusinessGroupCode ?? null,
         health_status: detailHealthStatus || 'green',
@@ -1742,6 +1918,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         doc_link: detailDocLink || null,
         ui_design_link: detailUiDesignLink || null,
         test_case_link: detailTestCaseLink || null,
+        group_chat_mode: detailGroupChatMode || 'none',
+        group_chat_id: detailGroupChatMode === 'bind' ? detailGroupChatId || null : null,
       })
       if (!result?.success) {
         message.error(result?.message || '保存失败')
@@ -1817,6 +1995,20 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setWorkflowSubmitting(false)
     }
   }
+
+  const handleDetailRoleUserChange = useCallback((roleKey, userId) => {
+    const normalizedRole = String(roleKey || '').trim().toUpperCase()
+    if (!normalizedRole) return
+    setDetailParticipantRoleUserMap((prev) => {
+      const next = normalizeParticipantRoleUserMap(prev, detailParticipantRoles)
+      if (!userId) {
+        delete next[normalizedRole]
+      } else {
+        next[normalizedRole] = Number(userId)
+      }
+      return next
+    })
+  }, [detailParticipantRoles])
 
   const handleSaveWorkflowNodeSchedule = async (payload = {}) => {
     if (!detailDemand?.id || !canManageWorkflow || !selectedWorkflowNode?.node_key) return false
@@ -2749,6 +2941,33 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
             />
           </Form.Item>
 
+          <Card size="small" variant="borderless" style={{ marginTop: -6, marginBottom: 12 }}>
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Text strong>角色指定人员（可选）</Text>
+              {modalRoleAssignmentRows.length > 0 ? (
+                modalRoleAssignmentRows.map((item) => (
+                  <div
+                    key={`role-user-${item.roleKey}`}
+                    style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 8, alignItems: 'center' }}
+                  >
+                    <Text>{item.roleLabel}</Text>
+                    <Select
+                      allowClear
+                      showSearch
+                      optionFilterProp="label"
+                      options={ownerOptions}
+                      value={item.userId}
+                      placeholder={`请选择${item.roleLabel}人员（可选）`}
+                      onChange={(value) => handleModalRoleUserChange(item.roleKey, value)}
+                    />
+                  </div>
+                ))
+              ) : (
+                <Text type="secondary">请先选择需求涉及角色</Text>
+              )}
+            </Space>
+          </Card>
+
           {selectedModalTemplate ? (
             <Card size="small" variant="borderless" style={{ marginBottom: 12 }}>
               <Space orientation="vertical" size={6} style={{ width: '100%' }}>
@@ -2789,6 +3008,28 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               placeholder="请选择业务组（可选）"
             />
           </Form.Item>
+
+          <Form.Item label="拉群方式选择" name="group_chat_mode">
+            <Radio.Group options={DEMAND_GROUP_CHAT_MODE_OPTIONS} />
+          </Form.Item>
+          {modalGroupChatMode === 'bind' ? (
+            <Form.Item
+              label="绑定现有群"
+              name="group_chat_id"
+              rules={[{ required: true, message: '请选择要绑定的飞书群' }]}
+            >
+              <Select
+                allowClear
+                showSearch
+                filterOption={false}
+                onSearch={(value) => loadFeishuChatOptions(value)}
+                onFocus={() => loadFeishuChatOptions()}
+                notFoundContent={feishuChatOptionsLoading ? '加载中...' : '暂无可选飞书群'}
+                options={feishuChatOptions}
+                placeholder="选择当前应用可访问的飞书群"
+              />
+            </Form.Item>
+          ) : null}
 
           <Form.Item label="状态" name="status" rules={[{ required: true, message: '请选择状态' }]}>
             <Select options={STATUS_OPTIONS} />
@@ -3063,6 +3304,31 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               onChange={(value) => setDetailHealthStatus(value)}
                             />
                           </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">拉群方式选择</Text>
+                            <Radio.Group
+                              options={DEMAND_GROUP_CHAT_MODE_OPTIONS}
+                              value={detailGroupChatMode}
+                              onChange={(event) => setDetailGroupChatMode(event?.target?.value || 'none')}
+                            />
+                          </div>
+                          {detailGroupChatMode === 'bind' ? (
+                            <div className="work-demand-detail__field work-demand-detail__field--full">
+                              <Text type="secondary">绑定现有群</Text>
+                              <Select
+                                allowClear
+                                showSearch
+                                filterOption={false}
+                                value={detailGroupChatId}
+                                onSearch={(value) => loadFeishuChatOptions(value)}
+                                onFocus={() => loadFeishuChatOptions()}
+                                notFoundContent={feishuChatOptionsLoading ? '加载中...' : '暂无可选飞书群'}
+                                options={feishuChatOptions}
+                                placeholder="选择当前应用可访问的飞书群"
+                                onChange={(value) => setDetailGroupChatId(value || undefined)}
+                              />
+                            </div>
+                          ) : null}
                           <div className="work-demand-detail__field">
                             <Text type="secondary">预期上线</Text>
                             <DatePicker
@@ -3120,6 +3386,38 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                             onChange={(value) => setDetailParticipantRoles(value)}
                           />
                         </div>
+                        <div className="work-demand-detail__field work-demand-detail__field--full">
+                          <Text type="secondary">角色指定人员（可选）</Text>
+                          {detailRoleAssignmentRows.length > 0 ? (
+                            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                              {detailRoleAssignmentRows.map((item) => (
+                                <div
+                                  key={`detail-role-user-${item.roleKey}`}
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: '140px 1fr',
+                                    gap: 8,
+                                    alignItems: 'center',
+                                  }}
+                                >
+                                  <Text>{item.roleLabel}</Text>
+                                  <Select
+                                    allowClear
+                                    showSearch
+                                    optionFilterProp="label"
+                                    value={item.userId}
+                                    options={ownerOptions}
+                                    placeholder={`请选择${item.roleLabel}人员（可选）`}
+                                    disabled={!canEditDemandRecord(detailDemand)}
+                                    onChange={(value) => handleDetailRoleUserChange(item.roleKey, value)}
+                                  />
+                                </div>
+                              ))}
+                            </Space>
+                          ) : (
+                            <Text type="secondary">请先选择需求涉及角色</Text>
+                          )}
+                        </div>
                       </div>
                       <div className="work-demand-detail__table-shell">
                         <div className="work-demand-detail__role-panel">
@@ -3135,6 +3433,23 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                             <Text type="secondary">当前未配置需求涉及角色</Text>
                           )}
                         </div>
+                        {detailRoleAssignmentRows.some((item) => Number(item.userId) > 0) ? (
+                          <div className="work-demand-detail__role-panel" style={{ marginTop: 8 }}>
+                            <Space size={[8, 8]} wrap>
+                              {detailRoleAssignmentRows
+                                .filter((item) => Number(item.userId) > 0)
+                                .map((item) => {
+                                  const userId = Number(item.userId)
+                                  const userLabel = ownerLabelMap.get(userId) || `用户${userId}`
+                                  return (
+                                    <Tag key={`role-user-tag-${item.roleKey}`} color="gold">
+                                      {item.roleLabel}: {userLabel}
+                                    </Tag>
+                                  )
+                                })}
+                            </Space>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   ),

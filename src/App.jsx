@@ -27,6 +27,7 @@ const LaunchPlan = lazy(() => import('./pages/project/LaunchPlanPage'))
 const ProjectTemplates = lazy(() => import('./pages/project/ProjectTemplatesPage'))
 const ProjectTemplateDetail = lazy(() => import('./pages/project/ProjectTemplateDetailPage'))
 const NotificationConfig = lazy(() => import('./pages/project/NotificationConfigPage'))
+const NotificationRules = lazy(() => import('./pages/notification/NotificationRulesPage'))
 const WorkLogs = lazy(() => import('./pages/workbench/WorkLogsPage'))
 const MyDemands = lazy(() => import('./pages/workbench/MyDemandsPage'))
 const MyAssignedItems = lazy(() => import('./pages/workbench/MyAssignedItemsPage'))
@@ -69,6 +70,7 @@ const PAGE_COMPONENTS = {
   projectTemplates: ProjectTemplates,
   projectTemplateDetail: ProjectTemplateDetail,
   notificationConfig: NotificationConfig,
+  notificationRules: NotificationRules,
   launchPlan: LaunchPlan,
   register: Register,
   rolePermissions: RolePermissions,
