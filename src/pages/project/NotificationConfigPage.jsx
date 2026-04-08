@@ -150,7 +150,7 @@ function NotificationConfig() {
       key: 'scene',
       width: 240,
       render: (scene) => (
-        <Space direction="vertical" size={2}>
+        <Space orientation="vertical" size={2}>
           <Tag color="blue">{SCENE_META[scene]?.label || scene}</Tag>
           <Text type="secondary">{SCENE_META[scene]?.desc || '-'}</Text>
         </Space>

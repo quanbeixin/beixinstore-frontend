@@ -150,6 +150,7 @@ function OwnerWorkbench() {
   const [pendingOnlyTouched, setPendingOnlyTouched] = useState(false)
   const [doneRecentOnly, setDoneRecentOnly] = useState(true)
   const [selectedRowKeys, setSelectedRowKeys] = useState([])
+  const [quickFilterType, setQuickFilterType] = useState('')
 
   const [estimateForm] = Form.useForm()
   const [batchForm] = Form.useForm()
@@ -398,6 +399,11 @@ function OwnerWorkbench() {
         return false
       }
       if (q && !getSearchText(item).includes(q)) return false
+      if (quickFilterType === 'OVERDUE') {
+        const completionDate = String(item?.expected_completion_date || '').trim()
+        const status = String(item?.log_status || 'IN_PROGRESS').trim().toUpperCase()
+        if (!completionDate || completionDate >= todayValue || status === 'DONE') return false
+      }
       return true
     })
 
@@ -421,6 +427,7 @@ function OwnerWorkbench() {
     pendingOnly,
     isDoneStatusSelected,
     doneRecentOnly,
+    quickFilterType,
   ])
 
   // Owner工作台提醒统计
@@ -507,7 +514,11 @@ function OwnerWorkbench() {
       message.warning('请先勾选要批量评估的事项')
       return
     }
-    batchForm.setFieldsValue({ owner_estimate_hours: undefined })
+    batchForm.setFieldsValue({
+      owner_estimate_hours: undefined,
+      task_difficulty_strategy: 'AUTO',
+      task_difficulty_code: undefined,
+    })
     setBatchModalOpen(true)
   }
 
@@ -529,9 +540,13 @@ function OwnerWorkbench() {
       let successCount = 0
       for (const item of targets) {
         try {
+          const resolvedTaskDifficultyCode =
+            values.task_difficulty_strategy === 'MANUAL'
+              ? values.task_difficulty_code || 'N1'
+              : item?.task_difficulty_code || item?.self_task_difficulty_code || 'N1'
           const result = await updateWorkLogOwnerEstimateApi(item.id, {
             owner_estimate_hours: values.owner_estimate_hours,
-            task_difficulty_code: item?.task_difficulty_code || 'N1',
+            task_difficulty_code: resolvedTaskDifficultyCode,
           })
           if (result?.success) successCount += 1
         } catch {
@@ -551,6 +566,24 @@ function OwnerWorkbench() {
     } finally {
       setBatchSaving(false)
     }
+  }
+
+  const resetOwnerFilters = () => {
+    setKeyword('')
+    setMemberFilter(undefined)
+    setPhaseFilter(undefined)
+    setStatusFilter(undefined)
+    setPendingOnly(true)
+    setPendingOnlyTouched(false)
+    setDoneRecentOnly(true)
+    setQuickFilterType('')
+  }
+
+  const applyOverdueQuickFilter = () => {
+    setQuickFilterType('OVERDUE')
+    setStatusFilter(undefined)
+    setPendingOnly(false)
+    setDoneRecentOnly(true)
   }
 
   const openAssignModal = () => {
@@ -982,6 +1015,11 @@ function OwnerWorkbench() {
                 title={`有 ${ownerReminderStats.overdueCount} 项团队成员工作已超期`}
                 type="error"
                 showIcon
+                action={
+                  <Button type="link" size="small" onClick={applyOverdueQuickFilter}>
+                    查看明细
+                  </Button>
+                }
                 closable
               />
             )}
@@ -1063,7 +1101,13 @@ function OwnerWorkbench() {
               <Switch checked={doneRecentOnly} onChange={setDoneRecentOnly} />
             </Space>
           ) : null}
+          {quickFilterType === 'OVERDUE' ? (
+            <Tag closable onClose={() => setQuickFilterType('')} color="red">
+              快捷筛选：超期事项
+            </Tag>
+          ) : null}
           <Button onClick={() => setSelectedRowKeys([])}>清空勾选</Button>
+          <Button onClick={resetOwnerFilters}>重置筛选</Button>
           <Button type="primary" disabled={selectedRowKeys.length === 0} onClick={openBatchModal}>
             批量评估
           </Button>
@@ -1166,7 +1210,40 @@ function OwnerWorkbench() {
           >
             <InputNumber min={0} step={0.5} className="owner-input-number-full" />
           </Form.Item>
+          <Form.Item
+            label="Owner评估任务难度"
+            name="task_difficulty_strategy"
+            initialValue="AUTO"
+            rules={[{ required: true, message: '请选择任务难度设置方式' }]}
+          >
+            <Select
+              options={[
+                { value: 'AUTO', label: '自动（默认）' },
+                { value: 'MANUAL', label: '统一指定' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, next) => prev.task_difficulty_strategy !== next.task_difficulty_strategy}>
+            {({ getFieldValue }) =>
+              getFieldValue('task_difficulty_strategy') === 'MANUAL' ? (
+                <Form.Item
+                  label="统一任务难度"
+                  name="task_difficulty_code"
+                  rules={[{ required: true, message: '请选择任务难度' }]}
+                >
+                  <Select
+                    showSearch
+                    placeholder="请选择任务难度"
+                    options={taskDifficultyOptions}
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              ) : null
+            }
+          </Form.Item>
           <Text type="secondary">将对当前筛选结果中已勾选事项统一设置该评估值。</Text>
+          <br />
+          <Text type="secondary">自动模式：优先沿用事项当前 Owner 难度，若缺失则使用个人评估难度，再缺失回退 N1。</Text>
         </Form>
       </Modal>
 

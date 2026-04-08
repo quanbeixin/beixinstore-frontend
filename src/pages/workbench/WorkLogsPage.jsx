@@ -59,7 +59,7 @@ import { getUnifiedStatusMeta } from '../../utils/workStatus'
 const { Text } = Typography
 const { RangePicker } = DatePicker
 const DEFAULT_SELF_TASK_DIFFICULTY_CODE = 'N1'
-const DAILY_ACTUAL_WARNING_LIMIT_HOURS = 9
+const DAILY_ACTUAL_MAX_LIMIT_HOURS = 8.5
 const SELF_TASK_DIFFICULTY_HELP_TEXT = '关于事项的难易程度，请您根据自身实际能力，做出适宜的判断即可，默认为N1'
 const TASK_DIFFICULTY_FALLBACK_OPTIONS = ['N1', 'N2', 'N3', 'N4'].map((item) => ({
   value: item,
@@ -336,6 +336,11 @@ function getLastWeeklyRange() {
 function toNumber(value, fallback = 0) {
   const num = Number(value)
   return Number.isFinite(num) ? num : fallback
+}
+
+function hasFiniteNumber(value) {
+  if (value === undefined || value === null || value === '') return false
+  return Number.isFinite(Number(value))
 }
 
 function getTaskSourceLabel(source) {
@@ -1380,21 +1385,18 @@ function WorkLogs({ mode = 'dashboard' }) {
     const defaultEntryDate = isDetailEdit
       ? String(operatingLog?.entry_date || '').trim() || getTodayDateString()
       : getTodayDateString()
-    const hasDetailActual = Number.isFinite(Number(operatingLog?.detail_entry_actual_hours))
-    const hasTodayActual = Number.isFinite(Number(operatingLog?.today_actual_hours))
-    const suggestedCompletionHours = toNumber(operatingLog?.today_planned_hours, 0) > 0
-      ? toNumber(operatingLog?.today_planned_hours, 0)
-      : toNumber(operatingLog?.personal_estimate_hours, 0)
+    const hasDetailActual = hasFiniteNumber(operatingLog?.detail_entry_actual_hours)
+    const hasTodayActual = hasFiniteNumber(operatingLog?.today_entry_actual_hours)
     const defaultActualHours = isDetailEdit
       ? hasDetailActual
         ? toNumber(operatingLog?.detail_entry_actual_hours, 0)
         : toNumber(operatingLog?.today_planned_hours, 0)
       : hasTodayActual
-        ? toNumber(operatingLog?.today_actual_hours, 0)
-        : toNumber(operatingLog?.today_planned_hours, 0) > 0
-          ? toNumber(operatingLog?.today_planned_hours, 0)
-          : dailyEntryCompletesItem
-            ? suggestedCompletionHours
+        ? toNumber(operatingLog?.today_entry_actual_hours, 0)
+        : dailyEntryCompletesItem
+          ? undefined
+          : toNumber(operatingLog?.today_planned_hours, 0) > 0
+            ? toNumber(operatingLog?.today_planned_hours, 0)
             : 0
     dailyEntryForm.setFieldsValue({
       entry_date: defaultEntryDate,
@@ -1625,19 +1627,6 @@ function WorkLogs({ mode = 'dashboard' }) {
     return toNumber(result?.data?.today?.actual_hours_today, 0)
   }, [isHistoryPage, workbench?.today?.actual_hours_today])
 
-  const confirmExcessDailyActualHours = useCallback(async (projectedHours) => {
-    return new Promise((resolve) => {
-      Modal.confirm({
-        title: '今日投入已超过 9 小时',
-        content: `当前保存后，今日实际投入将达到 ${toNumber(projectedHours, 0).toFixed(1)} 小时。辛苦校准今日事项后再填报，确认无误后可继续保存。`,
-        okText: '仍然保存',
-        cancelText: '返回校准',
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      })
-    })
-  }, [])
-
   const ensureDailyActualHoursWithinNotice = useCallback(
     async ({ entryDate, actualHours }) => {
       const todayDate = getTodayDateString()
@@ -1655,14 +1644,15 @@ function WorkLogs({ mode = 'dashboard' }) {
       }
 
       const projectedHours = toNumber(currentTodayActualHours, 0) - existingEntryHours + toNumber(actualHours, 0)
-      if (projectedHours <= DAILY_ACTUAL_WARNING_LIMIT_HOURS) {
+      if (projectedHours <= DAILY_ACTUAL_MAX_LIMIT_HOURS) {
         return true
       }
-
-      return confirmExcessDailyActualHours(projectedHours)
+      message.warning(
+        `当日实际用时不能超过 ${DAILY_ACTUAL_MAX_LIMIT_HOURS} 小时（当前将达到 ${toNumber(projectedHours, 0).toFixed(1)} 小时）`,
+      )
+      return false
     },
     [
-      confirmExcessDailyActualHours,
       dailyEntryModalMode,
       operatingLog?.detail_entry_actual_hours,
       operatingLog?.entry_date,

@@ -51,8 +51,39 @@ function getSaturationTag(rate) {
   return <Tag color="green">{num.toFixed(1)}%</Tag>
 }
 
+function renderDayTypeTags(row) {
+  const tags = []
+  if (row?.is_adjusted_workday) {
+    tags.push(
+      <Tag key="adjusted" color="blue">
+        调休工作日
+      </Tag>,
+    )
+  } else if (row?.is_holiday) {
+    tags.push(
+      <Tooltip key="holiday-tip" title={row?.holiday_name || row?.note || '节假日'}>
+        <Tag color="volcano">节假日</Tag>
+      </Tooltip>,
+    )
+  } else if (!row?.is_workday) {
+    tags.push(<Tag key="weekend">非工作日</Tag>)
+  }
+  return tags
+}
+
+function renderDailySaturation(value, row) {
+  const num = toNumber(value, 0)
+  if (!row?.is_workday && num <= 0) {
+    return <Text type="secondary">-</Text>
+  }
+  if (!row?.is_workday) {
+    return <Tag color="blue">{num.toFixed(1)}%</Tag>
+  }
+  return getSaturationTag(num)
+}
+
 function getDefaultDateRange() {
-  return [dayjs().add(-30, 'day'), dayjs()]
+  return getThisWeekToTodayDateRange()
 }
 
 function getTodayDateRange() {
@@ -128,6 +159,10 @@ function MemberRhythmBoard() {
     summary: {
       member_count: 0,
       total_filled_days: 0,
+      total_recorded_days: 0,
+      total_workday_count: 0,
+      workday_count: 0,
+      calendar_day_count: 0,
       total_owner_estimate_hours: 0,
       total_personal_estimate_hours: 0,
       total_actual_hours: 0,
@@ -138,6 +173,7 @@ function MemberRhythmBoard() {
       overload_day_count: 0,
       low_load_day_count: 0,
     },
+    calendar_dates: [],
     member_list: [],
   })
 
@@ -275,6 +311,7 @@ function MemberRhythmBoard() {
     () => (data.summary && typeof data.summary === 'object' ? data.summary : {}),
     [data.summary],
   )
+  const calendarDates = useMemo(() => (Array.isArray(data.calendar_dates) ? data.calendar_dates : []), [data.calendar_dates])
   const memberList = useMemo(() => (Array.isArray(data.member_list) ? data.member_list : []), [data.member_list])
 
   const overloadTop10 = useMemo(
@@ -306,6 +343,7 @@ function MemberRhythmBoard() {
       title: '日均实际用时(h)',
       value: toNumber(summary.avg_actual_hours_per_day, 0),
       precision: 1,
+      extra: `真实工作日：${toNumber(summary.total_workday_count, 0)}`,
     },
     {
       key: 'avg_saturation_rate',
@@ -313,6 +351,7 @@ function MemberRhythmBoard() {
       value: toNumber(summary.avg_saturation_rate, 0),
       precision: 1,
       suffix: '%',
+      extra: `日标准工时：8.5h`,
     },
     {
       key: 'overload_member_count',
@@ -406,7 +445,10 @@ function MemberRhythmBoard() {
     const keywordText = String(keyword || '').trim() || '无'
     const reportDateTime = dayjs().format('YYYY-MM-DD HH:mm:ss')
     const memberCount = toNumber(summary.member_count, 0)
-    const filledDays = toNumber(summary.total_filled_days, 0)
+    const recordedDays = toNumber(summary.total_recorded_days ?? summary.total_filled_days, 0)
+    const totalWorkdayCount = toNumber(summary.total_workday_count, 0)
+    const workdayCount = toNumber(summary.workday_count, 0)
+    const calendarDayCount = toNumber(summary.calendar_day_count, 0)
     const avgSaturation = formatRate(summary.avg_saturation_rate)
     const actualHours = toNumber(summary.total_actual_hours, 0).toFixed(1)
     const ownerEstimateHours = toNumber(summary.total_owner_estimate_hours, 0).toFixed(1)
@@ -428,8 +470,9 @@ function MemberRhythmBoard() {
               const username = String(item?.username || `成员#${item?.user_id || '-'}`).trim()
               const saturation = formatRate(item?.avg_saturation_rate)
               const memberActual = toNumber(item?.total_actual_hours, 0).toFixed(1)
-              const memberFilledDays = toNumber(item?.filled_days, 0)
-              return `${index + 1}. ${username}｜实际 ${memberActual}h｜饱和度 ${saturation}｜填报 ${memberFilledDays} 天`
+              const memberRecordedDays = toNumber(item?.recorded_days ?? item?.filled_days, 0)
+              const memberWorkdays = toNumber(item?.workday_count, 0)
+              return `${index + 1}. ${username}｜实际 ${memberActual}h｜饱和度 ${saturation}｜工作日 ${memberWorkdays} 天｜有记录 ${memberRecordedDays} 天`
             })
             .join('\n')
         : '无'
@@ -447,7 +490,10 @@ function MemberRhythmBoard() {
       '',
       '【一、整体概览】',
       `- 成员数：${memberCount}`,
-      `- 填报天数总计：${filledDays}`,
+      `- 日历天数：${calendarDayCount}`,
+      `- 单成员真实工作日：${workdayCount}`,
+      `- 真实工作日总计：${totalWorkdayCount}`,
+      `- 有记录天数总计：${recordedDays}`,
       `- 负责人预估总用时：${ownerEstimateHours}h`,
       `- 个人预估总用时：${personalEstimateHours}h`,
       `- 个人实际总用时：${actualHours}h`,
@@ -472,9 +518,9 @@ function MemberRhythmBoard() {
       lowLoadMemberCount > 0
         ? '- 对低载成员可补充可并行事项，提升本周资源利用率。'
         : '- 当前暂无明显低载成员，整体负载较均衡。',
-      '- 建议结合“成员工作节奏明细”下钻到按日数据，确认异常是否持续出现。',
+      '- 建议结合“成员工作节奏明细”下钻到按日数据，结合节假日/调休标记确认异常是否持续出现。',
       '',
-      '（口径：按筛选时间内 work_logs.log_date 统计，饱和度=个人实际/8.5h）',
+      '（口径：实际工时按筛选范围内真实发生工时统计，日均与平均饱和度按中国法定节假日/调休后的真实工作日和 8.5h/天计算）',
     ].join('\n')
   }, [
     businessGroupCode,
@@ -604,9 +650,15 @@ function MemberRhythmBoard() {
       ),
     },
     {
-      title: '填报天数',
-      dataIndex: 'filled_days',
-      key: 'filled_days',
+      title: '有记录天数',
+      dataIndex: 'recorded_days',
+      key: 'recorded_days',
+      width: 90,
+    },
+    {
+      title: '工作日数',
+      dataIndex: 'workday_count',
+      key: 'workday_count',
       width: 90,
     },
     {
@@ -663,20 +715,6 @@ function MemberRhythmBoard() {
       sorter: (a, b) => toNumber(a?.avg_saturation_rate, 0) - toNumber(b?.avg_saturation_rate, 0),
       sortDirections: ['descend', 'ascend'],
       render: (value) => getSaturationTag(value),
-    },
-    {
-      title: '超负荷天数',
-      dataIndex: 'overload_days',
-      key: 'overload_days',
-      width: 100,
-      render: (value) => (Number(value || 0) > 0 ? <Tag color="red">{value}</Tag> : '0'),
-    },
-    {
-      title: '低负荷天数',
-      dataIndex: 'low_load_days',
-      key: 'low_load_days',
-      width: 100,
-      render: (value) => (Number(value || 0) > 0 ? <Tag color="gold">{value}</Tag> : '0'),
     },
     {
       title: '最后记录',
@@ -789,10 +827,45 @@ function MemberRhythmBoard() {
 
   const renderDailyTable = (memberRow) => {
     const rows = Array.isArray(memberRow.daily_stats) ? memberRow.daily_stats : []
-    if (rows.length === 0) {
+    const rowMap = new Map(rows.map((item) => [String(item.log_date || ''), item]))
+    const mergedRows =
+      calendarDates.length > 0
+        ? calendarDates.map((calendarDay) => {
+            const matchedRow = rowMap.get(String(calendarDay.date || '')) || {}
+            return {
+              log_date: calendarDay.date,
+              log_count: toNumber(matchedRow.log_count, 0),
+              demand_count: toNumber(matchedRow.demand_count, 0),
+              owner_estimate_hours: toNumber(matchedRow.owner_estimate_hours, 0),
+              personal_estimate_hours: toNumber(matchedRow.personal_estimate_hours, 0),
+              actual_hours: toNumber(matchedRow.actual_hours, 0),
+              variance_owner_hours: toNumber(matchedRow.variance_owner_hours, 0),
+              variance_personal_hours: toNumber(matchedRow.variance_personal_hours, 0),
+              saturation_rate: toNumber(matchedRow.saturation_rate, 0),
+              items: Array.isArray(matchedRow.items) ? matchedRow.items : [],
+              is_workday: Boolean(calendarDay.is_workday),
+              is_weekend: Boolean(calendarDay.is_weekend),
+              is_holiday: Boolean(calendarDay.is_holiday),
+              is_adjusted_workday: Boolean(calendarDay.is_adjusted_workday),
+              day_type: calendarDay.day_type || 'WORKDAY',
+              day_label: calendarDay.day_label || '工作日',
+              holiday_name: calendarDay.holiday_name || null,
+              note: calendarDay.note || null,
+            }
+          })
+        : rows
+
+    const hasAnyContent = mergedRows.some(
+      (item) =>
+        Number(item.log_count || 0) > 0 ||
+        Number(item.owner_estimate_hours || 0) > 0 ||
+        Number(item.personal_estimate_hours || 0) > 0 ||
+        Number(item.actual_hours || 0) > 0,
+    )
+    if (mergedRows.length === 0) {
       return <Empty description="当前成员暂无按日数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
     }
-    const sortedRows = [...rows].sort((a, b) =>
+    const sortedRows = [...mergedRows].sort((a, b) =>
       String(b.log_date || '').localeCompare(String(a.log_date || '')),
     )
 
@@ -811,8 +884,13 @@ function MemberRhythmBoard() {
             title: '日期',
             dataIndex: 'log_date',
             key: 'log_date',
-            width: 120,
-            render: (value) => formatBeijingDate(value),
+            width: 220,
+            render: (value, row) => (
+              <Space size={[6, 6]} wrap>
+                <Text>{formatBeijingDate(value)}</Text>
+                {renderDayTypeTags(row)}
+              </Space>
+            ),
           },
           {
             title: '日志条数',
@@ -852,9 +930,12 @@ function MemberRhythmBoard() {
             dataIndex: 'saturation_rate',
             key: 'saturation_rate',
             width: 110,
-            render: (value) => getSaturationTag(value),
+            render: (value, row) => renderDailySaturation(value, row),
           },
         ]}
+        locale={{
+          emptyText: hasAnyContent ? '当前成员暂无按日数据' : '当前成员在该周期内暂无记录，已按完整日历补齐日期',
+        }}
       />
     )
   }
@@ -1047,7 +1128,8 @@ function MemberRhythmBoard() {
           dataSource={memberList}
           expandable={{
             expandedRowRender: renderDailyTable,
-            rowExpandable: (record) => Array.isArray(record.daily_stats) && record.daily_stats.length > 0,
+            rowExpandable: (record) =>
+              calendarDates.length > 0 || (Array.isArray(record.daily_stats) && record.daily_stats.length > 0),
           }}
           scroll={{ x: 1500 }}
           pagination={{
@@ -1072,11 +1154,12 @@ function MemberRhythmBoard() {
         onCancel={() => setMetricModalOpen(false)}
       >
         <Space orientation="vertical" size={8}>
-          <Text>1. 统计范围按筛选时间内 `work_logs.log_date` 计算。</Text>
-          <Text>2. 饱和度口径：`个人实际用时 / 8.5h`，当前按固定 8.5h/天计算。</Text>
-          <Text>3. 超负荷：饱和度 {'>'} 100%；低负荷：饱和度 {'<'} 60%。</Text>
-          <Text>4. 可从“需求数”直接联动到需求投入看板，继续追踪投入分布。</Text>
-          <Text>5. 三类用时分别为：负责人预估、个人预估、个人实际。</Text>
+          <Text>1. 统计范围按筛选时间内的完整日历天展示，明细会保留节假日、周末与调休工作日标记。</Text>
+          <Text>2. 日均实际用时口径：`个人实际总工时 / 真实工作日数`。</Text>
+          <Text>3. 平均饱和度口径：`个人实际总工时 / (真实工作日数 × 8.5h)`。</Text>
+          <Text>4. 某个真实工作日即使没有工作也没有填报，也会按 `0h` 计入节奏。</Text>
+          <Text>5. 节假日当天如果实际发生了工时，会计入总工时，但不会把该日计入真实工作日分母。</Text>
+          <Text>6. 三类用时分别为：负责人预估、个人预估、个人实际。</Text>
         </Space>
       </Modal>
 
