@@ -242,36 +242,60 @@ const DEDUP_KEY_FIELD_OPTIONS = [
   { label: '任务', value: 'task_id' },
 ]
 
-const EVENT_TYPE_OPTIONS = [
-  { label: '节点指派', value: 'node_assign' },
-  { label: '节点驳回', value: 'node_reject' },
-  { label: '节点完成', value: 'node_complete' },
-  { label: '任务指派', value: 'task_assign' },
-  { label: '任务截止提醒', value: 'task_deadline' },
-  { label: '任务完成', value: 'task_complete' },
-  { label: '周报发送', value: 'weekly_report_send' },
-  { label: '需求创建', value: 'demand_create' },
-  { label: '需求指派', value: 'demand_assign' },
-  { label: '需求状态变更', value: 'demand_status_change' },
-  { label: '事项创建', value: 'worklog_create' },
-  { label: '事项指派', value: 'worklog_assign' },
-  { label: '事项状态变更', value: 'worklog_status_change' },
-  { label: '事项到期提醒', value: 'worklog_deadline_remind' },
-  { label: '每小时定时', value: 'schedule_hourly' },
-  { label: '每日定时', value: 'schedule_daily' },
-  { label: '每周定时', value: 'schedule_weekly' },
-  { label: '每月定时', value: 'schedule_monthly' },
-  { label: 'Bug创建', value: 'bug_create' },
-  { label: 'Bug指派', value: 'bug_assign' },
-  { label: 'Bug状态变更', value: 'bug_status_change' },
-  { label: 'Bug已修复', value: 'bug_fixed' },
-  { label: 'Bug重新打开', value: 'bug_reopen' },
+const EVENT_TYPE_GROUPED_OPTIONS = [
+  {
+    label: '需求',
+    options: [
+      { label: '需求创建', value: 'demand_create' },
+      { label: '需求指派', value: 'demand_assign' },
+      { label: '需求状态变更', value: 'demand_status_change' },
+      { label: '节点指派', value: 'node_assign' },
+      { label: '节点驳回', value: 'node_reject' },
+      { label: '节点完成', value: 'node_complete' },
+      { label: '任务指派', value: 'task_assign' },
+      { label: '任务截止提醒', value: 'task_deadline' },
+      { label: '任务完成', value: 'task_complete' },
+    ],
+  },
+  {
+    label: '人效',
+    options: [
+      { label: '事项创建', value: 'worklog_create' },
+      { label: '事项指派', value: 'worklog_assign' },
+      { label: '事项状态变更', value: 'worklog_status_change' },
+      { label: '事项到期提醒', value: 'worklog_deadline_remind' },
+      { label: '周报发送', value: 'weekly_report_send' },
+    ],
+  },
+  {
+    label: '缺陷',
+    options: [
+      { label: 'Bug创建', value: 'bug_create' },
+      { label: 'Bug指派', value: 'bug_assign' },
+      { label: 'Bug状态变更', value: 'bug_status_change' },
+      { label: 'Bug已修复', value: 'bug_fixed' },
+      { label: 'Bug重新打开', value: 'bug_reopen' },
+    ],
+  },
 ]
 
-const EVENT_TYPE_LABEL_MAP = EVENT_TYPE_OPTIONS.reduce((acc, item) => {
-  acc[item.value] = item.label
-  return acc
-}, {})
+const EVENT_TYPE_OPTIONS = EVENT_TYPE_GROUPED_OPTIONS.flatMap((group) => group.options || [])
+const SCHEDULE_SCENE_CODE_BY_FREQUENCY = {
+  hourly: 'schedule_hourly',
+  daily: 'schedule_daily',
+  weekly: 'schedule_weekly',
+  monthly: 'schedule_monthly',
+}
+const EVENT_TYPE_LABEL_MAP = {
+  ...EVENT_TYPE_OPTIONS.reduce((acc, item) => {
+    acc[item.value] = item.label
+    return acc
+  }, {}),
+  schedule_hourly: '每小时定时',
+  schedule_daily: '每日定时',
+  schedule_weekly: '每周定时',
+  schedule_monthly: '每月定时',
+}
 
 const CHANNEL_LABEL_MAP = {
   feishu: '飞书',
@@ -601,7 +625,7 @@ function mentionsTextToStorageText(value) {
   })
 }
 
-function parseConditionFromJson(conditionConfigJson) {
+function parseConditionFromJson(conditionConfigJson, sceneCode = '') {
   const condition = safeParseJson(conditionConfigJson, null)
   const normalized = condition && typeof condition === 'object' ? condition : {}
   const triggerMode = String(normalized.trigger_mode || '').trim().toLowerCase() || 'event'
@@ -621,14 +645,23 @@ function parseConditionFromJson(conditionConfigJson) {
 
   const scheduleConfig = normalized.schedule && typeof normalized.schedule === 'object' ? normalized.schedule : {}
   const deadlineConfig = normalized.deadline && typeof normalized.deadline === 'object' ? normalized.deadline : {}
+  const normalizedSceneCode = String(sceneCode || '').toLowerCase()
+  const fallbackScheduleFrequency = normalizedSceneCode === 'schedule_hourly'
+    ? 'hourly'
+    : normalizedSceneCode === 'schedule_weekly'
+      ? 'weekly'
+      : normalizedSceneCode === 'schedule_monthly'
+        ? 'monthly'
+        : 'daily'
 
   return {
     trigger_mode: triggerMode,
+    schedule_event_type: String(scheduleConfig.event_type || ''),
     condition_enabled: hasFieldCondition,
     condition_field: first?.field || undefined,
     condition_operator: operator,
     condition_value: value,
-    schedule_frequency: String(scheduleConfig.frequency || 'daily'),
+    schedule_frequency: String(scheduleConfig.frequency || fallbackScheduleFrequency),
     schedule_interval_hours: Number(scheduleConfig.interval_hours || 1),
     schedule_hour: Number(scheduleConfig.hour || 9),
     schedule_minute: Number(scheduleConfig.minute || 0),
@@ -688,7 +721,7 @@ function parseReceiverFromJson(receiverConfigJson) {
 
 function normalizeRuleFormValue(rule) {
   const receiverForm = parseReceiverFromJson(rule?.receiver_config_json || {})
-  const conditionForm = parseConditionFromJson(rule?.condition_config_json)
+  const conditionForm = parseConditionFromJson(rule?.condition_config_json, rule?.scene_code)
   const dedupForm = parseDedupFromJson(rule?.dedup_config_json)
 
   return {
@@ -984,6 +1017,7 @@ function NotificationRulesPage() {
   const [sendControlChatIds, setSendControlChatIds] = useState([])
   const [form] = Form.useForm()
   const selectedEventType = Form.useWatch('scene_code', form)
+  const selectedScheduleEventType = Form.useWatch('schedule_event_type', form)
   const selectedReceiverType = Form.useWatch('receiver_type', form)
   const selectedReceiverRoles = Form.useWatch('receiver_roles', form)
   const selectedReceiverUsers = Form.useWatch('receiver_users', form)
@@ -991,17 +1025,23 @@ function NotificationRulesPage() {
   const selectedReceiverFieldUserId = Form.useWatch('receiver_field_user_id', form)
   const selectedTriggerMode = Form.useWatch('trigger_mode', form)
   const selectedScheduleFrequency = Form.useWatch('schedule_frequency', form)
+  const effectiveEventType = useMemo(() => {
+    if (String(selectedTriggerMode || 'event') === 'schedule') {
+      return String(selectedScheduleEventType || '').trim()
+    }
+    return String(selectedEventType || '').trim()
+  }, [selectedEventType, selectedScheduleEventType, selectedTriggerMode])
   const conditionEnabled = Form.useWatch('condition_enabled', form)
   const selectedConditionOperator = Form.useWatch('condition_operator', form)
   const isConditionValueRequired =
     selectedTriggerMode === 'event' && !CONDITION_OPERATORS_WITHOUT_VALUE.has(String(selectedConditionOperator || ''))
 
   const activeConditionFieldOptions = useMemo(
-    () => CONDITION_FIELD_OPTIONS_BY_EVENT[selectedEventType] || DEFAULT_CONDITION_FIELD_OPTIONS,
-    [selectedEventType],
+    () => CONDITION_FIELD_OPTIONS_BY_EVENT[effectiveEventType] || DEFAULT_CONDITION_FIELD_OPTIONS,
+    [effectiveEventType],
   )
   const variableMentionOptions = useMemo(() => {
-    const eventVars = EVENT_VARIABLE_OPTIONS_BY_EVENT[selectedEventType] || []
+    const eventVars = EVENT_VARIABLE_OPTIONS_BY_EVENT[effectiveEventType] || []
     const merged = [...BASE_VARIABLE_OPTIONS, ...eventVars]
     const dedup = new Map()
     merged.forEach((item) => {
@@ -1012,9 +1052,9 @@ function NotificationRulesPage() {
       })
     })
     return Array.from(dedup.values())
-  }, [selectedEventType])
+  }, [effectiveEventType])
   const receiverFieldOptions = useMemo(() => {
-    const eventVars = EVENT_VARIABLE_OPTIONS_BY_EVENT[selectedEventType] || []
+    const eventVars = EVENT_VARIABLE_OPTIONS_BY_EVENT[effectiveEventType] || []
     const vars = eventVars.filter((item) => RECEIVER_FIELD_CANDIDATE_KEYS.has(String(item?.value || '').trim()))
     const merged = [
       ...Array.from(RECEIVER_FIELD_CANDIDATE_KEYS).map((key) => ({ label: getReceiverFieldLabel(key), value: key })),
@@ -1029,21 +1069,27 @@ function NotificationRulesPage() {
       dedup.set(item.value, item)
     })
     return Array.from(dedup.values())
-  }, [selectedEventType])
+  }, [effectiveEventType])
   const filteredEventTypeOptions = useMemo(() => {
     const triggerMode = String(selectedTriggerMode || 'event')
-    if (triggerMode === 'schedule') {
-      return EVENT_TYPE_OPTIONS.filter((item) => String(item?.value || '').startsWith('schedule_'))
+    if (triggerMode === 'schedule') return []
+    const filterOption = (option) => {
+      const value = String(option?.value || '')
+      if (triggerMode === 'deadline') {
+        return value === 'worklog_deadline_remind'
+      }
+      return true
     }
-    if (triggerMode === 'deadline') {
-      return EVENT_TYPE_OPTIONS.filter((item) => String(item?.value || '') === 'worklog_deadline_remind')
-    }
-    return EVENT_TYPE_OPTIONS.filter((item) => !String(item?.value || '').startsWith('schedule_'))
+
+    return EVENT_TYPE_GROUPED_OPTIONS.map((group) => ({
+      label: group.label,
+      options: (group.options || []).filter((option) => filterOption(option)),
+    })).filter((group) => Array.isArray(group.options) && group.options.length > 0)
   }, [selectedTriggerMode])
   const selectedTriggerModeTip = useMemo(() => {
     const triggerMode = String(selectedTriggerMode || 'event')
     if (triggerMode === 'schedule') {
-      return '当前为按时间触发，仅可选择“每小时/每日/每周/每月定时”事件。'
+      return '当前为按时间触发：通过计划周期设置触发时间，并选择业务事件类型。'
     }
     if (triggerMode === 'deadline') {
       return '当前为按到期触发，仅可选择“事项到期提醒”事件。'
@@ -1313,9 +1359,25 @@ function NotificationRulesPage() {
     if (selectedReceiverType !== 'field') return
     const current = String(form.getFieldValue('receiver_field_user_id') || '').trim()
     if (current) return
-    const nextDefault = DEFAULT_RECEIVER_FIELD_BY_EVENT[selectedEventType] || 'operator_id'
+    const nextDefault = DEFAULT_RECEIVER_FIELD_BY_EVENT[effectiveEventType] || 'operator_id'
     form.setFieldValue('receiver_field_user_id', nextDefault)
-  }, [form, selectedEventType, selectedReceiverType])
+  }, [effectiveEventType, form, selectedReceiverType])
+
+  useEffect(() => {
+    if (String(selectedTriggerMode || 'event') !== 'schedule') return
+    const frequency = String(selectedScheduleFrequency || 'daily')
+    const nextSceneCode = SCHEDULE_SCENE_CODE_BY_FREQUENCY[frequency] || 'schedule_daily'
+    const currentSceneCode = String(form.getFieldValue('scene_code') || '')
+    if (currentSceneCode === nextSceneCode) return
+    form.setFieldValue('scene_code', nextSceneCode)
+  }, [form, selectedScheduleFrequency, selectedTriggerMode])
+
+  useEffect(() => {
+    if (String(selectedTriggerMode || 'event') !== 'schedule') return
+    const current = String(form.getFieldValue('schedule_event_type') || '').trim()
+    if (current) return
+    form.setFieldValue('schedule_event_type', 'weekly_report_send')
+  }, [form, selectedTriggerMode])
 
   useEffect(() => {
     const sceneCode = String(form.getFieldValue('scene_code') || '')
@@ -1474,6 +1536,7 @@ function NotificationRulesPage() {
       conditionConfig = {
         trigger_mode: 'schedule',
         schedule: {
+          event_type: String(values.schedule_event_type || ''),
           frequency,
           timezone: String(values.schedule_timezone || 'Asia/Shanghai'),
           interval_hours: Number(values.schedule_interval_hours || 1),
@@ -1532,6 +1595,10 @@ function NotificationRulesPage() {
       message.error('按时间触发时，请选择“每小时/每日/每周/每月定时”事件类型')
       return
     }
+    if (triggerMode === 'schedule' && !String(values.schedule_event_type || '').trim()) {
+      message.error('按时间触发时，请选择业务事件类型')
+      return
+    }
     if (triggerMode === 'deadline' && sceneCode !== 'worklog_deadline_remind') {
       message.error('按到期触发时，请选择“事项到期提醒”事件类型')
       return
@@ -1563,7 +1630,10 @@ function NotificationRulesPage() {
     const now = Date.now()
     const conditionConfig = safeParseJson(rule?.condition_config_json, null)
     const triggerMode = String(conditionConfig?.trigger_mode || '').toLowerCase()
-    const baseData = buildMockEventData(String(rule.scene_code), rule.business_line_id, now)
+    const scheduleEventType = String(conditionConfig?.schedule?.event_type || '').trim()
+    const testEventType =
+      triggerMode === 'schedule' && scheduleEventType ? scheduleEventType : String(rule.scene_code)
+    const baseData = buildMockEventData(testEventType, rule.business_line_id, now)
     const contextData =
       triggerMode === 'schedule'
         ? {
@@ -1581,7 +1651,7 @@ function NotificationRulesPage() {
             }
           : {}
     const payload = {
-      eventType: String(rule.scene_code),
+      eventType: testEventType,
       data: {
         ...baseData,
         ...contextData,
@@ -1925,19 +1995,46 @@ function NotificationRulesPage() {
 
           <Row gutter={12}>
             <Col span={24}>
-              <Form.Item
-                name="scene_code"
-                label="事件类型"
-                rules={[{ required: true, message: '请选择事件类型' }]}
-                extra={selectedTriggerModeTip}
-              >
-                <Select
-                  showSearch
-                  placeholder="请选择事件类型"
-                  options={filteredEventTypeOptions}
-                  optionFilterProp="label"
-                />
-              </Form.Item>
+              {selectedTriggerMode === 'schedule' ? (
+                <>
+                  <Form.Item name="scene_code" hidden>
+                    <Input />
+                  </Form.Item>
+                  <Form.Item
+                    name="schedule_event_type"
+                    label="业务事件类型"
+                    rules={[{ required: true, message: '请选择业务事件类型' }]}
+                    extra="定时只决定触发时间；业务事件决定通知变量（例如周报正文）。"
+                  >
+                    <Select
+                      showSearch
+                      placeholder="请选择业务事件类型"
+                      options={EVENT_TYPE_OPTIONS.filter((item) => item.value !== 'worklog_deadline_remind')}
+                      optionFilterProp="label"
+                    />
+                  </Form.Item>
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="规则会在计划时间触发，并按“业务事件类型”解析变量。"
+                    style={{ marginBottom: 8 }}
+                  />
+                </>
+              ) : (
+                <Form.Item
+                  name="scene_code"
+                  label="事件类型"
+                  rules={[{ required: true, message: '请选择事件类型' }]}
+                  extra={selectedTriggerModeTip}
+                >
+                  <Select
+                    showSearch
+                    placeholder="请选择事件类型"
+                    options={filteredEventTypeOptions}
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              )}
             </Col>
           </Row>
 
@@ -2194,7 +2291,7 @@ function NotificationRulesPage() {
             type="info"
             style={{ marginTop: 12 }}
             message="保存前摘要"
-            description={`事件类型：${EVENT_TYPE_LABEL_MAP[String(selectedEventType || '').toLowerCase()] || '未选择'}；接收配置：${receiverSummaryText}`}
+            description={`事件类型：${EVENT_TYPE_LABEL_MAP[String(effectiveEventType || '').toLowerCase()] || '未选择'}；接收配置：${receiverSummaryText}`}
           />
 
           <Collapse
