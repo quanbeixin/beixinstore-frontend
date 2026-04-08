@@ -205,6 +205,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/human-gantt',
+    componentKey: 'humanGantt',
+    requiredPermission: null,
+    page: {
+      title: '人力甘特图',
+      subtitle: '按成员和日期查看事项排期，快速识别冲突与空档，支持人力协调安排。',
+    },
+    menu: {
+      section: 'project',
+      label: '人力甘特图',
+      icon: 'tool',
+    },
+  },
+  {
     path: '/project-templates',
     componentKey: 'projectTemplates',
     requiredPermission: 'project.template.view',

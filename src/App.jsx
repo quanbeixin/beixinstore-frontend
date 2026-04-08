@@ -24,6 +24,7 @@ const MemberRhythmBoard = lazy(() => import('./pages/insight/MemberRhythmBoardPa
 const MemberEfficiencyDetail = lazy(() => import('./pages/insight/MemberEfficiencyDetailPage'))
 const WorkDemands = lazy(() => import('./pages/project/WorkDemandsPage'))
 const LaunchPlan = lazy(() => import('./pages/project/LaunchPlanPage'))
+const HumanGantt = lazy(() => import('./pages/project/HumanGanttPage'))
 const ProjectTemplates = lazy(() => import('./pages/project/ProjectTemplatesPage'))
 const ProjectTemplateDetail = lazy(() => import('./pages/project/ProjectTemplateDetailPage'))
 const NotificationConfig = lazy(() => import('./pages/project/NotificationConfigPage'))
@@ -69,6 +70,7 @@ const PAGE_COMPONENTS = {
   memberEfficiencyDetail: MemberEfficiencyDetail,
   projectTemplates: ProjectTemplates,
   projectTemplateDetail: ProjectTemplateDetail,
+  humanGantt: HumanGantt,
   notificationConfig: NotificationConfig,
   notificationRules: NotificationRules,
   launchPlan: LaunchPlan,

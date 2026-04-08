@@ -313,6 +313,23 @@ export function getMorningStandupWeeklyCompletedApi(params, options = {}) {
   return cachedRequest(cacheKey, requestFn, 15000)
 }
 
+export function getHumanGanttApi(params, options = {}) {
+  const normalizedParams = params || {}
+  const cacheKey = `human-gantt-${JSON.stringify(normalizedParams)}`
+  const requestFn = () =>
+    request.get('/work/human-gantt', {
+      params: normalizedParams,
+      timeout: 30000,
+    })
+
+  if (options?.force) {
+    clearCache(cacheKey)
+    return requestFn()
+  }
+
+  return cachedRequest(cacheKey, requestFn, 10000)
+}
+
 export function previewNoFillReminderApi() {
   return request.post('/work/reminders/no-fill')
 }

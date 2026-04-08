@@ -1,4 +1,5 @@
 export { default as ArchiveDemandsPage } from './ArchiveDemandsPage'
+export { default as HumanGanttPage } from './HumanGanttPage'
 export { default as NotificationConfigPage } from './NotificationConfigPage'
 export { default as ProjectTemplateDetailPage } from './ProjectTemplateDetailPage'
 export { default as ProjectTemplatesPage } from './ProjectTemplatesPage'
