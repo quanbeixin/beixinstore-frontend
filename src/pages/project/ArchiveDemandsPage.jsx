@@ -396,7 +396,7 @@ function ArchiveDemands() {
         destroyOnHidden
         forceRender
       >
-        <Space direction="vertical" size={12} style={{ width: '100%', marginTop: 4 }}>
+        <Space orientation="vertical" size={12} style={{ width: '100%', marginTop: 4 }}>
           <Text>
             该操作会永久删除需求主档、关联事项和流程数据，无法恢复。请填写需求ID以确认：
           </Text>

@@ -16,7 +16,7 @@ import {
   message,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { getMemberEfficiencyDetailApi } from '../../api/work'
 import { formatBeijingDate } from '../../utils/datetime'
@@ -145,9 +145,18 @@ function MemberEfficiencyDetailPage() {
   )
 
   const summary = data.summary || {}
-  const demandSummaryList = Array.isArray(data.demand_summary_list) ? data.demand_summary_list : []
-  const workItemList = Array.isArray(data.work_item_list) ? data.work_item_list : []
-  const phaseDistribution = Array.isArray(data.phase_distribution) ? data.phase_distribution : []
+  const demandSummaryList = useMemo(
+    () => (Array.isArray(data.demand_summary_list) ? data.demand_summary_list : []),
+    [data.demand_summary_list],
+  )
+  const workItemList = useMemo(
+    () => (Array.isArray(data.work_item_list) ? data.work_item_list : []),
+    [data.work_item_list],
+  )
+  const phaseDistribution = useMemo(
+    () => (Array.isArray(data.phase_distribution) ? data.phase_distribution : []),
+    [data.phase_distribution],
+  )
   const totalPhaseHours = phaseDistribution.reduce((sum, item) => sum + toNumber(item.actual_hours, 0), 0)
 
   const demandPhaseMap = new Map()
@@ -226,6 +235,62 @@ function MemberEfficiencyDetailPage() {
       children,
     }
   })
+
+  const workItemTreeData = useMemo(() => {
+    const groupedMap = new Map()
+
+    workItemList.forEach((item, index) => {
+      const typeName = String(item.item_type_name || '').trim() || '未分类'
+      if (!groupedMap.has(typeName)) {
+        groupedMap.set(typeName, {
+          key: `type-${typeName}-${groupedMap.size + 1}`,
+          __isTypeGroup: true,
+          item_type_name: typeName,
+          log_status: null,
+          job_level_name: summary.job_level_name || summary.job_level || '-',
+          task_difficulty_name: null,
+          self_task_difficulty_name: null,
+          demand_name: null,
+          phase_name: null,
+          owner_estimate_hours: 0,
+          personal_estimate_hours: 0,
+          actual_hours: 0,
+          net_efficiency_value: null,
+          expected_start_date: null,
+          expected_completion_date: null,
+          description: '',
+          item_count: 0,
+          latest_log_date: null,
+          children: [],
+        })
+      }
+
+      const group = groupedMap.get(typeName)
+      const logDate = String(item.log_date || '').trim()
+      group.item_count += 1
+      group.owner_estimate_hours += toNumber(item.owner_estimate_hours, 0)
+      group.personal_estimate_hours += toNumber(item.personal_estimate_hours, 0)
+      group.actual_hours += toNumber(item.actual_hours, 0)
+      if (!group.latest_log_date || (logDate && dayjs(logDate).isAfter(dayjs(group.latest_log_date)))) {
+        group.latest_log_date = logDate || group.latest_log_date
+      }
+      group.children.push({
+        ...item,
+        key: `log-${item.log_id || index + 1}`,
+        __isTypeGroup: false,
+      })
+    })
+
+    return Array.from(groupedMap.values())
+      .map((group) => ({
+        ...group,
+        owner_estimate_hours: toNumber(group.owner_estimate_hours, 0),
+        personal_estimate_hours: toNumber(group.personal_estimate_hours, 0),
+        actual_hours: toNumber(group.actual_hours, 0),
+        children: [...group.children].sort((a, b) => String(b.log_date || '').localeCompare(String(a.log_date || ''))),
+      }))
+      .sort((a, b) => String(b.latest_log_date || '').localeCompare(String(a.latest_log_date || '')))
+  }, [summary.job_level, summary.job_level_name, workItemList])
 
   const handleExport = () => {
     if (workItemList.length === 0) {
@@ -341,34 +406,55 @@ function MemberEfficiencyDetailPage() {
       title: '日期',
       dataIndex: 'log_date',
       key: 'log_date',
-      width: 110,
-      render: (value) => formatBeijingDate(value),
+      width: 200,
+      render: (value, row) =>
+        row.__isTypeGroup ? (
+          <Text type="secondary">{row.latest_log_date ? `最近：${formatBeijingDate(row.latest_log_date)}` : '-'}</Text>
+        ) : (
+          formatBeijingDate(value)
+        ),
     },
     {
       title: '事项类型',
       dataIndex: 'item_type_name',
       key: 'item_type_name',
-      width: 140,
+      width: 160,
+      render: (value, row) =>
+        row.__isTypeGroup ? (
+          <Space size={8}>
+            <Text strong>{value || '未分类'}</Text>
+            <Tag color="blue">{`${toNumber(row.item_count, 0)} 条事项`}</Tag>
+          </Space>
+        ) : (
+          value || '-'
+        ),
     },
     {
       title: '状态',
       dataIndex: 'log_status',
       key: 'log_status',
       width: 100,
-      render: (value) => getLogStatusTag(value),
+      render: (value, row) => (row.__isTypeGroup ? '-' : getLogStatusTag(value)),
     },
     {
       title: '职级',
       key: 'job_level_name',
       width: 110,
-      render: () => <Tag color="processing">{summary.job_level_name || summary.job_level || '-'}</Tag>,
+      render: (_, row) =>
+        row.__isTypeGroup ? (
+          <Text type="secondary">-</Text>
+        ) : (
+          <Tag color="processing">{summary.job_level_name || summary.job_level || '-'}</Tag>
+        ),
     },
     {
       title: 'Owner评估难易程度',
       key: 'task_difficulty_name',
       width: 150,
       render: (_, row) =>
-        row.task_difficulty_name || row.task_difficulty_code ? (
+        row.__isTypeGroup ? (
+          <Text type="secondary">-</Text>
+        ) : row.task_difficulty_name || row.task_difficulty_code ? (
           <Tag color="gold">{row.task_difficulty_name || row.task_difficulty_code}</Tag>
         ) : (
           <Text type="secondary">未评估</Text>
@@ -379,7 +465,9 @@ function MemberEfficiencyDetailPage() {
       key: 'self_task_difficulty_name',
       width: 150,
       render: (_, row) =>
-        row.self_task_difficulty_name || row.self_task_difficulty_code ? (
+        row.__isTypeGroup ? (
+          <Text type="secondary">-</Text>
+        ) : row.self_task_difficulty_name || row.self_task_difficulty_code ? (
           <Tag color="cyan">{row.self_task_difficulty_name || row.self_task_difficulty_code}</Tag>
         ) : (
           <Text type="secondary">未评估</Text>
@@ -389,12 +477,15 @@ function MemberEfficiencyDetailPage() {
       title: '关联需求',
       key: 'demand',
       width: 220,
-      render: (_, row) => (
-        <Space orientation="vertical" size={2}>
-          <Text strong>{row.demand_name || '-'}</Text>
-          <Text type="secondary">{row.phase_name || row.phase_key || '未分阶段'}</Text>
-        </Space>
-      ),
+      render: (_, row) =>
+        row.__isTypeGroup ? (
+          <Text type="secondary">该类型下共 {toNumber(row.item_count, 0)} 条事项</Text>
+        ) : (
+          <Space orientation="vertical" size={2}>
+            <Text strong>{row.demand_name || '-'}</Text>
+            <Text type="secondary">{row.phase_name || row.phase_key || '未分阶段'}</Text>
+          </Space>
+        ),
     },
     {
       title: 'Owner预估(h)',
@@ -422,20 +513,26 @@ function MemberEfficiencyDetailPage() {
       dataIndex: 'net_efficiency_value',
       key: 'net_efficiency_value',
       width: 120,
-      render: (value) =>
-        value === null || value === undefined ? <Text type="secondary">-</Text> : <Text strong>{formatNetEfficiencyValue(value)}</Text>,
+      render: (value, row) =>
+        row.__isTypeGroup
+          ? <Text type="secondary">-</Text>
+          : value === null || value === undefined
+            ? <Text type="secondary">-</Text>
+            : <Text strong>{formatNetEfficiencyValue(value)}</Text>,
     },
     {
       title: '排期',
       key: 'schedule',
       width: 200,
-      render: (_, row) => `${row.expected_start_date || '-'} ~ ${row.expected_completion_date || '-'}`,
+      render: (_, row) =>
+        row.__isTypeGroup ? '-' : `${row.expected_start_date || '-'} ~ ${row.expected_completion_date || '-'}`,
     },
     {
       title: '描述',
       dataIndex: 'description',
       key: 'description',
       ellipsis: true,
+      render: (value, row) => (row.__isTypeGroup ? '-' : value || '-'),
     },
   ]
 
@@ -566,19 +663,23 @@ function MemberEfficiencyDetailPage() {
 
             <Card
               title="事项明细"
-              extra={<span className="efficiency-detail-toolbar__hint">保留事项级口径，便于核对阶段、排期与实际投入</span>}
+              extra={<span className="efficiency-detail-toolbar__hint">按事项类型分组展示，展开后按日期倒序查看具体事项</span>}
               variant="borderless"
               className="efficiency-detail-section"
             >
               <Table
-                rowKey="log_id"
+                rowKey="key"
                 loading={loading}
                 columns={workItemColumns}
-                dataSource={workItemList}
+                dataSource={workItemTreeData}
                 size="small"
                 className="efficiency-detail-table"
                 scroll={{ x: 1640 }}
-                pagination={{ pageSize: 12, showSizeChanger: false, showTotal: (total) => `共 ${total} 条事项` }}
+                expandable={{
+                  defaultExpandAllRows: true,
+                  rowExpandable: (record) => Array.isArray(record.children) && record.children.length > 0,
+                }}
+                pagination={{ pageSize: 12, showSizeChanger: false, showTotal: (total) => `共 ${total} 类事项` }}
                 locale={{ emptyText: '当前范围暂无事项明细' }}
               />
             </Card>
