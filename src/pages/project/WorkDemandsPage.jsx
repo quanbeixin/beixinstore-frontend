@@ -12,6 +12,7 @@ import {
 } from '@ant-design/icons'
 import {
   Alert,
+  Avatar,
   Button,
   Card,
   DatePicker,
@@ -1351,9 +1352,12 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           const chatId = String(item?.chat_id || '').trim()
           if (!chatId) return null
           const name = String(item?.name || '').trim() || chatId
+          const avatar = String(item?.avatar || '').trim()
           return {
             label: `${name}（${chatId}）`,
             value: chatId,
+            chatName: name,
+            chatAvatar: avatar,
           }
         })
         .filter(Boolean)
@@ -1825,7 +1829,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   }, [isDetailPage, detailDemand, canEditDemandRecord, defaultProjectTemplateId])
 
   useEffect(() => {
-    if (detailGroupChatMode === 'bind') return
+    if (detailGroupChatMode === 'bind' || detailGroupChatMode === 'auto') return
     setDetailGroupChatId(undefined)
   }, [detailGroupChatMode])
 
@@ -1836,10 +1840,17 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
   useEffect(() => {
     if (!isDetailPage || !detailDemand) return
-    if (detailGroupChatMode !== 'bind') return
-    if (feishuChatOptions.length > 0) return
+    if (detailGroupChatMode !== 'bind' && detailGroupChatMode !== 'auto') return
+    if (detailGroupChatMode === 'auto' && !detailGroupChatId) return
+    const hasCurrentChat = feishuChatOptions.some((item) => item?.value === detailGroupChatId)
+    if (feishuChatOptions.length > 0 && (detailGroupChatMode === 'bind' || hasCurrentChat)) return
     loadFeishuChatOptions()
-  }, [isDetailPage, detailDemand, detailGroupChatMode, feishuChatOptions.length, loadFeishuChatOptions])
+  }, [isDetailPage, detailDemand, detailGroupChatId, detailGroupChatMode, feishuChatOptions, loadFeishuChatOptions])
+
+  const detailSelectedGroupChat = useMemo(
+    () => feishuChatOptions.find((item) => item?.value === detailGroupChatId) || null,
+    [detailGroupChatId, feishuChatOptions],
+  )
 
   const refreshListAndDetail = useCallback(async (nextDetail) => {
     if (!isDetailPage) {
@@ -1919,7 +1930,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         ui_design_link: detailUiDesignLink || null,
         test_case_link: detailTestCaseLink || null,
         group_chat_mode: detailGroupChatMode || 'none',
-        group_chat_id: detailGroupChatMode === 'bind' ? detailGroupChatId || null : null,
+        group_chat_id:
+          detailGroupChatMode === 'bind' || detailGroupChatMode === 'auto'
+            ? detailGroupChatId || null
+            : null,
       })
       if (!result?.success) {
         message.error(result?.message || '保存失败')
@@ -3327,6 +3341,35 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                                 placeholder="选择当前应用可访问的飞书群"
                                 onChange={(value) => setDetailGroupChatId(value || undefined)}
                               />
+                            </div>
+                          ) : null}
+                          {detailGroupChatMode === 'auto' ? (
+                            <div className="work-demand-detail__field work-demand-detail__field--full">
+                              <Text type="secondary">自动拉群</Text>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 10,
+                                  minHeight: 40,
+                                  padding: '8px 12px',
+                                  border: '1px solid #d9d9d9',
+                                  borderRadius: 8,
+                                  background: '#fff',
+                                }}
+                              >
+                                <Avatar
+                                  src={detailSelectedGroupChat?.chatAvatar || undefined}
+                                  shape="square"
+                                  size={28}
+                                >
+                                  {String(detailSelectedGroupChat?.chatName || '群').slice(0, 1)}
+                                </Avatar>
+                                <Text>
+                                  {detailSelectedGroupChat?.chatName ||
+                                    (detailGroupChatId ? '已自动拉群（群信息同步中）' : '将由系统自动创建并关联飞书群')}
+                                </Text>
+                              </div>
                             </div>
                           ) : null}
                           <div className="work-demand-detail__field">
