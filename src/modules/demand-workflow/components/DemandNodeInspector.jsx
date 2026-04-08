@@ -1,4 +1,4 @@
-import { Button, DatePicker, Input, InputNumber, Modal, Select, Tag, Typography, message } from 'antd'
+import { Button, DatePicker, Input, InputNumber, Modal, Popconfirm, Select, Tag, Typography, message } from 'antd'
 import dayjs from 'dayjs'
 import { useState } from 'react'
 import { WorkflowInspector } from '../../workflow'
@@ -150,7 +150,9 @@ function DemandNodeInspector({
   onSaveWorkflowOwner,
   onSaveWorkflowSchedule,
   canAssignSelectedWorkflowNode = false,
+  canRollbackNode = false,
   onSubmitNode,
+  onRollbackNode,
   selectedWorkflowNodeTasks = [],
   workflowTaskUpdatingId = null,
   onUpdateWorkflowTask,
@@ -316,15 +318,34 @@ function DemandNodeInspector({
                 </Tag>
               </div>
 
-              <Button
-                type="primary"
-                className="demand-node-inspector__complete-btn"
-                loading={workflowSubmitting}
-                disabled={!canManageWorkflow || !isCurrentNode || workflowActionBusy}
-                onClick={onSubmitNode}
-              >
-                完成
-              </Button>
+              <div className="demand-node-inspector__panel-actions">
+                {canRollbackNode ? (
+                  <Popconfirm
+                    title="确认回退该节点？"
+                    description="回退后，该节点会从已完成变为未完成，并退回到上一可执行节点。"
+                    okText="确认回退"
+                    cancelText="取消"
+                    onConfirm={onRollbackNode}
+                  >
+                    <Button
+                      className="demand-node-inspector__rollback-btn"
+                      loading={workflowSubmitting}
+                      disabled={workflowActionBusy}
+                    >
+                      回退
+                    </Button>
+                  </Popconfirm>
+                ) : null}
+                <Button
+                  type="primary"
+                  className="demand-node-inspector__complete-btn"
+                  loading={workflowSubmitting}
+                  disabled={!canManageWorkflow || !isCurrentNode || workflowActionBusy}
+                  onClick={onSubmitNode}
+                >
+                  完成
+                </Button>
+              </div>
             </div>
 
             <div className="demand-node-inspector__info-grid">

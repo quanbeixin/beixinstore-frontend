@@ -58,6 +58,20 @@
   box-shadow: none;
 }
 
+.demand-node-inspector__panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.demand-node-inspector__rollback-btn {
+  height: 32px;
+  padding-inline: 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .demand-node-inspector__info-grid {
   display: flex;
   align-items: center;

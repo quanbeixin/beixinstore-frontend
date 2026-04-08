@@ -52,6 +52,7 @@ import {
   getWorkDemandsApi,
   getWorkLogsApi,
   initDemandWorkflowApi,
+  rejectDemandWorkflowNodeApi,
   replaceDemandWorkflowLatestApi,
   submitDemandWorkflowNodeApi,
   updateDemandWorkflowNodeHoursApi,
@@ -614,6 +615,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     const status = String(selectedWorkflowNode?.status || '').toUpperCase()
     return status !== 'DONE' && status !== 'CANCELLED'
   }, [selectedWorkflowNode])
+  const canRollbackSelectedWorkflowNode = useMemo(() => {
+    if (!canManageWorkflow || !access?.is_super_admin) return false
+    return String(selectedWorkflowNode?.status || '').trim().toUpperCase() === 'DONE'
+  }, [access?.is_super_admin, canManageWorkflow, selectedWorkflowNode])
 
   const workflowActionBusy = workflowSubmitting || workflowReplacing
 
@@ -2096,6 +2101,41 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     }
   }
 
+  const handleRollbackWorkflowNode = async () => {
+    if (!detailDemand?.id || !canManageWorkflow || !access?.is_super_admin) return
+    if (!selectedWorkflowNode?.node_key) {
+      message.warning('请先选择流程节点')
+      return
+    }
+    if (String(selectedWorkflowNode?.status || '').trim().toUpperCase() !== 'DONE') {
+      message.warning('仅已完成节点支持回退')
+      return
+    }
+
+    try {
+      setWorkflowSubmitting(true)
+      const result = await rejectDemandWorkflowNodeApi(detailDemand.id, selectedWorkflowNode.node_key, {
+        reject_reason: '超级管理员节点回退',
+        comment: '超级管理员执行节点回退（已完成 -> 未完成）',
+      })
+      if (!result?.success) {
+        message.error(result?.message || '节点回退失败')
+        return
+      }
+      message.success(result?.message || '节点已回退')
+      const workflow = result.data || null
+      setWorkflowData(workflow)
+      setSelectedWorkflowNodeKey(
+        workflow?.current_nodes?.[0]?.node_key || workflow?.current_node?.node_key || workflow?.nodes?.[0]?.node_key || '',
+      )
+      await refreshListAndDetail()
+    } catch (error) {
+      message.error(error?.message || '节点回退失败')
+    } finally {
+      setWorkflowSubmitting(false)
+    }
+  }
+
   const handleUpdateWorkflowTask = async (taskId, payload = {}) => {
     if (!detailDemand?.id || !taskId) return false
     const selectedTask = (selectedWorkflowNodeTasks || []).find((item) => String(item?.id) === String(taskId))
@@ -3174,7 +3214,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                         }
                         onSaveWorkflowSchedule={handleSaveWorkflowNodeSchedule}
                         canAssignSelectedWorkflowNode={canAssignSelectedWorkflowNode}
+                        canRollbackNode={canRollbackSelectedWorkflowNode}
                         onSubmitNode={handleSubmitWorkflowNode}
+                        onRollbackNode={handleRollbackWorkflowNode}
                         selectedWorkflowNodeTasks={selectedWorkflowNodeTasks}
                         workflowTaskUpdatingId={workflowTaskUpdatingId}
                         onUpdateWorkflowTask={handleUpdateWorkflowTask}
