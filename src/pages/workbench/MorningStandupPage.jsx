@@ -12,9 +12,13 @@ import {
 import { Button, Card, Col, Empty, Modal, Progress, Row, Segmented, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { executeAgentApi, getAgentOptionsApi } from '../../api/agent'
-import { getMorningStandupBoardApi } from '../../api/work'
+import {
+  getMorningStandupBoardApi,
+  getMorningStandupWeeklyCompletedApi,
+  getMorningStandupWeeklyProgressApi,
+} from '../../api/work'
 import { getAccessSnapshot, getCurrentUser } from '../../utils/access'
-import { formatBeijingDate } from '../../utils/datetime'
+import { formatBeijingDate, formatBeijingDateTime } from '../../utils/datetime'
 import { UNIFIED_WORK_STATUS, getUnifiedStatusMeta } from '../../utils/workStatus'
 import './MorningStandupPage.css'
 
@@ -25,6 +29,52 @@ const MORNING_STANDUP_AGENT_SCENE = 'MORNING_STANDUP_ANALYSIS'
 const STANDUP_VIEW_MODE_STORAGE_KEYS = {
   inProgress: 'morning-standup-in-progress-view-mode',
   yesterdayDue: 'morning-standup-yesterday-due-view-mode',
+}
+const EMPTY_WEEKLY_PROGRESS = {
+  tabs: [],
+  default_tab_key: '',
+  current_tab_key: '',
+  view_scope: {
+    mode: 'DEPARTMENT',
+    department_id: null,
+    department_name: '',
+    department_ids: [],
+  },
+  range: {
+    start_date: '',
+    end_date: '',
+    total_days: 0,
+  },
+  summary: {
+    demand_count: 0,
+    item_count: 0,
+    active_item_count: 0,
+    done_item_count: 0,
+    risk_item_count: 0,
+  },
+  demand_list: [],
+}
+const EMPTY_WEEKLY_COMPLETED = {
+  tabs: [],
+  default_tab_key: '',
+  current_tab_key: '',
+  view_scope: {
+    mode: 'DEPARTMENT',
+    department_id: null,
+    department_name: '',
+    department_ids: [],
+  },
+  range: {
+    start_date: '',
+    end_date: '',
+    total_days: 0,
+  },
+  summary: {
+    member_count: 0,
+    day_count: 0,
+    done_item_count: 0,
+  },
+  member_tree: [],
 }
 
 function readStoredViewMode(storageKey, fallback = 'tree') {
@@ -57,6 +107,107 @@ function parseDepartmentIdFromTabKey(tabKey) {
   if (!raw.startsWith('dept-')) return null
   const num = Number(raw.slice(5))
   return Number.isInteger(num) && num > 0 ? num : null
+}
+
+function buildMorningScopeParams(tabKey = '') {
+  const params = {}
+  const normalizedTabKey = String(tabKey || '').trim()
+  if (normalizedTabKey) {
+    params.tab_key = normalizedTabKey
+  }
+  const departmentId = parseDepartmentIdFromTabKey(normalizedTabKey)
+  if (departmentId) {
+    params.department_id = departmentId
+  }
+  return params
+}
+
+function formatStandupRange(range = {}) {
+  const startDate = String(range?.start_date || '').trim()
+  const endDate = String(range?.end_date || '').trim()
+  if (startDate && endDate) return `${formatBeijingDate(startDate)} - ${formatBeijingDate(endDate)}`
+  if (startDate) return formatBeijingDate(startDate)
+  if (endDate) return formatBeijingDate(endDate)
+  return '-'
+}
+
+function joinDisplayNames(list = []) {
+  const normalized = Array.isArray(list)
+    ? list.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+  return normalized.length > 0 ? normalized.join('、') : '-'
+}
+
+function formatScheduleSpan(startDate, endDate) {
+  const start = String(startDate || '').trim()
+  const end = String(endDate || '').trim()
+  if (start && end) return `${formatBeijingDate(start)} - ${formatBeijingDate(end)}`
+  if (start) return `开始：${formatBeijingDate(start)}`
+  if (end) return `截止：${formatBeijingDate(end)}`
+  return '未排期'
+}
+
+function buildWeeklyProgressCopyText(data = {}, scopeLabel = '当前范围') {
+  const summary = data?.summary || {}
+  const demandList = Array.isArray(data?.demand_list) ? data.demand_list : []
+  const lines = [
+    `${scopeLabel}本周进展`,
+    `统计范围：${formatStandupRange(data?.range)}`,
+    `需求数：${toNumber(summary.demand_count, 0)}，进行中事项：${toNumber(summary.active_item_count, 0)}，本周完成：${toNumber(summary.done_item_count, 0)}，风险事项：${toNumber(summary.risk_item_count, 0)}`,
+  ]
+
+  if (demandList.length === 0) {
+    lines.push('当前范围本周暂无需求进展。')
+    return lines.join('\n')
+  }
+
+  demandList.forEach((demand, index) => {
+    const latestItems = Array.isArray(demand?.latest_items) ? demand.latest_items.slice(0, 3) : []
+    const phases = Array.isArray(demand?.phase_list) ? demand.phase_list.slice(0, 3) : []
+    lines.push(
+      '',
+      `${index + 1}. ${demand.demand_name || demand.demand_id || '-'}`,
+      `负责人：${joinDisplayNames(demand.owner_names)}`,
+      `进行中 ${toNumber(demand.active_item_count, 0)} 项，本周完成 ${toNumber(demand.done_item_count, 0)} 项，风险 ${toNumber(demand.risk_item_count, 0)} 项`,
+    )
+    if (phases.length > 0) {
+      lines.push(`节点排期：${phases.map((phase) => `${phase.phase_name || '其他事项'}（${formatScheduleSpan(phase.start_date, phase.end_date)}）`).join('；')}`)
+    }
+    if (latestItems.length > 0) {
+      lines.push(`最新进展：${latestItems.map((item) => `${item.username || '-'}-${item.phase_name || '其他事项'}-${item.description || item.item_type_name || `事项#${item.id}`}`).join('；')}`)
+    }
+  })
+
+  return lines.join('\n')
+}
+
+function buildWeeklyCompletedCopyText(data = {}, scopeLabel = '当前范围') {
+  const summary = data?.summary || {}
+  const memberTree = Array.isArray(data?.member_tree) ? data.member_tree : []
+  const lines = [
+    `${scopeLabel}本周已完成事项汇总`,
+    `统计范围：${formatStandupRange(data?.range)}`,
+    `成员数：${toNumber(summary.member_count, 0)}，完成日期数：${toNumber(summary.day_count, 0)}，已完成事项数：${toNumber(summary.done_item_count, 0)}`,
+  ]
+
+  if (memberTree.length === 0) {
+    lines.push('当前范围本周暂无已完成事项。')
+    return lines.join('\n')
+  }
+
+  memberTree.forEach((member, index) => {
+    const days = Array.isArray(member?.children) ? member.children : []
+    lines.push('', `${index + 1}. ${member.username || '-'}（${toNumber(member.done_count, 0)} 项）`)
+    days.forEach((day) => {
+      const items = Array.isArray(day?.children) ? day.children : []
+      const itemText = items
+        .map((item) => `${item.phase_name || '其他事项'}-${item.description || item.item_type_name || `事项#${item.id}`}`)
+        .join('；')
+      lines.push(`- ${formatBeijingDate(day.completed_date)}：${itemText || '无事项明细'}`)
+    })
+  })
+
+  return lines.join('\n')
 }
 
 function getStatusTagColor(status) {
@@ -279,6 +430,14 @@ function MorningStandupBoard() {
   const [unscheduledModalOpen, setUnscheduledModalOpen] = useState(false)
   const [unfilledModalOpen, setUnfilledModalOpen] = useState(false)
   const [hoursDetailModal, setHoursDetailModal] = useState({ open: false, type: 'planned' })
+  const [weeklyProgressModalOpen, setWeeklyProgressModalOpen] = useState(false)
+  const [weeklyProgressLoading, setWeeklyProgressLoading] = useState(false)
+  const [weeklyProgressScopeKey, setWeeklyProgressScopeKey] = useState('')
+  const [weeklyProgressData, setWeeklyProgressData] = useState(EMPTY_WEEKLY_PROGRESS)
+  const [weeklyCompletedModalOpen, setWeeklyCompletedModalOpen] = useState(false)
+  const [weeklyCompletedLoading, setWeeklyCompletedLoading] = useState(false)
+  const [weeklyCompletedScopeKey, setWeeklyCompletedScopeKey] = useState('')
+  const [weeklyCompletedData, setWeeklyCompletedData] = useState(EMPTY_WEEKLY_COMPLETED)
   const [agentOptionsLoading, setAgentOptionsLoading] = useState(false)
   const [agentOptions, setAgentOptions] = useState([])
   const [selectedAgentId, setSelectedAgentId] = useState(null)
@@ -333,16 +492,8 @@ function MorningStandupBoard() {
   const loadBoard = useCallback(async (tabKey = '', options = {}) => {
     setLoading(true)
     try {
-      const params = {}
       const normalizedTabKey = String(tabKey || '').trim()
-      if (normalizedTabKey) {
-        params.tab_key = normalizedTabKey
-      }
-
-      const departmentId = parseDepartmentIdFromTabKey(normalizedTabKey)
-      if (departmentId) {
-        params.department_id = departmentId
-      }
+      const params = buildMorningScopeParams(normalizedTabKey)
 
       const result = await getMorningStandupBoardApi(params, {
         force: options?.force === true,
@@ -1103,6 +1254,75 @@ function MorningStandupBoard() {
     [activeAlignmentTab, alignmentTabItems],
   )
 
+  const currentScopeParams = useMemo(() => buildMorningScopeParams(activeTabKey), [activeTabKey])
+  const currentScopeKey = useMemo(() => JSON.stringify(currentScopeParams), [currentScopeParams])
+
+  const loadWeeklyProgress = useCallback(
+    async ({ force = false } = {}) => {
+      if (!force && weeklyProgressScopeKey === currentScopeKey && weeklyProgressData.demand_list.length > 0) return
+
+      setWeeklyProgressLoading(true)
+      try {
+        const result = await getMorningStandupWeeklyProgressApi(currentScopeParams, { force })
+        if (!result?.success) {
+          message.error(result?.message || '获取本周进展失败')
+          return
+        }
+        setWeeklyProgressData(result.data || EMPTY_WEEKLY_PROGRESS)
+        setWeeklyProgressScopeKey(currentScopeKey)
+      } catch (error) {
+        message.error(error?.message || '获取本周进展失败')
+      } finally {
+        setWeeklyProgressLoading(false)
+      }
+    },
+    [currentScopeKey, currentScopeParams, weeklyProgressData.demand_list.length, weeklyProgressScopeKey],
+  )
+
+  const loadWeeklyCompleted = useCallback(
+    async ({ force = false } = {}) => {
+      if (!force && weeklyCompletedScopeKey === currentScopeKey && weeklyCompletedData.member_tree.length > 0) return
+
+      setWeeklyCompletedLoading(true)
+      try {
+        const result = await getMorningStandupWeeklyCompletedApi(currentScopeParams, { force })
+        if (!result?.success) {
+          message.error(result?.message || '获取本周已完成事项汇总失败')
+          return
+        }
+        setWeeklyCompletedData(result.data || EMPTY_WEEKLY_COMPLETED)
+        setWeeklyCompletedScopeKey(currentScopeKey)
+      } catch (error) {
+        message.error(error?.message || '获取本周已完成事项汇总失败')
+      } finally {
+        setWeeklyCompletedLoading(false)
+      }
+    },
+    [currentScopeKey, currentScopeParams, weeklyCompletedData.member_tree.length, weeklyCompletedScopeKey],
+  )
+
+  useEffect(() => {
+    if (weeklyProgressModalOpen && weeklyProgressScopeKey !== currentScopeKey) {
+      loadWeeklyProgress({ force: true })
+    }
+  }, [currentScopeKey, loadWeeklyProgress, weeklyProgressModalOpen, weeklyProgressScopeKey])
+
+  useEffect(() => {
+    if (weeklyCompletedModalOpen && weeklyCompletedScopeKey !== currentScopeKey) {
+      loadWeeklyCompleted({ force: true })
+    }
+  }, [currentScopeKey, loadWeeklyCompleted, weeklyCompletedModalOpen, weeklyCompletedScopeKey])
+
+  const handleOpenWeeklyProgress = useCallback(async () => {
+    setWeeklyProgressModalOpen(true)
+    await loadWeeklyProgress()
+  }, [loadWeeklyProgress])
+
+  const handleOpenWeeklyCompleted = useCallback(async () => {
+    setWeeklyCompletedModalOpen(true)
+    await loadWeeklyCompleted()
+  }, [loadWeeklyCompleted])
+
   const handleTabChange = async (nextKey) => {
     setActiveTabKey(nextKey)
     await loadBoard(nextKey)
@@ -1169,6 +1389,268 @@ function MorningStandupBoard() {
   const currentHoursDetailTitle = hoursDetailModal.type === 'actual' ? '今日实际用时明细' : '今日计划用时明细'
   const currentHoursField = hoursDetailModal.type === 'actual' ? 'today_actual_hours' : 'today_planned_hours'
   const currentHoursTotal = currentHoursDetailItems.reduce((sum, item) => sum + toNumber(item?.hours, 0), 0)
+  const weeklyProgressRangeLabel = formatStandupRange(weeklyProgressData.range)
+  const weeklyCompletedRangeLabel = formatStandupRange(weeklyCompletedData.range)
+  const weeklyProgressCopyText = useMemo(
+    () => buildWeeklyProgressCopyText(weeklyProgressData, `${activeTabLabel} · `),
+    [activeTabLabel, weeklyProgressData],
+  )
+  const weeklyCompletedCopyText = useMemo(
+    () => buildWeeklyCompletedCopyText(weeklyCompletedData, `${activeTabLabel} · `),
+    [activeTabLabel, weeklyCompletedData],
+  )
+
+  const handleCopyText = useCallback(async (text, successLabel) => {
+    const normalizedText = String(text || '').trim()
+    if (!normalizedText) {
+      message.warning('当前没有可复制的内容')
+      return
+    }
+
+    if (!navigator?.clipboard?.writeText) {
+      message.error('当前浏览器不支持复制')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(normalizedText)
+      message.success(successLabel)
+    } catch (error) {
+      message.error(error?.message || '复制失败')
+    }
+  }, [])
+
+  const weeklyProgressColumns = useMemo(
+    () => [
+      {
+        title: '需求',
+        dataIndex: 'demand_name',
+        key: 'demand_name',
+        width: 220,
+        render: (_, record) => (
+          <Space size={[6, 6]} wrap>
+            {record.demand_priority ? <Tag color="red">{record.demand_priority}</Tag> : null}
+            {renderDemandNameWithLimit(record.demand_name || record.demand_id, 30, record.demand_id)}
+          </Space>
+        ),
+      },
+      {
+        title: '负责人',
+        dataIndex: 'owner_names',
+        key: 'owner_names',
+        width: 180,
+        render: (value) => <span className="morning-prewrap-text">{joinDisplayNames(value)}</span>,
+      },
+      {
+        title: '节点排期',
+        dataIndex: 'phase_list',
+        key: 'phase_list',
+        width: 280,
+        render: (value) => {
+          const phases = Array.isArray(value) ? value.slice(0, 3) : []
+          if (phases.length === 0) return <Text type="secondary">暂无节点排期</Text>
+          return (
+            <Space orientation="vertical" size={4}>
+              {phases.map((phase) => (
+                <div key={`${phase.phase_key || phase.phase_name}`}>
+                  <Space size={[4, 4]} wrap>
+                    <Tag color="geekblue">{phase.phase_name || '其他事项'}</Tag>
+                    <Text type="secondary">{formatScheduleSpan(phase.start_date, phase.end_date)}</Text>
+                  </Space>
+                </div>
+              ))}
+              {Array.isArray(value) && value.length > 3 ? (
+                <Text type="secondary">{`另有 ${value.length - 3} 个节点`}</Text>
+              ) : null}
+            </Space>
+          )
+        },
+      },
+      {
+        title: '进行中',
+        dataIndex: 'active_item_count',
+        key: 'active_item_count',
+        width: 88,
+        align: 'right',
+      },
+      {
+        title: '本周完成',
+        dataIndex: 'done_item_count',
+        key: 'done_item_count',
+        width: 96,
+        align: 'right',
+      },
+      {
+        title: '风险',
+        dataIndex: 'risk_item_count',
+        key: 'risk_item_count',
+        width: 84,
+        align: 'right',
+        render: (value) => (
+          <Text type={toNumber(value, 0) > 0 ? 'danger' : 'secondary'}>{toNumber(value, 0)}</Text>
+        ),
+      },
+      {
+        title: '最新进展',
+        dataIndex: 'latest_items',
+        key: 'latest_items',
+        width: 320,
+        render: (value) => {
+          const items = Array.isArray(value) ? value.slice(0, 2) : []
+          if (items.length === 0) return <Text type="secondary">暂无事项</Text>
+          return (
+            <Space orientation="vertical" size={4}>
+              {items.map((item) => (
+                <div key={item.id}>
+                  <Space size={[4, 4]} wrap>
+                    <Tag color={getStatusTagColor(item.log_status)}>{getStatusLabel(item.log_status)}</Tag>
+                    <Text strong>{item.username || '-'}</Text>
+                    {item.phase_name ? <Tag color="blue">{item.phase_name}</Tag> : null}
+                  </Space>
+                  <div className="morning-prewrap-text">
+                    {item.description || item.item_type_name || `事项 #${item.id}`}
+                  </div>
+                </div>
+              ))}
+            </Space>
+          )
+        },
+      },
+    ],
+    [],
+  )
+
+  const weeklyCompletedColumns = useMemo(
+    () => [
+      {
+        title: '本周已完成事项',
+        key: 'name',
+        width: 360,
+        render: (_, record) => {
+          if (record.row_type === 'member') {
+            return (
+              <Space size={[8, 8]} wrap>
+                <Text strong>{record.username || '-'}</Text>
+                <Tag color="blue">{`${toNumber(record.done_count, 0)} 项`}</Tag>
+              </Space>
+            )
+          }
+
+          if (record.row_type === 'day') {
+            return (
+              <Space size={[8, 8]} wrap>
+                <Tag color="geekblue">{formatBeijingDate(record.completed_date)}</Tag>
+                <Text type="secondary">{`已完成 ${toNumber(record.done_count, 0)} 项`}</Text>
+              </Space>
+            )
+          }
+
+          return (
+            <div>
+              <Space size={[4, 4]} wrap>
+                <Tag color="green">{`#${record.id}`}</Tag>
+                <Tag>{record.item_type_name || '-'}</Tag>
+              </Space>
+              <div className="morning-prewrap-text" style={{ marginTop: 4 }}>
+                {record.description || '-'}
+              </div>
+            </div>
+          )
+        },
+      },
+      {
+        title: '需求',
+        key: 'demand_name',
+        width: 220,
+        render: (_, record) =>
+          record.row_type === 'item'
+            ? renderDemandNameWithLimit(record.demand_name || record.demand_id, 28, record.demand_id)
+            : <Text type="secondary">-</Text>,
+      },
+      {
+        title: '节点',
+        dataIndex: 'phase_name',
+        key: 'phase_name',
+        width: 160,
+        render: (value, record) => (record.row_type === 'item' ? value || '-' : <Text type="secondary">-</Text>),
+      },
+      {
+        title: '完成时间',
+        key: 'completed_at',
+        width: 180,
+        render: (_, record) => {
+          if (record.row_type === 'item') return formatBeijingDateTime(record.completed_at)
+          if (record.row_type === 'day') return formatBeijingDate(record.completed_date)
+          return <Text type="secondary">-</Text>
+        },
+      },
+    ],
+    [],
+  )
+
+  const renderWeeklyProgressExpanded = useCallback((record) => {
+    const phases = Array.isArray(record?.phase_list) ? record.phase_list : []
+    const latestItems = Array.isArray(record?.latest_items) ? record.latest_items : []
+
+    return (
+      <Row gutter={[12, 12]}>
+        <Col xs={24} xl={12}>
+          <Card size="small" title={`相关节点（${phases.length}）`} className="morning-weekly-detail-card">
+            {phases.length === 0 ? (
+              <Empty description="暂无节点信息" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              <Space orientation="vertical" size={8} className="morning-weekly-detail-list">
+                {phases.map((phase) => (
+                  <div key={`${record.demand_id}-${phase.phase_key || phase.phase_name}`} className="morning-weekly-detail-item">
+                    <div className="morning-weekly-detail-item__head">
+                      <Space size={[6, 6]} wrap>
+                        <Tag color="geekblue">{phase.phase_name || '其他事项'}</Tag>
+                        <Tag>{`负责人 ${joinDisplayNames(phase.owner_names)}`}</Tag>
+                        <Tag color="processing">{`进行中 ${toNumber(phase.active_item_count, 0)}`}</Tag>
+                        <Tag color="success">{`本周完成 ${toNumber(phase.done_item_count, 0)}`}</Tag>
+                        {toNumber(phase.risk_item_count, 0) > 0 ? (
+                          <Tag color="error">{`风险 ${toNumber(phase.risk_item_count, 0)}`}</Tag>
+                        ) : null}
+                      </Space>
+                    </div>
+                    <div className="morning-weekly-detail-item__meta">
+                      {formatScheduleSpan(phase.start_date, phase.end_date)}
+                    </div>
+                  </div>
+                ))}
+              </Space>
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} xl={12}>
+          <Card size="small" title={`事项明细（${latestItems.length}）`} className="morning-weekly-detail-card">
+            {latestItems.length === 0 ? (
+              <Empty description="暂无事项明细" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              <Space orientation="vertical" size={8} className="morning-weekly-detail-list">
+                {latestItems.map((item) => (
+                  <div key={`${record.demand_id}-${item.id}`} className="morning-weekly-detail-item">
+                    <div className="morning-weekly-detail-item__head">
+                      <Space size={[6, 6]} wrap>
+                        <Tag color={getStatusTagColor(item.log_status)}>{getStatusLabel(item.log_status)}</Tag>
+                        <Text strong>{item.username || '-'}</Text>
+                        {item.phase_name ? <Tag color="blue">{item.phase_name}</Tag> : null}
+                        {item.is_risk ? <Tag color="error">风险</Tag> : null}
+                      </Space>
+                    </div>
+                    <div className="morning-weekly-detail-item__desc">{item.description || '-'}</div>
+                    <div className="morning-weekly-detail-item__meta">
+                      {formatScheduleSpan(item.expected_start_date, item.expected_completion_date)}
+                    </div>
+                  </div>
+                ))}
+              </Space>
+            )}
+          </Card>
+        </Col>
+      </Row>
+    )
+  }, [])
 
   const renderMemberCard = (member) => {
     const activeItems = Array.isArray(member?.active_items) ? member.active_items : []
@@ -1277,8 +1759,8 @@ function MorningStandupBoard() {
         variant="borderless"
         className="morning-board-section-card morning-board-shell-card morning-section-gap"
       >
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
-          <div style={{ flex: '0 0 66.67%', overflow: 'hidden' }}>
+        <div className="morning-board-topbar">
+          <div className="morning-board-topbar__tabs">
             {tabItems.length > 0 ? (
               <Tabs
                 className="morning-board-tabs"
@@ -1291,7 +1773,13 @@ function MorningStandupBoard() {
               <Empty description="暂无可用部门数据" style={{ margin: 0 }} />
             )}
           </div>
-          <div style={{ flex: '0 0 auto', marginLeft: 'auto' }}>
+          <div className="morning-board-topbar__actions">
+            <Button className="morning-weekly-toolbar-btn" onClick={handleOpenWeeklyProgress}>
+              本周进展
+            </Button>
+            <Button className="morning-weekly-toolbar-btn" onClick={handleOpenWeeklyCompleted}>
+              本周已完成
+            </Button>
             <Tag
               className={`morning-board-refresh-tag ${loading ? 'morning-board-refresh-tag--loading' : ''}`}
               icon={<ReloadOutlined />}
@@ -1579,6 +2067,144 @@ function MorningStandupBoard() {
           </Card>
         </Col>
       </Row>
+
+      <Modal
+        title={`本周进展 · ${activeTabLabel}`}
+        open={weeklyProgressModalOpen}
+        onCancel={() => setWeeklyProgressModalOpen(false)}
+        width={1180}
+        footer={[
+          <Button key="copy" onClick={() => handleCopyText(weeklyProgressCopyText, '本周进展文案已复制')}>
+            复制汇总文案
+          </Button>,
+          <Button key="refresh" loading={weeklyProgressLoading} onClick={() => loadWeeklyProgress({ force: true })}>
+            刷新数据
+          </Button>,
+          <Button key="close" type="primary" onClick={() => setWeeklyProgressModalOpen(false)}>
+            关闭
+          </Button>,
+        ]}
+      >
+        <div className="morning-weekly-summary-grid">
+          <div className="morning-weekly-summary-card">
+            <div className="morning-weekly-summary-card__label">统计范围</div>
+            <div className="morning-weekly-summary-card__value morning-weekly-summary-card__value--small">
+              {weeklyProgressRangeLabel}
+            </div>
+          </div>
+          <div className="morning-weekly-summary-card">
+            <div className="morning-weekly-summary-card__label">需求数</div>
+            <div className="morning-weekly-summary-card__value">
+              {toNumber(weeklyProgressData.summary?.demand_count, 0)}
+            </div>
+          </div>
+          <div className="morning-weekly-summary-card">
+            <div className="morning-weekly-summary-card__label">进行中事项</div>
+            <div className="morning-weekly-summary-card__value">
+              {toNumber(weeklyProgressData.summary?.active_item_count, 0)}
+            </div>
+          </div>
+          <div className="morning-weekly-summary-card">
+            <div className="morning-weekly-summary-card__label">本周完成</div>
+            <div className="morning-weekly-summary-card__value morning-weekly-summary-card__value--success">
+              {toNumber(weeklyProgressData.summary?.done_item_count, 0)}
+            </div>
+          </div>
+          <div className="morning-weekly-summary-card">
+            <div className="morning-weekly-summary-card__label">风险事项</div>
+            <div className="morning-weekly-summary-card__value morning-weekly-summary-card__value--danger">
+              {toNumber(weeklyProgressData.summary?.risk_item_count, 0)}
+            </div>
+          </div>
+        </div>
+
+        {weeklyProgressData.demand_list.length === 0 ? (
+          <Empty
+            description={weeklyProgressLoading ? '本周进展加载中' : '当前范围本周暂无需求进展'}
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+        ) : (
+          <Table
+            rowKey={(record) => record.demand_id}
+            loading={weeklyProgressLoading}
+            size="small"
+            pagination={false}
+            dataSource={weeklyProgressData.demand_list}
+            columns={weeklyProgressColumns}
+            className="morning-board-table"
+            scroll={{ x: 1180 }}
+            expandable={{
+              expandedRowRender: renderWeeklyProgressExpanded,
+              rowExpandable: (record) =>
+                Array.isArray(record?.phase_list) && record.phase_list.length > 0,
+            }}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        title={`本周已完成事项汇总 · ${activeTabLabel}`}
+        open={weeklyCompletedModalOpen}
+        onCancel={() => setWeeklyCompletedModalOpen(false)}
+        width={1080}
+        footer={[
+          <Button key="copy" onClick={() => handleCopyText(weeklyCompletedCopyText, '本周已完成汇总文案已复制')}>
+            复制汇总文案
+          </Button>,
+          <Button key="refresh" loading={weeklyCompletedLoading} onClick={() => loadWeeklyCompleted({ force: true })}>
+            刷新数据
+          </Button>,
+          <Button key="close" type="primary" onClick={() => setWeeklyCompletedModalOpen(false)}>
+            关闭
+          </Button>,
+        ]}
+      >
+        <div className="morning-weekly-summary-grid">
+          <div className="morning-weekly-summary-card">
+            <div className="morning-weekly-summary-card__label">统计范围</div>
+            <div className="morning-weekly-summary-card__value morning-weekly-summary-card__value--small">
+              {weeklyCompletedRangeLabel}
+            </div>
+          </div>
+          <div className="morning-weekly-summary-card">
+            <div className="morning-weekly-summary-card__label">成员数</div>
+            <div className="morning-weekly-summary-card__value">
+              {toNumber(weeklyCompletedData.summary?.member_count, 0)}
+            </div>
+          </div>
+          <div className="morning-weekly-summary-card">
+            <div className="morning-weekly-summary-card__label">完成日期数</div>
+            <div className="morning-weekly-summary-card__value">
+              {toNumber(weeklyCompletedData.summary?.day_count, 0)}
+            </div>
+          </div>
+          <div className="morning-weekly-summary-card">
+            <div className="morning-weekly-summary-card__label">已完成事项数</div>
+            <div className="morning-weekly-summary-card__value morning-weekly-summary-card__value--success">
+              {toNumber(weeklyCompletedData.summary?.done_item_count, 0)}
+            </div>
+          </div>
+        </div>
+
+        {weeklyCompletedData.member_tree.length === 0 ? (
+          <Empty
+            description={weeklyCompletedLoading ? '本周已完成事项加载中' : '当前范围本周暂无已完成事项'}
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+        ) : (
+          <Table
+            rowKey={(record) => record.key}
+            loading={weeklyCompletedLoading}
+            size="small"
+            pagination={false}
+            dataSource={weeklyCompletedData.member_tree}
+            columns={weeklyCompletedColumns}
+            className="morning-board-table"
+            scroll={{ x: 920 }}
+            expandable={{ defaultExpandAllRows: true }}
+          />
+        )}
+      </Modal>
 
       <Modal
         title={`今日未安排成员（${unscheduledMembers.length}）`}

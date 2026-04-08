@@ -279,6 +279,40 @@ export function getMorningStandupBoardApi(params, options = {}) {
   return cachedRequest(cacheKey, requestFn, 15000)
 }
 
+export function getMorningStandupWeeklyProgressApi(params, options = {}) {
+  const normalizedParams = params || {}
+  const cacheKey = `morning-standup-weekly-progress-${JSON.stringify(normalizedParams)}`
+  const requestFn = () =>
+    request.get('/work/workbench/morning/weekly-progress', {
+      params: normalizedParams,
+      timeout: 30000,
+    })
+
+  if (options?.force) {
+    clearCache(cacheKey)
+    return requestFn()
+  }
+
+  return cachedRequest(cacheKey, requestFn, 15000)
+}
+
+export function getMorningStandupWeeklyCompletedApi(params, options = {}) {
+  const normalizedParams = params || {}
+  const cacheKey = `morning-standup-weekly-completed-${JSON.stringify(normalizedParams)}`
+  const requestFn = () =>
+    request.get('/work/workbench/morning/weekly-completed', {
+      params: normalizedParams,
+      timeout: 30000,
+    })
+
+  if (options?.force) {
+    clearCache(cacheKey)
+    return requestFn()
+  }
+
+  return cachedRequest(cacheKey, requestFn, 15000)
+}
+
 export function previewNoFillReminderApi() {
   return request.post('/work/reminders/no-fill')
 }
