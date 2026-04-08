@@ -587,56 +587,21 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     [workflowGraphNodes],
   )
 
-  const workflowTotalEstimatedHours = useMemo(() => {
-    const tasks = Array.isArray(workflowData?.tasks) ? workflowData.tasks : []
-    const nodes = Array.isArray(workflowData?.nodes) ? workflowData.nodes : []
-    const relatedPhaseKeySet = new Set()
-    nodes.forEach((item) => {
-      getNodeRelatedPhaseKeySet(item).forEach((key) => {
-        if (key) relatedPhaseKeySet.add(key)
-      })
-    })
+  const demandTotalActualHours = useMemo(() => {
+    const demandLevelActualHours = Number(detailDemand?.overall_actual_hours)
+    if (Number.isFinite(demandLevelActualHours) && demandLevelActualHours >= 0) {
+      return Number(demandLevelActualHours.toFixed(1))
+    }
 
-    let totalTaskHours = 0
-    let hasTaskHours = false
-    tasks.forEach((item) => {
-      const status = String(item?.status || '').toUpperCase()
-      if (status === 'CANCELLED') return
-      const hours = Number(item?.personal_estimated_hours)
-      if (!Number.isFinite(hours) || hours <= 0) return
-      totalTaskHours += hours
-      hasTaskHours = true
-    })
-
-    ;(detailLogs || []).forEach((item) => {
-      const taskSource = String(item?.task_source || '').trim().toUpperCase()
-      if (taskSource === 'WORKFLOW_AUTO') return
+    const totalFromLogs = (detailLogs || []).reduce((sum, item) => {
       const status = String(item?.log_status || '').toUpperCase()
-      if (status === 'CANCELLED') return
-      const phaseKey = String(item?.phase_key || '').trim().toUpperCase()
-      if (!phaseKey || !relatedPhaseKeySet.has(phaseKey)) return
-      const hours = Number(item?.personal_estimate_hours)
-      if (!Number.isFinite(hours) || hours <= 0) return
-      totalTaskHours += hours
-      hasTaskHours = true
-    })
-
-    if (hasTaskHours) return Number(totalTaskHours.toFixed(1))
-
-    let totalNodeHours = 0
-    let hasNodeHours = false
-    nodes.forEach((item) => {
-      const fallbackValue =
-        item?.personal_estimated_hours !== undefined && item?.personal_estimated_hours !== null
-          ? item.personal_estimated_hours
-          : item?.owner_estimated_hours
-      const hours = Number(fallbackValue)
-      if (!Number.isFinite(hours) || hours <= 0) return
-      totalNodeHours += hours
-      hasNodeHours = true
-    })
-    return hasNodeHours ? Number(totalNodeHours.toFixed(1)) : 0
-  }, [detailLogs, workflowData])
+      if (status === 'CANCELLED') return sum
+      const hours = Number(item?.actual_hours)
+      if (!Number.isFinite(hours) || hours <= 0) return sum
+      return sum + hours
+    }, 0)
+    return Number(totalFromLogs.toFixed(1))
+  }, [detailDemand?.overall_actual_hours, detailLogs])
 
   const currentWorkflowNodeLabel = useMemo(() => {
     if (currentWorkflowNodes.length > 1) {
@@ -2942,7 +2907,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           </Form.Item>
 
           <Card size="small" variant="borderless" style={{ marginTop: -6, marginBottom: 12 }}>
-            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            <Space orientation="vertical" size={8} style={{ width: '100%' }}>
               <Text strong>角色指定人员（可选）</Text>
               {modalRoleAssignmentRows.length > 0 ? (
                 modalRoleAssignmentRows.map((item) => (
@@ -3161,8 +3126,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                           <strong>{workflowGraphNodes.length}</strong>
                         </div>
                         <div className="work-demand-detail__workflow-pill">
-                          <span>整体预估用时</span>
-                          <strong>{workflowTotalEstimatedHours.toFixed(1)} h</strong>
+                          <span>整体实际用时</span>
+                          <strong>{demandTotalActualHours.toFixed(1)} h</strong>
                         </div>
                       </div>
                       {canForceReplaceWorkflow ? (
@@ -3389,7 +3354,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                         <div className="work-demand-detail__field work-demand-detail__field--full">
                           <Text type="secondary">角色指定人员（可选）</Text>
                           {detailRoleAssignmentRows.length > 0 ? (
-                            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                            <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                               {detailRoleAssignmentRows.map((item) => (
                                 <div
                                   key={`detail-role-user-${item.roleKey}`}

@@ -77,6 +77,42 @@ const EMPTY_WEEKLY_COMPLETED = {
   member_tree: [],
 }
 
+async function copyTextWithFallback(text) {
+  const normalizedText = String(text || '')
+  if (!normalizedText) return false
+
+  if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(normalizedText)
+      return true
+    } catch {
+      // fallback for non-secure context or blocked clipboard permissions
+    }
+  }
+
+  if (typeof document === 'undefined' || !document.body) return false
+
+  const textarea = document.createElement('textarea')
+  textarea.value = normalizedText
+  textarea.setAttribute('readonly', 'readonly')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  textarea.style.pointerEvents = 'none'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
 function readStoredViewMode(storageKey, fallback = 'tree') {
   if (typeof window === 'undefined' || !window.localStorage) return fallback
   try {
@@ -1371,13 +1407,12 @@ function MorningStandupBoard() {
       return
     }
 
-    if (!navigator?.clipboard?.writeText) {
-      message.error('当前浏览器不支持复制')
-      return
-    }
-
     try {
-      await navigator.clipboard.writeText(text)
+      const copied = await copyTextWithFallback(text)
+      if (!copied) {
+        message.error('复制失败，请检查浏览器复制权限')
+        return
+      }
       message.success('分析结果已复制')
     } catch (error) {
       message.error(error?.message || '复制失败')
@@ -1407,13 +1442,12 @@ function MorningStandupBoard() {
       return
     }
 
-    if (!navigator?.clipboard?.writeText) {
-      message.error('当前浏览器不支持复制')
-      return
-    }
-
     try {
-      await navigator.clipboard.writeText(normalizedText)
+      const copied = await copyTextWithFallback(normalizedText)
+      if (!copied) {
+        message.error('复制失败，请检查浏览器复制权限')
+        return
+      }
       message.success(successLabel)
     } catch (error) {
       message.error(error?.message || '复制失败')
