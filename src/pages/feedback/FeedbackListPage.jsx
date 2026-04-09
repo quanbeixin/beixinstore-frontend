@@ -65,6 +65,7 @@ const DEFAULT_PRODUCT_OPTIONS = ['A1', 'Minimix', 'Vimi', 'Couplelens', 'Veeo', 
 const DEFAULT_CHANNEL_OPTIONS = ['邮件', '表单', '商店评论', '其他']
 const DUPLICATE_TIME_WINDOW_MINUTES = 5
 const DUPLICATE_TIME_WINDOW_MS = DUPLICATE_TIME_WINDOW_MINUTES * 60 * 1000
+const AI_CATEGORY_PREVIEW_CHARS = 10
 const STATUS_META = {
   pending: { label: '待处理', color: 'orange' },
   processed: { label: '已处理', color: 'green' },
@@ -110,6 +111,13 @@ function toTimestamp(value) {
   const dateValue = dayjs(value)
   if (!dateValue.isValid()) return null
   return dateValue.valueOf()
+}
+
+function truncateText(value, maxChars) {
+  const text = String(value || '')
+  const chars = Array.from(text)
+  if (chars.length <= maxChars) return text
+  return `${chars.slice(0, maxChars).join('')}...`
 }
 
 function parseImportRows(jsonRows) {
@@ -601,16 +609,22 @@ function FeedbackListPage() {
       title: 'AI 分类',
       dataIndex: 'ai_category',
       key: 'ai_category',
-      width: 120,
+      width: 160,
       render: (value) => {
         if (!value) return '-'
+        const fullText = String(value || '')
+        const shortText = truncateText(fullText, AI_CATEGORY_PREVIEW_CHARS)
         const colorMap = {
           Bug: 'red',
           功能需求: 'blue',
           投诉: 'orange',
           咨询: 'green',
         }
-        return <Tag color={colorMap[value] || 'default'}>{value}</Tag>
+        return (
+          <Tooltip title={fullText} placement="topLeft" styles={{ root: { maxWidth: 420 } }}>
+            <Tag color={colorMap[fullText] || 'default'}>{shortText}</Tag>
+          </Tooltip>
+        )
       },
     },
     {
