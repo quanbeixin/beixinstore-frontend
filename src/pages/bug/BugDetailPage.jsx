@@ -119,28 +119,59 @@ function BugDetailPage() {
   const runTransition = async (actionKey) => {
     try {
       const values = await remarkForm.validateFields()
+      const remark = String(values.remark || '').trim()
+      const fixSolution = String(values.fix_solution || '').trim()
+      const verifyResult = String(values.verify_result || '').trim()
+
+      const jumpToField = (name, errorText) => {
+        remarkForm.setFields([{ name, errors: [errorText] }])
+        try {
+          remarkForm.scrollToField(name, { block: 'center', behavior: 'smooth' })
+        } catch {
+          // noop
+        }
+      }
+
+      if (actionKey === 'fix' && !fixSolution) {
+        jumpToField('fix_solution', '修复方案&影响范围不能为空')
+        message.warning('请先填写修复方案&影响范围，再执行“修复完成”')
+        return
+      }
+
+      if (actionKey === 'verify' && !verifyResult) {
+        jumpToField('verify_result', '验证结果不能为空')
+        message.warning('请先填写验证结果，再执行“验证通过”')
+        return
+      }
+
+      if ((actionKey === 'reopen' || actionKey === 'reject') && !remark) {
+        jumpToField('remark', '备注不能为空')
+        message.warning('请先填写备注，再执行当前操作')
+        return
+      }
+
       setActionLoading(actionKey)
       let result = null
 
       if (actionKey === 'start') {
-        result = await startBugApi(bugId, { remark: values.remark || '' })
+        result = await startBugApi(bugId, { remark })
       } else if (actionKey === 'fix') {
         result = await fixBugApi(bugId, {
-          remark: values.remark || '',
-          fix_solution: values.fix_solution || '',
+          remark,
+          fix_solution: fixSolution,
         })
       } else if (actionKey === 'verify') {
         result = await verifyBugApi(bugId, {
-          remark: values.remark || '',
-          verify_result: values.verify_result || '',
+          remark,
+          verify_result: verifyResult,
         })
       } else if (actionKey === 'reopen') {
         result = await reopenBugApi(bugId, {
-          remark: values.remark || '',
-          verify_result: values.verify_result || '',
+          remark,
+          verify_result: verifyResult,
         })
       } else if (actionKey === 'reject') {
-        result = await rejectBugApi(bugId, { remark: values.remark || '' })
+        result = await rejectBugApi(bugId, { remark })
       }
 
       if (!result?.success) {
@@ -416,16 +447,17 @@ function BugDetailPage() {
                     <Input.TextArea rows={3} maxLength={20000} placeholder="打回、重开或处理说明可填写在这里" />
                   </Form.Item>
                   <Form.Item
-                    label="影响范围"
+                    label="修复方案&影响范围"
                     name="fix_solution"
+                    required
                     extra="执行“修复完成”时必填"
                   >
-                    <Input.TextArea rows={3} maxLength={20000} placeholder="描述影响范围" />
+                    <Input.TextArea rows={3} maxLength={20000} placeholder="请填写修复方案&影响范围（必填）" />
                   </Form.Item>
                   <Form.Item
                     label="验证结果"
                     name="verify_result"
-                    extra="执行“验证通过”或“重新打开”时建议填写"
+                    extra="执行“验证通过”时必填；重新打开建议填写"
                   >
                     <Input.TextArea rows={3} maxLength={20000} placeholder="描述验证结果" />
                   </Form.Item>
@@ -456,7 +488,7 @@ function BugDetailPage() {
 
             <Card size="small" className="bug-detail-page__block" variant="borderless" title="修复与验证">
               <Descriptions column={1} size="small">
-                <Descriptions.Item label="影响范围">
+                <Descriptions.Item label="修复方案&影响范围">
                   <Paragraph>{detail.fix_solution || '-'}</Paragraph>
                 </Descriptions.Item>
                 <Descriptions.Item label="验证结果">
