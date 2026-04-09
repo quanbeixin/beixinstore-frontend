@@ -2040,7 +2040,7 @@ function NotificationRulesPage() {
           </Space>
         }
       >
-        <Space direction="vertical" style={{ width: '100%' }} size={16}>
+        <Space orientation="vertical" style={{ width: '100%' }} size={16}>
           <Row gutter={12}>
             <Col span={10}>
               <Input
@@ -2069,7 +2069,7 @@ function NotificationRulesPage() {
       <Drawer
         title={editingRule ? `编辑规则：${editingRule.rule_name}` : '新建通知规则'}
         open={drawerOpen}
-        width={760}
+        size="large"
         onClose={() => setDrawerOpen(false)}
         extra={
           <Space>
