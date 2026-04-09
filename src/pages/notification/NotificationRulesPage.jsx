@@ -52,10 +52,18 @@ const RECEIVER_TYPE_OPTIONS = [
   { label: '需求绑定群', value: 'demand_group' },
   { label: '字段映射', value: 'field' },
 ]
-const BUSINESS_ROLE_OPTIONS = [
+const BASE_BUSINESS_ROLE_OPTIONS = [
   { label: '需求处理人', value: 'demand_owner' },
   { label: '节点负责人', value: 'node_owner' },
 ]
+const DAILY_REPORT_BUSINESS_ROLE_OPTIONS = [
+  { label: '团队人数', value: 'daily_report_team_all' },
+  { label: '今日有安排', value: 'daily_report_scheduled' },
+  { label: '有安排已填报', value: 'daily_report_filled' },
+  { label: '有安排待填报', value: 'daily_report_unfilled' },
+  { label: '今日未安排', value: 'daily_report_unscheduled' },
+]
+const BUSINESS_ROLE_OPTIONS = [...BASE_BUSINESS_ROLE_OPTIONS, ...DAILY_REPORT_BUSINESS_ROLE_OPTIONS]
 const BUSINESS_ROLE_LABEL_MAP = BUSINESS_ROLE_OPTIONS.reduce((acc, item) => {
   acc[item.value] = item.label
   return acc
@@ -265,6 +273,7 @@ const EVENT_TYPE_GROUPED_OPTIONS = [
       { label: '事项状态变更', value: 'worklog_status_change' },
       { label: '事项到期提醒', value: 'worklog_deadline_remind' },
       { label: '周报发送', value: 'weekly_report_send' },
+      { label: '日报通知', value: 'daily_report_notify' },
     ],
   },
   {
@@ -537,6 +546,23 @@ const EVENT_VARIABLE_OPTIONS_BY_EVENT = {
     { label: '成员ID', value: 'user_id' },
     { label: '成员姓名', value: 'user_name' },
   ],
+  daily_report_notify: [
+    { label: '提醒日期', value: 'today_date' },
+    { label: '提醒分类', value: 'category_label' },
+    { label: '提醒分类标识', value: 'category_key' },
+    { label: '成员数量', value: 'member_count' },
+    { label: '部门名称', value: 'department_name' },
+    { label: '晨会视图名称', value: 'tab_label' },
+    { label: '日报@块', value: 'mention_block' },
+    { label: '日报@文本', value: 'mention_plain_text' },
+    { label: '团队人数', value: 'summary_team_size' },
+    { label: '今日有安排', value: 'summary_scheduled_users_today' },
+    { label: '有安排已填报', value: 'summary_filled_users_today' },
+    { label: '有安排待填报', value: 'summary_unfilled_users_today' },
+    { label: '今日未安排', value: 'summary_unscheduled_users_today' },
+    { label: '计划用时', value: 'summary_total_planned_hours_today' },
+    { label: '实际用时', value: 'summary_total_actual_hours_today' },
+  ],
 }
 
 const VARIABLE_ALIAS_BY_KEY = {
@@ -550,7 +576,9 @@ const VARIABLE_ALIAS_BY_KEY = {
   week_range: '周报周期',
   weekly_summary_text: '周报正文',
   department_id: '部门ID',
+  department_name: '部门名称',
   user_id: '成员ID',
+  tab_label: '晨会视图名称',
   priority: '优先级',
   status: '状态',
   remaining_hours: '剩余小时',
@@ -587,6 +615,19 @@ const VARIABLE_ALIAS_BY_KEY = {
   bug_status: '缺陷状态',
   reporter_name: '提交人姓名',
   user_name: '成员姓名',
+  category_key: '提醒分类标识',
+  category_label: '提醒分类',
+  member_count: '成员数量',
+  mention_block: '日报@块',
+  mention_plain_text: '日报@文本',
+  summary_team_size: '团队人数',
+  summary_scheduled_users_today: '今日有安排',
+  summary_filled_users_today: '有安排已填报',
+  summary_unfilled_users_today: '有安排待填报',
+  summary_unscheduled_users_today: '今日未安排',
+  summary_total_planned_hours_today: '计划用时',
+  summary_total_actual_hours_today: '实际用时',
+  today_date: '提醒日期',
 }
 
 const VARIABLE_KEY_BY_ALIAS = Object.entries(VARIABLE_ALIAS_BY_KEY).reduce((acc, [key, alias]) => {
@@ -697,7 +738,8 @@ function parseReceiverFromJson(receiverConfigJson) {
   const receiver = safeParseJson(receiverConfigJson, {})
   const roleValues = Array.isArray(receiver?.business_roles)
     ? receiver.business_roles.map((item) => String(item || '').trim()).filter(Boolean)
-    : Array.isArray(receiver?.roles)
+    : []
+  const legacyRoleValues = Array.isArray(receiver?.roles)
     ? receiver.roles.map((item) => (typeof item === 'object' ? item.id : item)).filter(Boolean)
     : []
   const userValues = Array.isArray(receiver?.user_ids)
@@ -711,7 +753,7 @@ function parseReceiverFromJson(receiverConfigJson) {
     : []
 
   return {
-    receiver_roles: roleValues,
+    receiver_roles: legacyRoleValues.length > 0 ? legacyRoleValues : roleValues,
     receiver_users: userValues,
     receiver_chat_ids: chatValues,
     receiver_use_demand_bound_chat: receiver?.use_demand_bound_chat === true,
@@ -1070,6 +1112,11 @@ function NotificationRulesPage() {
     })
     return Array.from(dedup.values())
   }, [effectiveEventType])
+  const receiverRoleOptions = useMemo(() => {
+    return String(effectiveEventType || '').trim().toLowerCase() === 'daily_report_notify'
+      ? DAILY_REPORT_BUSINESS_ROLE_OPTIONS
+      : BASE_BUSINESS_ROLE_OPTIONS
+  }, [effectiveEventType])
   const filteredEventTypeOptions = useMemo(() => {
     const triggerMode = String(selectedTriggerMode || 'event')
     if (triggerMode === 'schedule') return []
@@ -1086,6 +1133,14 @@ function NotificationRulesPage() {
       options: (group.options || []).filter((option) => filterOption(option)),
     })).filter((group) => Array.isArray(group.options) && group.options.length > 0)
   }, [selectedTriggerMode])
+  const scheduleBusinessEventTypeOptions = useMemo(
+    () =>
+      EVENT_TYPE_GROUPED_OPTIONS.map((group) => ({
+        label: group.label,
+        options: (group.options || []).filter((option) => String(option?.value || '') !== 'worklog_deadline_remind'),
+      })).filter((group) => Array.isArray(group.options) && group.options.length > 0),
+    [],
+  )
   const selectedTriggerModeTip = useMemo(() => {
     const triggerMode = String(selectedTriggerMode || 'event')
     if (triggerMode === 'schedule') {
@@ -1363,6 +1418,47 @@ function NotificationRulesPage() {
     form.setFieldValue('receiver_field_user_id', nextDefault)
   }, [effectiveEventType, form, selectedReceiverType])
 
+  const hasReceiverRoleOptions = receiverRoleOptions.length > 0
+
+  useEffect(() => {
+    if (selectedReceiverType !== 'role') return
+    if (!hasReceiverRoleOptions) return
+    const currentRoles = Array.isArray(form.getFieldValue('receiver_roles'))
+      ? form.getFieldValue('receiver_roles')
+      : []
+    if (currentRoles.length === 0) return
+
+    const normalizedEventType = String(effectiveEventType || '').trim().toLowerCase()
+    if (!normalizedEventType) return
+
+    const optionValues = new Set(receiverRoleOptions.map((item) => item.value))
+    const hasMismatch = currentRoles.some((role) => !optionValues.has(role))
+    if (!hasMismatch) return
+
+    const isDailyReportEvent = normalizedEventType === 'daily_report_notify'
+    const allDailyRoles = currentRoles.every((role) => String(role || '').startsWith('daily_report_'))
+    if (isDailyReportEvent && allDailyRoles) {
+      // 等待 daily_report 选项加载完成后再校验，避免初始化时被清空
+      return
+    }
+
+    const filteredRoles = currentRoles.filter((role) => optionValues.has(role))
+    form.setFieldValue('receiver_roles', filteredRoles)
+  }, [receiverRoleOptions, form, selectedReceiverType, effectiveEventType, hasReceiverRoleOptions])
+
+  useEffect(() => {
+    if (String(selectedTriggerMode || 'event') !== 'schedule') return
+    const currentScheduleEventType = String(form.getFieldValue('schedule_event_type') || '').trim()
+    if (currentScheduleEventType) return
+
+    const currentSceneCode = String(form.getFieldValue('scene_code') || '').trim()
+    if (!currentSceneCode) return
+    if (currentSceneCode.startsWith('schedule_')) return
+    if (currentSceneCode === 'worklog_deadline_remind') return
+
+    form.setFieldValue('schedule_event_type', currentSceneCode)
+  }, [form, selectedTriggerMode])
+
   useEffect(() => {
     if (String(selectedTriggerMode || 'event') !== 'schedule') return
     const frequency = String(selectedScheduleFrequency || 'daily')
@@ -1373,27 +1469,28 @@ function NotificationRulesPage() {
   }, [form, selectedScheduleFrequency, selectedTriggerMode])
 
   useEffect(() => {
-    if (String(selectedTriggerMode || 'event') !== 'schedule') return
-    const current = String(form.getFieldValue('schedule_event_type') || '').trim()
-    if (current) return
-    form.setFieldValue('schedule_event_type', 'weekly_report_send')
-  }, [form, selectedTriggerMode])
-
-  useEffect(() => {
     const sceneCode = String(form.getFieldValue('scene_code') || '')
-    if (!sceneCode) return
-
     const triggerMode = String(selectedTriggerMode || 'event')
-    if (triggerMode === 'schedule' && !sceneCode.startsWith('schedule_')) {
-      form.setFieldValue('scene_code', undefined)
+    if (!sceneCode) {
+      if (triggerMode === 'event') {
+        const scheduleEventType = String(form.getFieldValue('schedule_event_type') || '').trim()
+        if (scheduleEventType && scheduleEventType !== 'worklog_deadline_remind') {
+          form.setFieldValue('scene_code', scheduleEventType)
+        }
+      }
       return
     }
+
     if (triggerMode === 'deadline' && sceneCode !== 'worklog_deadline_remind') {
       form.setFieldValue('scene_code', undefined)
       return
     }
     if (triggerMode === 'event' && sceneCode.startsWith('schedule_')) {
-      form.setFieldValue('scene_code', undefined)
+      const scheduleEventType = String(form.getFieldValue('schedule_event_type') || '').trim()
+      form.setFieldValue(
+        'scene_code',
+        scheduleEventType && scheduleEventType !== 'worklog_deadline_remind' ? scheduleEventType : undefined,
+      )
     }
   }, [form, selectedTriggerMode])
 
@@ -1488,43 +1585,48 @@ function NotificationRulesPage() {
 
     let fieldCondition = null
     if (values.condition_enabled) {
-      if (!values.condition_field) {
-        message.error('请先选择条件字段')
-        return
-      }
-      if (!values.condition_operator) {
-        message.error('请先选择条件运算符')
-        return
-      }
-      const operator = values.condition_operator
-      const needsConditionValue = !CONDITION_OPERATORS_WITHOUT_VALUE.has(String(operator))
-
-      if (
-        needsConditionValue &&
-        (values.condition_value === undefined ||
-          values.condition_value === null ||
-          String(values.condition_value).trim() === '')
-      ) {
-        message.error('请先填写条件值')
-        return
+      if (selectedTriggerMode === 'event') {
+        if (!values.condition_field) {
+          message.error('请先选择条件字段')
+          return
+        }
+        if (!values.condition_operator) {
+          message.error('请先选择条件运算符')
+          return
+        }
       }
 
-      const conditionValue =
-        !needsConditionValue
-          ? null
-          : operator === 'in' || operator === 'nin'
-            ? splitCommaValues(values.condition_value)
-            : String(values.condition_value).trim()
+      if (values.condition_field && values.condition_operator) {
+        const operator = values.condition_operator
+        const needsConditionValue = !CONDITION_OPERATORS_WITHOUT_VALUE.has(String(operator))
 
-      fieldCondition = {
-        logic: 'and',
-        items: [
-          {
-            field: values.condition_field,
-            operator,
-            value: conditionValue,
-          },
-        ],
+        if (
+          needsConditionValue &&
+          (values.condition_value === undefined ||
+            values.condition_value === null ||
+            String(values.condition_value).trim() === '')
+        ) {
+          message.error('请先填写条件值')
+          return
+        }
+
+        const conditionValue =
+          !needsConditionValue
+            ? null
+            : operator === 'in' || operator === 'nin'
+              ? splitCommaValues(values.condition_value)
+              : String(values.condition_value).trim()
+
+        fieldCondition = {
+          logic: 'and',
+          items: [
+            {
+              field: values.condition_field,
+              operator,
+              value: conditionValue,
+            },
+          ],
+        }
       }
     }
 
@@ -2009,7 +2111,7 @@ function NotificationRulesPage() {
                     <Select
                       showSearch
                       placeholder="请选择业务事件类型"
-                      options={EVENT_TYPE_OPTIONS.filter((item) => item.value !== 'worklog_deadline_remind')}
+                      options={scheduleBusinessEventTypeOptions}
                       optionFilterProp="label"
                     />
                   </Form.Item>
@@ -2156,7 +2258,7 @@ function NotificationRulesPage() {
                       showSearch
                       optionFilterProp="label"
                       placeholder="选择接收业务角色"
-                      options={BUSINESS_ROLE_OPTIONS}
+                      options={receiverRoleOptions}
                     />
                   </Form.Item>
                 )}
