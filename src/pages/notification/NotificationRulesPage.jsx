@@ -40,6 +40,7 @@ import {
   updateNotificationSendControlApi,
   updateNotificationRuleApi,
 } from '../../api/notification'
+import { getCurrentUser } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
 
 const { Text } = Typography
@@ -796,12 +797,15 @@ function generateRuleCode(sceneCode) {
   return `n_rule_${scene}_${timestamp}_${randomPart}`.slice(0, 64)
 }
 
-function buildMockEventData(sceneCode, businessLineId, now) {
+function buildMockEventData(sceneCode, businessLineId, now, currentUser = null) {
   const base = {
     trace_id: `trace_${now}`,
     event_id: `evt_${now}`,
     business_line_id: businessLineId || undefined,
   }
+  const currentUserId = Number(currentUser?.id)
+  const normalizedCurrentUserId = Number.isInteger(currentUserId) && currentUserId > 0 ? currentUserId : 11
+  const currentUserName = String(currentUser?.real_name || currentUser?.username || '当前用户').trim() || '当前用户'
 
   if (sceneCode === 'bug_assign') {
     return {
@@ -918,6 +922,32 @@ function buildMockEventData(sceneCode, businessLineId, now) {
       expected_completion_date: '2026-04-05',
       hours_to_deadline: 2,
       business_line_name: '零售业务线',
+    }
+  }
+
+  if (sceneCode === 'daily_report_notify') {
+    const currentMember = {
+      user_id: normalizedCurrentUserId,
+      username: currentUserName,
+      department_name: '当前部门',
+    }
+    return {
+      ...base,
+      category_key: 'unscheduled',
+      category_label: '今日未安排',
+      tab_key: 'all',
+      tab_label: '全部',
+      department_name: '全部',
+      summary_unscheduled_users_today: 1,
+      member_count: 1,
+      members: [currentMember],
+      member_groups: {
+        unscheduled: [currentMember],
+        unfilled: [],
+        scheduled: [],
+        filled: [],
+        team_all: [currentMember],
+      },
     }
   }
 
@@ -1040,6 +1070,7 @@ function buildMockEventData(sceneCode, businessLineId, now) {
 
 function NotificationRulesPage() {
   const screens = Grid.useBreakpoint()
+  const currentUser = useMemo(() => getCurrentUser(), [])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [rules, setRules] = useState([])
@@ -1735,7 +1766,7 @@ function NotificationRulesPage() {
     const scheduleEventType = String(conditionConfig?.schedule?.event_type || '').trim()
     const testEventType =
       triggerMode === 'schedule' && scheduleEventType ? scheduleEventType : String(rule.scene_code)
-    const baseData = buildMockEventData(testEventType, rule.business_line_id, now)
+    const baseData = buildMockEventData(testEventType, rule.business_line_id, now, currentUser)
     const contextData =
       triggerMode === 'schedule'
         ? {
@@ -1758,6 +1789,7 @@ function NotificationRulesPage() {
         ...baseData,
         ...contextData,
       },
+      targetRuleIds: rule?.id ? [rule.id] : [],
     }
 
     const result = await triggerNotificationEventApi(payload)
@@ -1774,6 +1806,12 @@ function NotificationRulesPage() {
     const failedItems = resultItems.filter((item) => item?.status === 'failed')
     const skippedItems = resultItems.filter((item) => item?.status === 'skipped')
     const partialItems = resultItems.filter((item) => item?.status === 'partial_success')
+    const skippedByCodeCountMap = skippedItems.reduce((acc, item) => {
+      const code = String(item?.error_code || 'UNKNOWN')
+      acc.set(code, Number(acc.get(code) || 0) + 1)
+      return acc
+    }, new Map())
+    const skippedByWhitelistCount = Number(skippedByCodeCountMap.get('SEND_SKIPPED_BY_WHITELIST') || 0)
 
     if (processed === 0 || matched === 0) {
       message.warning('已触发事件，但未命中可执行规则')
@@ -1796,6 +1834,13 @@ function NotificationRulesPage() {
 
       if (partialCount > 0) {
         message.warning(`已触发 ${processed} 条，部分成功 ${partialCount} 条，请检查通知日志详情`)
+        return
+      }
+
+      if (skippedByWhitelistCount > 0 && skippedByWhitelistCount === skippedCount) {
+        message.warning(
+          `已触发 ${processed} 条，本次命中的接收人不在白名单中（跳过 ${skippedCount} 条）。请确认白名单是否包含本次实际接收人。`,
+        )
         return
       }
 
