@@ -63,6 +63,12 @@ const DEFAULT_VISIBLE_COLUMNS = [
 
 const DEFAULT_PRODUCT_OPTIONS = ['A1', 'Minimix', 'Vimi', 'Couplelens', 'Veeo', 'Heyo', 'POPDoll', 'Beyo', 'Viyo']
 const DEFAULT_CHANNEL_OPTIONS = ['邮件', '表单', '商店评论', '其他']
+const DUPLICATE_TIME_WINDOW_MINUTES = 5
+const DUPLICATE_TIME_WINDOW_MS = DUPLICATE_TIME_WINDOW_MINUTES * 60 * 1000
+const STATUS_META = {
+  pending: { label: '待处理', color: 'orange' },
+  processed: { label: '已处理', color: 'green' },
+}
 
 function readVisibleColumns() {
   try {
@@ -89,6 +95,21 @@ function toDateTimeString(value) {
   const d = dayjs(value)
   if (!d.isValid()) return ''
   return d.format('YYYY-MM-DD HH:mm:ss')
+}
+
+function getStatusLabel(value) {
+  return STATUS_META[value]?.label || String(value || '-')
+}
+
+function normalizeEmail(value) {
+  const email = String(value || '').trim().toLowerCase()
+  return email
+}
+
+function toTimestamp(value) {
+  const dateValue = dayjs(value)
+  if (!dateValue.isValid()) return null
+  return dateValue.valueOf()
 }
 
 function parseImportRows(jsonRows) {
@@ -269,25 +290,50 @@ function FeedbackListPage() {
   }, [rows, dictProductNames])
 
   const groupedRows = useMemo(() => {
-    const groupCounts = {}
+    const list = Array.isArray(rows) ? rows : []
+    const groupCounts = new Array(list.length).fill(0)
+    const groupKeys = new Array(list.length).fill('')
+    const emailBuckets = new Map()
 
-    ;(rows || []).forEach((item) => {
-      const dateText = dayjs(item.date).isValid() ? dayjs(item.date).format('YYYY-MM-DD') : '-'
-      const email = item.user_email || ''
-      const key = `${dateText}_${email}`
-      groupCounts[key] = (groupCounts[key] || 0) + 1
+    list.forEach((item, index) => {
+      const email = normalizeEmail(item?.user_email)
+      const ts = toTimestamp(item?.date)
+      if (!email || !Number.isFinite(ts)) return
+
+      if (!emailBuckets.has(email)) {
+        emailBuckets.set(email, [])
+      }
+      emailBuckets.get(email).push({ index, ts })
     })
 
-    return (rows || []).map((item) => {
-      const dateText = dayjs(item.date).isValid() ? dayjs(item.date).format('YYYY-MM-DD') : '-'
-      const email = item.user_email || ''
-      const key = `${dateText}_${email}`
-      return {
-        ...item,
-        _groupKey: key,
-        _groupCount: groupCounts[key] || 0,
+    emailBuckets.forEach((entries, email) => {
+      entries.sort((a, b) => a.ts - b.ts)
+
+      for (let start = 0; start < entries.length; start += 1) {
+        let end = start + 1
+        while (end < entries.length && entries[end].ts - entries[start].ts <= DUPLICATE_TIME_WINDOW_MS) {
+          end += 1
+        }
+
+        const windowSize = end - start
+        if (windowSize < 2) continue
+
+        const groupKey = `${email}_${entries[start].ts}_${entries[end - 1].ts}`
+        for (let cursor = start; cursor < end; cursor += 1) {
+          const rowIndex = entries[cursor].index
+          groupCounts[rowIndex] = Math.max(groupCounts[rowIndex], windowSize)
+          if (!groupKeys[rowIndex]) {
+            groupKeys[rowIndex] = groupKey
+          }
+        }
       }
     })
+
+    return list.map((item, index) => ({
+      ...item,
+      _groupKey: groupKeys[index] || '',
+      _groupCount: groupCounts[index] || 0,
+    }))
   }, [rows])
 
   const productOptions = useMemo(
@@ -378,14 +424,9 @@ function FeedbackListPage() {
   const handleStatusChange = (record, newStatus) => {
     if (newStatus === record.status) return
 
-    const statusMap = {
-      pending: '待处理',
-      processed: '已处理',
-    }
-
     Modal.confirm({
       title: '确认修改状态',
-      content: `确定将状态从“${statusMap[record.status] || record.status}”改为“${statusMap[newStatus] || newStatus}”吗？`,
+      content: `确定将状态从“${getStatusLabel(record.status)}”改为“${getStatusLabel(newStatus)}”吗？`,
       okText: '确认',
       cancelText: '取消',
       onOk: async () => {
@@ -650,10 +691,25 @@ function FeedbackListPage() {
           size="small"
           style={{ width: '100%' }}
           value={value}
+          optionLabelProp="label"
           onChange={(next) => handleStatusChange(record, next)}
           options={[
-            { label: '待处理', value: 'pending' },
-            { label: '已处理', value: 'processed' },
+            {
+              label: (
+                <Tag color={STATUS_META.pending.color} style={{ marginInlineEnd: 0 }}>
+                  {STATUS_META.pending.label}
+                </Tag>
+              ),
+              value: 'pending',
+            },
+            {
+              label: (
+                <Tag color={STATUS_META.processed.color} style={{ marginInlineEnd: 0 }}>
+                  {STATUS_META.processed.label}
+                </Tag>
+              ),
+              value: 'processed',
+            },
           ]}
         />
       ),
