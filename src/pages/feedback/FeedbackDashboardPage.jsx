@@ -4,13 +4,33 @@ import {
   MessageOutlined,
   UserOutlined,
 } from '@ant-design/icons'
-import { Card, Col, DatePicker, Row, Select, Spin, Statistic, Table } from 'antd'
+import { Card, Col, DatePicker, Empty, Row, Select, Spin, Statistic } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { getAllFeedbackApi } from '../../api/feedback'
+import './FeedbackDashboardPage.css'
 
 const { RangePicker } = DatePicker
+const CATEGORY_COLORS = [
+  '#2f80ed',
+  '#14b8a6',
+  '#f2994a',
+  '#bb6bd9',
+  '#6f6ceb',
+  '#7cb518',
+  '#56ccf2',
+  '#eb5757',
+  '#f2c94c',
+  '#2d9cdb',
+  '#27ae60',
+  '#9b51e0',
+]
+
+function formatPercent(value) {
+  if (!Number.isFinite(Number(value))) return '0.0%'
+  return `${Number(value).toFixed(1)}%`
+}
 
 function FeedbackDashboardPage() {
   const [loading, setLoading] = useState(false)
@@ -63,7 +83,7 @@ function FeedbackDashboardPage() {
     return { total, processed, pending, aiProcessed }
   }, [filteredRows])
 
-  const categoryTableData = useMemo(() => {
+  const categoryRows = useMemo(() => {
     const map = {}
     filteredRows.forEach((item) => {
       const key = item?.ai_category || '未分类'
@@ -75,10 +95,13 @@ function FeedbackDashboardPage() {
       .map((key) => ({
         category: key,
         count: map[key],
-        percentage: ((map[key] / total) * 100).toFixed(1),
+        percentage: (map[key] / total) * 100,
       }))
       .sort((a, b) => b.count - a.count)
   }, [filteredRows])
+
+  const categoryListRows = useMemo(() => categoryRows, [categoryRows])
+  const categoryPieRows = useMemo(() => categoryRows.slice(0, 10), [categoryRows])
 
   const channelData = useMemo(() => {
     const map = {}
@@ -87,7 +110,9 @@ function FeedbackDashboardPage() {
       map[key] = (map[key] || 0) + 1
     })
 
-    return Object.keys(map).map((key) => ({ name: key, value: map[key] }))
+    return Object.keys(map)
+      .map((key) => ({ name: key, value: map[key] }))
+      .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))
   }, [filteredRows])
 
   const productData = useMemo(() => {
@@ -97,122 +122,150 @@ function FeedbackDashboardPage() {
       map[key] = (map[key] || 0) + 1
     })
 
-    return Object.keys(map).map((key) => ({ name: key, value: map[key] }))
+    return Object.keys(map)
+      .map((key) => ({ name: key, value: map[key] }))
+      .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))
   }, [filteredRows])
 
   const categoryPieOption = useMemo(
     () => ({
       tooltip: { trigger: 'item' },
-      legend: { orient: 'vertical', left: 8, top: 'middle' },
+      color: CATEGORY_COLORS,
       series: [
         {
           name: '分类占比',
           type: 'pie',
-          radius: ['50%', '72%'],
-          center: ['62%', '50%'],
+          radius: ['54%', '74%'],
+          center: ['50%', '50%'],
+          avoidLabelOverlap: true,
           itemStyle: {
             borderRadius: 6,
             borderColor: '#fff',
             borderWidth: 2,
           },
           label: {
+            show: true,
             formatter: '{b}: {d}%',
+            color: '#6b7280',
+            fontSize: 12,
           },
-          data: categoryTableData.map((item) => ({
+          labelLine: {
+            show: true,
+            length: 12,
+            length2: 10,
+            lineStyle: {
+              color: '#b6bfcc',
+              width: 1,
+            },
+          },
+          data: categoryPieRows.map((item) => ({
             name: item.category,
             value: item.count,
           })),
         },
       ],
     }),
-    [categoryTableData],
+    [categoryPieRows],
   )
 
   const channelBarOption = useMemo(
     () => ({
-      tooltip: { trigger: 'axis' },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
       xAxis: {
         type: 'category',
         data: channelData.map((item) => item.name),
-        axisLabel: { interval: 0, rotate: 20 },
+        axisLabel: { interval: 0, rotate: 0, color: '#8a94a6', fontSize: 12 },
+        axisTick: { show: false },
+        axisLine: { lineStyle: { color: '#e7ecf4' } },
       },
-      yAxis: { type: 'value' },
+      yAxis: {
+        type: 'value',
+        axisLabel: { color: '#9aa4b3' },
+        splitLine: { lineStyle: { color: '#edf1f7' } },
+      },
       series: [
         {
           type: 'bar',
           data: channelData.map((item) => item.value),
-          itemStyle: { color: '#1677ff' },
+          itemStyle: {
+            color: '#2f80ed',
+            borderRadius: [6, 6, 0, 0],
+          },
+          label: {
+            show: true,
+            position: 'insideTop',
+            color: '#1f4f93',
+            fontSize: 11,
+          },
           barMaxWidth: 36,
         },
       ],
-      grid: { left: 36, right: 18, bottom: 40, top: 30 },
+      grid: { left: 28, right: 16, bottom: 22, top: 24, containLabel: true },
     }),
     [channelData],
   )
 
   const productBarOption = useMemo(
     () => ({
-      tooltip: { trigger: 'axis' },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
       xAxis: {
         type: 'category',
         data: productData.map((item) => item.name),
-        axisLabel: { interval: 0, rotate: 20 },
+        axisLabel: { interval: 0, rotate: 0, color: '#8a94a6', fontSize: 12 },
+        axisTick: { show: false },
+        axisLine: { lineStyle: { color: '#e7ecf4' } },
       },
-      yAxis: { type: 'value' },
+      yAxis: {
+        type: 'value',
+        axisLabel: { color: '#9aa4b3' },
+        splitLine: { lineStyle: { color: '#edf1f7' } },
+      },
       series: [
         {
           type: 'bar',
           data: productData.map((item) => item.value),
-          itemStyle: { color: '#52c41a' },
+          itemStyle: {
+            color: '#2f80ed',
+            borderRadius: [6, 6, 0, 0],
+          },
+          label: {
+            show: true,
+            position: 'insideTop',
+            color: '#1f4f93',
+            fontSize: 11,
+          },
           barMaxWidth: 36,
         },
       ],
-      grid: { left: 36, right: 18, bottom: 40, top: 30 },
+      grid: { left: 28, right: 16, bottom: 22, top: 24, containLabel: true },
     }),
     [productData],
   )
-
-  const productStatsRows = useMemo(() => {
-    const map = {}
-    filteredRows.forEach((item) => {
-      const key = item?.product || '未指定'
-      if (!map[key]) {
-        map[key] = { product: key, total: 0, processed: 0, pending: 0 }
-      }
-      map[key].total += 1
-      if (item.status === 'processed') {
-        map[key].processed += 1
-      } else {
-        map[key].pending += 1
-      }
-    })
-
-    return Object.values(map).map((item) => ({
-      ...item,
-      processRate: item.total > 0 ? `${((item.processed / item.total) * 100).toFixed(1)}%` : '0%',
-    }))
-  }, [filteredRows])
 
   const productOptions = useMemo(
     () => ['all'].concat([...new Set((rows || []).map((item) => item.product).filter(Boolean))]),
     [rows],
   )
 
+  const hasCategoryData = categoryRows.length > 0
+  const hasChannelData = channelData.length > 0
+  const hasProductData = productData.length > 0
+
   return (
-    <div style={{ padding: 12 }}>
-      <Card style={{ marginBottom: 12 }}>
-        <Row gutter={12}>
-          <Col xs={24} md={10}>
+    <div className="feedback-dashboard-page">
+      <Card className="feedback-dashboard-filter-card" variant="borderless">
+        <Row gutter={[12, 12]}>
+          <Col xs={24} md={8}>
             <RangePicker
-              style={{ width: '100%' }}
+              className="feedback-dashboard-range"
               value={dateRange}
               format="YYYY-MM-DD"
               onChange={(value) => setDateRange(value)}
             />
           </Col>
-          <Col xs={24} md={8}>
+          <Col xs={24} md={6}>
             <Select
-              style={{ width: '100%' }}
+              className="feedback-dashboard-product-select"
               value={selectedProduct}
               onChange={setSelectedProduct}
               options={productOptions.map((item) => ({
@@ -225,108 +278,113 @@ function FeedbackDashboardPage() {
       </Card>
 
       <Spin spinning={loading}>
-        <Row gutter={12} style={{ marginBottom: 12 }}>
+        <Row gutter={[12, 12]} className="feedback-dashboard-stats-row">
           <Col xs={24} sm={12} lg={6}>
-            <Card>
+            <Card className="feedback-dashboard-stat-card" variant="borderless">
               <Statistic
                 title="反馈总数"
                 value={stats.total}
                 prefix={<MessageOutlined />}
-                styles={{ content: { color: '#1677ff' } }}
+                styles={{ content: { color: '#101827' } }}
               />
             </Card>
           </Col>
           <Col xs={24} sm={12} lg={6}>
-            <Card>
+            <Card className="feedback-dashboard-stat-card" variant="borderless">
               <Statistic
                 title="已处理"
                 value={stats.processed}
                 prefix={<CheckCircleOutlined />}
-                styles={{ content: { color: '#52c41a' } }}
+                styles={{ content: { color: '#101827' } }}
                 suffix={`/ ${stats.total}`}
               />
             </Card>
           </Col>
           <Col xs={24} sm={12} lg={6}>
-            <Card>
+            <Card className="feedback-dashboard-stat-card" variant="borderless">
               <Statistic
                 title="待处理"
                 value={stats.pending}
                 prefix={<ClockCircleOutlined />}
-                styles={{ content: { color: '#faad14' } }}
+                styles={{ content: { color: '#101827' } }}
               />
             </Card>
           </Col>
           <Col xs={24} sm={12} lg={6}>
-            <Card>
+            <Card className="feedback-dashboard-stat-card" variant="borderless">
               <Statistic
                 title="AI 已分析"
                 value={stats.aiProcessed}
                 prefix={<UserOutlined />}
-                styles={{ content: { color: '#722ed1' } }}
+                styles={{ content: { color: '#101827' } }}
                 suffix={`/ ${stats.total}`}
               />
             </Card>
           </Col>
         </Row>
 
-        <Row gutter={12} style={{ marginBottom: 12 }}>
-          <Col xs={24} lg={14}>
-            <Card title="问题类型占比" style={{ height: 420 }}>
-              <ReactECharts option={categoryPieOption} style={{ height: 340 }} notMerge lazyUpdate />
-            </Card>
-          </Col>
-          <Col xs={24} lg={10}>
-            <Card title="分类明细" style={{ height: 420 }}>
-              <Table
-                size="small"
-                rowKey="category"
-                pagination={false}
-                dataSource={categoryTableData}
-                columns={[
-                  { title: '分类', dataIndex: 'category', key: 'category' },
-                  { title: '数量', dataIndex: 'count', key: 'count', width: 80 },
-                  {
-                    title: '占比',
-                    dataIndex: 'percentage',
-                    key: 'percentage',
-                    width: 80,
-                    render: (value) => `${value}%`,
-                  },
-                ]}
-              />
-            </Card>
-          </Col>
-        </Row>
-
-        <Row gutter={12} style={{ marginBottom: 12 }}>
-          <Col xs={24} lg={12}>
-            <Card title="反馈渠道分布" style={{ height: 360 }}>
-              <ReactECharts option={channelBarOption} style={{ height: 280 }} notMerge lazyUpdate />
-            </Card>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Card title="用户反馈量分布" style={{ height: 360 }}>
-              <ReactECharts option={productBarOption} style={{ height: 280 }} notMerge lazyUpdate />
-            </Card>
-          </Col>
-        </Row>
-
-        <Card title="产品处理情况">
-          <Table
-            rowKey="product"
-            size="small"
-            pagination={false}
-            dataSource={productStatsRows}
-            columns={[
-              { title: '产品', dataIndex: 'product', key: 'product' },
-              { title: '总数', dataIndex: 'total', key: 'total', width: 80 },
-              { title: '已处理', dataIndex: 'processed', key: 'processed', width: 90 },
-              { title: '待处理', dataIndex: 'pending', key: 'pending', width: 90 },
-              { title: '处理率', dataIndex: 'processRate', key: 'processRate', width: 90 },
-            ]}
-          />
+        <Card title="问题类型占比" className="feedback-dashboard-category-card" variant="borderless">
+          {hasCategoryData ? (
+            <Row gutter={[12, 12]}>
+              <Col xs={24} xl={10}>
+                <div className="feedback-dashboard-category-list">
+                  {categoryListRows.map((item, index) => (
+                    <div
+                      key={item.category}
+                      className="feedback-dashboard-category-list-item"
+                      style={{ '--item-color': CATEGORY_COLORS[index % CATEGORY_COLORS.length] }}
+                    >
+                      <div className="feedback-dashboard-category-list-label">
+                        <span className="feedback-dashboard-category-dot" />
+                        <span className="feedback-dashboard-category-name">{item.category}</span>
+                      </div>
+                      <div className="feedback-dashboard-category-list-meta">
+                        <span className="feedback-dashboard-category-count">{item.count}</span>
+                        <span className="feedback-dashboard-category-percent">
+                          {formatPercent(item.percentage)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Col>
+              <Col xs={24} xl={14}>
+                <div className="feedback-dashboard-category-chart-wrap">
+                  <ReactECharts option={categoryPieOption} style={{ height: 330 }} notMerge lazyUpdate />
+                </div>
+              </Col>
+            </Row>
+          ) : (
+            <div className="feedback-dashboard-empty-wrap">
+              <Empty description="暂无分类数据" />
+            </div>
+          )}
         </Card>
+
+        <Row gutter={[12, 12]} className="feedback-dashboard-bottom-row">
+          <Col xs={24} lg={12}>
+            <Card title="反馈渠道分布" className="feedback-dashboard-chart-card" variant="borderless">
+              {hasChannelData ? (
+                <ReactECharts option={channelBarOption} style={{ height: 260 }} notMerge lazyUpdate />
+              ) : (
+                <div className="feedback-dashboard-empty-wrap">
+                  <Empty description="暂无渠道数据" />
+                </div>
+              )}
+            </Card>
+          </Col>
+          <Col xs={24} lg={12}>
+            <Card title="用户反馈量分布" className="feedback-dashboard-chart-card" variant="borderless">
+              {hasProductData ? (
+                <ReactECharts option={productBarOption} style={{ height: 260 }} notMerge lazyUpdate />
+              ) : (
+                <div className="feedback-dashboard-empty-wrap">
+                  <Empty description="暂无产品数据" />
+                </div>
+              )}
+            </Card>
+          </Col>
+        </Row>
       </Spin>
     </div>
   )
