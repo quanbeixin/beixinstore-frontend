@@ -44,6 +44,9 @@ const FeishuContacts = lazy(() => import('./pages/integration/FeishuContactsPage
 const FeishuUserBindings = lazy(() => import('./pages/integration/FeishuUserBindingsPage'))
 const BugList = lazy(() => import('./pages/bug/BugListPage'))
 const BugDetail = lazy(() => import('./pages/bug/BugDetailPage'))
+const FeedbackList = lazy(() => import('./pages/feedback/FeedbackListPage'))
+const FeedbackDashboard = lazy(() => import('./pages/feedback/FeedbackDashboardPage'))
+const FeedbackAIPromptConfig = lazy(() => import('./pages/feedback/AIPromptConfigPage'))
 const Login = lazy(() => import('./pages/auth/LoginPage'))
 const Register = lazy(() => import('./pages/auth/RegisterPage'))
 
@@ -58,6 +61,9 @@ const PAGE_COMPONENTS = {
   archiveDemands: ArchiveDemands,
   bugList: BugList,
   bugDetail: BugDetail,
+  feedbackList: FeedbackList,
+  feedbackDashboard: FeedbackDashboard,
+  feedbackAIPromptConfig: FeedbackAIPromptConfig,
   morningStandupBoard: MorningStandupBoard,
   options: Options,
   ownerWorkbench: OwnerWorkbench,
