@@ -16,7 +16,6 @@ import {
   Empty,
   Form,
   Input,
-  List,
   Popconfirm,
   Space,
   Table,
@@ -326,6 +325,8 @@ function BugDetailPage() {
     }
   }
 
+  const statusLogs = Array.isArray(detail?.status_logs) ? detail.status_logs : []
+
   if (!bugId) {
     return (
       <div style={{ padding: 12 }}>
@@ -426,7 +427,7 @@ function BugDetailPage() {
                   <Descriptions.Item label="产品模块">{detail.product_name || detail.product_code || '-'}</Descriptions.Item>
                   <Descriptions.Item label="Bug阶段">{detail.issue_stage_name || detail.issue_stage || '-'}</Descriptions.Item>
                   <Descriptions.Item label="发现人">{detail.reporter_name || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="处理人">{detail.assignee_name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="处理人" span={2}>{detail.assignee_name || '-'}</Descriptions.Item>
                   <Descriptions.Item label="关联需求" span={2}>
                     {detail.demand_id ? (
                       <Button type="link" style={{ paddingInline: 0 }} onClick={() => navigate(`/work-demands/${detail.demand_id}`)}>
@@ -531,26 +532,31 @@ function BugDetailPage() {
             </Card>
 
             <Card size="small" className="bug-detail-page__block" variant="borderless" title="状态变更历史">
-              <List
-                dataSource={detail.status_logs || []}
-                locale={{ emptyText: '暂无流转记录' }}
-                renderItem={(item) => (
-                  <List.Item>
-                    <div className="bug-detail-page__log-item">
-                      <div className="bug-detail-page__log-main">
-                        <Text strong>{item.operator_name || '-'}</Text>
-                        <Text type="secondary">
-                          {item.from_status_name || item.from_status_code || '初始'}
-                          {' -> '}
-                          {item.to_status_name || item.to_status_code || '-'}
-                        </Text>
+              {statusLogs.length === 0 ? (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无流转记录" />
+              ) : (
+                <div className="bug-detail-page__log-list">
+                  {statusLogs.map((item, index) => (
+                    <div
+                      className="bug-detail-page__log-list-item"
+                      key={`${item?.id || item?.created_at || 'status-log'}-${index}`}
+                    >
+                      <div className="bug-detail-page__log-item">
+                        <div className="bug-detail-page__log-main">
+                          <Text strong>{item.operator_name || '-'}</Text>
+                          <Text type="secondary">
+                            {item.from_status_name || item.from_status_code || '初始'}
+                            {' -> '}
+                            {item.to_status_name || item.to_status_code || '-'}
+                          </Text>
+                        </div>
+                        <div className="bug-detail-page__log-time">{formatBeijingDateTime(item.created_at)}</div>
+                        {item.remark ? <div className="bug-detail-page__log-remark">{item.remark}</div> : null}
                       </div>
-                      <div className="bug-detail-page__log-time">{formatBeijingDateTime(item.created_at)}</div>
-                      {item.remark ? <div className="bug-detail-page__log-remark">{item.remark}</div> : null}
                     </div>
-                  </List.Item>
-                )}
-              />
+                  ))}
+                </div>
+              )}
             </Card>
 
             <BugFormModal

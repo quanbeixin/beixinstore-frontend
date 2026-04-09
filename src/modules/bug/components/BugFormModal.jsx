@@ -193,7 +193,7 @@ function BugFormModal({
       onCancel={onCancel}
       footer={footer}
       destroyOnHidden
-      maskClosable={false}
+      mask={{ closable: false }}
     >
       <Form form={form} layout="vertical" disabled={loadingOptions || confirmLoading}>
         <Space size={12} style={{ width: '100%' }} wrap>
