@@ -1,6 +1,17 @@
 import { request } from './http'
 import { cachedRequest, clearCache, clearCacheByPrefix } from '../utils/requestCache'
 
+function clearDerivedWorkCaches({ includeWorkbench = true } = {}) {
+  if (includeWorkbench) {
+    clearCache('workbench-me')
+  }
+  clearCacheByPrefix('logs-')
+  clearCacheByPrefix('demands-')
+  clearCacheByPrefix('insight-')
+  clearCacheByPrefix('morning-standup-')
+  clearCacheByPrefix('human-gantt-')
+}
+
 export function getWorkItemTypesApi(params) {
   const key = `item-types-${JSON.stringify(params)}`
   return cachedRequest(key, () => request.get('/work/item-types', { params }))
@@ -194,26 +205,22 @@ export function getWorkLogsApi(params) {
 }
 
 export function createWorkLogApi(payload) {
-  clearCache('workbench-me')
-  clearCacheByPrefix('logs-')
+  clearDerivedWorkCaches()
   return request.post('/work/logs', payload)
 }
 
 export function createOwnerAssignedLogApi(payload) {
-  clearCache('workbench-me')
-  clearCacheByPrefix('logs-')
+  clearDerivedWorkCaches()
   return request.post('/work/logs/owner-assign', payload)
 }
 
 export function updateWorkLogApi(logId, payload) {
-  clearCache('workbench-me')
-  clearCacheByPrefix('logs-')
+  clearDerivedWorkCaches()
   return request.put(`/work/logs/${logId}`, payload)
 }
 
 export function deleteWorkLogApi(logId) {
-  clearCache('workbench-me')
-  clearCacheByPrefix('logs-')
+  clearDerivedWorkCaches()
   return request.delete(`/work/logs/${logId}`)
 }
 
@@ -230,18 +237,17 @@ export function getLogDailyEntriesApi(logId, params) {
 }
 
 export function createLogDailyEntryApi(logId, payload) {
-  clearCache('workbench-me')
-  clearCacheByPrefix('logs-')
+  clearDerivedWorkCaches()
   return request.post(`/work/logs/${logId}/daily-entries`, payload)
 }
 
 export function updateLogDailyEntryApi(logId, entryId, payload) {
-  clearCache('workbench-me')
-  clearCacheByPrefix('logs-')
+  clearDerivedWorkCaches()
   return request.put(`/work/logs/${logId}/daily-entries/${entryId}`, payload)
 }
 
 export function updateWorkLogOwnerEstimateApi(logId, payload) {
+  clearDerivedWorkCaches({ includeWorkbench: false })
   return request.put(`/work/logs/${logId}/owner-estimate`, payload)
 }
 
@@ -368,5 +374,6 @@ export function getMyAssignedItemsApi() {
 }
 
 export function updateAssignedLogApi(logId, payload) {
+  clearDerivedWorkCaches()
   return request.put(`/work/my-assigned-items/${logId}`, payload)
 }
