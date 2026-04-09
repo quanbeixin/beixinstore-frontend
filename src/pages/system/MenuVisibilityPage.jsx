@@ -43,6 +43,8 @@ const SCOPE_META = {
 const SECTION_LABELS = {
   main: '主导航',
   project: '项目管理',
+  efficiency: '效能总览',
+  feedback: '用户反馈',
   system: '系统设置',
   integration: '第三方接入',
 }
@@ -211,7 +213,7 @@ function MenuVisibility() {
 
     const sections = Object.values(sectionMap).filter((section) => section.items.length > 0)
     const orderedSections = []
-    const preferredOrder = ['main', 'project', 'system', 'integration']
+    const preferredOrder = ['main', 'project', 'efficiency', 'feedback', 'system', 'integration']
 
     preferredOrder.forEach((key) => {
       const section = sections.find((item) => item.key === key)

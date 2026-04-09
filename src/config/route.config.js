@@ -265,6 +265,48 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/feedback/list',
+    componentKey: 'feedbackList',
+    requiredPermission: 'feedback.view',
+    page: {
+      title: '用户问题记录',
+      subtitle: '查看、筛选并维护用户反馈记录，支持 AI 分析和批量导入。',
+    },
+    menu: {
+      section: 'feedback',
+      label: '用户问题记录',
+      icon: 'message',
+    },
+  },
+  {
+    path: '/feedback/dashboard',
+    componentKey: 'feedbackDashboard',
+    requiredPermission: 'feedback.view',
+    page: {
+      title: '反馈数据看板',
+      subtitle: '按时间、产品和分类查看用户反馈处理与分析概览。',
+    },
+    menu: {
+      section: 'feedback',
+      label: '反馈数据看板',
+      icon: 'message',
+    },
+  },
+  {
+    path: '/feedback/ai-config',
+    componentKey: 'feedbackAIPromptConfig',
+    requiredPermission: 'feedback.manage',
+    page: {
+      title: 'AI 配置',
+      subtitle: '维护反馈分析场景的 Prompt、知识库与分类规则。',
+    },
+    menu: {
+      section: 'feedback',
+      label: 'AI 配置',
+      icon: 'setting',
+    },
+  },
+  {
     path: '/notification/rules',
     componentKey: 'notificationRules',
     requiredPermission: 'notification.rule.manage',
