@@ -549,7 +549,7 @@ function FeedbackListPage() {
       width: 250,
       ellipsis: true,
       render: (value) => (
-        <Tooltip title={value} placement="topLeft" overlayStyle={{ maxWidth: 420 }}>
+        <Tooltip title={value} placement="topLeft" styles={{ root: { maxWidth: 420 } }}>
           <span style={{ display: 'inline-block', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {value || '-'}
           </span>
@@ -580,7 +580,7 @@ function FeedbackListPage() {
       ellipsis: true,
       render: (value) => (
         <Space size={4} style={{ maxWidth: 220 }}>
-          <Tooltip title={value} placement="topLeft" overlayStyle={{ maxWidth: 420 }}>
+          <Tooltip title={value} placement="topLeft" styles={{ root: { maxWidth: 420 } }}>
             <span style={{ display: 'inline-block', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {value || '-'}
             </span>
@@ -604,7 +604,7 @@ function FeedbackListPage() {
       ellipsis: true,
       render: (value) => (
         <Space size={4} style={{ maxWidth: 220 }}>
-          <Tooltip title={value} placement="topLeft" overlayStyle={{ maxWidth: 420 }}>
+          <Tooltip title={value} placement="topLeft" styles={{ root: { maxWidth: 420 } }}>
             <span style={{ display: 'inline-block', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {value || '-'}
             </span>
@@ -680,7 +680,7 @@ function FeedbackListPage() {
       width: 250,
       ellipsis: true,
       render: (value) => (
-        <Tooltip title={value} placement="topLeft" overlayStyle={{ maxWidth: 420 }}>
+        <Tooltip title={value} placement="topLeft" styles={{ root: { maxWidth: 420 } }}>
           <span style={{ display: 'inline-block', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {value || '-'}
           </span>
