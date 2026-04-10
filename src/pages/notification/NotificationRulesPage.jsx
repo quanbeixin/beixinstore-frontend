@@ -567,69 +567,26 @@ const EVENT_VARIABLE_OPTIONS_BY_EVENT = {
   ],
 }
 
+function buildVariableAliasByKey() {
+  const map = {}
+  const merged = [
+    ...BASE_VARIABLE_OPTIONS,
+    ...Object.values(EVENT_VARIABLE_OPTIONS_BY_EVENT).flat(),
+  ]
+  merged.forEach((item) => {
+    const key = String(item?.value || '').trim()
+    const label = String(item?.label || '').trim()
+    if (!key || !label || map[key]) return
+    map[key] = label
+  })
+  return map
+}
+
 const VARIABLE_ALIAS_BY_KEY = {
-  demand_name: '需求名称',
-  node_name: '节点名称',
-  assignee_name: '接收人姓名',
-  operator_name: '操作人姓名',
-  business_line_id: '业务线ID',
-  event_id: '事件ID',
-  trace_id: '追踪ID',
-  week_range: '周报周期',
-  weekly_summary_text: '周报正文',
-  department_id: '部门ID',
-  department_name: '部门名称',
-  user_id: '成员ID',
-  tab_label: '晨会视图名称',
-  priority: '优先级',
-  status: '状态',
-  remaining_hours: '剩余小时',
-  task_id: '任务ID',
-  bug_id: '缺陷ID',
-  owner_user_id: '负责人ID',
-  owner_name: '负责人姓名',
-  from_owner_user_id: '原负责人ID',
-  from_owner_name: '原负责人姓名',
-  to_owner_user_id: '新负责人ID',
-  to_owner_name: '新负责人姓名',
-  business_line_name: '业务线名称',
-  worklog_id: '事项ID',
+  ...buildVariableAliasByKey(),
   task_title: '标题',
-  task_content: '事项内容',
-  item_type_name: '事项类型',
-  from_assignee_id: '原接收人ID',
-  from_assignee_name: '原接收人姓名',
-  to_assignee_id: '新接收人ID',
-  to_assignee_name: '新接收人姓名',
-  assigned_by_name: '指派人姓名',
-  expected_completion_date: '预计完成日期',
-  hours_to_deadline: '距到期小时',
-  schedule_bucket: '触发时间',
-  severity: '严重级别',
-  from_status: '旧状态',
-  to_status: '新状态',
-  reopen_reason: '重开原因',
-  operator_id: '操作人ID',
-  reject_reason: '驳回原因',
-  bug_no: '缺陷编号',
-  bug_title: '缺陷标题',
-  bug_content: '缺陷内容',
-  bug_status: '缺陷状态',
-  reporter_name: '提交人姓名',
-  user_name: '成员姓名',
-  category_key: '提醒分类标识',
-  category_label: '提醒分类',
-  member_count: '成员数量',
   mention_block: '日报@块',
   mention_plain_text: '日报@文本',
-  summary_team_size: '团队人数',
-  summary_scheduled_users_today: '今日有安排',
-  summary_filled_users_today: '有安排已填报',
-  summary_unfilled_users_today: '有安排待填报',
-  summary_unscheduled_users_today: '今日未安排',
-  summary_total_planned_hours_today: '计划用时',
-  summary_total_actual_hours_today: '实际用时',
-  today_date: '提醒日期',
 }
 
 const VARIABLE_KEY_BY_ALIAS = Object.entries(VARIABLE_ALIAS_BY_KEY).reduce((acc, [key, alias]) => {
@@ -655,8 +612,13 @@ function splitCommaValues(input) {
 }
 
 function storageTextToMentionsText(value) {
-  return String(value || '').replace(/\$\{([a-zA-Z0-9_.]+)\}/g, (_, key) => {
+  const source = String(value || '')
+  const fromTemplate = source.replace(/\$\{([a-zA-Z0-9_.]+)\}/g, (_, key) => {
     return `@${VARIABLE_ALIAS_BY_KEY[key] || key}`
+  })
+  return fromTemplate.replace(/@([a-zA-Z0-9_.]+)/g, (full, key) => {
+    const alias = VARIABLE_ALIAS_BY_KEY[key]
+    return alias ? `@${alias}` : full
   })
 }
 
