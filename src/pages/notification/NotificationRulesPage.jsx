@@ -56,6 +56,7 @@ const RECEIVER_TYPE_OPTIONS = [
 const BASE_BUSINESS_ROLE_OPTIONS = [
   { label: '需求处理人', value: 'demand_owner' },
   { label: '节点负责人', value: 'node_owner' },
+  { label: '任务负责人（被指派人）', value: 'node_assignee' },
 ]
 const DAILY_REPORT_BUSINESS_ROLE_OPTIONS = [
   { label: '团队人数', value: 'daily_report_team_all' },
