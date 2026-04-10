@@ -750,6 +750,7 @@ function WorkLogs({ mode = 'dashboard' }) {
   const [page, setPage] = useState(() => (isHistoryPage ? initialHistoryViewState.page : 1))
   const [pageSize, setPageSize] = useState(() => (isHistoryPage ? initialHistoryViewState.pageSize : 10))
   const [total, setTotal] = useState(0)
+  const [historyTotalItems, setHistoryTotalItems] = useState(0)
 
   const selectedTypeId = Form.useWatch('item_type_id', form)
   const selectedDemandId = Form.useWatch('demand_id', form)
@@ -1178,6 +1179,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       message.warning('开始日期不能晚于结束日期')
       setLogs([])
       setTotal(0)
+      setHistoryTotalItems(0)
       return
     }
 
@@ -1187,7 +1189,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       const result = await getWorkLogsApi({
         page,
         pageSize,
-        ...(historyDimension === 'DATE' ? { date_dimension: 'ENTRY' } : {}),
+        ...(historyDimension === 'DATE' ? { date_dimension: 'ENTRY', entry_group_mode: 'DAY' } : {}),
         ...(historyDateRange.startDate ? { start_date: historyDateRange.startDate } : {}),
         ...(historyDateRange.endDate ? { end_date: historyDateRange.endDate } : {}),
         ...(statusFilter.kind === 'lifecycle' ? { log_status: statusFilter.value } : {}),
@@ -1195,13 +1197,24 @@ function WorkLogs({ mode = 'dashboard' }) {
       })
       if (!result?.success) {
         message.error(result?.message || '获取工作记录失败')
+        setLogs([])
+        setTotal(0)
+        setHistoryTotalItems(0)
         return
       }
 
       setLogs(result.data?.list || [])
       setTotal(result.data?.total || 0)
+      setHistoryTotalItems(
+        historyDimension === 'DATE'
+          ? Number(result.data?.total_items || 0)
+          : Number(result.data?.total || 0),
+      )
     } catch (error) {
       message.error(error?.message || '获取工作记录失败')
+      setLogs([])
+      setTotal(0)
+      setHistoryTotalItems(0)
     } finally {
       setLoadingLogs(false)
     }
@@ -2275,6 +2288,16 @@ function WorkLogs({ mode = 'dashboard' }) {
   ]
 
   const historyDailyRows = useMemo(() => {
+    if (
+      historyDimension === 'DATE' &&
+      Array.isArray(logs) &&
+      logs.length > 0 &&
+      Array.isArray(logs[0]?.items) &&
+      Object.prototype.hasOwnProperty.call(logs[0] || {}, 'date')
+    ) {
+      return logs
+    }
+
     const grouped = new Map()
 
     logs.forEach((log) => {
@@ -2323,12 +2346,16 @@ function WorkLogs({ mode = 'dashboard' }) {
         if (b.date === '未标注日期') return -1
         return String(b.date || '').localeCompare(String(a.date || ''))
       })
-  }, [logs])
+  }, [historyDimension, logs])
 
   const historyDateItemColumns = logColumns
     .filter(
       (column) =>
-        column.key !== 'log_date' && column.key !== 'expected_completion_date' && column.key !== 'assigned_by_name',
+        column.key !== 'log_date' &&
+        column.key !== 'expected_start_date' &&
+        column.key !== 'expected_completion_date' &&
+        column.key !== 'log_completed_at' &&
+        column.key !== 'assigned_by_name',
     )
     .map((column) => {
       if (column.key === 'action') {
@@ -2338,9 +2365,6 @@ function WorkLogs({ mode = 'dashboard' }) {
           render: (_, record) =>
             canUpdate ? (
               <Space size={4}>
-                <Button type="link" onClick={() => openDetailModal(record)}>
-                  查看日明细
-                </Button>
                 <Button
                   type="link"
                   onClick={() => openHistoryDayEntryModal(record, record.__history_date)}
@@ -3409,9 +3433,14 @@ function WorkLogs({ mode = 'dashboard' }) {
                       <Tag color="blue">当前筛选：{currentHistoryFilterLabel}</Tag>
                       <Tag color="purple">时间：{currentHistoryDatePresetLabel}</Tag>
                       <Tag>{currentHistoryDateRangeText}</Tag>
-                      <Tag color="cyan">共 {total} 条</Tag>
+                      {historyDimension === 'DATE' ? (
+                        <Tag color="cyan">共 {historyTotalItems} 项投入</Tag>
+                      ) : (
+                        <Tag color="cyan">共 {total} 条</Tag>
+                      )}
+                      {historyDimension === 'DATE' ? <Tag color="geekblue">共 {total} 天</Tag> : null}
                       <Tag color="geekblue">第 {page} 页</Tag>
-                      <Tag>每页 {pageSize} 条</Tag>
+                      <Tag>每页 {pageSize}{historyDimension === 'DATE' ? ' 天' : ' 条'}</Tag>
                     </div>
                   </div>
 
@@ -3530,7 +3559,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                         pageSize,
                         total,
                         showSizeChanger: true,
-                        showTotal: (t) => `共 ${t} 条`,
+                        showTotal: (t) => `共 ${t} 天`,
                       }}
                       onChange={(pagination) => {
                         setPage(pagination.current || 1)
