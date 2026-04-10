@@ -84,6 +84,9 @@ const DEMAND_POOL_AGENT_SCENE = 'DEMAND_POOL_ANALYSIS'
 const WORKFLOW_ASSIGNEE_PAGE_SIZE = 500
 const WORKFLOW_ASSIGNEE_MAX_PAGES = 50
 const DEMAND_LIST_PAGE_SIZE = 1000
+const FEISHU_CHAT_QUERY_PAGE_SIZE = 100
+const FEISHU_CHAT_QUERY_MAX_PAGES = 30
+const FEISHU_CHAT_QUERY_MAX_ITEMS = 3000
 
 const STATUS_OPTIONS = [
   { label: '待开始', value: 'TODO' },
@@ -1315,30 +1318,46 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const loadFeishuChatOptions = useCallback(async (keywordText = '') => {
     setFeishuChatOptionsLoading(true)
     try {
-      const result = await getFeishuChatOptionsApi({
-        page_size: 100,
-        keyword: String(keywordText || '').trim() || undefined,
-      })
-      if (!result?.success) {
-        message.error(result?.message || '获取飞书群失败')
-        return
-      }
+      const keyword = String(keywordText || '').trim()
+      const seen = new Set()
+      const options = []
+      let pageToken = ''
+      let page = 0
 
-      const items = Array.isArray(result?.data?.items) ? result.data.items : []
-      const options = items
-        .map((item) => {
+      while (page < FEISHU_CHAT_QUERY_MAX_PAGES && options.length < FEISHU_CHAT_QUERY_MAX_ITEMS) {
+        const result = await getFeishuChatOptionsApi({
+          page_size: FEISHU_CHAT_QUERY_PAGE_SIZE,
+          page_token: pageToken || undefined,
+          keyword: keyword || undefined,
+        })
+
+        if (!result?.success) {
+          message.error(result?.message || '获取飞书群失败')
+          return
+        }
+
+        const items = Array.isArray(result?.data?.items) ? result.data.items : []
+        items.forEach((item) => {
           const chatId = normalizeFeishuChatId(item?.chat_id)
-          if (!chatId) return null
+          if (!chatId || seen.has(chatId)) return
+          seen.add(chatId)
           const name = String(item?.name || '').trim() || chatId
           const avatar = String(item?.avatar || '').trim()
-          return {
+          options.push({
             label: `${name}（${chatId}）`,
             value: chatId,
             chatName: name,
             chatAvatar: avatar,
-          }
+          })
         })
-        .filter(Boolean)
+
+        page += 1
+        const hasMore = Boolean(result?.data?.has_more)
+        const nextPageToken = String(result?.data?.next_page_token || '').trim()
+        if (!hasMore || !nextPageToken) break
+        pageToken = nextPageToken
+      }
+
       setFeishuChatOptions(options)
     } catch (error) {
       message.error(error?.message || '获取飞书群失败')
