@@ -117,6 +117,14 @@ const DEMAND_GROUP_CHAT_MODE_OPTIONS = [
   { label: '绑定现有群', value: 'bind' },
 ]
 
+function normalizeFeishuChatId(value) {
+  const normalized = String(value || '').trim()
+  if (!normalized) return ''
+  if (/^oc\._/i.test(normalized)) return `oc_${normalized.slice(4)}`
+  if (/^oc\./i.test(normalized)) return `oc_${normalized.slice(3)}`
+  return normalized
+}
+
 function formatDemandNodeSchedule(record) {
   const plannedStart = formatBeijingDate(record?.current_node_planned_start_date)
   const plannedEnd = formatBeijingDate(record?.current_node_planned_end_date)
@@ -1319,7 +1327,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       const items = Array.isArray(result?.data?.items) ? result.data.items : []
       const options = items
         .map((item) => {
-          const chatId = String(item?.chat_id || '').trim()
+          const chatId = normalizeFeishuChatId(item?.chat_id)
           if (!chatId) return null
           const name = String(item?.name || '').trim() || chatId
           const avatar = String(item?.avatar || '').trim()
@@ -1338,6 +1346,29 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setFeishuChatOptionsLoading(false)
     }
   }, [])
+
+  const ensureBoundChatOption = useCallback((rawChatId) => {
+    const chatId = normalizeFeishuChatId(rawChatId)
+    if (!chatId) return
+    setFeishuChatOptions((prev) => {
+      const exists = (Array.isArray(prev) ? prev : []).some((item) => String(item?.value || '').trim() === chatId)
+      if (exists) return prev
+      return [
+        {
+          label: `已绑定群（${chatId}）`,
+          value: chatId,
+          chatName: '已绑定群',
+          chatAvatar: '',
+        },
+        ...(Array.isArray(prev) ? prev : []),
+      ]
+    })
+  }, [])
+
+  const handleFeishuChatSelectFocus = useCallback(() => {
+    if (feishuChatOptions.length > 0) return
+    loadFeishuChatOptions()
+  }, [feishuChatOptions.length, loadFeishuChatOptions])
 
   const openCreateModal = () => {
     if (!canCreateInCurrentPage) return
@@ -1396,7 +1427,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       ui_design_link: record.ui_design_link || '',
       test_case_link: record.test_case_link || '',
       group_chat_mode: record.group_chat_mode || 'none',
-      group_chat_id: record.group_chat_id || undefined,
+      group_chat_id: normalizeFeishuChatId(record.group_chat_id) || undefined,
       business_group_code: record.business_group_code || undefined,
       expected_release_date: record.expected_release_date ? dayjs(record.expected_release_date) : null,
       status: record.status,
@@ -1483,7 +1514,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         ui_design_link: values.ui_design_link || null,
         test_case_link: values.test_case_link || null,
         group_chat_mode: values.group_chat_mode || 'none',
-        group_chat_id: values.group_chat_mode === 'bind' ? values.group_chat_id || null : null,
+        group_chat_id:
+          values.group_chat_mode === 'bind' ? normalizeFeishuChatId(values.group_chat_id) || null : null,
         business_group_code: values.business_group_code ?? null,
         expected_release_date: values.expected_release_date ? values.expected_release_date.format('YYYY-MM-DD') : null,
         status: values.status,
@@ -1789,7 +1821,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setDetailUiDesignLink(detailDemand.ui_design_link || '')
     setDetailTestCaseLink(detailDemand.test_case_link || '')
     setDetailGroupChatMode(detailDemand.group_chat_mode || 'none')
-    setDetailGroupChatId(detailDemand.group_chat_id || undefined)
+    setDetailGroupChatId(normalizeFeishuChatId(detailDemand.group_chat_id) || undefined)
 
     if (!canEditDemandRecord(detailDemand)) {
       setDetailStatus('')
@@ -1812,10 +1844,22 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     if (!isDetailPage || !detailDemand) return
     if (detailGroupChatMode !== 'bind' && detailGroupChatMode !== 'auto') return
     if (detailGroupChatMode === 'auto' && !detailGroupChatId) return
+    if (detailGroupChatId) {
+      ensureBoundChatOption(detailGroupChatId)
+    }
+    if (detailGroupChatMode === 'bind' && detailGroupChatId) return
     const hasCurrentChat = feishuChatOptions.some((item) => item?.value === detailGroupChatId)
     if (feishuChatOptions.length > 0 && (detailGroupChatMode === 'bind' || hasCurrentChat)) return
     loadFeishuChatOptions()
-  }, [isDetailPage, detailDemand, detailGroupChatId, detailGroupChatMode, feishuChatOptions, loadFeishuChatOptions])
+  }, [
+    isDetailPage,
+    detailDemand,
+    detailGroupChatId,
+    detailGroupChatMode,
+    feishuChatOptions,
+    ensureBoundChatOption,
+    loadFeishuChatOptions,
+  ])
 
   const detailSelectedGroupChat = useMemo(
     () => feishuChatOptions.find((item) => item?.value === detailGroupChatId) || null,
@@ -1902,7 +1946,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         group_chat_mode: detailGroupChatMode || 'none',
         group_chat_id:
           detailGroupChatMode === 'bind' || detailGroupChatMode === 'auto'
-            ? detailGroupChatId || null
+            ? normalizeFeishuChatId(detailGroupChatId) || null
             : null,
       })
       if (!result?.success) {
@@ -3042,7 +3086,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                 showSearch
                 filterOption={false}
                 onSearch={(value) => loadFeishuChatOptions(value)}
-                onFocus={() => loadFeishuChatOptions()}
+                onFocus={handleFeishuChatSelectFocus}
                 notFoundContent={feishuChatOptionsLoading ? '加载中...' : '暂无可选飞书群'}
                 options={feishuChatOptions}
                 placeholder="选择当前应用可访问的飞书群"
@@ -3342,11 +3386,11 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                                 filterOption={false}
                                 value={detailGroupChatId}
                                 onSearch={(value) => loadFeishuChatOptions(value)}
-                                onFocus={() => loadFeishuChatOptions()}
+                                onFocus={handleFeishuChatSelectFocus}
                                 notFoundContent={feishuChatOptionsLoading ? '加载中...' : '暂无可选飞书群'}
                                 options={feishuChatOptions}
                                 placeholder="选择当前应用可访问的飞书群"
-                                onChange={(value) => setDetailGroupChatId(value || undefined)}
+                                onChange={(value) => setDetailGroupChatId(normalizeFeishuChatId(value) || undefined)}
                               />
                             </div>
                           ) : null}
