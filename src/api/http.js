@@ -29,12 +29,15 @@ instance.interceptors.response.use(
   (error) => {
     const requestUrl = error.config?.url || ''
     const isAuthRequest =
-      requestUrl.includes('/auth/login') || requestUrl.includes('/auth/register')
+      requestUrl.includes('/auth/login') ||
+      requestUrl.includes('/auth/register') ||
+      requestUrl.includes('/auth/notification-login')
 
     // 401 未授权 - 跳转登录
     if (error.response?.status === 401 && !isAuthRequest && window.location.pathname !== '/login') {
       clearAuthStorage()
-      window.location.replace('/login')
+      const redirect = `${window.location.pathname}${window.location.search}${window.location.hash}`
+      window.location.replace(`/login?redirect=${encodeURIComponent(redirect)}`)
       return Promise.reject({
         status: 401,
         message: '登录已过期，请重新登录',

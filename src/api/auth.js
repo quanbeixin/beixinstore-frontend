@@ -8,6 +8,12 @@ export function registerApi(payload) {
   return request.post('/auth/register', payload)
 }
 
+export function notificationLoginApi(nt) {
+  return request.get('/auth/notification-login', {
+    params: { nt },
+  })
+}
+
 export function getAccessApi() {
   return request.get('/auth/access')
 }

@@ -1,12 +1,15 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { getAccessApi, getPreferencesApi, notificationLoginApi } from './api/auth'
 import { getMyMenuVisibilityApi } from './api/rbac'
 import { PRIVATE_ROUTES, PUBLIC_ROUTES } from './config/route.config'
 import {
   AUTH_STORAGE_UPDATED_EVENT,
   canAccessRoute,
   getToken,
+  setAuthStorage,
   setMenuVisibilityAccessMap,
+  setUserPreferences,
 } from './utils/access'
 import './App.css'
 
@@ -103,9 +106,109 @@ function getDefaultPrivatePath() {
   return firstAccessibleRoute?.path || '/work-logs'
 }
 
+function getCurrentPathWithQuery() {
+  if (typeof window === 'undefined') return '/'
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`
+}
+
+function getNotificationTicketFromUrl() {
+  if (typeof window === 'undefined') return ''
+  const search = new URLSearchParams(window.location.search || '')
+  return String(search.get('nt') || '').trim()
+}
+
+function stripNotificationTicketFromCurrentUrl() {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has('nt')) return
+  url.searchParams.delete('nt')
+  const next = `${url.pathname}${url.search}${url.hash}`
+  window.history.replaceState({}, '', next)
+}
+
+function NotificationAutoLoginGate({ children }) {
+  const [status, setStatus] = useState('loading')
+
+  useEffect(() => {
+    let active = true
+
+    const run = async () => {
+      const ticket = getNotificationTicketFromUrl()
+      if (!ticket) {
+        if (active) setStatus('failed')
+        return
+      }
+
+      try {
+        const loginResult = await notificationLoginApi(ticket)
+        if (!loginResult?.success) {
+          throw new Error(loginResult?.message || '通知免登失败')
+        }
+
+        const token = loginResult?.data?.token || ''
+        const user = loginResult?.data?.user || null
+        if (!token || !user) {
+          throw new Error('通知免登返回数据异常')
+        }
+
+        setAuthStorage({
+          token,
+          user,
+          remember: true,
+        })
+
+        const userId = Number(user?.id) > 0 ? Number(user.id) : null
+        const [accessTask, menuTask, preferenceTask] = await Promise.allSettled([
+          getAccessApi(),
+          getMyMenuVisibilityApi(),
+          getPreferencesApi(),
+        ])
+
+        let accessSnapshot = null
+        if (accessTask.status === 'fulfilled' && accessTask.value?.success) {
+          accessSnapshot = accessTask.value.data
+        }
+        setAuthStorage({ access: accessSnapshot })
+
+        let menuAccessMap = {}
+        if (menuTask.status === 'fulfilled' && menuTask.value?.success) {
+          menuAccessMap = menuTask.value?.data?.menu_access_map || {}
+        }
+        setMenuVisibilityAccessMap(menuAccessMap, { user_id: userId })
+
+        if (preferenceTask.status === 'fulfilled' && preferenceTask.value?.success) {
+          setUserPreferences(preferenceTask.value.data || {})
+        }
+
+        stripNotificationTicketFromCurrentUrl()
+        if (active) setStatus('success')
+      } catch (error) {
+        console.warn('通知免登失败:', error?.message || error)
+        if (!active) return
+        setStatus('failed')
+      }
+    }
+
+    run()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  if (status === 'success') return children
+  if (status === 'loading') return <PageFallback />
+
+  const redirect = getCurrentPathWithQuery()
+  return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />
+}
+
 function RequireAuth({ children }) {
   if (!getToken()) {
-    return <Navigate to="/login" replace />
+    if (getNotificationTicketFromUrl()) {
+      return <NotificationAutoLoginGate>{children}</NotificationAutoLoginGate>
+    }
+    const redirect = getCurrentPathWithQuery()
+    return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />
   }
 
   return children

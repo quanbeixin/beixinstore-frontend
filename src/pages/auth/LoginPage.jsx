@@ -1,7 +1,7 @@
 import { ArrowRightOutlined, LockOutlined, UserOutlined } from '@ant-design/icons'
 import { Button, Checkbox, Form, Input, message } from 'antd'
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { getAccessApi, getPreferencesApi, loginApi } from '../../api/auth'
 import { getMyMenuVisibilityApi } from '../../api/rbac'
 import { setAuthStorage, setMenuVisibilityAccessMap, setUserPreferences } from '../../utils/access'
@@ -16,6 +16,7 @@ async function warmupWorkbenchPage() {
 
 function Login() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [loading, setLoading] = useState(false)
 
   const onFinish = async (values) => {
@@ -74,7 +75,10 @@ function Login() {
         }
 
         message.success('登录成功')
-        navigate('/work-logs', { replace: true })
+        const search = new URLSearchParams(location.search || '')
+        const redirect = String(search.get('redirect') || '').trim()
+        const targetPath = redirect && redirect.startsWith('/') ? redirect : '/work-logs'
+        navigate(targetPath, { replace: true })
       } else {
         message.error(result.message || '登录失败')
       }
