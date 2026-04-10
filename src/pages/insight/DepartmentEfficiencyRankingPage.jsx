@@ -57,7 +57,8 @@ function getThisMonthRange() {
 }
 
 function getDefaultCustomRange() {
-  return [dayjs().subtract(29, 'day').startOf('day'), dayjs().endOf('day')]
+  const yesterday = dayjs().subtract(1, 'day')
+  return [yesterday.startOf('day'), yesterday.endOf('day')]
 }
 
 function buildCsvContent(rows = []) {

@@ -758,6 +758,7 @@ function WorkLogs({ mode = 'dashboard' }) {
   const selectedActualDemandId = Form.useWatch('demand_id', actualForm)
   const selectedActualPhaseKey = Form.useWatch('phase_key', actualForm)
   const actualModalIsQuickEdit = actualModalMode === 'quick'
+  const canManualEditActualHours = false
   const dailyEntryModalIsDetailEdit = dailyEntryModalMode === 'detail'
   const dailyEntryCompletesItem = dailyEntryModalMode === 'today' && dailyEntrySubmitIntent === 'complete'
 
@@ -1929,13 +1930,15 @@ function WorkLogs({ mode = 'dashboard' }) {
           personal_estimate_hours: values.personal_estimate_hours,
           self_task_difficulty_code:
             values.self_task_difficulty_code || editingLog.self_task_difficulty_code || DEFAULT_SELF_TASK_DIFFICULTY_CODE,
-          actual_hours:
-            values.actual_hours === undefined || values.actual_hours === null || values.actual_hours === ''
-              ? 0
-              : values.actual_hours,
           expected_start_date: values.expected_start_date || null,
           expected_completion_date: values.expected_completion_date || null,
           log_completed_at: values.log_completed_at || null,
+        }
+        if (canManualEditActualHours) {
+          payload.actual_hours =
+            values.actual_hours === undefined || values.actual_hours === null || values.actual_hours === ''
+              ? 0
+              : values.actual_hours
         }
       } else {
         const requireDemand = Number(selectedActualItemType?.require_demand) === 1
@@ -1963,11 +1966,6 @@ function WorkLogs({ mode = 'dashboard' }) {
           nextCompletedAt = getTodayDateString()
         }
 
-        const resolvedActualHours =
-          values.actual_hours === undefined || values.actual_hours === null || values.actual_hours === ''
-            ? 0
-            : values.actual_hours
-
         payload = {
           item_type_id: values.item_type_id,
           demand_id: values.demand_id || null,
@@ -1977,10 +1975,15 @@ function WorkLogs({ mode = 'dashboard' }) {
           personal_estimate_hours: values.personal_estimate_hours,
           self_task_difficulty_code:
             values.self_task_difficulty_code || editingLog.self_task_difficulty_code || DEFAULT_SELF_TASK_DIFFICULTY_CODE,
-          actual_hours: resolvedActualHours,
           expected_start_date: values.expected_start_date || null,
           expected_completion_date: values.expected_completion_date || null,
           log_completed_at: nextCompletedAt,
+        }
+        if (canManualEditActualHours) {
+          payload.actual_hours =
+            values.actual_hours === undefined || values.actual_hours === null || values.actual_hours === ''
+              ? 0
+              : values.actual_hours
         }
       }
 
@@ -2323,7 +2326,10 @@ function WorkLogs({ mode = 'dashboard' }) {
   }, [logs])
 
   const historyDateItemColumns = logColumns
-    .filter((column) => column.key !== 'log_date')
+    .filter(
+      (column) =>
+        column.key !== 'log_date' && column.key !== 'expected_completion_date' && column.key !== 'assigned_by_name',
+    )
     .map((column) => {
       if (column.key === 'action') {
         return {
@@ -2332,6 +2338,9 @@ function WorkLogs({ mode = 'dashboard' }) {
           render: (_, record) =>
             canUpdate ? (
               <Space size={4}>
+                <Button type="link" onClick={() => openDetailModal(record)}>
+                  查看日明细
+                </Button>
                 <Button
                   type="link"
                   onClick={() => openHistoryDayEntryModal(record, record.__history_date)}
@@ -2366,7 +2375,20 @@ function WorkLogs({ mode = 'dashboard' }) {
     })
 
   const historyItemDimensionColumns = logColumns
+    .filter(
+      (column) =>
+        column.key !== 'expected_completion_date' &&
+        column.key !== 'expected_start_date' &&
+        column.key !== 'assigned_by_name' &&
+        column.key !== 'phase_name',
+    )
     .map((column) => {
+      if (column.key === 'demand_id') {
+        return {
+          ...column,
+          width: 190,
+        }
+      }
       if (column.key === 'actual_hours') {
         return {
           ...column,
@@ -2382,11 +2404,23 @@ function WorkLogs({ mode = 'dashboard' }) {
             canUpdate ? (
               <Space size={4}>
                 <Button type="link" icon={<EditOutlined />} onClick={() => openActualModal(record)}>
-                  修改事项
+                  修改
                 </Button>
                 <Button type="link" onClick={() => openDetailModal(record)}>
-                  查看按日明细
+                  调整日明细
                 </Button>
+                <Popconfirm
+                  title="确认删除该事项？"
+                  description="删除后将清空该事项下所有工作记录（含日投入与日计划），且不可恢复。"
+                  okText="确认删除"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true, loading: deletingLogId === record.id }}
+                  onConfirm={() => handleDeleteLog(record)}
+                >
+                  <Button type="link" danger icon={<DeleteOutlined />} loading={deletingLogId === record.id}>
+                    删除
+                  </Button>
+                </Popconfirm>
               </Space>
             ) : null,
         }
@@ -3416,7 +3450,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                       onChange={handleHistoryDimensionChange}
                     />
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                      按时间视图可改当日投入，按事项视图可改事项累计投入
+                      按时间视图可改当日投入；按事项视图可改事项信息，实际用时请在按日明细里维护
                     </Text>
                   </Space>
 
@@ -3961,15 +3995,23 @@ function WorkLogs({ mode = 'dashboard' }) {
                 </Form.Item>
               </Col>
 
-              <Col xs={24} md={12}>
-                <Form.Item
-                  label="实际用时(h)"
-                  name="actual_hours"
-                  extra="默认 0.0；仅当状态为“已完成”且实际用时为 0.0 时，保存后会自动与预计整体用时一致"
-                >
-                  <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
+              {canManualEditActualHours ? (
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="实际用时(h)"
+                    name="actual_hours"
+                    extra="默认 0.0；仅当状态为“已完成”且实际用时为 0.0 时，保存后会自动与预计整体用时一致"
+                  >
+                    <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              ) : (
+                <Col xs={24} md={12}>
+                  <Form.Item label="实际用时(h)" extra="该值由每日投入汇总生成，不支持在事项编辑中直接修改">
+                    <InputNumber value={toNumber(editingLog?.actual_hours, 0)} disabled style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              )}
 
               <Col xs={24} md={12}>
                 <Form.Item
@@ -4093,15 +4135,23 @@ function WorkLogs({ mode = 'dashboard' }) {
                   </Form.Item>
                 </Col>
 
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    label="实际用时(h)"
-                    name="actual_hours"
-                    extra="默认 0.0；仅当状态为“已完成”且实际用时为 0.0 时，保存后会自动与预计整体用时一致"
-                  >
-                    <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
-                  </Form.Item>
-                </Col>
+                {canManualEditActualHours ? (
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      label="实际用时(h)"
+                      name="actual_hours"
+                      extra="默认 0.0；仅当状态为“已完成”且实际用时为 0.0 时，保存后会自动与预计整体用时一致"
+                    >
+                      <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                ) : (
+                  <Col xs={24} md={12}>
+                    <Form.Item label="实际用时(h)" extra="该值由每日投入汇总生成，不支持在事项编辑中直接修改">
+                      <InputNumber value={toNumber(editingLog?.actual_hours, 0)} disabled style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                )}
 
                 <Col xs={24} md={12}>
                   <Form.Item
