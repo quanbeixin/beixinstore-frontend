@@ -25,6 +25,7 @@ import {
   Popconfirm,
   Row,
   Select,
+  Segmented,
   Space,
   Table,
   Tag,
@@ -40,6 +41,7 @@ import { getDictItemsApi } from '../../api/configDict'
 import {
   createWorkLogApi,
   createLogDailyEntryApi,
+  deleteLogDailyEntryApi,
   deleteWorkLogApi,
   getLogDailyEntriesApi,
   getLogDailyPlansApi,
@@ -138,6 +140,10 @@ const HISTORY_DATE_PRESET_OPTIONS = [
   { label: '本周', value: 'THIS_WEEK' },
   { label: '本月', value: 'THIS_MONTH' },
   { label: '自定义', value: 'CUSTOM' },
+]
+const HISTORY_DIMENSION_OPTIONS = [
+  { label: '按时间', value: 'DATE' },
+  { label: '按事项', value: 'ITEM' },
 ]
 const LOG_STATUS_FILTER_OPTIONS = [
   { label: '全部状态', value: 'ALL' },
@@ -489,6 +495,7 @@ function readHistoryViewState() {
       datePreset: 'ALL',
       customStartDate: '',
       customEndDate: '',
+      historyDimension: 'DATE',
     }
   }
 
@@ -502,6 +509,7 @@ function readHistoryViewState() {
         datePreset: 'ALL',
         customStartDate: '',
         customEndDate: '',
+        historyDimension: 'DATE',
       }
     }
 
@@ -513,6 +521,7 @@ function readHistoryViewState() {
       datePreset: String(parsed?.datePreset || 'ALL'),
       customStartDate: String(parsed?.customStartDate || ''),
       customEndDate: String(parsed?.customEndDate || ''),
+      historyDimension: String(parsed?.historyDimension || 'DATE').trim().toUpperCase() === 'ITEM' ? 'ITEM' : 'DATE',
     }
   } catch {
     return {
@@ -522,6 +531,7 @@ function readHistoryViewState() {
       datePreset: 'ALL',
       customStartDate: '',
       customEndDate: '',
+      historyDimension: 'DATE',
     }
   }
 }
@@ -706,6 +716,7 @@ function WorkLogs({ mode = 'dashboard' }) {
   const [hoursDetailModal, setHoursDetailModal] = useState({ open: false, type: 'planned' })
   const [scheduledItemsModalOpen, setScheduledItemsModalOpen] = useState(false)
   const [dailyEntrySubmitting, setDailyEntrySubmitting] = useState(false)
+  const [historyDayEntryDeletingKey, setHistoryDayEntryDeletingKey] = useState('')
   const [detailLoading, setDetailLoading] = useState(false)
   const [editingLog, setEditingLog] = useState(null)
   const [operatingLog, setOperatingLog] = useState(null)
@@ -729,6 +740,9 @@ function WorkLogs({ mode = 'dashboard' }) {
   )
   const [logStatusFilter, setLogStatusFilter] = useState(() =>
     isHistoryPage ? initialHistoryViewState.logStatusFilter : 'ALL',
+  )
+  const [historyDimension, setHistoryDimension] = useState(() =>
+    isHistoryPage ? initialHistoryViewState.historyDimension : 'DATE',
   )
   const [isQuickCompletionDateTouched, setIsQuickCompletionDateTouched] = useState(false)
   const quickCompletionDateAutoSyncRef = useRef(false)
@@ -1031,6 +1045,10 @@ function WorkLogs({ mode = 'dashboard' }) {
     const matched = HISTORY_DATE_PRESET_OPTIONS.find((item) => item.value === historyDatePreset)
     return matched?.label || '全部时间'
   }, [historyDatePreset])
+  const currentHistoryDimensionLabel = useMemo(() => {
+    const matched = HISTORY_DIMENSION_OPTIONS.find((item) => item.value === historyDimension)
+    return matched?.label || '按时间'
+  }, [historyDimension])
   const currentHistoryDateRangeText = useMemo(() => {
     if (historyDateRange.startDate && !historyDateRange.endDate) return `${historyDateRange.startDate} ~ 至今`
     if (!historyDateRange.startDate && historyDateRange.endDate) return `最早 ~ ${historyDateRange.endDate}`
@@ -1168,6 +1186,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       const result = await getWorkLogsApi({
         page,
         pageSize,
+        ...(historyDimension === 'DATE' ? { date_dimension: 'ENTRY' } : {}),
         ...(historyDateRange.startDate ? { start_date: historyDateRange.startDate } : {}),
         ...(historyDateRange.endDate ? { end_date: historyDateRange.endDate } : {}),
         ...(statusFilter.kind === 'lifecycle' ? { log_status: statusFilter.value } : {}),
@@ -1189,6 +1208,7 @@ function WorkLogs({ mode = 'dashboard' }) {
     canView,
     historyDateRange.endDate,
     historyDateRange.startDate,
+    historyDimension,
     isHistoryDateRangeInvalid,
     isHistoryPage,
     page,
@@ -1324,6 +1344,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       datePreset: historyDatePreset,
       customStartDate: historyCustomStartDate,
       customEndDate: historyCustomEndDate,
+      historyDimension,
     })
   }, [
     historyCustomEndDate,
@@ -1331,6 +1352,7 @@ function WorkLogs({ mode = 'dashboard' }) {
     historyDatePreset,
     isHistoryPage,
     logStatusFilter,
+    historyDimension,
     page,
     pageSize,
   ])
@@ -1605,6 +1627,121 @@ function WorkLogs({ mode = 'dashboard' }) {
     setDailyEntryModalOpen(true)
   }
 
+  const openHistoryDayEntryModal = useCallback(async (record, dayDate) => {
+    if (!record?.id || !dayDate) return
+    const normalizedDayDate = String(dayDate || '').trim()
+    if (!normalizedDayDate || normalizedDayDate === '未标注日期') return
+
+    try {
+      const result = await getLogDailyEntriesApi(record.id, {
+        start_date: normalizedDayDate,
+        end_date: normalizedDayDate,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '获取当日投入失败')
+        return
+      }
+
+      const rows = Array.isArray(result.data) ? result.data : []
+      const latestEntry = rows[0] || null
+      const fallbackDailyHours = toNumber(record?.log_date_actual_hours, toNumber(record?.actual_hours, 0))
+      setOperatingLog({
+        ...record,
+        entry_date: normalizedDayDate,
+        detail_entry_id: latestEntry?.id || null,
+        detail_entry_actual_hours:
+          latestEntry?.actual_hours !== undefined && latestEntry?.actual_hours !== null
+            ? toNumber(latestEntry.actual_hours, 0)
+            : fallbackDailyHours,
+        detail_entry_description: String(latestEntry?.description || '').trim(),
+        detail_entry_count: rows.length,
+      })
+      setDailyEntryModalMode('detail')
+      setDailyEntrySubmitIntent('save')
+      setDailyEntryModalOpen(true)
+    } catch (error) {
+      message.error(error?.message || '获取当日投入失败')
+    }
+  }, [])
+
+  const loadDetailTimeline = useCallback(async (record) => {
+    if (!record?.id) return false
+    try {
+      const rangeParams = buildDetailDateRangeParams(record)
+      const [planResult, entryResult] = await Promise.all([
+        getLogDailyPlansApi(record.id, rangeParams),
+        getLogDailyEntriesApi(record.id, rangeParams),
+      ])
+
+      if (!planResult?.success) {
+        message.error(planResult?.message || '获取事项日计划失败')
+        return false
+      }
+      if (!entryResult?.success) {
+        message.error(entryResult?.message || '获取事项日投入失败')
+        return false
+      }
+
+      const timeline = buildDailyTimeline(planResult.data || [], entryResult.data || [])
+      setDetailTimeline(timeline)
+      return true
+    } catch (error) {
+      message.error(error?.message || '获取事项日明细失败')
+      return false
+    }
+  }, [])
+
+  const handleDeleteHistoryDayEntry = useCallback(
+    async (record, dayDate) => {
+      if (!canUpdate) return
+      if (!record?.id || !dayDate) return
+      const normalizedDayDate = String(dayDate || '').trim()
+      if (!normalizedDayDate || normalizedDayDate === '未标注日期') return
+
+      const rowKey = `${Number(record.id)}_${normalizedDayDate}`
+      setHistoryDayEntryDeletingKey(rowKey)
+      try {
+        const entriesResult = await getLogDailyEntriesApi(record.id, {
+          start_date: normalizedDayDate,
+          end_date: normalizedDayDate,
+        })
+        if (!entriesResult?.success) {
+          message.error(entriesResult?.message || '获取当日投入失败')
+          return
+        }
+        const entryRows = Array.isArray(entriesResult.data) ? entriesResult.data : []
+        const matchedEntry = entryRows.find((item) => String(item?.entry_date || '').trim() === normalizedDayDate) || null
+        if (!matchedEntry?.id) {
+          message.warning('该日期暂无可删除的投入记录')
+          return
+        }
+
+        const deleteResult = await deleteLogDailyEntryApi(record.id, matchedEntry.id)
+        if (!deleteResult?.success) {
+          message.error(deleteResult?.message || '删除当日投入失败')
+          return
+        }
+
+        message.success('当日投入记录已删除')
+        await reloadCurrentPageData()
+
+        if (detailModalOpen && detailLog?.id && Number(detailLog.id) === Number(record.id)) {
+          setDetailLoading(true)
+          try {
+            await loadDetailTimeline(detailLog)
+          } finally {
+            setDetailLoading(false)
+          }
+        }
+      } catch (error) {
+        message.error(error?.message || '删除当日投入失败')
+      } finally {
+        setHistoryDayEntryDeletingKey('')
+      }
+    },
+    [canUpdate, detailLog, detailModalOpen, loadDetailTimeline, reloadCurrentPageData],
+  )
+
   const closeDailyEntryModal = () => {
     dailyEntryForm.resetFields()
     setDailyEntryModalOpen(false)
@@ -1679,33 +1816,6 @@ function WorkLogs({ mode = 'dashboard' }) {
     },
     [reloadCurrentPageData],
   )
-
-  const loadDetailTimeline = useCallback(async (record) => {
-    if (!record?.id) return false
-    try {
-      const rangeParams = buildDetailDateRangeParams(record)
-      const [planResult, entryResult] = await Promise.all([
-        getLogDailyPlansApi(record.id, rangeParams),
-        getLogDailyEntriesApi(record.id, rangeParams),
-      ])
-
-      if (!planResult?.success) {
-        message.error(planResult?.message || '获取事项日计划失败')
-        return false
-      }
-      if (!entryResult?.success) {
-        message.error(entryResult?.message || '获取事项日投入失败')
-        return false
-      }
-
-      const timeline = buildDailyTimeline(planResult.data || [], entryResult.data || [])
-      setDetailTimeline(timeline)
-      return true
-    } catch (error) {
-      message.error(error?.message || '获取事项日明细失败')
-      return false
-    }
-  }, [])
 
   const openDetailModal = async (record) => {
     if (!record?.id) return
@@ -1969,6 +2079,14 @@ function WorkLogs({ mode = 'dashboard' }) {
     setActiveItemStatusFilter((prev) => (prev === nextFilterValue ? 'ALL' : nextFilterValue))
   }
 
+  const handleHistoryDimensionChange = (next) => {
+    const normalizedNext = String(next || '').trim().toUpperCase() === 'ITEM' ? 'ITEM' : 'DATE'
+    setHistoryDimension(normalizedNext)
+    if (page !== 1) {
+      setPage(1)
+    }
+  }
+
   const handleHistoryDatePresetChange = (next) => {
     setHistoryDatePreset(next)
     const normalizedNext = String(next || '').trim().toUpperCase()
@@ -2119,11 +2237,11 @@ function WorkLogs({ mode = 'dashboard' }) {
       render: (value) => toNumber(value, 0).toFixed(1),
     },
     {
-      title: '实际用时(h)',
+      title: '当日实际投入(h)',
       dataIndex: 'actual_hours',
       key: 'actual_hours',
       width: 140,
-      render: (value) => toNumber(value, 0).toFixed(1),
+      render: (_, record) => toNumber(record?.log_date_actual_hours, toNumber(record?.actual_hours, 0)).toFixed(1),
     },
     {
       title: '操作',
@@ -2150,6 +2268,195 @@ function WorkLogs({ mode = 'dashboard' }) {
             </Popconfirm>
           </Space>
         ) : null,
+    },
+  ]
+
+  const historyDailyRows = useMemo(() => {
+    const grouped = new Map()
+
+    logs.forEach((log) => {
+      const formattedDate = formatDateOnly(log?.entry_date || log?.log_date)
+      const dateKey = formattedDate && formattedDate !== '-' ? formattedDate : '未标注日期'
+      const existing = grouped.get(dateKey)
+
+      if (existing) {
+        existing.items.push(log)
+        existing.totalItems += 1
+        existing.totalActualHours += toNumber(log?.log_date_actual_hours, toNumber(log?.actual_hours, 0))
+        existing.totalEstimateHours += toNumber(log?.personal_estimate_hours, 0)
+        const status = String(log?.log_status || '').trim().toUpperCase()
+        if (status === 'DONE') existing.doneCount += 1
+        if (status === 'IN_PROGRESS') existing.inProgressCount += 1
+        if (status === 'TODO') existing.todoCount += 1
+        return
+      }
+
+      const status = String(log?.log_status || '').trim().toUpperCase()
+      grouped.set(dateKey, {
+        key: `history-day-${dateKey}`,
+        date: dateKey,
+        items: [log],
+        totalItems: 1,
+        totalActualHours: toNumber(log?.log_date_actual_hours, toNumber(log?.actual_hours, 0)),
+        totalEstimateHours: toNumber(log?.personal_estimate_hours, 0),
+        doneCount: status === 'DONE' ? 1 : 0,
+        inProgressCount: status === 'IN_PROGRESS' ? 1 : 0,
+        todoCount: status === 'TODO' ? 1 : 0,
+      })
+    })
+
+    return Array.from(grouped.values())
+      .map((group) => ({
+        ...group,
+        items: [...group.items].sort((a, b) => {
+          const aTime = dayjs(a?.log_date || a?.entry_date).valueOf()
+          const bTime = dayjs(b?.log_date || b?.entry_date).valueOf()
+          if (aTime !== bTime) return bTime - aTime
+          return toNumber(b?.id, 0) - toNumber(a?.id, 0)
+        }),
+      }))
+      .sort((a, b) => {
+        if (a.date === '未标注日期') return 1
+        if (b.date === '未标注日期') return -1
+        return String(b.date || '').localeCompare(String(a.date || ''))
+      })
+  }, [logs])
+
+  const historyDateItemColumns = logColumns
+    .filter((column) => column.key !== 'log_date')
+    .map((column) => {
+      if (column.key === 'action') {
+        return {
+          ...column,
+          fixed: undefined,
+          render: (_, record) =>
+            canUpdate ? (
+              <Space size={4}>
+                <Button
+                  type="link"
+                  onClick={() => openHistoryDayEntryModal(record, record.__history_date)}
+                  disabled={String(record?.__history_date || '').trim() > getTodayDateString()}
+                >
+                  调整当日投入
+                </Button>
+                <Popconfirm
+                  title="确认删除该事项当天投入记录？"
+                  description="仅删除该事项在该日期的投入，不会删除事项本身。"
+                  okText="确认删除"
+                  cancelText="取消"
+                  okButtonProps={{
+                    danger: true,
+                    loading: historyDayEntryDeletingKey === `${Number(record?.id || 0)}_${String(record?.__history_date || '').trim()}`,
+                  }}
+                  onConfirm={() => handleDeleteHistoryDayEntry(record, record.__history_date)}
+                >
+                  <Button
+                    type="link"
+                    danger
+                    disabled={String(record?.__history_date || '').trim() > getTodayDateString()}
+                  >
+                    删除当日记录
+                  </Button>
+                </Popconfirm>
+              </Space>
+            ) : null,
+        }
+      }
+      return column
+    })
+
+  const historyItemDimensionColumns = logColumns
+    .map((column) => {
+      if (column.key === 'actual_hours') {
+        return {
+          ...column,
+          title: '事项累计实际投入(h)',
+          render: (_, record) => toNumber(record?.actual_hours, 0).toFixed(1),
+        }
+      }
+      if (column.key === 'action') {
+        return {
+          ...column,
+          fixed: undefined,
+          render: (_, record) =>
+            canUpdate ? (
+              <Space size={4}>
+                <Button type="link" icon={<EditOutlined />} onClick={() => openActualModal(record)}>
+                  修改事项
+                </Button>
+                <Button type="link" onClick={() => openDetailModal(record)}>
+                  查看按日明细
+                </Button>
+              </Space>
+            ) : null,
+        }
+      }
+      return column
+    })
+
+  const historyItemRows = useMemo(() => {
+    const rowMap = new Map()
+
+    logs.forEach((log) => {
+      const normalizedId = Number(log?.id || 0)
+      if (!Number.isInteger(normalizedId) || normalizedId <= 0) return
+      const existing = rowMap.get(normalizedId)
+      if (!existing) {
+        rowMap.set(normalizedId, log)
+        return
+      }
+
+      const existingTime = dayjs(existing?.entry_date || existing?.log_date).valueOf()
+      const currentTime = dayjs(log?.entry_date || log?.log_date).valueOf()
+      if (currentTime > existingTime) {
+        rowMap.set(normalizedId, log)
+      }
+    })
+
+    return Array.from(rowMap.values())
+  }, [logs])
+
+  const historyDailyColumns = [
+    {
+      title: '日期',
+      dataIndex: 'date',
+      key: 'date',
+      width: 220,
+      render: (value, record) => (
+        <Space size={8}>
+          <Text strong style={{ color: '#0f172a' }}>
+            {value || '-'}
+          </Text>
+          <Tag color="blue">{record?.totalItems || 0} 项</Tag>
+        </Space>
+      ),
+    },
+    {
+      title: '状态分布',
+      dataIndex: 'status_summary',
+      key: 'status_summary',
+      width: 280,
+      render: (_, record) => (
+        <Space wrap size={[6, 6]}>
+          <Tag color="success">已完成 {toNumber(record?.doneCount, 0)}</Tag>
+          <Tag color="processing">进行中 {toNumber(record?.inProgressCount, 0)}</Tag>
+          <Tag>待开始 {toNumber(record?.todoCount, 0)}</Tag>
+        </Space>
+      ),
+    },
+    {
+      title: '预计整体用时(h)',
+      dataIndex: 'totalEstimateHours',
+      key: 'totalEstimateHours',
+      width: 150,
+      render: (value) => toNumber(value, 0).toFixed(1),
+    },
+    {
+      title: '当日实际投入(h)',
+      dataIndex: 'totalActualHours',
+      key: 'totalActualHours',
+      width: 140,
+      render: (value) => toNumber(value, 0).toFixed(1),
     },
   ]
 
@@ -3064,6 +3371,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                     </div>
 
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Tag color="gold">视图：{currentHistoryDimensionLabel}</Tag>
                       <Tag color="blue">当前筛选：{currentHistoryFilterLabel}</Tag>
                       <Tag color="purple">时间：{currentHistoryDatePresetLabel}</Tag>
                       <Tag>{currentHistoryDateRangeText}</Tag>
@@ -3100,6 +3408,18 @@ function WorkLogs({ mode = 'dashboard' }) {
                     flexWrap: 'wrap',
                   }}
                 >
+                  <Space wrap size={10}>
+                    <Text type="secondary">展示方式</Text>
+                    <Segmented
+                      value={historyDimension}
+                      options={HISTORY_DIMENSION_OPTIONS}
+                      onChange={handleHistoryDimensionChange}
+                    />
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      按时间视图可改当日投入，按事项视图可改事项累计投入
+                    </Text>
+                  </Space>
+
                   <Space wrap size={10}>
                     <Text type="secondary">时间范围</Text>
                     <Select
@@ -3145,25 +3465,65 @@ function WorkLogs({ mode = 'dashboard' }) {
             <Col span={24}>
               <Card variant="borderless">
                 <div style={{ width: '100%', overflowX: 'auto' }}>
-                  <Table
-                    rowKey="id"
-                    loading={loadingLogs}
-                    columns={logColumns}
-                    dataSource={logs}
-                    size="middle"
-                    scroll={{ x: 1280 }}
-                    pagination={{
-                      current: page,
-                      pageSize,
-                      total,
-                      showSizeChanger: true,
-                      showTotal: (t) => `共 ${t} 条`,
-                    }}
-                    onChange={(pagination) => {
-                      setPage(pagination.current || 1)
-                      setPageSize(pagination.pageSize || 10)
-                    }}
-                  />
+                  {historyDimension === 'DATE' ? (
+                    <Table
+                      rowKey="key"
+                      loading={loadingLogs}
+                      columns={historyDailyColumns}
+                      dataSource={historyDailyRows}
+                      size="middle"
+                      expandable={{
+                        rowExpandable: (record) => Array.isArray(record?.items) && record.items.length > 0,
+                        expandedRowRender: (record) => (
+                          <div style={{ padding: '4px 0 2px' }}>
+                            <Table
+                              rowKey="id"
+                              size="small"
+                              columns={historyDateItemColumns}
+                              dataSource={(record?.items || []).map((item) => ({
+                                ...item,
+                                __history_date: record?.date || '',
+                              }))}
+                              pagination={false}
+                              scroll={{ x: 1280 }}
+                            />
+                          </div>
+                        ),
+                      }}
+                      scroll={{ x: 980 }}
+                      pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        showSizeChanger: true,
+                        showTotal: (t) => `共 ${t} 条`,
+                      }}
+                      onChange={(pagination) => {
+                        setPage(pagination.current || 1)
+                        setPageSize(pagination.pageSize || 10)
+                      }}
+                    />
+                  ) : (
+                    <Table
+                      rowKey="id"
+                      loading={loadingLogs}
+                      columns={historyItemDimensionColumns}
+                      dataSource={historyItemRows}
+                      size="middle"
+                      scroll={{ x: 1280 }}
+                      pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        showSizeChanger: true,
+                        showTotal: (t) => `共 ${t} 条`,
+                      }}
+                      onChange={(pagination) => {
+                        setPage(pagination.current || 1)
+                        setPageSize(pagination.pageSize || 10)
+                      }}
+                    />
+                  )}
                 </div>
               </Card>
             </Col>

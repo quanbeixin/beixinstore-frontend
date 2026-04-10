@@ -246,6 +246,11 @@ export function updateLogDailyEntryApi(logId, entryId, payload) {
   return request.put(`/work/logs/${logId}/daily-entries/${entryId}`, payload)
 }
 
+export function deleteLogDailyEntryApi(logId, entryId) {
+  clearDerivedWorkCaches()
+  return request.delete(`/work/logs/${logId}/daily-entries/${entryId}`)
+}
+
 export function updateWorkLogOwnerEstimateApi(logId, payload) {
   clearDerivedWorkCaches({ includeWorkbench: false })
   return request.put(`/work/logs/${logId}/owner-estimate`, payload)
