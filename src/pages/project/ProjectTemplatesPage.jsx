@@ -1,4 +1,4 @@
-import { EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons'
 import {
   Alert,
   Button,
@@ -18,6 +18,8 @@ import { useNavigate } from 'react-router-dom'
 import {
   createProjectTemplateApi,
   getProjectTemplatesApi,
+  previewOwnerEstimateCalibrationApi,
+  runOwnerEstimateCalibrationApi,
 } from '../../api/work'
 import { hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
@@ -53,6 +55,11 @@ function ProjectTemplates() {
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [calibrationModalOpen, setCalibrationModalOpen] = useState(false)
+  const [calibrationPreviewLoading, setCalibrationPreviewLoading] = useState(false)
+  const [calibrationRunning, setCalibrationRunning] = useState(false)
+  const [calibrationPreview, setCalibrationPreview] = useState(null)
+  const [calibrationResult, setCalibrationResult] = useState(null)
 
   const [list, setList] = useState([])
   const [keywordInput, setKeywordInput] = useState('')
@@ -107,6 +114,55 @@ function ProjectTemplates() {
   const closeModal = () => {
     setModalOpen(false)
     form.resetFields()
+  }
+
+  const fetchCalibrationPreview = useCallback(async () => {
+    setCalibrationPreviewLoading(true)
+    try {
+      const result = await previewOwnerEstimateCalibrationApi()
+      if (!result?.success) {
+        message.error(result?.message || '获取范围校准预览失败')
+        return
+      }
+      setCalibrationPreview(result.data || null)
+    } catch (error) {
+      message.error(error?.message || '获取范围校准预览失败')
+    } finally {
+      setCalibrationPreviewLoading(false)
+    }
+  }, [])
+
+  const openCalibrationModal = () => {
+    if (!canManage) return
+    setCalibrationResult(null)
+    setCalibrationModalOpen(true)
+    fetchCalibrationPreview()
+  }
+
+  const closeCalibrationModal = () => {
+    if (calibrationRunning) return
+    setCalibrationModalOpen(false)
+  }
+
+  const handleRunCalibration = async () => {
+    setCalibrationRunning(true)
+    try {
+      const result = await runOwnerEstimateCalibrationApi()
+      if (!result?.success) {
+        message.error(result?.message || 'Owner评估范围校准失败')
+        return
+      }
+      const data = result.data || {}
+      setCalibrationResult(data)
+      message.success(
+        `范围校准完成：规则过滤 ${Number(data.dual_rule_changed_count || 0)} 条，模版节点 ${Number(data.template_node_changed_count || 0)} 条`,
+      )
+      await fetchCalibrationPreview()
+    } catch (error) {
+      message.error(error?.message || 'Owner评估范围校准失败')
+    } finally {
+      setCalibrationRunning(false)
+    }
   }
 
   const handleSubmit = async () => {
@@ -226,6 +282,11 @@ function ProjectTemplates() {
               刷新
             </Button>
             {canManage ? (
+              <Button icon={<SyncOutlined />} onClick={openCalibrationModal}>
+                评估范围校准
+              </Button>
+            ) : null}
+            {canManage ? (
               <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
                 新建模板
               </Button>
@@ -277,6 +338,51 @@ function ProjectTemplates() {
           </Text>
         ) : null}
       </Card>
+
+      <Modal
+        title="Owner评估范围校准"
+        open={calibrationModalOpen}
+        onCancel={closeCalibrationModal}
+        onOk={handleRunCalibration}
+        confirmLoading={calibrationRunning}
+        okText="执行范围校准"
+        cancelText="取消"
+        okButtonProps={{ disabled: calibrationPreviewLoading }}
+        cancelButtonProps={{ disabled: calibrationRunning }}
+        destroyOnHidden
+      >
+        <Space direction="vertical" size={10} style={{ width: '100%', marginTop: 8 }}>
+          <Alert
+            showIcon
+            type="info"
+            message="按“事项类型配置 + 模版节点配置”重算 Owner 评估范围"
+            description="仅会把明确“不需要 Owner 评估”的历史数据校准为“不需要”，不会自动改成“需要”。适合在字典中心或项目模版节点调整后重复执行。"
+          />
+          <Space wrap>
+            <Tag color="processing">
+              规则过滤待校准：{calibrationPreviewLoading ? '计算中...' : Number(calibrationPreview?.dual_rule_would_change_count || 0)}
+            </Tag>
+            <Tag color="processing">
+              模版节点待校准：
+              {calibrationPreviewLoading ? '计算中...' : Number(calibrationPreview?.template_node_would_change_count || 0)}
+            </Tag>
+            <Tag color="gold">
+              预计总校准：{calibrationPreviewLoading ? '计算中...' : Number(calibrationPreview?.total_would_change_count || 0)}
+            </Tag>
+          </Space>
+          <Button size="small" loading={calibrationPreviewLoading} onClick={fetchCalibrationPreview}>
+            刷新预览
+          </Button>
+          {calibrationResult ? (
+            <Alert
+              showIcon
+              type="success"
+              message="最近一次范围校准结果"
+              description={`规则过滤已校准 ${Number(calibrationResult.dual_rule_changed_count || 0)} 条，模版节点已校准 ${Number(calibrationResult.template_node_changed_count || 0)} 条，共 ${Number(calibrationResult.total_changed_count || 0)} 条。`}
+            />
+          ) : null}
+        </Space>
+      </Modal>
 
       <Modal
         title="新建项目模板"
