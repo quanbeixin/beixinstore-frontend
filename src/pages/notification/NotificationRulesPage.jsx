@@ -673,6 +673,7 @@ function parseConditionFromJson(conditionConfigJson, sceneCode = '') {
     schedule_weekdays: Array.isArray(scheduleConfig.weekdays) && scheduleConfig.weekdays.length > 0 ? scheduleConfig.weekdays : [1],
     schedule_day_of_month: Number(scheduleConfig.day_of_month || 1),
     schedule_timezone: String(scheduleConfig.timezone || 'Asia/Shanghai'),
+    schedule_skip_legal_holidays: scheduleConfig.skip_legal_holidays !== false,
     deadline_target: String(deadlineConfig.target || 'worklog'),
     deadline_offset_type: String(deadlineConfig.offset_type || 'before'),
     deadline_offset_value: Number(deadlineConfig.offset_value || 2),
@@ -1635,6 +1636,7 @@ function NotificationRulesPage() {
           event_type: String(values.schedule_event_type || ''),
           frequency,
           timezone: String(values.schedule_timezone || 'Asia/Shanghai'),
+          skip_legal_holidays: values.schedule_skip_legal_holidays !== false,
           interval_hours: Number(values.schedule_interval_hours || 1),
           hour: Number(values.schedule_hour || 9),
           minute: Number(values.schedule_minute || 0),
@@ -1746,12 +1748,18 @@ function NotificationRulesPage() {
               },
             }
           : {}
+    const isDailyReportEvent = testEventType === 'daily_report_notify'
     const payload = {
       eventType: testEventType,
-      data: {
-        ...baseData,
-        ...contextData,
-      },
+      data: isDailyReportEvent
+        ? {
+            __use_real_daily_report: true,
+            ...contextData,
+          }
+        : {
+            ...baseData,
+            ...contextData,
+          },
       targetRuleIds: rule?.id ? [rule.id] : [],
     }
 
@@ -1775,6 +1783,7 @@ function NotificationRulesPage() {
       return acc
     }, new Map())
     const skippedByWhitelistCount = Number(skippedByCodeCountMap.get('SEND_SKIPPED_BY_WHITELIST') || 0)
+    const skippedByOnlySelfCount = Number(skippedByCodeCountMap.get('ONLY_SELF_RECEIVER') || 0)
 
     if (processed === 0 || matched === 0) {
       message.warning('已触发事件，但未命中可执行规则')
@@ -1804,6 +1813,11 @@ function NotificationRulesPage() {
         message.warning(
           `已触发 ${processed} 条，本次命中的接收人不在白名单中（跳过 ${skippedCount} 条）。请确认白名单是否包含本次实际接收人。`,
         )
+        return
+      }
+
+      if (skippedByOnlySelfCount > 0 && skippedByOnlySelfCount === skippedCount) {
+        message.warning(`已触发 ${processed} 条，但本次仅命中触发者本人，系统已自动跳过自发自收通知。`)
         return
       }
 
@@ -2332,6 +2346,16 @@ function NotificationRulesPage() {
                 <Col span={12}>
                   <Form.Item name="schedule_timezone" label="时区">
                     <Input disabled />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="schedule_skip_legal_holidays"
+                    label="法定节假日不发送"
+                    valuePropName="checked"
+                    extra="默认开启，开启后法定节假日会自动跳过。"
+                  >
+                    <Switch />
                   </Form.Item>
                 </Col>
               </Row>
