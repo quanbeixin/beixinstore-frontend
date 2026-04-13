@@ -1,8 +1,8 @@
 import { BugOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, Col, Empty, Input, Row, Select, Space, Table, Tag, Typography, message } from 'antd'
+import { Button, Card, Col, Empty, Input, Popconfirm, Row, Select, Space, Table, Tag, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createBugApi, getDemandBugsApi, getDemandBugStatsApi } from '../../../api/bug'
+import { createBugApi, getDemandBugsApi, getDemandBugStatsApi, reopenBugApi } from '../../../api/bug'
 import { hasPermission } from '../../../utils/access'
 import { formatBeijingDateTime } from '../../../utils/datetime'
 import { pinyinSelectFilter } from '../../../utils/selectSearch'
@@ -16,10 +16,12 @@ const { Text } = Typography
 function DemandBugPanel({ demandId }) {
   const navigate = useNavigate()
   const canCreate = hasPermission('bug.create')
+  const canTransition = hasPermission('bug.transition')
 
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [reopeningBugId, setReopeningBugId] = useState(0)
   const [rows, setRows] = useState([])
   const [stats, setStats] = useState([])
   const [statusFilter, setStatusFilter] = useState()
@@ -119,6 +121,54 @@ function DemandBugPanel({ demandId }) {
       width: 180,
       render: (value) => formatBeijingDateTime(value),
     },
+    ...(canTransition
+      ? [
+          {
+            title: '操作',
+            key: 'action',
+            width: 110,
+            render: (_, row) => {
+              const status = String(row?.status_code || '').trim().toUpperCase()
+              if (status !== 'CLOSED') return '-'
+              return (
+                <Popconfirm
+                  title="确认重新打开该Bug？"
+                  description="重新打开后可继续进入处理流程。"
+                  okText="重新打开"
+                  cancelText="取消"
+                  onConfirm={async () => {
+                    const bugId = Number(row?.id || 0)
+                    if (!bugId) return
+                    try {
+                      setReopeningBugId(bugId)
+                      const result = await reopenBugApi(bugId, { remark: '需求详情页Bug列表重新打开' })
+                      if (!result?.success) {
+                        message.error(result?.message || '重新打开失败')
+                        return
+                      }
+                      message.success(result?.message || 'Bug已重新打开')
+                      await loadData()
+                    } catch (error) {
+                      message.error(error?.message || '重新打开失败')
+                    } finally {
+                      setReopeningBugId(0)
+                    }
+                  }}
+                >
+                  <Button
+                    type="link"
+                    size="small"
+                    loading={reopeningBugId === Number(row?.id || 0)}
+                    style={{ paddingInline: 0 }}
+                  >
+                    重新打开
+                  </Button>
+                </Popconfirm>
+              )
+            },
+          },
+        ]
+      : []),
   ]
 
   return (

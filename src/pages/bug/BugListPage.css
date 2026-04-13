@@ -186,6 +186,15 @@
   border-radius: 4px;
 }
 
+.bug-list-page__group-title .ant-tag {
+  margin-inline-end: 0;
+}
+
+.bug-list-page__group-row > td {
+  background: #f7faff !important;
+  font-weight: 600;
+}
+
 .bug-list-page__attachment-link {
   padding-inline: 0;
 }

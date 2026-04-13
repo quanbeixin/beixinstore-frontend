@@ -40,6 +40,10 @@ export function rejectBugApi(id, payload = {}) {
   return request.post(`/work/bugs/${id}/reject`, payload)
 }
 
+export function createBugCommentApi(id, payload = {}) {
+  return request.post(`/work/bugs/${id}/comments`, payload)
+}
+
 export function getBugAssigneesApi(params) {
   return request.get('/work/bugs/assignees', { params })
 }

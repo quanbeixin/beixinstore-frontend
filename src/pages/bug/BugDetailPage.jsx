@@ -2,6 +2,7 @@ import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   EditOutlined,
   RedoOutlined,
   ReloadOutlined,
@@ -18,6 +19,7 @@ import {
   Image,
   Input,
   Popconfirm,
+  Select,
   Space,
   Table,
   Tag,
@@ -29,6 +31,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   createBugAttachmentApi,
+  getBugAssigneesApi,
+  createBugCommentApi,
   deleteBugAttachmentApi,
   deleteBugApi,
   fixBugApi,
@@ -41,8 +45,9 @@ import {
   verifyBugApi,
 } from '../../api/bug'
 import { BugFormModal, BugStatusFlow } from '../../modules/bug'
-import { hasPermission } from '../../utils/access'
+import { getCurrentUser, hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
+import { pinyinSelectFilter } from '../../utils/selectSearch'
 import './BugDetailPage.css'
 
 const { Paragraph, Text, Title } = Typography
@@ -68,9 +73,11 @@ function BugDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams()
   const bugId = Number(id)
+  const currentUserId = Number(getCurrentUser()?.id || 0)
   const canUpdate = hasPermission('bug.update')
   const canTransition = hasPermission('bug.transition')
   const canDelete = hasPermission('bug.delete')
+  const canManageAllFields = hasPermission('bug.manage')
 
   const [loading, setLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState('')
@@ -79,6 +86,10 @@ function BugDetailPage() {
   const [editOpen, setEditOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [remarkForm] = Form.useForm()
+  const [commentForm] = Form.useForm()
+  const [commentSubmitting, setCommentSubmitting] = useState(false)
+  const [mentionUserOptions, setMentionUserOptions] = useState([])
+  const [mentionUserLoading, setMentionUserLoading] = useState(false)
 
   const loadDetail = useCallback(async () => {
     if (!bugId) return
@@ -110,29 +121,82 @@ function BugDetailPage() {
     })
   }, [detail, remarkForm])
 
+  const loadMentionUserOptions = useCallback(async () => {
+    setMentionUserLoading(true)
+    try {
+      const result = await getBugAssigneesApi({
+        demand_id: detail?.demand_id || undefined,
+      })
+      const rows = Array.isArray(result?.data) ? result.data : []
+      const options = rows
+        .map((item) => {
+          const userId = Number(item?.id || 0)
+          if (!userId) return null
+          const realName = String(item?.name || '').trim()
+          const username = String(item?.username || '').trim()
+          const displayName = realName || username || `用户${userId}`
+          return {
+            value: userId,
+            label: username && username !== displayName ? `${displayName} (${username})` : displayName,
+            searchText: `${displayName} ${username}`.trim(),
+          }
+        })
+        .filter(Boolean)
+      setMentionUserOptions(options)
+    } catch (error) {
+      console.warn('加载评论可@人员失败:', error?.message || error)
+    } finally {
+      setMentionUserLoading(false)
+    }
+  }, [detail?.demand_id])
+
+  useEffect(() => {
+    loadMentionUserOptions()
+  }, [loadMentionUserOptions])
+
+  const isCurrentUserReporter = useMemo(
+    () => currentUserId > 0 && Number(detail?.reporter_id || 0) === currentUserId,
+    [currentUserId, detail?.reporter_id],
+  )
+
+  const isCurrentUserAssignee = useMemo(() => {
+    if (currentUserId <= 0) return false
+    const assigneeIds = Array.isArray(detail?.assignee_ids) ? detail.assignee_ids : []
+    if (assigneeIds.some((item) => Number(item) === currentUserId)) return true
+    return Number(detail?.assignee_id || 0) === currentUserId
+  }, [currentUserId, detail?.assignee_id, detail?.assignee_ids])
+
+  const canSeeFixModule = canManageAllFields || isCurrentUserAssignee
+  const canSeeVerifyModule = canManageAllFields || isCurrentUserReporter
+
   const transitionButtons = useMemo(() => {
     const status = String(detail?.status_code || '').toUpperCase()
     if (!canTransition) return []
+    let buttons = []
     if (status === 'NEW') {
-      return [{ key: 'start', label: '开始处理', icon: <SendOutlined /> }]
-    }
-    if (status === 'PROCESSING') {
-      return [
+      buttons = [{ key: 'start', label: '开始处理', icon: <SendOutlined /> }]
+    } else if (status === 'PROCESSING') {
+      buttons = [
         { key: 'fix', label: '修复完成', icon: <CheckCircleOutlined /> },
         { key: 'reject', label: '打回', icon: <StopOutlined /> },
       ]
-    }
-    if (status === 'FIXED') {
-      return [
+    } else if (status === 'FIXED') {
+      buttons = [
         { key: 'verify', label: '验证通过', icon: <CheckCircleOutlined /> },
         { key: 'reopen', label: '重新打开', icon: <RedoOutlined /> },
       ]
+    } else if (status === 'CLOSED') {
+      buttons = [{ key: 'reopen', label: '重新打开', icon: <RedoOutlined /> }]
+    } else if (status === 'REOPENED') {
+      buttons = [{ key: 'start', label: '重新处理', icon: <ReloadOutlined /> }]
     }
-    if (status === 'REOPENED') {
-      return [{ key: 'start', label: '重新处理', icon: <ReloadOutlined /> }]
-    }
-    return []
-  }, [detail?.status_code, canTransition])
+
+    return buttons.filter((item) => {
+      if (item.key === 'fix') return canSeeFixModule
+      if (item.key === 'verify') return canSeeVerifyModule
+      return true
+    })
+  }, [detail?.status_code, canTransition, canSeeFixModule, canSeeVerifyModule])
 
   const runTransition = async (actionKey) => {
     try {
@@ -231,14 +295,19 @@ function BugDetailPage() {
       title: '文件名',
       dataIndex: 'file_name',
       key: 'file_name',
-      render: (value, row) =>
-        getAttachmentUrl(row) ? (
-          <a href={getAttachmentUrl(row)} target="_blank" rel="noreferrer">
-            {value || '-'}
-          </a>
-        ) : (
-          value || '-'
-        ),
+      render: (value, row) => {
+        const fileName = value || '-'
+        const downloadUrl = String(row?.download_file_url || '').trim() || getAttachmentUrl(row)
+        if (!downloadUrl) return fileName
+        return (
+          <Space size={6}>
+            <span>{fileName}</span>
+            <a href={downloadUrl} target="_blank" rel="noreferrer" title="下载附件" onClick={(event) => event.stopPropagation()}>
+              <Button type="text" size="small" icon={<DownloadOutlined />} style={{ paddingInline: 4, height: 22 }} />
+            </a>
+          </Space>
+        )
+      },
     },
     {
       title: '大小',
@@ -362,6 +431,36 @@ function BugDetailPage() {
     }
   }
 
+  const handleSubmitComment = async () => {
+    try {
+      const values = await commentForm.validateFields()
+      const comment = String(values.comment || '').trim()
+      const mentionUserId = Number(values.mention_user_id || 0) || null
+      if (!comment) {
+        message.warning('评论内容不能为空')
+        return
+      }
+
+      setCommentSubmitting(true)
+      const result = await createBugCommentApi(bugId, {
+        comment,
+        mention_user_id: mentionUserId,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '评论发送失败')
+        return
+      }
+      message.success(result?.message || '评论已发布')
+      commentForm.resetFields()
+      await loadDetail()
+    } catch (error) {
+      if (error?.errorFields) return
+      message.error(error?.message || '评论发送失败')
+    } finally {
+      setCommentSubmitting(false)
+    }
+  }
+
   const statusLogs = Array.isArray(detail?.status_logs) ? detail.status_logs : []
 
   if (!bugId) {
@@ -482,21 +581,25 @@ function BugDetailPage() {
                   <Form.Item label="备注" name="remark">
                     <Input.TextArea rows={3} maxLength={20000} placeholder="打回、重开或处理说明可填写在这里" />
                   </Form.Item>
-                  <Form.Item
-                    label="修复方案&影响范围"
-                    name="fix_solution"
-                    required
-                    extra="执行“修复完成”时必填"
-                  >
-                    <Input.TextArea rows={3} maxLength={20000} placeholder="请填写修复方案&影响范围（必填）" />
-                  </Form.Item>
-                  <Form.Item
-                    label="验证结果"
-                    name="verify_result"
-                    extra="执行“验证通过”时必填；重新打开建议填写"
-                  >
-                    <Input.TextArea rows={3} maxLength={20000} placeholder="描述验证结果" />
-                  </Form.Item>
+                  {canSeeFixModule ? (
+                    <Form.Item
+                      label="修复方案&影响范围"
+                      name="fix_solution"
+                      required
+                      extra="执行“修复完成”时必填"
+                    >
+                      <Input.TextArea rows={3} maxLength={20000} placeholder="请填写修复方案&影响范围（必填）" />
+                    </Form.Item>
+                  ) : null}
+                  {canSeeVerifyModule ? (
+                    <Form.Item
+                      label="验证结果"
+                      name="verify_result"
+                      extra="执行“验证通过”时必填；重新打开建议填写"
+                    >
+                      <Input.TextArea rows={3} maxLength={20000} placeholder="描述验证结果" />
+                    </Form.Item>
+                  ) : null}
 
                 </Form>
               </Card>
@@ -531,6 +634,32 @@ function BugDetailPage() {
                   <Paragraph>{detail.verify_result || '-'}</Paragraph>
                 </Descriptions.Item>
               </Descriptions>
+            </Card>
+
+            <Card size="small" className="bug-detail-page__block" variant="borderless" title="评论通知">
+              <Form form={commentForm} layout="vertical">
+                <Form.Item
+                  label="评论内容"
+                  name="comment"
+                  rules={[{ required: true, message: '请输入评论内容' }]}
+                >
+                  <Input.TextArea rows={3} maxLength={20000} placeholder="输入评论内容，可选择@某人并发送通知" />
+                </Form.Item>
+                <Form.Item label="@某人（可选）" name="mention_user_id">
+                  <Select
+                    showSearch
+                    allowClear
+                    placeholder="选择需要通知的人员"
+                    options={mentionUserOptions}
+                    loading={mentionUserLoading}
+                    filterOption={(input, option) => pinyinSelectFilter(input, option)}
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+                <Button type="primary" onClick={handleSubmitComment} loading={commentSubmitting}>
+                  发表评论并通知
+                </Button>
+              </Form>
             </Card>
 
             <Card
@@ -577,16 +706,27 @@ function BugDetailPage() {
                       key={`${item?.id || item?.created_at || 'status-log'}-${index}`}
                     >
                       <div className="bug-detail-page__log-item">
-                        <div className="bug-detail-page__log-main">
-                          <Text strong>{item.operator_name || '-'}</Text>
-                          <Text type="secondary">
-                            {item.from_status_name || item.from_status_code || '初始'}
-                            {' -> '}
-                            {item.to_status_name || item.to_status_code || '-'}
-                          </Text>
-                        </div>
-                        <div className="bug-detail-page__log-time">{formatBeijingDateTime(item.created_at)}</div>
-                        {item.remark ? <div className="bug-detail-page__log-remark">{item.remark}</div> : null}
+                        {(() => {
+                          const fromStatusCode = String(item?.from_status_code || '').trim().toUpperCase()
+                          const toStatusCode = String(item?.to_status_code || '').trim().toUpperCase()
+                          const isCommentLog = Boolean(item?.remark) && fromStatusCode && fromStatusCode === toStatusCode
+                          return (
+                            <>
+                              <div className="bug-detail-page__log-main">
+                                <Text strong>{item.operator_name || '-'}</Text>
+                                <Text type="secondary">
+                                  {isCommentLog
+                                    ? '发表评论'
+                                    : `${item.from_status_name || item.from_status_code || '初始'} -> ${
+                                        item.to_status_name || item.to_status_code || '-'
+                                      }`}
+                                </Text>
+                              </div>
+                              <div className="bug-detail-page__log-time">{formatBeijingDateTime(item.created_at)}</div>
+                              {item.remark ? <div className="bug-detail-page__log-remark">{item.remark}</div> : null}
+                            </>
+                          )
+                        })()}
                       </div>
                     </div>
                   ))}

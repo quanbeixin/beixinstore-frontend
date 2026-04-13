@@ -343,7 +343,7 @@ function BugFormModal({
       <Drawer
         open={open}
         title={title}
-        width={760}
+        size="large"
         className="bug-form-modal"
         onClose={onCancel}
         footer={actionButtons}
