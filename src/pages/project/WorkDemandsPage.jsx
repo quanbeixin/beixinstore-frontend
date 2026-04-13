@@ -684,11 +684,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
   const canEditDemandRecord = useCallback(
     (record) => {
-      if (!record) return false
-      if (canTransferOwner) return true
-      return Number(record.owner_user_id) === Number(currentUser?.id)
+      return Boolean(record)
     },
-    [canTransferOwner, currentUser?.id],
+    [],
   )
 
   const ownerOptions = useMemo(() => {
