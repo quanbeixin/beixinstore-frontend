@@ -605,6 +605,113 @@ function MorningStandupBoard() {
     () => members.filter((item) => !item?.today_scheduled),
     [members],
   )
+  const memberByUserId = useMemo(
+    () =>
+      new Map(
+        members
+          .map((item) => [Number(item?.user_id), item])
+          .filter(([userId]) => Number.isInteger(userId) && userId > 0),
+      ),
+    [members],
+  )
+  const noFillMembersWithDepartment = useMemo(
+    () =>
+      noFillMembers.map((member) => {
+        const userId = Number(member?.id || member?.user_id) || 0
+        const memberFromBoard = memberByUserId.get(userId)
+        const username = String(member?.username || memberFromBoard?.username || '').trim() || `用户${userId || ''}`
+        const departmentName = String(memberFromBoard?.department_name || '').trim() || '未分配部门'
+        return {
+          user_id: userId,
+          username,
+          department_name: departmentName,
+        }
+      }),
+    [memberByUserId, noFillMembers],
+  )
+  const unscheduledByDepartmentRows = useMemo(() => {
+    const departmentMap = new Map()
+
+    unscheduledMembers.forEach((member) => {
+      const departmentName = String(member?.department_name || '').trim() || '未分配部门'
+      const memberName = String(member?.username || '').trim() || `用户${Number(member?.user_id) || ''}`
+      const userId = Number(member?.user_id) || 0
+
+      if (!departmentMap.has(departmentName)) {
+        departmentMap.set(departmentName, [])
+      }
+      departmentMap.get(departmentName).push({
+        user_id: userId,
+        username: memberName,
+      })
+    })
+
+    return Array.from(departmentMap.entries())
+      .map(([department_name, member_list]) => ({
+        key: department_name,
+        department_name,
+        member_list: member_list.sort((a, b) =>
+          String(a.username || '').localeCompare(String(b.username || ''), 'zh-Hans-CN'),
+        ),
+      }))
+      .sort((a, b) => String(a.department_name || '').localeCompare(String(b.department_name || ''), 'zh-Hans-CN'))
+  }, [unscheduledMembers])
+  const noFillByDepartmentRows = useMemo(() => {
+    const departmentMap = new Map()
+
+    noFillMembersWithDepartment.forEach((member) => {
+      const departmentName = String(member?.department_name || '').trim() || '未分配部门'
+      const memberName = String(member?.username || '').trim() || `用户${Number(member?.user_id) || ''}`
+      const userId = Number(member?.user_id) || 0
+
+      if (!departmentMap.has(departmentName)) {
+        departmentMap.set(departmentName, [])
+      }
+      departmentMap.get(departmentName).push({
+        user_id: userId,
+        username: memberName,
+      })
+    })
+
+    return Array.from(departmentMap.entries())
+      .map(([department_name, member_list]) => ({
+        key: department_name,
+        department_name,
+        member_list: member_list.sort((a, b) =>
+          String(a.username || '').localeCompare(String(b.username || ''), 'zh-Hans-CN'),
+        ),
+      }))
+      .sort((a, b) => String(a.department_name || '').localeCompare(String(b.department_name || ''), 'zh-Hans-CN'))
+  }, [noFillMembersWithDepartment])
+  const departmentMemberColumns = useMemo(
+    () => [
+      {
+        title: '部门',
+        dataIndex: 'department_name',
+        key: 'department_name',
+        width: 220,
+      },
+      {
+        title: '人员名单',
+        dataIndex: 'member_list',
+        key: 'member_list',
+        render: (value) => {
+          const list = Array.isArray(value) ? value : []
+          if (list.length === 0) return '-'
+          return (
+            <Space wrap size={[8, 8]}>
+              {list.map((member) => (
+                <Tag key={member.user_id || member.username} color="blue">
+                  {member.username}
+                </Tag>
+              ))}
+            </Space>
+          )
+        },
+      },
+    ],
+    [],
+  )
   const summary = useMemo(() => (data.summary && typeof data.summary === 'object' ? data.summary : EMPTY_OBJECT), [data.summary])
   const focusSummary = useMemo(
     () => (data.focus_summary && typeof data.focus_summary === 'object' ? data.focus_summary : EMPTY_OBJECT),
@@ -2247,20 +2354,20 @@ function MorningStandupBoard() {
         onOk={() => setUnscheduledModalOpen(false)}
         okText="关闭"
         cancelButtonProps={{ style: { display: 'none' } }}
+        width={840}
       >
         {unscheduledMembers.length === 0 ? (
           <Empty description="今日暂无未安排成员" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
-          <Space wrap size={[8, 8]}>
-            {unscheduledMembers.map((member) => {
-              const displayName = String(member?.username || '').trim() || `用户${Number(member?.user_id) || ''}`
-              return (
-                <Tag key={member.user_id} color="blue">
-                  {displayName}
-                </Tag>
-              )
-            })}
-          </Space>
+          <Table
+            rowKey={(record) => record.key}
+            size="small"
+            pagination={false}
+            dataSource={unscheduledByDepartmentRows}
+            columns={departmentMemberColumns}
+            className="morning-board-table"
+            scroll={{ x: 760 }}
+          />
         )}
       </Modal>
 
@@ -2271,20 +2378,20 @@ function MorningStandupBoard() {
         onOk={() => setUnfilledModalOpen(false)}
         okText="关闭"
         cancelButtonProps={{ style: { display: 'none' } }}
+        width={840}
       >
         {noFillMembers.length === 0 ? (
           <Empty description="今天有安排成员均已填报" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
-          <Space wrap size={[8, 8]}>
-            {noFillMembers.map((member) => {
-              const displayName = String(member?.username || '').trim() || `用户${Number(member?.id) || ''}`
-              return (
-                <Tag key={member.id} color="orange">
-                  {displayName}
-                </Tag>
-              )
-            })}
-          </Space>
+          <Table
+            rowKey={(record) => record.key}
+            size="small"
+            pagination={false}
+            dataSource={noFillByDepartmentRows}
+            columns={departmentMemberColumns}
+            className="morning-board-table"
+            scroll={{ x: 760 }}
+          />
         )}
       </Modal>
 
