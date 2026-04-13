@@ -15,6 +15,7 @@ import {
   Descriptions,
   Empty,
   Form,
+  Image,
   Input,
   Popconfirm,
   Space,
@@ -45,6 +46,23 @@ import { formatBeijingDateTime } from '../../utils/datetime'
 import './BugDetailPage.css'
 
 const { Paragraph, Text, Title } = Typography
+const IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)(\?.*)?$/i
+
+function getAttachmentUrl(row) {
+  return String(row?.download_url || row?.object_url || '').trim()
+}
+
+function isImageAttachment(row) {
+  const mimeType = String(row?.mime_type || '').trim().toLowerCase()
+  if (mimeType.startsWith('image/')) return true
+
+  const fileExt = String(row?.file_ext || '').trim().toLowerCase()
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif'].includes(fileExt)) return true
+
+  const fileName = String(row?.file_name || '').trim()
+  const objectUrl = getAttachmentUrl(row)
+  return IMAGE_EXT_PATTERN.test(fileName) || IMAGE_EXT_PATTERN.test(objectUrl)
+}
 
 function BugDetailPage() {
   const navigate = useNavigate()
@@ -84,6 +102,7 @@ function BugDetailPage() {
   }, [loadDetail])
 
   useEffect(() => {
+    if (!detail) return
     remarkForm.setFieldsValue({
       remark: '',
       fix_solution: detail?.fix_solution || '',
@@ -191,12 +210,30 @@ function BugDetailPage() {
 
   const attachmentColumns = [
     {
+      title: '缩略图',
+      key: 'preview',
+      width: 90,
+      render: (_, row) => {
+        const objectUrl = getAttachmentUrl(row)
+        if (!objectUrl || !isImageAttachment(row)) return '-'
+        return (
+          <Image
+            className="bug-detail-page__attachment-thumbnail"
+            src={objectUrl}
+            alt={row?.file_name || '附件缩略图'}
+            width={56}
+            height={56}
+          />
+        )
+      },
+    },
+    {
       title: '文件名',
       dataIndex: 'file_name',
       key: 'file_name',
       render: (value, row) =>
-        row.object_url ? (
-          <a href={row.object_url} target="_blank" rel="noreferrer">
+        getAttachmentUrl(row) ? (
+          <a href={getAttachmentUrl(row)} target="_blank" rel="noreferrer">
             {value || '-'}
           </a>
         ) : (
@@ -420,14 +457,12 @@ function BugDetailPage() {
                   <Descriptions.Item label="严重程度">
                     <Tag color={detail.severity_color || 'default'}>{detail.severity_name || detail.severity_code || '-'}</Tag>
                   </Descriptions.Item>
-                  <Descriptions.Item label="优先级">
-                    <Tag color={detail.priority_color || 'default'}>{detail.priority_name || detail.priority_code || '-'}</Tag>
-                  </Descriptions.Item>
                   <Descriptions.Item label="Bug类型">{detail.bug_type_name || detail.bug_type_code || '-'}</Descriptions.Item>
                   <Descriptions.Item label="产品模块">{detail.product_name || detail.product_code || '-'}</Descriptions.Item>
                   <Descriptions.Item label="Bug阶段">{detail.issue_stage_name || detail.issue_stage || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="发现人">{detail.reporter_name || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="处理人" span={2}>{detail.assignee_name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="发现人" span={2}>{detail.reporter_name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="处理人" span={2}>{detail.assignee_names || detail.assignee_name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="关注人" span={2}>{detail.watcher_names || '-'}</Descriptions.Item>
                   <Descriptions.Item label="关联需求" span={2}>
                     {detail.demand_id ? (
                       <Button type="link" style={{ paddingInline: 0 }} onClick={() => navigate(`/work-demands/${detail.demand_id}`)}>
@@ -481,7 +516,7 @@ function BugDetailPage() {
                 <Descriptions.Item label="实际结果">
                   <Paragraph>{detail.actual_result || '-'}</Paragraph>
                 </Descriptions.Item>
-                <Descriptions.Item label="环境信息">
+                <Descriptions.Item label="复现环境">
                   <Paragraph>{detail.environment_info || '-'}</Paragraph>
                 </Descriptions.Item>
               </Descriptions>

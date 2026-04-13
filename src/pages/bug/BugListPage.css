@@ -186,6 +186,73 @@
   border-radius: 4px;
 }
 
+.bug-list-page__attachment-link {
+  padding-inline: 0;
+}
+
+.bug-list-page__attachment-popover .ant-popover-inner {
+  max-width: 360px;
+}
+
+.bug-list-page__attachment-loading,
+.bug-list-page__attachment-empty {
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bug-list-page__attachment-preview {
+  min-width: 220px;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bug-list-page__attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bug-list-page__attachment-thumb.ant-image-img {
+  border-radius: 8px;
+  border: 1px solid #e4eaf5;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
+.bug-list-page__attachment-fallback {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid #d9e3f5;
+  background: #f5f8ff;
+  color: #60739b;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+}
+
+.bug-list-page__attachment-name {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bug-list-page__attachment-name--disabled {
+  color: #98a6c3;
+}
+
+.bug-list-page__attachment-more {
+  align-self: flex-end;
+  padding-inline: 0;
+}
+
 .bug-list-page .ant-tag {
   border-radius: 999px;
   font-size: 12px;

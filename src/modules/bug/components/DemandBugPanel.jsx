@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { createBugApi, getDemandBugsApi, getDemandBugStatsApi } from '../../../api/bug'
 import { hasPermission } from '../../../utils/access'
 import { formatBeijingDateTime } from '../../../utils/datetime'
+import { pinyinSelectFilter } from '../../../utils/selectSearch'
 import BugFormModal from './BugFormModal'
 import { uploadDraftAttachments } from '../utils/attachmentUpload'
 import './demand-bug-panel.css'
@@ -98,17 +99,17 @@ function DemandBugPanel({ demandId }) {
       render: (value, row) => <Tag color={row.severity_color || 'default'}>{value || row.severity_code || '-'}</Tag>,
     },
     {
-      title: '优先级',
-      dataIndex: 'priority_name',
-      key: 'priority_name',
-      width: 110,
-      render: (value, row) => <Tag color={row.priority_color || 'default'}>{value || row.priority_code || '-'}</Tag>,
+      title: '处理人',
+      dataIndex: 'assignee_names',
+      key: 'assignee_names',
+      width: 140,
+      render: (value, row) => value || row.assignee_name || '-',
     },
     {
-      title: '处理人',
-      dataIndex: 'assignee_name',
-      key: 'assignee_name',
-      width: 140,
+      title: '关注人',
+      dataIndex: 'watcher_names',
+      key: 'watcher_names',
+      width: 180,
       render: (value) => value || '-',
     },
     {
@@ -153,10 +154,12 @@ function DemandBugPanel({ demandId }) {
             />
             <Select
               allowClear
+              showSearch
               placeholder="状态"
               style={{ width: 140 }}
               value={statusFilter}
               options={statusOptions}
+              filterOption={pinyinSelectFilter}
               onChange={(value) => setStatusFilter(value)}
             />
             <Button icon={<ReloadOutlined />} onClick={loadData}>
@@ -187,6 +190,7 @@ function DemandBugPanel({ demandId }) {
         open={createOpen}
         title="新建关联Bug"
         submitText="创建"
+        presentation="drawer"
         demandIdPreset={demandId}
         lockDemand
         confirmLoading={submitting}

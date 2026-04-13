@@ -1,6 +1,9 @@
 import {
+  CalendarOutlined,
+  CheckOutlined,
   CopyOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   EditOutlined,
   LeftOutlined,
   PlusOutlined,
@@ -19,6 +22,7 @@ import {
   Drawer,
   Empty,
   Form,
+  Image,
   Input,
   InputNumber,
   Modal,
@@ -125,6 +129,40 @@ function normalizeFeishuChatId(value) {
   return normalized
 }
 
+function normalizePreviewUrl(value) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  if (/^https?:\/\//i.test(text) || /^data:image\//i.test(text)) return text
+  return ''
+}
+
+function isImagePreviewUrl(url) {
+  const text = String(url || '').trim()
+  if (!text) return false
+  if (/^data:image\//i.test(text)) return true
+  try {
+    const parsed = new URL(text)
+    return /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i.test(parsed.pathname || '')
+  } catch {
+    return false
+  }
+}
+
+function downloadCsv(filename, rows = []) {
+  const content = rows
+    .map((columns) => columns.map((cell) => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(','))
+    .join('\n')
+  const blob = new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.setAttribute('download', filename)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 function formatDemandNodeSchedule(record) {
   const plannedStart = formatBeijingDate(record?.current_node_planned_start_date)
   const plannedEnd = formatBeijingDate(record?.current_node_planned_end_date)
@@ -223,6 +261,13 @@ function getHealthTagColor(healthStatus) {
 function getHealthLabel(healthStatus) {
   const target = HEALTH_STATUS_OPTIONS.find((item) => item.value === healthStatus)
   return target?.label || healthStatus || '健康'
+}
+
+function getInlinePreviewText(value, previewLength = 30) {
+  const text = String(value || '').trim()
+  if (!text) return '-'
+  if (text.length <= previewLength) return text
+  return `${text.slice(0, previewLength)}...`
 }
 
 function getDemandPhaseTagColor(phaseKey, phaseName) {
@@ -512,6 +557,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [detailDocLink, setDetailDocLink] = useState('')
   const [detailUiDesignLink, setDetailUiDesignLink] = useState('')
   const [detailTestCaseLink, setDetailTestCaseLink] = useState('')
+  const [detailCodeBranch, setDetailCodeBranch] = useState('')
+  const [detailReleaseNote, setDetailReleaseNote] = useState('')
   const [detailGroupChatMode, setDetailGroupChatMode] = useState('none')
   const [detailGroupChatId, setDetailGroupChatId] = useState(undefined)
   const [workflowLoading, setWorkflowLoading] = useState(false)
@@ -525,6 +572,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [workflowDueAt, setWorkflowDueAt] = useState(null)
   const [workflowExpectedStartAt, setWorkflowExpectedStartAt] = useState(null)
   const [workflowQuickTaskSubmitting, setWorkflowQuickTaskSubmitting] = useState(false)
+  const [quickEditSavingMap, setQuickEditSavingMap] = useState({})
   const [detailStatus, setDetailStatus] = useState('')
   const [detailTabKey, setDetailTabKey] = useState('basic')
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState(() => readCollapsedGroupKeys(groupCollapseStorageKey))
@@ -1389,6 +1437,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       doc_link: '',
       ui_design_link: '',
       test_case_link: '',
+      code_branch: '',
+      release_note: '',
       group_chat_mode: 'none',
       group_chat_id: undefined,
       business_group_code: undefined,
@@ -1426,6 +1476,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       doc_link: record.doc_link || '',
       ui_design_link: record.ui_design_link || '',
       test_case_link: record.test_case_link || '',
+      code_branch: record.code_branch || '',
+      release_note: record.release_note || '',
       group_chat_mode: record.group_chat_mode || 'none',
       group_chat_id: normalizeFeishuChatId(record.group_chat_id) || undefined,
       business_group_code: record.business_group_code || undefined,
@@ -1513,6 +1565,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         doc_link: values.doc_link || null,
         ui_design_link: values.ui_design_link || null,
         test_case_link: values.test_case_link || null,
+        code_branch: values.code_branch || null,
+        release_note: values.release_note || null,
         group_chat_mode: values.group_chat_mode || 'none',
         group_chat_id:
           values.group_chat_mode === 'bind' ? normalizeFeishuChatId(values.group_chat_id) || null : null,
@@ -1792,6 +1846,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setDetailDocLink('')
       setDetailUiDesignLink('')
       setDetailTestCaseLink('')
+      setDetailCodeBranch('')
+      setDetailReleaseNote('')
       setDetailGroupChatMode('none')
       setDetailGroupChatId(undefined)
       return
@@ -1820,6 +1876,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setDetailDocLink(detailDemand.doc_link || '')
     setDetailUiDesignLink(detailDemand.ui_design_link || '')
     setDetailTestCaseLink(detailDemand.test_case_link || '')
+    setDetailCodeBranch(detailDemand.code_branch || '')
+    setDetailReleaseNote(detailDemand.release_note || '')
     setDetailGroupChatMode(detailDemand.group_chat_mode || 'none')
     setDetailGroupChatId(normalizeFeishuChatId(detailDemand.group_chat_id) || undefined)
 
@@ -1897,6 +1955,40 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     }
   }, [canEditDemandRecord, refreshListAndDetail])
 
+  const isQuickFieldSaving = useCallback((demandId, fieldName) => {
+    if (!demandId || !fieldName) return false
+    return Boolean(quickEditSavingMap[`${demandId}:${fieldName}`])
+  }, [quickEditSavingMap])
+
+  const handleQuickFieldSave = useCallback(async (record, fieldName, nextValueRaw) => {
+    if (!record?.id || !fieldName || !canEditDemandRecord(record)) return
+    const fieldLabel = fieldName === 'code_branch' ? '代码分支' : '备注信息（上线表）'
+    const nextValue = String(nextValueRaw || '').trim()
+    const currentValue = String(record?.[fieldName] || '').trim()
+    if (nextValue === currentValue) return
+    const cacheKey = `${record.id}:${fieldName}`
+    try {
+      setQuickEditSavingMap((prev) => ({ ...prev, [cacheKey]: true }))
+      const result = await updateWorkDemandApi(record.id, {
+        [fieldName]: nextValue || null,
+      })
+      if (!result?.success) {
+        message.error(result?.message || `${fieldLabel}保存失败`)
+        return
+      }
+      message.success(`${fieldLabel}已更新`)
+      await refreshListAndDetail(result?.data || null)
+    } catch (error) {
+      message.error(error?.message || `${fieldLabel}保存失败`)
+    } finally {
+      setQuickEditSavingMap((prev) => {
+        const next = { ...prev }
+        delete next[cacheKey]
+        return next
+      })
+    }
+  }, [canEditDemandRecord, refreshListAndDetail])
+
   const handleSaveDetail = async () => {
     if (!detailDemand?.id || !canEditDemandRecord(detailDemand)) return
     const nextName = String(detailName || '').trim()
@@ -1943,6 +2035,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         doc_link: detailDocLink || null,
         ui_design_link: detailUiDesignLink || null,
         test_case_link: detailTestCaseLink || null,
+        code_branch: detailCodeBranch || null,
+        release_note: detailReleaseNote || null,
         group_chat_mode: detailGroupChatMode || 'none',
         group_chat_id:
           detailGroupChatMode === 'bind' || detailGroupChatMode === 'auto'
@@ -2479,29 +2573,34 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         width: 260,
         fixed: 'left',
         ellipsis: true,
-        render: (value, record) => (
+        render: (value, record) =>
           record?.__group ? (
-            <Space size={8}>
-              {isLaunchPlanPage ? (
-                <>
-                  <Tag color={Number(record?.__overdueCount || 0) > 0 ? 'error' : 'geekblue'}>
+            isLaunchPlanPage ? (
+              <div className="work-demand-list__launch-group-head">
+                <Space size={8} wrap>
+                  <span className="work-demand-list__launch-group-date">
+                    <CalendarOutlined />
                     {record?.name || '未设置预期上线时间'}
-                  </Tag>
+                  </span>
                   {Number(record?.__overdueCount || 0) > 0 ? <Tag color="error">{`延期 ${record.__overdueCount}`}</Tag> : null}
-                </>
-              ) : (
+                </Space>
+                <Text className="work-demand-list__launch-group-count">
+                  {`共 ${Number(record?.children?.length || 0)} 条需求`}
+                </Text>
+              </div>
+            ) : (
+              <Space size={8}>
                 <Tag color={getDemandPhaseTagColor(record?.current_phase_key, record?.current_phase_name)}>
                   {record?.current_phase_name || '未开始'}
                 </Tag>
-              )}
-              <Text strong>{Number(record?.children?.length || 0)} 条需求</Text>
-            </Space>
+                <Text strong>{Number(record?.children?.length || 0)} 条需求</Text>
+              </Space>
+            )
           ) : (
             <Button type="link" style={{ padding: 0 }} onClick={() => openDetailDrawer(record)}>
               <Text strong>{value}</Text>
             </Button>
-          )
-        ),
+          ),
       },
       {
         title: '需求负责人',
@@ -2585,6 +2684,69 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           ),
       },
     ]
+
+    if (isLaunchPlanPage) {
+      columns.push(
+        {
+          title: '代码分支',
+          dataIndex: 'code_branch',
+          key: 'code_branch',
+          width: 280,
+          render: (value, record) => {
+            if (record?.__group) return null
+            const previewText = getInlinePreviewText(value, 30)
+            if (!canEditDemandRecord(record)) return <span title={value || '-'}>{previewText}</span>
+            return (
+              <Text
+                title={value || '-'}
+                editable={{
+                  text: value || '',
+                  icon: <EditOutlined style={{ fontSize: 12 }} />,
+                  enterIcon: <CheckOutlined style={{ fontSize: 12 }} />,
+                  tooltip: '编辑代码分支',
+                  triggerType: ['icon'],
+                  maxLength: 255,
+                  autoSize: { minRows: 1, maxRows: 3 },
+                  disabled: isQuickFieldSaving(record.id, 'code_branch'),
+                  onChange: (nextValue) => handleQuickFieldSave(record, 'code_branch', nextValue),
+                }}
+              >
+                {previewText}
+              </Text>
+            )
+          },
+        },
+        {
+          title: '备注信息（上线表）',
+          dataIndex: 'release_note',
+          key: 'release_note',
+          width: 320,
+          render: (value, record) => {
+            if (record?.__group) return null
+            const previewText = getInlinePreviewText(value, 30)
+            if (!canEditDemandRecord(record)) return <span title={value || '-'}>{previewText}</span>
+            return (
+              <Text
+                title={value || '-'}
+                editable={{
+                  text: value || '',
+                  icon: <EditOutlined style={{ fontSize: 12 }} />,
+                  enterIcon: <CheckOutlined style={{ fontSize: 12 }} />,
+                  tooltip: '编辑备注信息',
+                  triggerType: ['icon'],
+                  maxLength: 2000,
+                  autoSize: { minRows: 1, maxRows: 4 },
+                  disabled: isQuickFieldSaving(record.id, 'release_note'),
+                  onChange: (nextValue) => handleQuickFieldSave(record, 'release_note', nextValue),
+                }}
+              >
+                {previewText}
+              </Text>
+            )
+          },
+        },
+      )
+    }
 
     if (!compactView) {
       columns.push(
@@ -2681,9 +2843,56 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     openDetailDrawer,
     openEditModal,
     canEditDemandRecord,
+    isQuickFieldSaving,
+    handleQuickFieldSave,
     handleQuickStatusUpdate,
     handleDeleteDemand,
   ])
+
+  const handleExportDemands = useCallback(() => {
+    const exportRows = groupedDemands.flatMap((group) => (Array.isArray(group?.children) ? group.children : []))
+    if (exportRows.length === 0) {
+      message.warning('当前没有可导出的需求数据')
+      return
+    }
+
+    const rows = [
+      [
+        '需求ID',
+        '需求名称',
+        '需求负责人',
+        '业务组',
+        '状态',
+        '优先级',
+        '需求阶段',
+        '当前进行中节点',
+        '节点排期',
+        '预期上线时间',
+        '代码分支',
+        '备注信息（上线表）',
+        '最近更新',
+      ],
+      ...exportRows.map((item) => [
+        item?.id || '-',
+        item?.name || '-',
+        item?.owner_name || '-',
+        item?.business_group_name || item?.business_group_code || '-',
+        getStatusLabel(item?.status),
+        item?.priority || '-',
+        item?.current_phase_name || '-',
+        item?.current_node_name || '-',
+        formatDemandNodeSchedule(item),
+        formatBeijingDate(item?.expected_release_date) || '-',
+        item?.code_branch || '-',
+        item?.release_note || '-',
+        formatBeijingDateTime(item?.updated_at) || '-',
+      ]),
+    ]
+
+    const filePrefix = isLaunchPlanPage ? '上线计划表' : isMyDemandsPage ? '我的需求' : '需求池'
+    downloadCsv(`${filePrefix}-${dayjs().format('YYYYMMDD-HHmmss')}.csv`, rows)
+    message.success('导出成功')
+  }, [groupedDemands, isLaunchPlanPage, isMyDemandsPage])
 
   return (
     <div style={{ padding: 12 }}>
@@ -2696,6 +2905,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               <Space>
                 <Button icon={<ReloadOutlined />} onClick={loadDemands} loading={loading}>
                   刷新
+                </Button>
+                <Button icon={<DownloadOutlined />} onClick={handleExportDemands}>
+                  导出
                 </Button>
                 {canCreateInCurrentPage ? (
                   <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
@@ -2918,6 +3130,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               loading={loading}
               columns={demandColumns}
               dataSource={groupedDemands}
+              rowClassName={(record) =>
+                record?.__group && isLaunchPlanPage ? 'work-demand-list__launch-group-row' : ''
+              }
               expandable={{
                 rowExpandable: (record) => Boolean(record?.__group),
                 expandedRowKeys: expandedGroupKeys,
@@ -3134,6 +3349,14 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
           <Form.Item label="测试用例CASE地址" name="test_case_link">
             <Input maxLength={500} placeholder="例如 测试用例平台链接（可选）" />
+          </Form.Item>
+
+          <Form.Item label="代码分支（选填）" name="code_branch">
+            <Input maxLength={255} placeholder="例如 feature/req-123（可选）" />
+          </Form.Item>
+
+          <Form.Item label="备注信息（上线表）" name="release_note">
+            <Input.TextArea rows={3} maxLength={2000} placeholder="补充上线说明、注意事项、回滚提示等（可选）" />
           </Form.Item>
 
           <Form.Item label="预期上线日期" name="expected_release_date">
@@ -3439,6 +3662,31 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               placeholder="填写 PRD链接"
                               onChange={(event) => setDetailDocLink(event.target.value)}
                             />
+                            {normalizePreviewUrl(detailDocLink) ? (
+                              <div className="work-demand-detail__link-preview">
+                                {isImagePreviewUrl(detailDocLink) ? (
+                                  <Image
+                                    className="work-demand-detail__link-preview-image"
+                                    src={normalizePreviewUrl(detailDocLink)}
+                                    alt="PRD附件缩略图"
+                                    width={96}
+                                    height={96}
+                                  />
+                                ) : (
+                                  <Text type="secondary">当前链接不是图片，无法展示缩略图</Text>
+                                )}
+                                <Button
+                                  type="link"
+                                  size="small"
+                                  style={{ paddingInline: 0 }}
+                                  href={normalizePreviewUrl(detailDocLink)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  打开链接
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
                           <div className="work-demand-detail__field work-demand-detail__field--full">
                             <Text type="secondary">UI设计稿地址</Text>
@@ -3447,6 +3695,31 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               placeholder="填写 UI设计稿地址"
                               onChange={(event) => setDetailUiDesignLink(event.target.value)}
                             />
+                            {normalizePreviewUrl(detailUiDesignLink) ? (
+                              <div className="work-demand-detail__link-preview">
+                                {isImagePreviewUrl(detailUiDesignLink) ? (
+                                  <Image
+                                    className="work-demand-detail__link-preview-image"
+                                    src={normalizePreviewUrl(detailUiDesignLink)}
+                                    alt="UI设计稿缩略图"
+                                    width={96}
+                                    height={96}
+                                  />
+                                ) : (
+                                  <Text type="secondary">当前链接不是图片，无法展示缩略图</Text>
+                                )}
+                                <Button
+                                  type="link"
+                                  size="small"
+                                  style={{ paddingInline: 0 }}
+                                  href={normalizePreviewUrl(detailUiDesignLink)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  打开链接
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
                           <div className="work-demand-detail__field work-demand-detail__field--full">
                             <Text type="secondary">测试用例CASE地址</Text>
@@ -3454,6 +3727,50 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               value={detailTestCaseLink}
                               placeholder="填写 测试用例CASE地址"
                               onChange={(event) => setDetailTestCaseLink(event.target.value)}
+                            />
+                            {normalizePreviewUrl(detailTestCaseLink) ? (
+                              <div className="work-demand-detail__link-preview">
+                                {isImagePreviewUrl(detailTestCaseLink) ? (
+                                  <Image
+                                    className="work-demand-detail__link-preview-image"
+                                    src={normalizePreviewUrl(detailTestCaseLink)}
+                                    alt="测试用例附件缩略图"
+                                    width={96}
+                                    height={96}
+                                  />
+                                ) : (
+                                  <Text type="secondary">当前链接不是图片，无法展示缩略图</Text>
+                                )}
+                                <Button
+                                  type="link"
+                                  size="small"
+                                  style={{ paddingInline: 0 }}
+                                  href={normalizePreviewUrl(detailTestCaseLink)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  打开链接
+                                </Button>
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">代码分支（选填）</Text>
+                            <Input
+                              value={detailCodeBranch}
+                              maxLength={255}
+                              placeholder="填写代码分支，例如 feature/req-123"
+                              onChange={(event) => setDetailCodeBranch(event.target.value)}
+                            />
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">备注信息（上线表）</Text>
+                            <Input.TextArea
+                              value={detailReleaseNote}
+                              rows={3}
+                              maxLength={2000}
+                              placeholder="补充上线说明、注意事项、回滚提示等"
+                              onChange={(event) => setDetailReleaseNote(event.target.value)}
                             />
                           </div>
                         </div>

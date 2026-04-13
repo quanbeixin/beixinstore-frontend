@@ -1,16 +1,34 @@
-import { BugOutlined, FilterOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
-import { Button, Card, Empty, Input, Segmented, Select, Space, Table, Tag, Typography, message } from 'antd'
+import { BugOutlined, FilterOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
+import { Button, Card, Empty, Image, Input, Popover, Segmented, Select, Space, Spin, Table, Tag, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getDictItemsApi } from '../../api/configDict'
-import { createBugApi, getBugsApi } from '../../api/bug'
+import { createBugApi, getBugByIdApi, getBugsApi } from '../../api/bug'
 import { hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
+import { pinyinSelectFilter } from '../../utils/selectSearch'
 import { BugFormModal } from '../../modules/bug'
 import { uploadDraftAttachments } from '../../modules/bug/utils/attachmentUpload'
 import './BugListPage.css'
 
 const { Text } = Typography
+const IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)(\?.*)?$/i
+
+function getAttachmentUrl(row) {
+  return String(row?.download_url || row?.object_url || '').trim()
+}
+
+function isImageAttachment(row) {
+  const mimeType = String(row?.mime_type || '').trim().toLowerCase()
+  if (mimeType.startsWith('image/')) return true
+
+  const fileExt = String(row?.file_ext || '').trim().toLowerCase()
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif'].includes(fileExt)) return true
+
+  const fileName = String(row?.file_name || '').trim()
+  const objectUrl = getAttachmentUrl(row)
+  return IMAGE_EXT_PATTERN.test(fileName) || IMAGE_EXT_PATTERN.test(objectUrl)
+}
 
 function mapDictOptions(rows) {
   return [{ label: '全部', value: undefined }].concat(
@@ -45,22 +63,21 @@ function BugListPage() {
   const [keyword, setKeyword] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [severityFilter, setSeverityFilter] = useState('')
-  const [priorityFilter, setPriorityFilter] = useState('')
   const [statusSegmentOptions, setStatusSegmentOptions] = useState([{ label: '全部状态', value: '' }])
   const [severityOptions, setSeverityOptions] = useState([{ label: '全部', value: undefined }])
-  const [priorityOptions, setPriorityOptions] = useState([{ label: '全部', value: undefined }])
+  const [attachmentPreviewMap, setAttachmentPreviewMap] = useState({})
+  const [attachmentPreviewLoadingMap, setAttachmentPreviewLoadingMap] = useState({})
+  const [activeAttachmentBugId, setActiveAttachmentBugId] = useState(0)
 
   const loadDicts = useCallback(async () => {
     try {
-      const [statusRes, severityRes, priorityRes] = await Promise.all([
+      const [statusRes, severityRes] = await Promise.all([
         getDictItemsApi('bug_status', { enabledOnly: true }),
         getDictItemsApi('bug_severity', { enabledOnly: true }),
-        getDictItemsApi('bug_priority', { enabledOnly: true }),
       ])
       const statusRows = statusRes?.data || []
       setStatusSegmentOptions(mapSegmentedOptions(statusRows))
       setSeverityOptions(mapDictOptions(severityRes?.data || []))
-      setPriorityOptions(mapDictOptions(priorityRes?.data || []))
     } catch (error) {
       message.error(error?.message || '加载Bug筛选项失败')
     }
@@ -75,7 +92,6 @@ function BugListPage() {
         keyword: keyword || undefined,
         status_code: statusFilter || undefined,
         severity_code: severityFilter || undefined,
-        priority_code: priorityFilter || undefined,
       })
       if (!result?.success) {
         message.error(result?.message || '获取Bug列表失败')
@@ -88,7 +104,7 @@ function BugListPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, keyword, statusFilter, severityFilter, priorityFilter])
+  }, [page, pageSize, keyword, statusFilter, severityFilter])
 
   useEffect(() => {
     loadDicts()
@@ -99,8 +115,8 @@ function BugListPage() {
   }, [loadBugs])
 
   const activeFilterCount = useMemo(
-    () => [keyword, statusFilter, severityFilter, priorityFilter].filter(Boolean).length,
-    [keyword, statusFilter, severityFilter, priorityFilter],
+    () => [keyword, statusFilter, severityFilter].filter(Boolean).length,
+    [keyword, statusFilter, severityFilter],
   )
 
   const resetFilters = useCallback(() => {
@@ -108,10 +124,115 @@ function BugListPage() {
     setKeyword('')
     setStatusFilter('')
     setSeverityFilter('')
-    setPriorityFilter('')
     setPage(1)
     setPageSize(20)
   }, [])
+
+  const loadBugAttachments = useCallback(
+    async (bugId, { force = false } = {}) => {
+      const normalizedBugId = Number(bugId || 0)
+      if (!normalizedBugId) return
+      if (!force && Array.isArray(attachmentPreviewMap[normalizedBugId])) return
+
+      setAttachmentPreviewLoadingMap((prev) => ({
+        ...prev,
+        [normalizedBugId]: true,
+      }))
+      try {
+        const result = await getBugByIdApi(normalizedBugId)
+        if (!result?.success) {
+          throw new Error(result?.message || '加载附件失败')
+        }
+        setAttachmentPreviewMap((prev) => ({
+          ...prev,
+          [normalizedBugId]: Array.isArray(result?.data?.attachments) ? result.data.attachments : [],
+        }))
+      } catch (error) {
+        message.error(error?.message || '加载附件失败')
+      } finally {
+        setAttachmentPreviewLoadingMap((prev) => ({
+          ...prev,
+          [normalizedBugId]: false,
+        }))
+      }
+    },
+    [attachmentPreviewMap],
+  )
+
+  const renderAttachmentPreviewContent = useCallback(
+    (row) => {
+      const bugId = Number(row?.id || 0)
+      const loading = Boolean(attachmentPreviewLoadingMap[bugId])
+      const attachments = attachmentPreviewMap[bugId]
+
+      if (loading && !Array.isArray(attachments)) {
+        return (
+          <div className="bug-list-page__attachment-loading">
+            <Spin size="small" />
+            <Text type="secondary">附件加载中...</Text>
+          </div>
+        )
+      }
+
+      if (!Array.isArray(attachments) || attachments.length === 0) {
+        return (
+          <div className="bug-list-page__attachment-empty">
+            <Text type="secondary">暂无附件</Text>
+          </div>
+        )
+      }
+
+      return (
+        <div className="bug-list-page__attachment-preview">
+          {attachments.slice(0, 6).map((attachment) => {
+            const fileUrl = getAttachmentUrl(attachment)
+            const imageAttachment = Boolean(fileUrl) && isImageAttachment(attachment)
+            return (
+              <div className="bug-list-page__attachment-item" key={attachment.id || `${attachment.file_name}-${attachment.object_key}`}>
+                {imageAttachment ? (
+                  <Image
+                    className="bug-list-page__attachment-thumb"
+                    width={44}
+                    height={44}
+                    src={fileUrl}
+                    alt={attachment?.file_name || '附件缩略图'}
+                  />
+                ) : (
+                  <div className="bug-list-page__attachment-fallback">文</div>
+                )}
+                {fileUrl ? (
+                  <a
+                    href={fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="bug-list-page__attachment-name"
+                    title={attachment?.file_name || ''}
+                  >
+                    {attachment?.file_name || '-'}
+                  </a>
+                ) : (
+                  <span className="bug-list-page__attachment-name bug-list-page__attachment-name--disabled">
+                    {attachment?.file_name || '-'}
+                  </span>
+                )}
+              </div>
+            )
+          })}
+          {attachments.length > 6 ? (
+            <Button
+              type="link"
+              size="small"
+              className="bug-list-page__attachment-more"
+              onClick={() => navigate(`/bugs/${bugId}`)}
+            >
+              查看全部 {attachments.length} 个附件
+            </Button>
+          ) : null}
+        </div>
+      )
+    },
+    [attachmentPreviewLoadingMap, attachmentPreviewMap, navigate],
+  )
 
   const columns = useMemo(
     () => [
@@ -148,13 +269,6 @@ function BugListPage() {
         render: (value, row) => <Tag color={row.severity_color || 'default'}>{value || row.severity_code || '-'}</Tag>,
       },
       {
-        title: '优先级',
-        dataIndex: 'priority_name',
-        key: 'priority_name',
-        width: 110,
-        render: (value, row) => <Tag color={row.priority_color || 'default'}>{value || row.priority_code || '-'}</Tag>,
-      },
-      {
         title: 'Bug阶段',
         dataIndex: 'issue_stage_name',
         key: 'issue_stage_name',
@@ -173,11 +287,55 @@ function BugListPage() {
         render: (value, row) => value || row.demand_id || '-',
       },
       {
+        title: '附件',
+        dataIndex: 'attachment_count',
+        key: 'attachment_count',
+        width: 130,
+        render: (value, row) => {
+          const bugId = Number(row?.id || 0)
+          const attachmentCount = Math.max(0, Number(value || 0))
+          return (
+            <Popover
+              trigger={['hover', 'click']}
+              placement="leftTop"
+              mouseEnterDelay={0.2}
+              overlayClassName="bug-list-page__attachment-popover"
+              open={activeAttachmentBugId === bugId}
+              onOpenChange={(open) => {
+                if (!bugId) return
+                if (open) {
+                  setActiveAttachmentBugId(bugId)
+                  void loadBugAttachments(bugId, { force: true })
+                  return
+                }
+                setActiveAttachmentBugId((prev) => (prev === bugId ? 0 : prev))
+              }}
+              content={renderAttachmentPreviewContent(row)}
+            >
+              <Button
+                type="link"
+                size="small"
+                icon={<PaperClipOutlined />}
+                className="bug-list-page__attachment-link"
+              >
+                {attachmentCount > 0 ? `${attachmentCount} 个` : '查看'}
+              </Button>
+            </Popover>
+          )
+        },
+      },
+      {
         title: '处理人',
-        dataIndex: 'assignee_name',
-        key: 'assignee_name',
+        dataIndex: 'assignee_names',
+        key: 'assignee_names',
         width: 110,
-        ellipsis: true,
+        render: (value, row) => value || row.assignee_name || '-',
+      },
+      {
+        title: '关注人',
+        dataIndex: 'watcher_names',
+        key: 'watcher_names',
+        width: 150,
         render: (value) => value || '-',
       },
       {
@@ -196,7 +354,7 @@ function BugListPage() {
         render: (value) => formatBeijingDateTime(value),
       },
     ],
-    [navigate],
+    [activeAttachmentBugId, loadBugAttachments, navigate, renderAttachmentPreviewContent],
   )
 
   return (
@@ -242,23 +400,14 @@ function BugListPage() {
           <div className="bug-list-page__filter-row">
             <Select
               size="small"
+              showSearch
               style={{ width: 140 }}
               value={severityFilter || undefined}
               options={severityOptions}
+              filterOption={pinyinSelectFilter}
               placeholder="严重程度"
               onChange={(value) => {
                 setSeverityFilter(String(value || ''))
-                setPage(1)
-              }}
-            />
-            <Select
-              size="small"
-              style={{ width: 130 }}
-              value={priorityFilter || undefined}
-              options={priorityOptions}
-              placeholder="优先级"
-              onChange={(value) => {
-                setPriorityFilter(String(value || ''))
                 setPage(1)
               }}
             />
@@ -313,7 +462,7 @@ function BugListPage() {
           loading={loading}
           columns={columns}
           dataSource={rows}
-          scroll={{ x: 1180 }}
+          scroll={{ x: 1360 }}
           pagination={{
             current: page,
             pageSize,
@@ -338,6 +487,7 @@ function BugListPage() {
         open={createOpen}
         title="新建Bug"
         submitText="创建"
+        presentation="drawer"
         confirmLoading={submitting}
         onCancel={() => setCreateOpen(false)}
         onSubmit={async (values, extra) => {

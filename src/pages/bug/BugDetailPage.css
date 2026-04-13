@@ -191,6 +191,13 @@
   line-height: 1.6;
 }
 
+.bug-detail-page__attachment-thumbnail.ant-image-img {
+  border-radius: 8px;
+  border: 1px solid #e4eaf5;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .bug-detail-page__block,
   .bug-detail-page__head,
