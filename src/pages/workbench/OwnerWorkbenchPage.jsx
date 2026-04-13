@@ -141,6 +141,7 @@ function OwnerWorkbench() {
   const [assignModalOpen, setAssignModalOpen] = useState(false)
   const [assignSaving, setAssignSaving] = useState(false)
   const [assignStatusManuallyChanged, setAssignStatusManuallyChanged] = useState(false)
+  const [noEstimateLoadingMap, setNoEstimateLoadingMap] = useState({})
 
   const [keyword, setKeyword] = useState('')
   const [memberFilter, setMemberFilter] = useState()
@@ -509,6 +510,41 @@ function OwnerWorkbench() {
     }
   }
 
+  const handleSetNoEstimate = async (item) => {
+    const logId = Number(item?.id || 0)
+    if (!logId) return
+
+    const ownerEstimateHours = toNumber(item?.actual_hours, 0)
+    const resolvedTaskDifficultyCode = item?.self_task_difficulty_code || item?.task_difficulty_code || 'N1'
+
+    try {
+      setNoEstimateLoadingMap((prev) => ({
+        ...prev,
+        [logId]: true,
+      }))
+
+      const result = await updateWorkLogOwnerEstimateApi(logId, {
+        owner_estimate_hours: ownerEstimateHours,
+        task_difficulty_code: resolvedTaskDifficultyCode,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '设置无需评估失败')
+        return
+      }
+
+      message.success(`已按实际用时 ${ownerEstimateHours.toFixed(1)}h 回填 Owner评估`)
+      await loadData()
+    } catch (error) {
+      message.error(error?.message || '设置无需评估失败')
+    } finally {
+      setNoEstimateLoadingMap((prev) => {
+        const next = { ...prev }
+        delete next[logId]
+        return next
+      })
+    }
+  }
+
   const openBatchModal = () => {
     if (selectedRowKeys.length === 0) {
       message.warning('请先勾选要批量评估的事项')
@@ -809,12 +845,23 @@ function OwnerWorkbench() {
     {
       title: '操作',
       key: 'action',
-      width: 110,
+      width: 220,
       fixed: 'right',
       render: (_, row) => (
-        <Button type="link" icon={<EditOutlined />} onClick={() => openEstimateModal(row)}>
-          维护评估
-        </Button>
+        <Space size={4}>
+          <Button type="link" icon={<EditOutlined />} onClick={() => openEstimateModal(row)}>
+            维护评估
+          </Button>
+          <Button
+            type="link"
+            loading={Boolean(noEstimateLoadingMap[row?.id])}
+            onClick={() => {
+              void handleSetNoEstimate(row)
+            }}
+          >
+            无需评估
+          </Button>
+        </Space>
       ),
     },
   ]
