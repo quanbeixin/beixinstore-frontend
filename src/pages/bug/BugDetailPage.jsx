@@ -23,6 +23,7 @@ import {
   Space,
   Table,
   Tag,
+  Tabs,
   Typography,
   Upload,
   message,
@@ -561,7 +562,28 @@ function BugDetailPage() {
     }
   }
 
-  const statusLogs = Array.isArray(detail?.status_logs) ? detail.status_logs : []
+  const normalizedStatusLogs = useMemo(() => {
+    const rows = Array.isArray(detail?.status_logs) ? detail.status_logs : []
+    return rows.map((item) => {
+      const fromStatusCode = String(item?.from_status_code || '').trim().toUpperCase()
+      const toStatusCode = String(item?.to_status_code || '').trim().toUpperCase()
+      const isCommentLog = Boolean(item?.remark) && fromStatusCode && fromStatusCode === toStatusCode
+      return {
+        ...item,
+        __isCommentLog: isCommentLog,
+      }
+    })
+  }, [detail?.status_logs])
+
+  const commentLogs = useMemo(
+    () => normalizedStatusLogs.filter((item) => Boolean(item?.__isCommentLog)),
+    [normalizedStatusLogs],
+  )
+
+  const operationLogs = useMemo(
+    () => normalizedStatusLogs.filter((item) => !item?.__isCommentLog),
+    [normalizedStatusLogs],
+  )
 
   if (!bugId) {
     return (
@@ -626,231 +648,287 @@ function BugDetailPage() {
               </Space>
             </div>
 
-            <Card size="small" className="bug-detail-page__block" variant="borderless" title="状态流转">
-              <div className="bug-detail-page__status-row">
-                <div className="bug-detail-page__status-flow">
-                  <BugStatusFlow currentStatus={detail.status_code} />
-                </div>
-                {transitionButtons.length ? (
-                  <Space size={8} wrap className="bug-detail-page__status-actions">
-                    {transitionButtons.map((item) => (
-                      <Button
-                        key={item.key}
-                        type="primary"
-                        className="bug-detail-page__status-action-btn"
-                        icon={item.icon}
-                        loading={actionLoading === item.actionId}
-                        onClick={() => runTransition(item)}
-                      >
-                        {item.label}
-                      </Button>
-                    ))}
-                  </Space>
-                ) : null}
-              </div>
-            </Card>
-
-            <div className="bug-detail-page__grid">
-              <Card size="small" className="bug-detail-page__block" variant="borderless" title="基本信息">
-                <Descriptions column={2} size="small" bordered>
-                  <Descriptions.Item label="严重程度">
-                    <Tag color={detail.severity_color || 'default'}>{detail.severity_name || detail.severity_code || '-'}</Tag>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Bug类型">{detail.bug_type_name || detail.bug_type_code || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="产品模块">{detail.product_name || detail.product_code || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="Bug阶段">{detail.issue_stage_name || detail.issue_stage || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="发现人" span={2}>{detail.reporter_name || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="处理人" span={2}>{detail.assignee_names || detail.assignee_name || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="关注人" span={2}>{detail.watcher_names || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="关联需求" span={2}>
-                    {detail.demand_id ? (
-                      <Button type="link" style={{ paddingInline: 0 }} onClick={() => navigate(`/work-demands/${detail.demand_id}`)}>
-                        {detail.demand_name || detail.demand_id}
-                      </Button>
-                    ) : (
-                      '-'
-                    )}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="创建时间">{formatBeijingDateTime(detail.created_at)}</Descriptions.Item>
-                  <Descriptions.Item label="更新时间">{formatBeijingDateTime(detail.updated_at)}</Descriptions.Item>
-                </Descriptions>
-              </Card>
-
-              <Card size="small" className="bug-detail-page__block" variant="borderless" title="流转操作">
-                <Form form={remarkForm} layout="vertical">
-                  <Form.Item
-                    label="备注"
-                    name="remark"
-                    required={transitionRequirementHints.requireRemark}
-                    extra={transitionRequirementHints.requireRemark ? '当前可执行动作中存在备注必填项' : '可选，打回/重开可补充原因'}
-                  >
-                    <Input.TextArea rows={3} maxLength={20000} placeholder="打回、重开或处理说明可填写在这里" />
-                  </Form.Item>
-                  {canSeeFixModule ? (
-                    <Form.Item
-                      label="修复方案&影响范围"
-                      name="fix_solution"
-                      required={transitionRequirementHints.requireFixSolution}
-                      extra={transitionRequirementHints.requireFixSolution ? '当前可执行动作中存在修复方案必填项' : '可选，建议记录修复方案'}
-                    >
-                      <Input.TextArea rows={3} maxLength={20000} placeholder="请填写修复方案与影响范围" />
-                    </Form.Item>
-                  ) : null}
-                  {canSeeVerifyModule ? (
-                    <Form.Item
-                      label="验证结果"
-                      name="verify_result"
-                      required={transitionRequirementHints.requireVerifyResult}
-                      extra={
-                        transitionRequirementHints.requireVerifyResult
-                          ? '当前可执行动作中存在验证结果必填项'
-                          : '选填，建议补充验证说明'
-                      }
-                    >
-                      <Input.TextArea rows={3} maxLength={20000} placeholder="描述验证结果" />
-                    </Form.Item>
-                  ) : null}
-
-                </Form>
-              </Card>
-            </div>
-
-            <Card size="small" className="bug-detail-page__block" variant="borderless" title="问题描述">
-              <Descriptions column={1} size="small">
-                <Descriptions.Item label="描述">
-                  <Paragraph className="bug-detail-page__description-content">{detail.description || '-'}</Paragraph>
-                </Descriptions.Item>
-                <Descriptions.Item label="复现环境">
-                  <Paragraph>{detail.environment_info || '-'}</Paragraph>
-                </Descriptions.Item>
-              </Descriptions>
-            </Card>
-
-            <Card size="small" className="bug-detail-page__block" variant="borderless" title="修复与验证">
-              <Descriptions column={1} size="small">
-                <Descriptions.Item label="修复方案&影响范围">
-                  <Paragraph>{detail.fix_solution || '-'}</Paragraph>
-                </Descriptions.Item>
-                <Descriptions.Item label="验证结果">
-                  <Paragraph>{detail.verify_result || '-'}</Paragraph>
-                </Descriptions.Item>
-              </Descriptions>
-            </Card>
-
-            <Card size="small" className="bug-detail-page__block" variant="borderless" title="评论通知">
-              <Form form={commentForm} layout="vertical">
-                <Form.Item
-                  label="评论内容"
-                  name="comment"
-                  rules={[{ required: true, message: '请输入评论内容' }]}
-                >
-                  <Input.TextArea rows={3} maxLength={20000} placeholder="输入评论内容，可选择@某人并发送通知" />
-                </Form.Item>
-                <Form.Item label="@某人（可选）" name="mention_user_id">
-                  <Select
-                    showSearch
-                    allowClear
-                    placeholder="选择需要通知的人员"
-                    options={mentionUserOptions}
-                    loading={mentionUserLoading}
-                    filterOption={(input, option) => pinyinSelectFilter(input, option)}
-                    optionFilterProp="label"
-                  />
-                </Form.Item>
-                <Button type="primary" onClick={handleSubmitComment} loading={commentSubmitting}>
-                  发表评论并通知
-                </Button>
-              </Form>
-            </Card>
-
             <Card
               size="small"
-              className="bug-detail-page__block"
+              className="bug-detail-page__block bug-detail-page__block--main bug-detail-page__tabs-block"
               variant="borderless"
-              title="附件"
-              extra={
-                canUpdate ? (
-                  <div
-                    className="bug-detail-page__upload-entry"
-                    tabIndex={0}
-                    onClick={handleUploadPasteFocus}
-                    onPaste={(event) => {
-                      void handlePasteUpload(event)
-                    }}
-                  >
-                    <Upload
-                      showUploadList={false}
-                      customRequest={handleUpload}
-                      disabled={uploading}
-                      multiple={false}
-                      maxCount={1}
-                    >
-                      <Button size="small" loading={uploading}>
-                        上传附件
-                      </Button>
-                    </Upload>
-                    <Text type="secondary" className="bug-detail-page__upload-hint">
-                      点击后可直接粘贴截图上传（Ctrl/Cmd + V）
-                    </Text>
-                  </div>
-                ) : null
-              }
             >
-              <Table
-                rowKey="id"
-                size="small"
-                columns={attachmentColumns}
-                dataSource={detail.attachments || []}
-                pagination={false}
-                locale={{
-                  emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前暂无附件" />,
-                }}
-              />
-            </Card>
-
-            <Card size="small" className="bug-detail-page__block" variant="borderless" title="状态变更历史">
-              {statusLogs.length === 0 ? (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无流转记录" />
-              ) : (
-                <div className="bug-detail-page__log-list">
-                  {statusLogs.map((item, index) => (
-                    <div
-                      className="bug-detail-page__log-list-item"
-                      key={`${item?.id || item?.created_at || 'status-log'}-${index}`}
-                    >
-                      <div className="bug-detail-page__log-item">
-                        {(() => {
-                          const fromStatusCode = String(item?.from_status_code || '').trim().toUpperCase()
-                          const toStatusCode = String(item?.to_status_code || '').trim().toUpperCase()
-                          const isCommentLog = Boolean(item?.remark) && fromStatusCode && fromStatusCode === toStatusCode
-                          return (
-                            <>
-                              <div className="bug-detail-page__log-main">
-                                <Text strong>{item.operator_name || '-'}</Text>
-                                <Text type="secondary">
-                                  {isCommentLog
-                                    ? '发表评论'
-                                    : `${item.from_status_name || item.from_status_code || '初始'} -> ${
-                                        item.to_status_name || item.to_status_code || '-'
-                                      }`}
-                                </Text>
+              <Tabs
+                className="bug-detail-page__content-tabs"
+                items={[
+                  {
+                    key: 'detail',
+                    label: '缺陷详情',
+                    children: (
+                      <div className="bug-detail-page__detail-tab-layout">
+                        <div className="bug-detail-page__detail-main">
+                          <div className="bug-detail-page__tab-section">
+                            <div className="bug-detail-page__tab-section-title">状态流转</div>
+                            <div className="bug-detail-page__status-row">
+                              <div className="bug-detail-page__status-flow">
+                                <BugStatusFlow currentStatus={detail.status_code} />
                               </div>
-                              <div className="bug-detail-page__log-time">{formatBeijingDateTime(item.created_at)}</div>
-                              {item.remark ? <div className="bug-detail-page__log-remark">{item.remark}</div> : null}
-                            </>
-                          )
-                        })()}
+                              {transitionButtons.length ? (
+                                <Space size={8} wrap className="bug-detail-page__status-actions">
+                                  {transitionButtons.map((item) => (
+                                    <Button
+                                      key={item.key}
+                                      type="primary"
+                                      className="bug-detail-page__status-action-btn"
+                                      icon={item.icon}
+                                      loading={actionLoading === item.actionId}
+                                      onClick={() => runTransition(item)}
+                                    >
+                                      {item.label}
+                                    </Button>
+                                  ))}
+                                </Space>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <div className="bug-detail-page__tab-section">
+                            <div className="bug-detail-page__tab-section-title">流转操作</div>
+                            <Form form={remarkForm} layout="vertical" className="bug-detail-page__transition-form">
+                              <Form.Item
+                                label="备注"
+                                name="remark"
+                                required={transitionRequirementHints.requireRemark}
+                                extra={transitionRequirementHints.requireRemark ? '当前可执行动作中存在备注必填项' : '可选，打回/重开可补充原因'}
+                              >
+                                <Input.TextArea rows={3} maxLength={20000} placeholder="打回、重开或处理说明可填写在这里" />
+                              </Form.Item>
+                              {canSeeFixModule ? (
+                                <Form.Item
+                                  label="修复方案&影响范围"
+                                  name="fix_solution"
+                                  required={transitionRequirementHints.requireFixSolution}
+                                  extra={transitionRequirementHints.requireFixSolution ? '当前可执行动作中存在修复方案必填项' : '可选，建议记录修复方案'}
+                                >
+                                  <Input.TextArea rows={3} maxLength={20000} placeholder="请填写修复方案与影响范围" />
+                                </Form.Item>
+                              ) : null}
+                              {canSeeVerifyModule ? (
+                                <Form.Item
+                                  label="验证结果"
+                                  name="verify_result"
+                                  required={transitionRequirementHints.requireVerifyResult}
+                                  extra={
+                                    transitionRequirementHints.requireVerifyResult
+                                      ? '当前可执行动作中存在验证结果必填项'
+                                      : '选填，建议补充验证说明'
+                                  }
+                                >
+                                  <Input.TextArea rows={3} maxLength={20000} placeholder="描述验证结果" />
+                                </Form.Item>
+                              ) : null}
+                            </Form>
+                          </div>
+
+                          <div className="bug-detail-page__tab-section">
+                            <div className="bug-detail-page__tab-section-title">问题描述</div>
+                            <Descriptions column={1} size="small">
+                              <Descriptions.Item label="描述">
+                                <Paragraph className="bug-detail-page__description-content">{detail.description || '-'}</Paragraph>
+                              </Descriptions.Item>
+                              <Descriptions.Item label="复现环境">
+                                <Paragraph>{detail.environment_info || '-'}</Paragraph>
+                              </Descriptions.Item>
+                            </Descriptions>
+                          </div>
+
+                          <div className="bug-detail-page__tab-section">
+                            <div className="bug-detail-page__tab-section-title">修复与验证</div>
+                            <Descriptions column={1} size="small">
+                              <Descriptions.Item label="修复方案&影响范围">
+                                <Paragraph>{detail.fix_solution || '-'}</Paragraph>
+                              </Descriptions.Item>
+                              <Descriptions.Item label="验证结果">
+                                <Paragraph>{detail.verify_result || '-'}</Paragraph>
+                              </Descriptions.Item>
+                            </Descriptions>
+                          </div>
+
+                          <div className="bug-detail-page__tab-section">
+                            <div className="bug-detail-page__tab-section-head">
+                              <div className="bug-detail-page__tab-section-title">附件</div>
+                              {canUpdate ? (
+                                <div
+                                  className="bug-detail-page__upload-entry"
+                                  tabIndex={0}
+                                  onClick={handleUploadPasteFocus}
+                                  onPaste={(event) => {
+                                    void handlePasteUpload(event)
+                                  }}
+                                >
+                                  <Upload
+                                    showUploadList={false}
+                                    customRequest={handleUpload}
+                                    disabled={uploading}
+                                    multiple={false}
+                                    maxCount={1}
+                                  >
+                                    <Button size="small" loading={uploading}>
+                                      上传附件
+                                    </Button>
+                                  </Upload>
+                                  <Text type="secondary" className="bug-detail-page__upload-hint">
+                                    点击后可直接粘贴截图上传（Ctrl/Cmd + V）
+                                  </Text>
+                                </div>
+                              ) : null}
+                            </div>
+                            <Table
+                              rowKey="id"
+                              size="small"
+                              columns={attachmentColumns}
+                              dataSource={detail.attachments || []}
+                              pagination={false}
+                              locale={{
+                                emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前暂无附件" />,
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="bug-detail-page__detail-side">
+                          <div className="bug-detail-page__tab-section">
+                            <div className="bug-detail-page__tab-section-title">基础字段</div>
+                            <Descriptions
+                              className="bug-detail-page__meta-descriptions"
+                              column={1}
+                              size="small"
+                              layout="vertical"
+                            >
+                              <Descriptions.Item label="严重程度">
+                                <Tag color={detail.severity_color || 'default'}>{detail.severity_name || detail.severity_code || '-'}</Tag>
+                              </Descriptions.Item>
+                              <Descriptions.Item label="Bug类型">{detail.bug_type_name || detail.bug_type_code || '-'}</Descriptions.Item>
+                              <Descriptions.Item label="产品模块">{detail.product_name || detail.product_code || '-'}</Descriptions.Item>
+                              <Descriptions.Item label="Bug阶段">{detail.issue_stage_name || detail.issue_stage || '-'}</Descriptions.Item>
+                              <Descriptions.Item label="发现人">{detail.reporter_name || '-'}</Descriptions.Item>
+                              <Descriptions.Item label="处理人">{detail.assignee_names || detail.assignee_name || '-'}</Descriptions.Item>
+                              <Descriptions.Item label="关注人">{detail.watcher_names || '-'}</Descriptions.Item>
+                              <Descriptions.Item label="关联需求">
+                                {detail.demand_id ? (
+                                  <Button type="link" style={{ paddingInline: 0 }} onClick={() => navigate(`/work-demands/${detail.demand_id}`)}>
+                                    {detail.demand_name || detail.demand_id}
+                                  </Button>
+                                ) : (
+                                  '-'
+                                )}
+                              </Descriptions.Item>
+                              <Descriptions.Item label="创建时间">{formatBeijingDateTime(detail.created_at)}</Descriptions.Item>
+                              <Descriptions.Item label="更新时间">{formatBeijingDateTime(detail.updated_at)}</Descriptions.Item>
+                            </Descriptions>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ),
+                  },
+                  {
+                    key: 'comment',
+                    label: '评论/备注',
+                    children: (
+                      <div className="bug-detail-page__tab-stack">
+                        <div className="bug-detail-page__tab-section">
+                          <div className="bug-detail-page__tab-section-title">发表评论</div>
+                          <Form form={commentForm} layout="vertical">
+                            <Form.Item
+                              label="评论内容"
+                              name="comment"
+                              rules={[{ required: true, message: '请输入评论内容' }]}
+                            >
+                              <Input.TextArea rows={3} maxLength={20000} placeholder="输入评论内容，可选择@某人并发送通知" />
+                            </Form.Item>
+                            <Form.Item label="@某人（可选）" name="mention_user_id">
+                              <Select
+                                showSearch
+                                allowClear
+                                placeholder="选择需要通知的人员"
+                                options={mentionUserOptions}
+                                loading={mentionUserLoading}
+                                filterOption={(input, option) => pinyinSelectFilter(input, option)}
+                                optionFilterProp="label"
+                              />
+                            </Form.Item>
+                            <Button type="primary" onClick={handleSubmitComment} loading={commentSubmitting}>
+                              发表评论并通知
+                            </Button>
+                          </Form>
+                        </div>
+
+                        <div className="bug-detail-page__tab-section">
+                          <div className="bug-detail-page__tab-section-title">评论记录</div>
+                          {commentLogs.length === 0 ? (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无评论记录" />
+                          ) : (
+                            <div className="bug-detail-page__log-list">
+                              {commentLogs.map((item, index) => (
+                                <div
+                                  className="bug-detail-page__log-list-item"
+                                  key={`comment-log-${item?.id || item?.created_at || 'comment'}-${index}`}
+                                >
+                                  <div className="bug-detail-page__log-item">
+                                    <div className="bug-detail-page__log-main">
+                                      <Text strong>{item.operator_name || '-'}</Text>
+                                      <Text type="secondary">发表评论</Text>
+                                    </div>
+                                    <div className="bug-detail-page__log-time">{formatBeijingDateTime(item.created_at)}</div>
+                                    {item.remark ? <div className="bug-detail-page__log-remark">{item.remark}</div> : null}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ),
+                  },
+                  {
+                    key: 'history',
+                    label: '操作记录',
+                    children: (
+                      <div className="bug-detail-page__tab-stack">
+                        <div className="bug-detail-page__tab-section">
+                          {operationLogs.length === 0 ? (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无流转记录" />
+                          ) : (
+                            <div className="bug-detail-page__log-list">
+                              {operationLogs.map((item, index) => (
+                                <div
+                                  className="bug-detail-page__log-list-item"
+                                  key={`status-log-${item?.id || item?.created_at || 'status'}-${index}`}
+                                >
+                                  <div className="bug-detail-page__log-item">
+                                    <div className="bug-detail-page__log-main">
+                                      <Text strong>{item.operator_name || '-'}</Text>
+                                      <Text type="secondary">
+                                        {`${item.from_status_name || item.from_status_code || '初始'} -> ${
+                                          item.to_status_name || item.to_status_code || '-'
+                                        }`}
+                                      </Text>
+                                    </div>
+                                    <div className="bug-detail-page__log-time">{formatBeijingDateTime(item.created_at)}</div>
+                                    {item.remark ? <div className="bug-detail-page__log-remark">{item.remark}</div> : null}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ),
+                  },
+                ]}
+              />
             </Card>
 
             <BugFormModal
               open={editOpen}
               title="编辑Bug"
               submitText="保存"
+              presentation="drawer"
               initialValues={detail}
               showDraftAttachments={false}
               onCancel={() => setEditOpen(false)}

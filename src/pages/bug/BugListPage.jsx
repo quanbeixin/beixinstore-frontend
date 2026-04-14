@@ -1,10 +1,10 @@
-import { BugOutlined, DeleteOutlined, FilterOutlined, LinkOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from '@ant-design/icons'
+import { BugOutlined, DeleteOutlined, EditOutlined, FilterOutlined, LinkOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from '@ant-design/icons'
 import { Button, Card, DatePicker, Empty, Form, Image, Input, Modal, Popconfirm, Popover, Segmented, Select, Space, Spin, Table, Tag, Typography, message } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getDictItemsApi } from '../../api/configDict'
-import { createBugApi, createBugViewApi, deleteBugViewApi, getBugAssigneesApi, getBugByIdApi, getBugViewByIdApi, getBugViewsApi, getBugWorkflowConfigApi, getBugsApi, transitionBugApi, updateBugViewApi } from '../../api/bug'
+import { createBugApi, createBugViewApi, deleteBugApi, deleteBugViewApi, getBugAssigneesApi, getBugByIdApi, getBugViewByIdApi, getBugViewsApi, getBugWorkflowConfigApi, getBugsApi, transitionBugApi, updateBugApi, updateBugViewApi } from '../../api/bug'
 import { hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
 import { pinyinSelectFilter } from '../../utils/selectSearch'
@@ -164,10 +164,18 @@ function BugListPage() {
   const location = useLocation()
   const canCreate = hasPermission('bug.create')
   const canTransition = hasPermission('bug.transition')
+  const canUpdate = hasPermission('bug.update')
+  const canDelete = hasPermission('bug.delete')
 
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [editSubmitting, setEditSubmitting] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editingBugId, setEditingBugId] = useState(0)
+  const [editingInitialValues, setEditingInitialValues] = useState(null)
+  const [editingRowLoadingId, setEditingRowLoadingId] = useState(0)
+  const [deletingBugId, setDeletingBugId] = useState(0)
   const [rows, setRows] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -847,6 +855,49 @@ function BugListPage() {
     }
   }, [runQuickTransition, statusDialog.bug, statusDialog.transition, transitionForm])
 
+  const handleOpenEditBug = useCallback(
+    async (row) => {
+      const bugId = Number(row?.id || 0)
+      if (!bugId) return
+      try {
+        setEditingRowLoadingId(bugId)
+        const result = await getBugByIdApi(bugId)
+        if (!result?.success || !result?.data) {
+          throw new Error(result?.message || '加载Bug详情失败')
+        }
+        setEditingBugId(bugId)
+        setEditingInitialValues(result.data)
+        setEditOpen(true)
+      } catch (error) {
+        message.error(error?.message || '加载Bug详情失败')
+      } finally {
+        setEditingRowLoadingId(0)
+      }
+    },
+    [],
+  )
+
+  const handleDeleteBug = useCallback(
+    async (row) => {
+      const bugId = Number(row?.id || 0)
+      if (!bugId) return
+      try {
+        setDeletingBugId(bugId)
+        const result = await deleteBugApi(bugId)
+        if (!result?.success) {
+          throw new Error(result?.message || '删除Bug失败')
+        }
+        message.success(result?.message || 'Bug已删除')
+        await loadBugs()
+      } catch (error) {
+        message.error(error?.message || '删除Bug失败')
+      } finally {
+        setDeletingBugId(0)
+      }
+    },
+    [loadBugs],
+  )
+
   const columns = useMemo(
     () => [
       {
@@ -1028,8 +1079,58 @@ function BugListPage() {
           return formatBeijingDateTime(value)
         },
       },
+      {
+        title: '操作',
+        key: 'actions',
+        width: 130,
+        fixed: 'right',
+        render: (_, row) => {
+          if (row?.__isGroup) return '-'
+          if (!canUpdate && !canDelete) return '-'
+          const bugId = Number(row?.id || 0)
+          return (
+            <Space size={4}>
+              {canUpdate ? (
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<EditOutlined />}
+                  style={{ paddingInline: 0 }}
+                  loading={editingRowLoadingId === bugId}
+                  onClick={() => {
+                    void handleOpenEditBug(row)
+                  }}
+                >
+                  编辑
+                </Button>
+              ) : null}
+              {canDelete ? (
+                <Popconfirm
+                  title="确认删除该Bug？"
+                  okText="删除"
+                  cancelText="取消"
+                  onConfirm={() => {
+                    void handleDeleteBug(row)
+                  }}
+                >
+                  <Button
+                    type="link"
+                    danger
+                    size="small"
+                    icon={<DeleteOutlined />}
+                    style={{ paddingInline: 0 }}
+                    loading={deletingBugId === bugId}
+                  >
+                    删除
+                  </Button>
+                </Popconfirm>
+              ) : null}
+            </Space>
+          )
+        },
+      },
     ],
-    [activeAttachmentBugId, canTransition, getQuickStatusOptions, handleQuickStatusChange, loadBugAttachments, navigate, renderAttachmentPreviewContent, statusUpdatingMap],
+    [activeAttachmentBugId, canDelete, canTransition, canUpdate, deletingBugId, editingRowLoadingId, getQuickStatusOptions, handleDeleteBug, handleOpenEditBug, handleQuickStatusChange, loadBugAttachments, navigate, renderAttachmentPreviewContent, statusUpdatingMap],
   )
 
   return (
@@ -1038,10 +1139,17 @@ function BugListPage() {
         className="bug-list-page__shell"
         variant="borderless"
         title={
-          <Space size={8} className="bug-list-page__title-wrap">
-            <BugOutlined />
-            <span className="bug-list-page__title">Bug管理</span>
-          </Space>
+          <div className="bug-list-page__title-block">
+            <Space size={10} className="bug-list-page__title-wrap">
+              <span className="bug-list-page__title-icon" aria-hidden>
+                <BugOutlined />
+              </span>
+              <span className="bug-list-page__title">Bug管理</span>
+            </Space>
+            <Text type="secondary" className="bug-list-page__subtitle">
+              一站式查看、筛选、分组与流转处理
+            </Text>
+          </div>
         }
         extra={
           <Space size={8} className="bug-list-page__header-actions">
@@ -1065,7 +1173,7 @@ function BugListPage() {
               size="small"
               showSearch
               allowClear
-              style={{ width: 280 }}
+              className="bug-list-page__view-select"
               value={activeViewId}
               options={bugViewOptions}
               loading={viewListLoading}
@@ -1151,7 +1259,7 @@ function BugListPage() {
             <Select
               size="small"
               showSearch
-              style={{ width: 140 }}
+              className="bug-list-page__filter-control bug-list-page__filter-control--sm"
               value={severityFilter || undefined}
               options={severityOptions}
               filterOption={pinyinSelectFilter}
@@ -1165,7 +1273,7 @@ function BugListPage() {
               size="small"
               showSearch
               allowClear
-              style={{ width: 160 }}
+              className="bug-list-page__filter-control"
               value={assigneeFilter}
               options={userOptions}
               loading={userOptionsLoading}
@@ -1180,7 +1288,7 @@ function BugListPage() {
               size="small"
               showSearch
               allowClear
-              style={{ width: 160 }}
+              className="bug-list-page__filter-control"
               value={reporterFilter}
               options={userOptions}
               loading={userOptionsLoading}
@@ -1193,7 +1301,7 @@ function BugListPage() {
             />
             <RangePicker
               size="small"
-              style={{ width: 240 }}
+              className="bug-list-page__filter-control bug-list-page__date-range"
               value={createdRange}
               placeholder={['创建开始', '创建结束']}
               allowClear
@@ -1207,7 +1315,7 @@ function BugListPage() {
               mode="multiple"
               allowClear
               maxTagCount="responsive"
-              style={{ width: 260 }}
+              className="bug-list-page__filter-control bug-list-page__group-select"
               value={groupFields}
               options={GROUP_FIELD_OPTIONS}
               placeholder="分组展示（状态/提交人/Bug分类）"
@@ -1280,13 +1388,14 @@ function BugListPage() {
         </div>
 
         <Table
+          className="bug-list-page__table"
           rowKey={(record) => String(record?.__rowKey || `bug-${record?.id || ''}`)}
           size="small"
           loading={loading}
           columns={columns}
           dataSource={tableDataSource}
           rowClassName={(record) => (record?.__isGroup ? 'bug-list-page__group-row' : '')}
-          scroll={{ x: 1490 }}
+          scroll={{ x: 1620 }}
           expandable={isGroupingEnabled ? { defaultExpandAllRows: false } : undefined}
           pagination={
             isGroupingEnabled
@@ -1315,6 +1424,7 @@ function BugListPage() {
       <Modal
         title="保存筛选视图"
         open={saveViewModalOpen}
+        className="bug-list-page__dialog"
         onCancel={() => {
           setSaveViewModalOpen(false)
           saveViewForm.resetFields()
@@ -1383,9 +1493,46 @@ function BugListPage() {
         }}
       />
 
+      <BugFormModal
+        open={editOpen}
+        title={editingBugId > 0 ? `编辑Bug #${editingBugId}` : '编辑Bug'}
+        submitText="保存"
+        presentation="drawer"
+        confirmLoading={editSubmitting}
+        initialValues={editingInitialValues}
+        showDraftAttachments={false}
+        onCancel={() => {
+          setEditOpen(false)
+          setEditingBugId(0)
+          setEditingInitialValues(null)
+        }}
+        onSubmit={async (values) => {
+          const bugId = Number(editingBugId || 0)
+          if (!bugId) return
+          setEditSubmitting(true)
+          try {
+            const result = await updateBugApi(bugId, values)
+            if (!result?.success) {
+              message.error(result?.message || '更新Bug失败')
+              return
+            }
+            message.success(result?.message || 'Bug已更新')
+            setEditOpen(false)
+            setEditingBugId(0)
+            setEditingInitialValues(null)
+            await loadBugs()
+          } catch (error) {
+            message.error(error?.message || '更新Bug失败')
+          } finally {
+            setEditSubmitting(false)
+          }
+        }}
+      />
+
       <Modal
         title="补充流转信息"
         open={statusDialog.open}
+        className="bug-list-page__dialog"
         onCancel={() => {
           setStatusDialog({ open: false, bug: null, transition: null })
           transitionForm.resetFields()

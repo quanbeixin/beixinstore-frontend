@@ -232,115 +232,125 @@ function BugFormModal({
   )
 
   const formContent = (
-    <Form form={form} layout="vertical" disabled={loadingOptions || confirmLoading}>
-      <Form.Item
-        label="Bug标题"
-        name="title"
-        style={{ width: '100%' }}
-        rules={[{ required: true, message: '请输入Bug标题' }]}
-      >
-        <Input maxLength={200} placeholder="简明描述问题现象" />
-      </Form.Item>
+    <Form
+      form={form}
+      layout="vertical"
+      className="bug-form-modal__form"
+      disabled={loadingOptions || confirmLoading}
+    >
+      <div className="bug-form-modal__layout">
+        <div className="bug-form-modal__main">
+          <Form.Item
+            label="Bug标题"
+            name="title"
+            style={{ width: '100%' }}
+            rules={[{ required: true, message: '请输入Bug标题' }]}
+          >
+            <Input maxLength={200} placeholder="简明描述问题现象" />
+          </Form.Item>
 
-      <Space size={12} style={{ width: '100%' }} wrap>
-        <Form.Item
-          label="处理人"
-          name="assignee_ids"
-          style={{ minWidth: 220 }}
-          rules={[{ required: true, message: '请选择处理人' }]}
-        >
-          <Select
-            mode="multiple"
-            showSearch
-            options={assigneeOptions}
-            filterOption={pinyinSelectFilter}
-            placeholder="可选择多个处理人"
-            maxTagCount="responsive"
-          />
-        </Form.Item>
-        <Form.Item
-          label="关注人"
-          name="watcher_ids"
-          style={{ minWidth: 220 }}
-        >
-          <Select
-            mode="multiple"
-            showSearch
-            options={assigneeOptions}
-            filterOption={pinyinSelectFilter}
-            placeholder="可选，补充需要关注该Bug的人"
-            maxTagCount="responsive"
-          />
-        </Form.Item>
-      </Space>
+          <Form.Item
+            label="描述"
+            name="description"
+            rules={[{ required: true, message: '请输入Bug描述' }]}
+          >
+            <Input.TextArea rows={9} maxLength={20000} placeholder={BUG_DESCRIPTION_TEMPLATE} />
+          </Form.Item>
 
-      <Space size={12} style={{ width: '100%' }} wrap>
-        <Form.Item
-          label="严重程度"
-          name="severity_code"
-          style={{ minWidth: 160 }}
-          rules={[{ required: true, message: '请选择严重程度' }]}
-        >
-          <Select options={severityOptions} placeholder="请选择" />
-        </Form.Item>
-        <Form.Item label="Bug类型" name="bug_type_code" style={{ minWidth: 160 }}>
-          <Select allowClear options={bugTypeOptions} placeholder="可选" />
-        </Form.Item>
-        <Form.Item label="产品模块" name="product_code" style={{ minWidth: 160 }}>
-          <Select allowClear options={productOptions} placeholder="可选" />
-        </Form.Item>
-        <Form.Item label="Bug阶段" name="issue_stage" style={{ minWidth: 160 }}>
-          <Select allowClear options={stageOptions} placeholder="可选" />
-        </Form.Item>
-      </Space>
+          <Form.Item label="复现环境" name="environment_info">
+            <Input.TextArea rows={2} maxLength={20000} placeholder="环境、浏览器、系统、设备等，可选" />
+          </Form.Item>
 
-      <Form.Item label="关联需求" name="demand_id">
-        <Select
-          allowClear={!lockDemand}
-          showSearch
-          options={demandOptions}
-          filterOption={pinyinSelectFilter}
-          disabled={lockDemand}
-          placeholder={lockDemand ? '已锁定当前需求' : '可选'}
-        />
-      </Form.Item>
-
-      <Form.Item
-        label="描述"
-        name="description"
-        rules={[{ required: true, message: '请输入Bug描述' }]}
-      >
-        <Input.TextArea rows={11} maxLength={20000} placeholder={BUG_DESCRIPTION_TEMPLATE} />
-      </Form.Item>
-
-      <Form.Item label="复现环境" name="environment_info">
-        <Input.TextArea rows={2} maxLength={20000} placeholder="环境、浏览器、系统、设备等，可选" />
-      </Form.Item>
-
-      {showDraftAttachments ? (
-        <Form.Item
-          label="附件"
-          extra="可选。Bug创建成功后将自动上传并关联到该Bug。"
-        >
-          <div onPaste={handleAttachmentPaste}>
-            <Upload.Dragger
-              className="bug-form-modal__dragger"
-              multiple
-              beforeUpload={() => false}
-              pastable
-              fileList={draftFileList}
-              onChange={handleAttachmentChange}
-              showUploadList={{ showPreviewIcon: false }}
-              maxCount={9}
+          {showDraftAttachments ? (
+            <Form.Item
+              label="附件"
+              extra="可选。Bug创建成功后将自动上传并关联到该Bug。"
             >
-              <p className="ant-upload-drag-icon">
-                <InboxOutlined />
-              </p>
-              <p className="ant-upload-text">点击、拖拽或粘贴上传附件（最多 9 个）</p>
-            </Upload.Dragger>
+              <div onPaste={handleAttachmentPaste}>
+                <Upload.Dragger
+                  className="bug-form-modal__dragger"
+                  multiple
+                  beforeUpload={() => false}
+                  pastable
+                  fileList={draftFileList}
+                  onChange={handleAttachmentChange}
+                  showUploadList={{ showPreviewIcon: false }}
+                  maxCount={9}
+                >
+                  <p className="ant-upload-drag-icon">
+                    <InboxOutlined />
+                  </p>
+                  <p className="ant-upload-text">点击、拖拽或粘贴上传附件（最多 9 个）</p>
+                </Upload.Dragger>
+              </div>
+            </Form.Item>
+          ) : null}
+        </div>
+
+        <div className="bug-form-modal__side">
+          <div className="bug-form-modal__meta-card">
+            <Form.Item label="产品模块" name="product_code">
+              <Select allowClear options={productOptions} placeholder="可选" />
+            </Form.Item>
+
+            <Form.Item
+              label="严重程度"
+              name="severity_code"
+              rules={[{ required: true, message: '请选择严重程度' }]}
+            >
+              <Select options={severityOptions} placeholder="请选择" />
+            </Form.Item>
+
+            <Form.Item label="Bug类型" name="bug_type_code">
+              <Select allowClear options={bugTypeOptions} placeholder="可选" />
+            </Form.Item>
+
+            <Form.Item label="Bug阶段" name="issue_stage">
+              <Select allowClear options={stageOptions} placeholder="可选" />
+            </Form.Item>
+
+            <Form.Item label="关联需求" name="demand_id">
+              <Select
+                allowClear={!lockDemand}
+                showSearch
+                options={demandOptions}
+                filterOption={pinyinSelectFilter}
+                disabled={lockDemand}
+                placeholder={lockDemand ? '已锁定当前需求' : '可选'}
+              />
+            </Form.Item>
+
+            <Form.Item
+              label="处理人"
+              name="assignee_ids"
+              rules={[{ required: true, message: '请选择处理人' }]}
+            >
+              <Select
+                mode="multiple"
+                showSearch
+                options={assigneeOptions}
+                filterOption={pinyinSelectFilter}
+                placeholder="可选择多个处理人"
+                maxTagCount="responsive"
+              />
+            </Form.Item>
+
+            <Form.Item
+              label="关注人"
+              name="watcher_ids"
+            >
+              <Select
+                mode="multiple"
+                showSearch
+                options={assigneeOptions}
+                filterOption={pinyinSelectFilter}
+                placeholder="可选，补充需要关注该Bug的人"
+                maxTagCount="responsive"
+              />
+            </Form.Item>
           </div>
-        </Form.Item>
-      ) : null}
+        </div>
+      </div>
     </Form>
   )
 
@@ -349,7 +359,7 @@ function BugFormModal({
       <Drawer
         open={open}
         title={title}
-        size="large"
+        width={900}
         className="bug-form-modal"
         onClose={onCancel}
         footer={actionButtons}
@@ -365,7 +375,7 @@ function BugFormModal({
     <Modal
       open={open}
       title={title}
-      width={760}
+      width={900}
       className="bug-form-modal"
       onCancel={onCancel}
       footer={actionButtons}

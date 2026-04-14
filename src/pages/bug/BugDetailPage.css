@@ -1,19 +1,26 @@
 .bug-detail-page {
-  padding: 12px;
-  --bug-surface-bg: #fbfcff;
-  --bug-border-color: #e8edf5;
-  --bug-muted-text: #6e7891;
-  --bug-main-text: #1f2a44;
+  --bug-detail-border: #d7dce5;
+  --bug-detail-border-strong: #c2c9d6;
+  --bug-detail-text: #1f2633;
+  --bug-detail-muted: #566073;
+  --bug-detail-shell: #ebedf1;
+  --bug-detail-card: #f4f6f9;
+  --bug-detail-shadow: 0 18px 38px rgba(24, 30, 40, 0.16);
+  padding: 10px;
+  background: linear-gradient(180deg, #f0f2f5 0%, #e8ebf0 100%);
 }
 
 .bug-detail-page__shell {
-  border-radius: 18px;
-  border: 1px solid var(--bug-border-color);
-  background: linear-gradient(180deg, #fcfdff 0%, #f8fafe 100%);
+  border-radius: 16px;
+  border: 1px solid var(--bug-detail-border);
+  background: linear-gradient(180deg, #f2f4f7 0%, #e9ecf1 100%);
+  box-shadow: var(--bug-detail-shadow);
+  max-width: 1240px;
+  margin: 0 auto;
 }
 
 .bug-detail-page__shell .ant-card-body {
-  padding: 14px 14px 10px;
+  padding: 10px;
 }
 
 .bug-detail-page__head {
@@ -22,10 +29,10 @@
   gap: 12px;
   align-items: center;
   margin-bottom: 10px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: var(--bug-surface-bg);
-  border: 1px solid var(--bug-border-color);
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #eff2f7;
+  border: 1px solid var(--bug-detail-border);
 }
 
 .bug-detail-page__head-left {
@@ -33,13 +40,13 @@
 }
 
 .bug-detail-page__back-btn {
-  color: var(--bug-muted-text);
+  color: var(--bug-detail-muted);
   border-radius: 8px;
 }
 
 .bug-detail-page__back-btn:hover {
-  color: #42506d !important;
-  background: #f0f4fb !important;
+  color: #384053 !important;
+  background: #e5e9f1 !important;
 }
 
 .bug-detail-page__bug-no {
@@ -48,47 +55,112 @@
 }
 
 .bug-detail-page__title {
-  color: var(--bug-main-text);
-  font-weight: 650 !important;
+  color: var(--bug-detail-text);
+  font-weight: 700 !important;
   letter-spacing: 0.01em;
 }
 
 .bug-detail-page__status-tag {
   margin-inline-end: 0;
   font-weight: 600;
+  border-radius: 999px;
 }
 
 .bug-detail-page__head-actions .ant-btn {
-  border-radius: 9px;
-}
-
-.bug-detail-page__grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-  gap: 12px;
+  border-radius: 8px;
 }
 
 .bug-detail-page__block {
-  border-radius: 16px;
-  margin-bottom: 12px;
-  border: 1px solid var(--bug-border-color);
-  background: #fff;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--bug-detail-border);
+  background: linear-gradient(180deg, #f8f9fb 0%, var(--bug-detail-card) 100%);
 }
 
 .bug-detail-page__block .ant-card-head {
-  min-height: 42px;
-  padding: 0 12px;
-  border-bottom-color: #eef2f8;
+  min-height: 40px;
+  padding: 0 10px;
+  border-bottom-color: #dee3ed;
+  background: #eef1f6;
 }
 
 .bug-detail-page__block .ant-card-head-title {
   font-size: 13px;
-  font-weight: 600;
-  color: #273248;
+  font-weight: 700;
+  color: #2a3343;
 }
 
 .bug-detail-page__block .ant-card-body {
-  padding: 12px;
+  padding: 10px;
+}
+
+.bug-detail-page__block--main .ant-card-head-title {
+  font-size: 14px;
+}
+
+.bug-detail-page__tabs-block .ant-card-body {
+  padding: 0;
+}
+
+.bug-detail-page__content-tabs .ant-tabs-nav {
+  margin: 0;
+  padding: 0 12px;
+  background: #eef1f6;
+  border-bottom: 1px solid #dde3ee;
+}
+
+.bug-detail-page__content-tabs .ant-tabs-tab {
+  padding: 10px 6px;
+  font-weight: 600;
+}
+
+.bug-detail-page__content-tabs .ant-tabs-content-holder {
+  padding: 10px;
+}
+
+.bug-detail-page__tab-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.bug-detail-page__detail-tab-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  gap: 10px;
+  align-items: start;
+}
+
+.bug-detail-page__detail-main,
+.bug-detail-page__detail-side {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.bug-detail-page__detail-side {
+  position: sticky;
+  top: 8px;
+}
+
+.bug-detail-page__tab-section {
+  border: 1px solid #dce2ed;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8f9fb;
+}
+
+.bug-detail-page__tab-section-title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #283447;
+}
+
+.bug-detail-page__tab-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .bug-detail-page__status-row {
@@ -111,42 +183,68 @@
 
 .bug-detail-page__status-action-btn {
   min-width: 88px;
-  height: 32px;
-  border-radius: 9px;
+  height: 30px;
+  border-radius: 8px;
   font-weight: 600;
 }
 
-.bug-detail-page__grid .ant-descriptions-item-label {
-  color: var(--bug-muted-text) !important;
+.bug-detail-page__meta-descriptions .ant-descriptions-row > th,
+.bug-detail-page__meta-descriptions .ant-descriptions-row > td {
+  padding-bottom: 8px;
+}
+
+.bug-detail-page__meta-descriptions .ant-descriptions-item-label {
+  font-size: 13px;
+  color: var(--bug-detail-muted) !important;
+  padding-bottom: 2px !important;
+}
+
+.bug-detail-page__meta-descriptions .ant-descriptions-item-content {
+  color: #1f2633;
+  font-size: 13px;
+}
+
+.bug-detail-page__meta-descriptions .ant-tag {
+  border-radius: 8px;
+  padding-inline: 9px;
+  line-height: 24px;
   font-size: 12px;
-  width: 86px;
+  font-weight: 700;
 }
 
-.bug-detail-page__grid .ant-descriptions-item-content {
-  color: #2b3550;
+.bug-detail-page__meta-descriptions .ant-btn-link {
+  padding-inline: 0;
 }
 
-.bug-detail-page__grid .ant-form-item {
+.bug-detail-page__transition-form .ant-form-item {
   margin-bottom: 10px;
 }
 
-.bug-detail-page__grid .ant-form-item-label > label {
+.bug-detail-page__transition-form .ant-form-item-label > label {
   font-size: 12px;
-  color: var(--bug-muted-text);
+  font-weight: 700;
+  color: var(--bug-detail-muted);
 }
 
-.bug-detail-page__grid .ant-input-textarea textarea {
-  border-radius: 10px;
+.bug-detail-page__transition-form .ant-input-textarea textarea {
+  border-radius: 8px;
+  border-color: var(--bug-detail-border-strong);
+  background: #ffffff;
 }
 
-.bug-detail-page__grid .ant-input-textarea textarea:hover {
-  border-color: #9fb4e8;
+.bug-detail-page__transition-form .ant-input-textarea textarea:hover {
+  border-color: #9098a8;
 }
 
-.bug-detail-page__grid .ant-input-textarea textarea:focus,
-.bug-detail-page__grid .ant-input-textarea textarea:focus-visible {
-  border-color: #7396e6;
-  box-shadow: 0 0 0 2px rgba(80, 119, 205, 0.14);
+.bug-detail-page__transition-form .ant-input-textarea textarea:focus,
+.bug-detail-page__transition-form .ant-input-textarea textarea:focus-visible {
+  border-color: #2f67d8;
+  box-shadow: 0 0 0 2px rgba(47, 103, 216, 0.15);
+}
+
+.bug-detail-page__description-content {
+  white-space: pre-wrap;
+  line-height: 1.66;
 }
 
 .bug-detail-page__log-item {
@@ -161,7 +259,7 @@
 }
 
 .bug-detail-page__log-list-item {
-  border-bottom: 1px solid #edf1f7;
+  border-bottom: 1px solid #dee3ed;
   padding: 10px 0;
 }
 
@@ -182,24 +280,20 @@
 }
 
 .bug-detail-page__log-time {
-  color: #7e8799;
+  color: #727c91;
   font-size: 12px;
 }
 
 .bug-detail-page__log-remark {
-  color: #3a4561;
+  color: #3a4558;
   line-height: 1.6;
 }
 
 .bug-detail-page__attachment-thumbnail.ant-image-img {
   border-radius: 8px;
-  border: 1px solid #e4eaf5;
+  border: 1px solid #d9dfe9;
   object-fit: cover;
   cursor: zoom-in;
-}
-
-.bug-detail-page__description-content {
-  white-space: pre-wrap;
 }
 
 .bug-detail-page__upload-entry {
@@ -211,11 +305,15 @@
 }
 
 .bug-detail-page__upload-entry:focus-visible .ant-btn {
-  box-shadow: 0 0 0 2px rgba(80, 119, 205, 0.22);
+  box-shadow: 0 0 0 2px rgba(47, 103, 216, 0.2);
 }
 
 .bug-detail-page__upload-hint {
   font-size: 12px;
+}
+
+.bug-detail-page__tab-section .ant-form-item:last-child {
+  margin-bottom: 0;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -231,15 +329,18 @@
   }
 }
 
-@media (max-width: 1100px) {
-  .bug-detail-page__grid {
+@media (max-width: 1180px) {
+  .bug-detail-page__detail-tab-layout {
     grid-template-columns: 1fr;
+  }
+
+  .bug-detail-page__detail-side {
+    position: static;
   }
 
   .bug-detail-page__head {
     flex-direction: column;
     align-items: flex-start;
-    padding: 10px;
   }
 
   .bug-detail-page__status-row {
@@ -254,10 +355,6 @@
 
   .bug-detail-page__head-actions {
     width: 100%;
-  }
-
-  .bug-detail-page__head-actions .ant-btn {
-    min-width: 86px;
   }
 
   .bug-detail-page__upload-entry {

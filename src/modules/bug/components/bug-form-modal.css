@@ -1,64 +1,194 @@
-.bug-form-modal .ant-modal-content {
-  border-radius: 16px;
+.bug-form-modal {
+  --bug-form-border: #d8dbe2;
+  --bug-form-border-strong: #bcc4d2;
+  --bug-form-text: #1f2633;
+  --bug-form-muted: #4f5969;
+  --bug-form-primary: #2f67d8;
+  --bug-form-surface: #f3f4f6;
+  --bug-form-shell: #eceef1;
+  --bug-form-shadow: 0 18px 38px rgba(24, 30, 40, 0.2);
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Source Han Sans SC', sans-serif;
+}
+
+.bug-form-modal .ant-modal-content,
+.bug-form-modal .ant-drawer-content {
+  border-radius: 14px;
   overflow: hidden;
-  border: 1px solid #e5ebf6;
-  box-shadow: 0 14px 34px rgba(28, 48, 89, 0.16);
+  border: 1px solid var(--bug-form-border);
+  box-shadow: var(--bug-form-shadow);
+  background: linear-gradient(180deg, #f4f5f7 0%, #ebedf0 100%);
 }
 
-.bug-form-modal .ant-modal-header {
-  padding: 12px 16px 10px;
-  border-bottom: 1px solid #edf2fb;
-  background: linear-gradient(180deg, #fcfdff 0%, #f7faff 100%);
+.bug-form-modal .ant-modal-header,
+.bug-form-modal .ant-drawer-header {
+  padding: 12px 18px;
+  border-bottom: 1px solid #d4d8df;
+  background: #e9ebef;
 }
 
-.bug-form-modal .ant-modal-title {
-  font-size: 15px;
-  font-weight: 650;
+.bug-form-modal .ant-modal-title,
+.bug-form-modal .ant-drawer-title {
+  font-size: 16px;
+  font-weight: 700;
   letter-spacing: 0.01em;
-  color: #23304b;
+  color: var(--bug-form-text);
 }
 
-.bug-form-modal .ant-modal-body {
-  padding: 12px 16px 10px;
-  max-height: calc(100vh - 170px);
+.bug-form-modal .ant-modal-body,
+.bug-form-modal .ant-drawer-body {
+  padding: 12px 14px 8px;
+  max-height: calc(100vh - 132px);
   overflow: auto;
+  scrollbar-gutter: stable both-edges;
+  background: var(--bug-form-shell);
 }
 
-.bug-form-modal .ant-modal-footer {
-  padding: 10px 16px 12px;
-  border-top: 1px solid #edf2fb;
-  background: #fcfdff;
+.bug-form-modal .ant-modal-footer,
+.bug-form-modal .ant-drawer-footer {
+  padding: 8px 14px 10px;
+  border-top: 1px solid #d4d8df;
+  background: #e9ebef;
 }
 
-.bug-form-modal .ant-modal-footer .ant-btn {
-  border-radius: 9px;
+.bug-form-modal .ant-modal-footer .ant-btn,
+.bug-form-modal .ant-drawer-footer .ant-btn {
+  border-radius: 8px;
+  min-width: 72px;
 }
 
-.bug-form-modal .ant-form-item {
+.bug-form-modal .ant-modal-footer .ant-btn-primary,
+.bug-form-modal .ant-drawer-footer .ant-btn-primary {
+  border-color: #2f67d8;
+  background: #2f67d8;
+  box-shadow: none;
+}
+
+.bug-form-modal .ant-modal-footer .ant-btn-primary:hover,
+.bug-form-modal .ant-drawer-footer .ant-btn-primary:hover {
+  border-color: #2759c0;
+  background: #2759c0;
+}
+
+.bug-form-modal__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.84fr) 272px;
+  gap: 12px;
+  align-items: start;
+}
+
+.bug-form-modal__main,
+.bug-form-modal__meta-card {
+  border: 1px solid #d5d9e0;
+  border-radius: 12px;
+  padding: 12px;
+  background: linear-gradient(180deg, #f9fafb 0%, #f2f4f7 100%);
+}
+
+.bug-form-modal__main .ant-form-item {
   margin-bottom: 12px;
 }
 
+.bug-form-modal__meta-card .ant-form-item {
+  margin-bottom: 10px;
+}
+
+.bug-form-modal__main .ant-form-item:last-child,
+.bug-form-modal__meta-card .ant-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.bug-form-modal__side {
+  position: sticky;
+  top: 2px;
+  align-self: start;
+}
+
 .bug-form-modal .ant-form-item-label > label {
-  font-size: 12px;
-  color: #5f6b85;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--bug-form-muted);
+}
+
+.bug-form-modal__main .ant-form-item-label > label {
+  font-size: 15px;
+  color: #1f2633;
+  letter-spacing: 0.01em;
 }
 
 .bug-form-modal .ant-form-item-extra {
+  margin-top: 6px;
   font-size: 12px;
-  color: #7a859d;
+  color: #6b7484;
+}
+
+.bug-form-modal .ant-form-item-explain-error {
+  font-size: 11px;
+  margin-top: 2px;
 }
 
 .bug-form-modal .ant-input,
 .bug-form-modal .ant-select-selector,
 .bug-form-modal .ant-input-textarea textarea {
-  border-radius: 9px !important;
-  border-color: #d9e2f1 !important;
+  border-radius: 8px !important;
+  border-color: var(--bug-form-border-strong) !important;
+  min-height: 36px;
+  background: #ffffff;
+  transition: all 0.2s ease;
+}
+
+.bug-form-modal__main .ant-input,
+.bug-form-modal__main .ant-input-textarea textarea {
+  border-radius: 10px !important;
+  border-color: #c7ccd6 !important;
+  background: #fcfdff;
+}
+
+.bug-form-modal__main .ant-input-textarea textarea {
+  line-height: 1.72;
+}
+
+.bug-form-modal .ant-select-selection-item {
+  border-radius: 999px !important;
+  background: #ecf1ff !important;
+  color: #234f9d !important;
+  font-weight: 600;
+}
+
+.bug-form-modal__meta-card .ant-form-item:nth-child(1) .ant-select-selector {
+  background: #f4e9f7;
+}
+
+.bug-form-modal__meta-card .ant-form-item:nth-child(2) .ant-select-selector {
+  background: #f6e7e7;
+}
+
+.bug-form-modal__meta-card .ant-form-item:nth-child(3) .ant-select-selector {
+  background: #fce6df;
+}
+
+.bug-form-modal__meta-card .ant-form-item:nth-child(4) .ant-select-selector {
+  background: #f8efdc;
+}
+
+.bug-form-modal__meta-card .ant-form-item:nth-child(5) .ant-select-selector {
+  background: #eceff7;
+}
+
+.bug-form-modal__meta-card .ant-form-item:nth-child(6) .ant-select-selector,
+.bug-form-modal__meta-card .ant-form-item:nth-child(7) .ant-select-selector {
+  background: #edf3ff;
+}
+
+.bug-form-modal .ant-select-multiple .ant-select-selector {
+  min-height: 36px;
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
 
 .bug-form-modal .ant-input:hover,
 .bug-form-modal .ant-select:hover .ant-select-selector,
 .bug-form-modal .ant-input-textarea textarea:hover {
-  border-color: #9fb3d8 !important;
+  border-color: #8f98aa !important;
 }
 
 .bug-form-modal .ant-input:focus,
@@ -66,20 +196,22 @@
 .bug-form-modal .ant-select-focused .ant-select-selector,
 .bug-form-modal .ant-input-textarea textarea:focus,
 .bug-form-modal .ant-input-textarea textarea:focus-visible {
-  border-color: #7899d4 !important;
-  box-shadow: 0 0 0 2px rgba(82, 118, 198, 0.14) !important;
+  border-color: var(--bug-form-primary) !important;
+  box-shadow: 0 0 0 2px rgba(47, 103, 216, 0.14) !important;
 }
 
 .bug-form-modal__dragger.ant-upload-wrapper .ant-upload-drag {
   border-radius: 10px;
-  min-height: 84px;
-  padding: 8px 10px 6px;
-  border-color: #d8e3f6;
-  background: linear-gradient(180deg, #fcfdff 0%, #f5f9ff 100%);
+  min-height: 94px;
+  padding: 10px;
+  border-color: #c8ccd4;
+  border-style: dashed;
+  background: #f8f9fb;
 }
 
 .bug-form-modal__dragger.ant-upload-wrapper .ant-upload-drag:hover {
-  border-color: #9cb4df;
+  border-color: #8f98aa;
+  background: #f1f3f6;
 }
 
 .bug-form-modal__dragger.ant-upload-wrapper .ant-upload-drag .ant-upload-drag-icon {
@@ -87,40 +219,74 @@
 }
 
 .bug-form-modal__dragger.ant-upload-wrapper .ant-upload-drag .ant-upload-drag-icon .anticon {
-  font-size: 18px;
-  color: #5d79ad;
+  font-size: 20px;
+  color: #3a66d4;
 }
 
 .bug-form-modal__dragger.ant-upload-wrapper .ant-upload-drag .ant-upload-text {
   margin-bottom: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: #5f6b85;
+  font-size: 13px;
+  line-height: 18px;
+  color: #2b3343;
+  font-weight: 600;
+}
+
+.bug-form-modal .ant-modal {
+  max-width: calc(100vw - 24px);
+}
+
+@media (max-width: 1366px) {
+  .bug-form-modal__layout {
+    grid-template-columns: minmax(0, 0.8fr) 248px;
+    gap: 10px;
+  }
 }
 
 .bug-form-modal__dragger.ant-upload-wrapper .ant-upload-list {
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .bug-form-modal__dragger.ant-upload-wrapper .ant-upload-list .ant-upload-list-item {
-  margin-top: 4px;
-  border-radius: 8px;
+  margin-top: 6px;
+  border-radius: 9px;
 }
 
-@media (max-width: 820px) {
+@media (max-width: 900px) {
   .bug-form-modal .ant-modal {
-    max-width: calc(100vw - 18px);
+    max-width: calc(100vw - 16px);
     margin: 8px auto;
   }
 
-  .bug-form-modal .ant-modal-body {
-    padding: 10px 12px 8px;
-    max-height: calc(100vh - 140px);
+  .bug-form-modal__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .bug-form-modal__side {
+    position: static;
+  }
+
+  .bug-form-modal__main .ant-form-item-label > label {
+    font-size: 15px;
   }
 
   .bug-form-modal .ant-modal-header,
-  .bug-form-modal .ant-modal-footer {
+  .bug-form-modal .ant-modal-body,
+  .bug-form-modal .ant-modal-footer,
+  .bug-form-modal .ant-drawer-header,
+  .bug-form-modal .ant-drawer-body,
+  .bug-form-modal .ant-drawer-footer {
     padding-left: 12px;
     padding-right: 12px;
+  }
+
+  .bug-form-modal .ant-modal-body {
+    max-height: calc(100vh - 116px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bug-form-modal * {
+    transition: none !important;
+    animation: none !important;
   }
 }
