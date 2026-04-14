@@ -1,0 +1,187 @@
+:root {
+  color-scheme: light;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.1884 0.0128 248.5103);
+  --card: oklch(0.9784 0.0011 197.1387);
+  --card-foreground: oklch(0.1884 0.0128 248.5103);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.1884 0.0128 248.5103);
+  --primary: oklch(0.6723 0.1606 244.9955);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.1884 0.0128 248.5103);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.9222 0.0013 286.3737);
+  --muted-foreground: oklch(0.1884 0.0128 248.5103);
+  --accent: oklch(0.9392 0.0166 250.8453);
+  --accent-foreground: oklch(0.6723 0.1606 244.9955);
+  --destructive: oklch(0.6188 0.2376 25.7658);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.9317 0.0118 231.6594);
+  --input: oklch(0.9809 0.0025 228.7836);
+  --ring: oklch(0.6818 0.1584 243.354);
+
+  --sidebar: oklch(0.9784 0.0011 197.1387);
+  --sidebar-foreground: oklch(0.1884 0.0128 248.5103);
+  --sidebar-primary: oklch(0.6723 0.1606 244.9955);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.9392 0.0166 250.8453);
+  --sidebar-accent-foreground: oklch(0.6723 0.1606 244.9955);
+  --sidebar-border: oklch(0.9271 0.0101 238.5177);
+  --sidebar-ring: oklch(0.6818 0.1584 243.354);
+
+  --font-sans: 'DM Sans', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono', Menlo, Monaco, Consolas, monospace;
+
+  --radius: 1rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-xs: 0 1px 2px -1px oklch(0.2 0.02 250 / 0.14);
+  --shadow-sm: 0 2px 6px -2px oklch(0.2 0.02 250 / 0.16);
+  --shadow-md: 0 8px 24px -10px oklch(0.2 0.02 250 / 0.18);
+  --shadow-lg: 0 14px 32px -12px oklch(0.2 0.02 250 / 0.22);
+  --shadow-xl: 0 22px 44px -16px oklch(0.2 0.02 250 / 0.24);
+
+  --transition-fast: 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  --transition-base: 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  --transition-slow: 360ms cubic-bezier(0.22, 1, 0.36, 1);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --text-primary: var(--color-foreground);
+  --text-secondary: color-mix(in oklch, var(--color-foreground) 72%, white);
+  --text-light: color-mix(in oklch, var(--color-foreground) 52%, white);
+  --bg-light: color-mix(in oklch, var(--color-background) 92%, var(--color-muted));
+  --bg-white: var(--color-background);
+  --border-color: var(--color-border);
+  --accent-blue: var(--color-primary);
+  --accent-purple: color-mix(in oklch, var(--color-primary) 78%, oklch(0.64 0.17 286));
+  --accent-gradient: linear-gradient(
+    130deg,
+    color-mix(in oklch, var(--color-primary) 72%, white) 0%,
+    var(--color-primary) 55%,
+    color-mix(in oklch, var(--color-primary) 65%, oklch(0.56 0.14 186)) 100%
+  );
+
+  --scrollbar-track: color-mix(in oklch, var(--color-background) 90%, var(--color-muted));
+  --scrollbar-thumb: color-mix(in oklch, var(--color-foreground) 34%, white);
+  --scrollbar-thumb-hover: color-mix(in oklch, var(--color-foreground) 46%, white);
+
+  --app-shell-bg: oklch(0.19 0.025 251);
+  --app-shell-glow-a: color-mix(in oklch, var(--color-primary) 30%, transparent);
+  --app-shell-glow-b: color-mix(in oklch, var(--color-primary) 20%, transparent);
+
+  --app-sider-top: oklch(0.22 0.02 250 / 0.96);
+  --app-sider-bottom: oklch(0.18 0.02 250 / 0.98);
+  --app-sider-tint: color-mix(in oklch, var(--color-primary) 24%, transparent);
+  --app-sider-border: color-mix(in oklch, var(--color-primary) 22%, white);
+  --app-sider-shadow: 12px 0 36px oklch(0.12 0.01 250 / 0.5), 1px 0 0 color-mix(in oklch, var(--color-primary) 20%, transparent) inset;
+
+  --app-header-top: oklch(0.24 0.025 250 / 0.96);
+  --app-header-bottom: oklch(0.2 0.02 250 / 0.98);
+  --app-header-border: color-mix(in oklch, var(--color-primary) 34%, white);
+  --app-header-shadow: 0 10px 28px oklch(0.12 0.01 250 / 0.3), 0 1px 0 oklch(1 0 0 / 0.05) inset;
+
+  --app-ink-on-dark: oklch(0.93 0.02 248);
+  --app-ink-on-dark-muted: oklch(0.9 0.03 240 / 0.84);
+  --app-ink-on-dark-subtle: oklch(0.86 0.02 240 / 0.78);
+
+  --app-main-top: oklch(0.24 0.02 250);
+  --app-main-surface-a: color-mix(in oklch, var(--color-background) 82%, oklch(0.96 0.01 245));
+  --app-main-surface-b: color-mix(in oklch, var(--color-background) 88%, oklch(0.95 0.01 248));
+}
+
+.dark,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --background: oklch(0.178 0.015 254);
+  --foreground: oklch(0.9328 0.0025 228.7857);
+  --card: oklch(0.2097 0.008 274.5332);
+  --card-foreground: oklch(0.8853 0 0);
+  --popover: oklch(0.178 0.015 254);
+  --popover-foreground: oklch(0.9328 0.0025 228.7857);
+  --primary: oklch(0.6692 0.1607 245.011);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.9622 0.0035 219.5331);
+  --secondary-foreground: oklch(0.1884 0.0128 248.5103);
+  --muted: oklch(0.26 0.01 255);
+  --muted-foreground: oklch(0.73 0.01 248);
+  --accent: oklch(0.1928 0.0331 242.5459);
+  --accent-foreground: oklch(0.6692 0.1607 245.011);
+  --destructive: oklch(0.6188 0.2376 25.7658);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.36 0.015 248);
+  --input: oklch(0.26 0.02 248);
+  --ring: oklch(0.6818 0.1584 243.354);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --text-primary: var(--color-foreground);
+  --text-secondary: color-mix(in oklch, var(--color-foreground) 72%, black);
+  --text-light: color-mix(in oklch, var(--color-foreground) 54%, black);
+  --bg-light: color-mix(in oklch, var(--color-background) 88%, var(--color-muted));
+  --bg-white: color-mix(in oklch, var(--color-card) 90%, var(--color-background));
+  --border-color: var(--color-border);
+
+  --scrollbar-track: color-mix(in oklch, var(--color-background) 86%, var(--color-muted));
+  --scrollbar-thumb: color-mix(in oklch, var(--color-foreground) 34%, black);
+  --scrollbar-thumb-hover: color-mix(in oklch, var(--color-foreground) 50%, black);
+
+  --app-shell-bg: oklch(0.17 0.015 252);
+  --app-shell-glow-a: color-mix(in oklch, var(--color-primary) 22%, transparent);
+  --app-shell-glow-b: color-mix(in oklch, var(--color-primary) 14%, transparent);
+
+  --app-sider-top: oklch(0.2 0.016 252 / 0.96);
+  --app-sider-bottom: oklch(0.16 0.014 252 / 0.98);
+  --app-sider-tint: color-mix(in oklch, var(--color-primary) 18%, transparent);
+  --app-sider-border: color-mix(in oklch, var(--color-primary) 26%, black);
+
+  --app-header-top: oklch(0.22 0.02 252 / 0.96);
+  --app-header-bottom: oklch(0.18 0.018 252 / 0.98);
+  --app-header-border: color-mix(in oklch, var(--color-primary) 26%, black);
+
+  --app-main-top: oklch(0.2 0.016 252);
+  --app-main-surface-a: color-mix(in oklch, var(--color-background) 88%, var(--color-muted));
+  --app-main-surface-b: color-mix(in oklch, var(--color-background) 92%, var(--color-muted));
+}
