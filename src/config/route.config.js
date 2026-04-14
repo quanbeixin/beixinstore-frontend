@@ -256,6 +256,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/bug-workflow-config',
+    componentKey: 'bugWorkflowConfig',
+    requiredPermission: 'bug.manage',
+    page: {
+      title: 'Bug流程配置中心',
+      subtitle: '配置 Bug 状态流转规则、动作文案与字段必填要求。',
+    },
+    menu: {
+      section: 'project',
+      label: 'Bug流程配置中心',
+      icon: 'tool',
+    },
+  },
+  {
     path: '/bugs/:id',
     componentKey: 'bugDetail',
     requiredPermission: 'bug.view',

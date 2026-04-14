@@ -35,16 +35,14 @@ import {
   createBugCommentApi,
   deleteBugAttachmentApi,
   deleteBugApi,
-  fixBugApi,
   getBugAttachmentPolicyApi,
   getBugByIdApi,
-  rejectBugApi,
-  reopenBugApi,
-  startBugApi,
+  getBugWorkflowConfigApi,
+  transitionBugApi,
   updateBugApi,
-  verifyBugApi,
 } from '../../api/bug'
 import { BugFormModal, BugStatusFlow } from '../../modules/bug'
+import { buildWorkflowTransitionMap, normalizeBugWorkflowTransitions } from '../../modules/bug/utils/workflow'
 import { getCurrentUser, hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
 import { pinyinSelectFilter } from '../../utils/selectSearch'
@@ -52,6 +50,24 @@ import './BugDetailPage.css'
 
 const { Paragraph, Text, Title } = Typography
 const IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)(\?.*)?$/i
+const ACTION_ICON_MAP = Object.freeze({
+  start: <SendOutlined />,
+  fix: <CheckCircleOutlined />,
+  verify: <CheckCircleOutlined />,
+  reopen: <RedoOutlined />,
+  reject: <StopOutlined />,
+})
+
+function toActionKey(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function buildTransitionActionId(transition = {}) {
+  const actionKey = toActionKey(transition?.action_key)
+  const fromStatus = String(transition?.from_status_code || '').trim().toUpperCase()
+  const toStatus = String(transition?.to_status_code || '').trim().toUpperCase()
+  return `${actionKey}:${fromStatus}:${toStatus}`
+}
 
 function getAttachmentUrl(row) {
   return String(row?.download_url || row?.object_url || '').trim()
@@ -67,6 +83,20 @@ function isImageAttachment(row) {
   const fileName = String(row?.file_name || '').trim()
   const objectUrl = getAttachmentUrl(row)
   return IMAGE_EXT_PATTERN.test(fileName) || IMAGE_EXT_PATTERN.test(objectUrl)
+}
+
+function extractClipboardFiles(clipboardData) {
+  if (!clipboardData) return []
+  const byItems = Array.from(clipboardData.items || [])
+    .map((item) => (item?.kind === 'file' ? item.getAsFile?.() : null))
+    .filter(Boolean)
+  const byFiles = Array.from(clipboardData.files || []).filter(Boolean)
+  const dedup = new Map()
+  ;[...byFiles, ...byItems].forEach((file) => {
+    const key = `${file?.name || ''}|${file?.size || 0}|${file?.type || ''}|${file?.lastModified || 0}`
+    if (!dedup.has(key)) dedup.set(key, file)
+  })
+  return Array.from(dedup.values())
 }
 
 function BugDetailPage() {
@@ -85,6 +115,7 @@ function BugDetailPage() {
   const [deletingAttachmentId, setDeletingAttachmentId] = useState(0)
   const [editOpen, setEditOpen] = useState(false)
   const [detail, setDetail] = useState(null)
+  const [workflowTransitions, setWorkflowTransitions] = useState([])
   const [remarkForm] = Form.useForm()
   const [commentForm] = Form.useForm()
   const [commentSubmitting, setCommentSubmitting] = useState(false)
@@ -108,9 +139,27 @@ function BugDetailPage() {
     }
   }, [bugId])
 
+  const loadWorkflowConfig = useCallback(async () => {
+    try {
+      const result = await getBugWorkflowConfigApi()
+      if (!result?.success) {
+        throw new Error(result?.message || '加载Bug流程配置失败')
+      }
+      const transitions = normalizeBugWorkflowTransitions(result?.data?.transitions || [])
+      setWorkflowTransitions(transitions)
+    } catch (error) {
+      message.warning(error?.message || '加载Bug流程配置失败，已使用默认流程')
+      setWorkflowTransitions(normalizeBugWorkflowTransitions([]))
+    }
+  }, [])
+
   useEffect(() => {
     loadDetail()
   }, [loadDetail])
+
+  useEffect(() => {
+    loadWorkflowConfig()
+  }, [loadWorkflowConfig])
 
   useEffect(() => {
     if (!detail) return
@@ -169,37 +218,50 @@ function BugDetailPage() {
   const canSeeFixModule = canManageAllFields || isCurrentUserAssignee
   const canSeeVerifyModule = canManageAllFields || isCurrentUserReporter
 
+  const workflowTransitionMap = useMemo(
+    () => buildWorkflowTransitionMap(workflowTransitions),
+    [workflowTransitions],
+  )
+
   const transitionButtons = useMemo(() => {
     const status = String(detail?.status_code || '').toUpperCase()
     if (!canTransition) return []
-    let buttons = []
-    if (status === 'NEW') {
-      buttons = [{ key: 'start', label: '开始处理', icon: <SendOutlined /> }]
-    } else if (status === 'PROCESSING') {
-      buttons = [
-        { key: 'fix', label: '修复完成', icon: <CheckCircleOutlined /> },
-        { key: 'reject', label: '打回', icon: <StopOutlined /> },
-      ]
-    } else if (status === 'FIXED') {
-      buttons = [
-        { key: 'verify', label: '验证通过', icon: <CheckCircleOutlined /> },
-        { key: 'reopen', label: '重新打开', icon: <RedoOutlined /> },
-      ]
-    } else if (status === 'CLOSED') {
-      buttons = [{ key: 'reopen', label: '重新打开', icon: <RedoOutlined /> }]
-    } else if (status === 'REOPENED') {
-      buttons = [{ key: 'start', label: '重新处理', icon: <ReloadOutlined /> }]
-    }
+    const transitions = workflowTransitionMap.get(status) || []
+    const buttons = transitions.map((item, index) => {
+      const actionKey = toActionKey(item?.action_key)
+      return {
+        key: `${buildTransitionActionId(item)}-${index}`,
+        actionKey,
+        actionId: buildTransitionActionId(item),
+        label:
+          String(item?.action_name || '').trim() ||
+          String(item?.to_status_name || item?.to_status_code || actionKey || '流转'),
+        icon: ACTION_ICON_MAP[actionKey] || <ReloadOutlined />,
+        transition: item,
+      }
+    })
 
     return buttons.filter((item) => {
-      if (item.key === 'fix') return canSeeFixModule
-      if (item.key === 'verify') return canSeeVerifyModule
+      if (item.actionKey === 'fix') return canSeeFixModule
+      if (item.actionKey === 'verify') return canSeeVerifyModule
       return true
     })
-  }, [detail?.status_code, canTransition, canSeeFixModule, canSeeVerifyModule])
+  }, [canSeeFixModule, canSeeVerifyModule, canTransition, detail?.status_code, workflowTransitionMap])
 
-  const runTransition = async (actionKey) => {
+  const transitionRequirementHints = useMemo(() => ({
+    requireRemark: transitionButtons.some((item) => Number(item?.transition?.require_remark) === 1),
+    requireFixSolution: transitionButtons.some((item) => Number(item?.transition?.require_fix_solution) === 1),
+    requireVerifyResult: transitionButtons.some((item) => Number(item?.transition?.require_verify_result) === 1),
+  }), [transitionButtons])
+
+  const runTransition = async (button) => {
     try {
+      const actionKey = toActionKey(button?.actionKey || button?.transition?.action_key)
+      const transition = button?.transition || null
+      if (!actionKey || !transition) {
+        message.warning('当前流转动作无效，请刷新后重试')
+        return
+      }
       const values = await remarkForm.validateFields()
       const remark = String(values.remark || '').trim()
       const fixSolution = String(values.fix_solution || '').trim()
@@ -214,41 +276,37 @@ function BugDetailPage() {
         }
       }
 
-      if (actionKey === 'fix' && !fixSolution) {
+      const requireRemark = Number(transition?.require_remark) === 1
+      const requireFixSolution = Number(transition?.require_fix_solution) === 1
+      const requireVerifyResult = Number(transition?.require_verify_result) === 1
+
+      if (requireFixSolution && !fixSolution) {
         jumpToField('fix_solution', '修复方案&影响范围不能为空')
-        message.warning('请先填写修复方案&影响范围，再执行“修复完成”')
+        message.warning('请先填写修复方案&影响范围，再执行当前操作')
         return
       }
 
-      if ((actionKey === 'reopen' || actionKey === 'reject') && !remark) {
+      if (requireRemark && !remark) {
         jumpToField('remark', '备注不能为空')
         message.warning('请先填写备注，再执行当前操作')
         return
       }
 
-      setActionLoading(actionKey)
-      let result = null
-
-      if (actionKey === 'start') {
-        result = await startBugApi(bugId, { remark })
-      } else if (actionKey === 'fix') {
-        result = await fixBugApi(bugId, {
-          remark,
-          fix_solution: fixSolution,
-        })
-      } else if (actionKey === 'verify') {
-        result = await verifyBugApi(bugId, {
-          remark,
-          verify_result: verifyResult,
-        })
-      } else if (actionKey === 'reopen') {
-        result = await reopenBugApi(bugId, {
-          remark,
-          verify_result: verifyResult,
-        })
-      } else if (actionKey === 'reject') {
-        result = await rejectBugApi(bugId, { remark })
+      if (requireVerifyResult && !verifyResult) {
+        jumpToField('verify_result', '验证结果不能为空')
+        message.warning('请先填写验证结果，再执行当前操作')
+        return
       }
+
+      setActionLoading(buildTransitionActionId(transition))
+      const toStatusCode = String(transition?.to_status_code || '').trim().toUpperCase()
+      const result = await transitionBugApi(bugId, {
+        action_key: actionKey,
+        to_status_code: toStatusCode,
+        remark,
+        fix_solution: fixSolution,
+        verify_result: verifyResult,
+      })
 
       if (!result?.success) {
         message.error(result?.message || '操作失败')
@@ -366,56 +424,65 @@ function BugDetailPage() {
       : []),
   ]
 
+  const uploadAttachmentFile = useCallback(async (file) => {
+    const currentFile = file || null
+    if (!currentFile) {
+      throw new Error('附件文件无效')
+    }
+    const policyRes = await getBugAttachmentPolicyApi(bugId, {
+      file_name: currentFile?.name || 'file',
+      mime_type: currentFile?.type || '',
+      file_size: currentFile?.size || 0,
+    })
+    if (!policyRes?.success) {
+      throw new Error(policyRes?.message || '获取OSS上传策略失败')
+    }
+
+    const policy = policyRes.data || {}
+    if (Number(policy.max_file_size || 0) > 0 && Number(currentFile?.size || 0) > Number(policy.max_file_size)) {
+      throw new Error(`附件大小不能超过 ${Math.ceil(Number(policy.max_file_size) / 1024 / 1024)}MB`)
+    }
+
+    const formData = new FormData()
+    Object.entries(policy.fields || {}).forEach(([key, value]) => {
+      formData.append(key, value)
+    })
+    formData.append('file', currentFile)
+
+    const uploadRes = await fetch(policy.host, {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!uploadRes.ok) {
+      const uploadText = await uploadRes.text().catch(() => '')
+      throw new Error(uploadText || `上传到OSS失败，状态码 ${uploadRes.status}`)
+    }
+
+    const registerRes = await createBugAttachmentApi(bugId, {
+      file_name: currentFile?.name || 'file',
+      file_ext: currentFile?.name?.includes('.') ? String(currentFile.name).split('.').pop() : '',
+      file_size: currentFile?.size || 0,
+      mime_type: currentFile?.type || '',
+      storage_provider: 'ALIYUN_OSS',
+      bucket_name: policy.bucket_name,
+      object_key: policy.object_key,
+      object_url: policy.object_url || '',
+    })
+
+    if (!registerRes?.success) {
+      throw new Error(registerRes?.message || '附件登记失败')
+    }
+
+    return registerRes.data
+  }, [bugId])
+
   const handleUpload = async ({ file, onSuccess, onError }) => {
     try {
       setUploading(true)
-      const policyRes = await getBugAttachmentPolicyApi(bugId, {
-        file_name: file?.name || 'file',
-        mime_type: file?.type || '',
-        file_size: file?.size || 0,
-      })
-      if (!policyRes?.success) {
-        throw new Error(policyRes?.message || '获取OSS上传策略失败')
-      }
-
-      const policy = policyRes.data || {}
-      if (Number(policy.max_file_size || 0) > 0 && Number(file?.size || 0) > Number(policy.max_file_size)) {
-        throw new Error(`附件大小不能超过 ${Math.ceil(Number(policy.max_file_size) / 1024 / 1024)}MB`)
-      }
-
-      const formData = new FormData()
-      Object.entries(policy.fields || {}).forEach(([key, value]) => {
-        formData.append(key, value)
-      })
-      formData.append('file', file)
-
-      const uploadRes = await fetch(policy.host, {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!uploadRes.ok) {
-        const uploadText = await uploadRes.text().catch(() => '')
-        throw new Error(uploadText || `上传到OSS失败，状态码 ${uploadRes.status}`)
-      }
-
-      const registerRes = await createBugAttachmentApi(bugId, {
-        file_name: file?.name || 'file',
-        file_ext: file?.name?.includes('.') ? String(file.name).split('.').pop() : '',
-        file_size: file?.size || 0,
-        mime_type: file?.type || '',
-        storage_provider: 'ALIYUN_OSS',
-        bucket_name: policy.bucket_name,
-        object_key: policy.object_key,
-        object_url: policy.object_url || '',
-      })
-
-      if (!registerRes?.success) {
-        throw new Error(registerRes?.message || '附件登记失败')
-      }
-
+      const uploaded = await uploadAttachmentFile(file)
       message.success('附件上传成功')
-      onSuccess?.(registerRes.data, file)
+      onSuccess?.(uploaded, file)
       await loadDetail()
     } catch (error) {
       message.error(error?.message || '附件上传失败')
@@ -424,6 +491,45 @@ function BugDetailPage() {
       setUploading(false)
     }
   }
+
+  const handlePasteUpload = useCallback(async (event) => {
+    if (!canUpdate || uploading) return
+    const files = extractClipboardFiles(event?.clipboardData)
+    if (files.length === 0) return
+
+    event.preventDefault()
+    setUploading(true)
+    let successCount = 0
+    const errors = []
+    try {
+      for (const file of files) {
+        try {
+          await uploadAttachmentFile(file)
+          successCount += 1
+        } catch (error) {
+          errors.push(error?.message || '附件上传失败')
+        }
+      }
+
+      if (successCount > 0) {
+        await loadDetail()
+        if (errors.length > 0) {
+          message.warning(`截图粘贴上传完成：成功 ${successCount} 个，失败 ${errors.length} 个`)
+        } else {
+          message.success(`截图粘贴上传成功（${successCount} 个）`)
+        }
+        return
+      }
+
+      message.error(errors[0] || '截图粘贴上传失败')
+    } finally {
+      setUploading(false)
+    }
+  }, [canUpdate, loadDetail, uploadAttachmentFile, uploading])
+
+  const handleUploadPasteFocus = useCallback((event) => {
+    event?.currentTarget?.focus?.()
+  }, [])
 
   const handleSubmitComment = async () => {
     try {
@@ -533,8 +639,8 @@ function BugDetailPage() {
                         type="primary"
                         className="bug-detail-page__status-action-btn"
                         icon={item.icon}
-                        loading={actionLoading === item.key}
-                        onClick={() => runTransition(item.key)}
+                        loading={actionLoading === item.actionId}
+                        onClick={() => runTransition(item)}
                       >
                         {item.label}
                       </Button>
@@ -572,24 +678,34 @@ function BugDetailPage() {
 
               <Card size="small" className="bug-detail-page__block" variant="borderless" title="流转操作">
                 <Form form={remarkForm} layout="vertical">
-                  <Form.Item label="备注" name="remark">
+                  <Form.Item
+                    label="备注"
+                    name="remark"
+                    required={transitionRequirementHints.requireRemark}
+                    extra={transitionRequirementHints.requireRemark ? '当前可执行动作中存在备注必填项' : '可选，打回/重开可补充原因'}
+                  >
                     <Input.TextArea rows={3} maxLength={20000} placeholder="打回、重开或处理说明可填写在这里" />
                   </Form.Item>
                   {canSeeFixModule ? (
                     <Form.Item
                       label="修复方案&影响范围"
                       name="fix_solution"
-                      required
-                      extra="执行“修复完成”时必填"
+                      required={transitionRequirementHints.requireFixSolution}
+                      extra={transitionRequirementHints.requireFixSolution ? '当前可执行动作中存在修复方案必填项' : '可选，建议记录修复方案'}
                     >
-                      <Input.TextArea rows={3} maxLength={20000} placeholder="请填写修复方案&影响范围（必填）" />
+                      <Input.TextArea rows={3} maxLength={20000} placeholder="请填写修复方案与影响范围" />
                     </Form.Item>
                   ) : null}
                   {canSeeVerifyModule ? (
                     <Form.Item
                       label="验证结果"
                       name="verify_result"
-                      extra="执行“验证通过”时选填；重新打开建议填写"
+                      required={transitionRequirementHints.requireVerifyResult}
+                      extra={
+                        transitionRequirementHints.requireVerifyResult
+                          ? '当前可执行动作中存在验证结果必填项'
+                          : '选填，建议补充验证说明'
+                      }
                     >
                       <Input.TextArea rows={3} maxLength={20000} placeholder="描述验证结果" />
                     </Form.Item>
@@ -601,17 +717,8 @@ function BugDetailPage() {
 
             <Card size="small" className="bug-detail-page__block" variant="borderless" title="问题描述">
               <Descriptions column={1} size="small">
-                <Descriptions.Item label="Bug描述">
-                  <Paragraph>{detail.description || '-'}</Paragraph>
-                </Descriptions.Item>
-                <Descriptions.Item label="重现步骤">
-                  <Paragraph>{detail.reproduce_steps || '-'}</Paragraph>
-                </Descriptions.Item>
-                <Descriptions.Item label="预期结果">
-                  <Paragraph>{detail.expected_result || '-'}</Paragraph>
-                </Descriptions.Item>
-                <Descriptions.Item label="实际结果">
-                  <Paragraph>{detail.actual_result || '-'}</Paragraph>
+                <Descriptions.Item label="描述">
+                  <Paragraph className="bug-detail-page__description-content">{detail.description || '-'}</Paragraph>
                 </Descriptions.Item>
                 <Descriptions.Item label="复现环境">
                   <Paragraph>{detail.environment_info || '-'}</Paragraph>
@@ -663,17 +770,29 @@ function BugDetailPage() {
               title="附件"
               extra={
                 canUpdate ? (
-                  <Upload
-                    showUploadList={false}
-                    customRequest={handleUpload}
-                    disabled={uploading}
-                    multiple={false}
-                    maxCount={1}
+                  <div
+                    className="bug-detail-page__upload-entry"
+                    tabIndex={0}
+                    onClick={handleUploadPasteFocus}
+                    onPaste={(event) => {
+                      void handlePasteUpload(event)
+                    }}
                   >
-                    <Button size="small" loading={uploading}>
-                      上传附件
-                    </Button>
-                  </Upload>
+                    <Upload
+                      showUploadList={false}
+                      customRequest={handleUpload}
+                      disabled={uploading}
+                      multiple={false}
+                      maxCount={1}
+                    >
+                      <Button size="small" loading={uploading}>
+                        上传附件
+                      </Button>
+                    </Upload>
+                    <Text type="secondary" className="bug-detail-page__upload-hint">
+                      点击后可直接粘贴截图上传（Ctrl/Cmd + V）
+                    </Text>
+                  </div>
                 ) : null
               }
             >

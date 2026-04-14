@@ -4,12 +4,13 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getDictItemsApi } from '../../api/configDict'
-import { createBugApi, createBugViewApi, deleteBugViewApi, fixBugApi, getBugAssigneesApi, getBugByIdApi, getBugViewByIdApi, getBugViewsApi, getBugsApi, rejectBugApi, reopenBugApi, startBugApi, updateBugViewApi, verifyBugApi } from '../../api/bug'
+import { createBugApi, createBugViewApi, deleteBugViewApi, getBugAssigneesApi, getBugByIdApi, getBugViewByIdApi, getBugViewsApi, getBugWorkflowConfigApi, getBugsApi, transitionBugApi, updateBugViewApi } from '../../api/bug'
 import { hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
 import { pinyinSelectFilter } from '../../utils/selectSearch'
 import { BugFormModal } from '../../modules/bug'
 import { uploadDraftAttachments } from '../../modules/bug/utils/attachmentUpload'
+import { buildWorkflowTransitionMap, normalizeBugWorkflowTransitions } from '../../modules/bug/utils/workflow'
 import './BugListPage.css'
 
 const { Text } = Typography
@@ -31,19 +32,6 @@ const BUG_VIEW_VISIBILITY_OPTIONS = [
   { label: '共享给他人', value: 'SHARED' },
 ]
 const BUG_VIEW_ALLOWED_PAGE_SIZE = new Set([20, 50, 100])
-const QUICK_STATUS_TRANSITION_MAP = Object.freeze({
-  NEW: [{ toStatus: 'PROCESSING', action: 'start' }],
-  REOPENED: [{ toStatus: 'PROCESSING', action: 'start' }],
-  PROCESSING: [
-    { toStatus: 'FIXED', action: 'fix', requiredField: 'fix_solution', requiredLabel: '修复方案&影响范围' },
-    { toStatus: 'CLOSED', action: 'reject', requiredField: 'remark', requiredLabel: '备注' },
-  ],
-  FIXED: [
-    { toStatus: 'CLOSED', action: 'verify' },
-    { toStatus: 'REOPENED', action: 'reopen', requiredField: 'remark', requiredLabel: '备注' },
-  ],
-  CLOSED: [{ toStatus: 'REOPENED', action: 'reopen', requiredField: 'remark', requiredLabel: '备注' }],
-})
 
 function getAttachmentUrl(row) {
   return String(row?.download_url || row?.object_url || '').trim()
@@ -198,6 +186,7 @@ function BugListPage() {
   const [statusSegmentOptions, setStatusSegmentOptions] = useState([{ label: '全部状态', value: '' }])
   const [statusNameMap, setStatusNameMap] = useState({})
   const [severityOptions, setSeverityOptions] = useState([{ label: '全部', value: undefined }])
+  const [workflowTransitions, setWorkflowTransitions] = useState([])
   const [attachmentPreviewMap, setAttachmentPreviewMap] = useState({})
   const [attachmentPreviewLoadingMap, setAttachmentPreviewLoadingMap] = useState({})
   const [activeAttachmentBugId, setActiveAttachmentBugId] = useState(0)
@@ -238,6 +227,10 @@ function BugListPage() {
         }
       }),
     [bugViews],
+  )
+  const workflowTransitionMap = useMemo(
+    () => buildWorkflowTransitionMap(workflowTransitions),
+    [workflowTransitions],
   )
 
   const loadDicts = useCallback(async () => {
@@ -287,6 +280,20 @@ function BugListPage() {
       message.error(error?.message || '加载人员筛选项失败')
     } finally {
       setUserOptionsLoading(false)
+    }
+  }, [])
+
+  const loadWorkflowConfig = useCallback(async () => {
+    try {
+      const result = await getBugWorkflowConfigApi()
+      if (!result?.success) {
+        throw new Error(result?.message || '加载Bug流程配置失败')
+      }
+      const transitions = normalizeBugWorkflowTransitions(result?.data?.transitions || [])
+      setWorkflowTransitions(transitions)
+    } catch (error) {
+      message.warning(error?.message || '加载Bug流程配置失败，已使用默认流程')
+      setWorkflowTransitions(normalizeBugWorkflowTransitions([]))
     }
   }, [])
 
@@ -465,6 +472,10 @@ function BugListPage() {
   useEffect(() => {
     loadUserOptions()
   }, [loadUserOptions])
+
+  useEffect(() => {
+    loadWorkflowConfig()
+  }, [loadWorkflowConfig])
 
   useEffect(() => {
     loadBugViews()
@@ -733,46 +744,43 @@ function BugListPage() {
     (row) => {
       const currentStatus = String(row?.status_code || '').trim().toUpperCase()
       const currentStatusName = String(row?.status_name || '').trim() || statusNameMap[currentStatus] || currentStatus || '-'
-      const transitions = QUICK_STATUS_TRANSITION_MAP[currentStatus] || []
+      const transitions = workflowTransitionMap.get(currentStatus) || []
       const options = [{ label: currentStatusName, value: currentStatus, disabled: true }]
       transitions.forEach((item) => {
-        const statusCode = String(item?.toStatus || '').trim().toUpperCase()
+        const statusCode = String(item?.to_status_code || '').trim().toUpperCase()
         if (!statusCode) return
         const statusName = statusNameMap[statusCode] || statusCode
-        const suffix = item?.requiredField ? `（需填写${item.requiredLabel}）` : ''
+        const requiredLabels = []
+        if (Number(item?.require_remark) === 1) requiredLabels.push('备注')
+        if (Number(item?.require_fix_solution) === 1) requiredLabels.push('修复方案&影响范围')
+        if (Number(item?.require_verify_result) === 1) requiredLabels.push('验证结果')
+        const suffix = requiredLabels.length > 0 ? `（需填写${requiredLabels.join('、')}）` : ''
         options.push({
-          label: `${statusName}${suffix}`,
+          label: `${String(item?.action_name || '').trim() || statusName}${suffix}`,
           value: statusCode,
         })
       })
       return options
     },
-    [statusNameMap],
+    [statusNameMap, workflowTransitionMap],
   )
 
   const runQuickTransition = useCallback(
     async (bug, transition, extraPayload = {}) => {
       const bugId = Number(bug?.id || 0)
-      if (!bugId || !transition?.action) return
+      const actionKey = String(transition?.action_key || transition?.action || '').trim().toLowerCase()
+      const toStatusCode = String(transition?.to_status_code || '').trim().toUpperCase()
+      if (!bugId || !actionKey || !toStatusCode) return
       try {
         setStatusUpdatingMap((prev) => ({ ...prev, [bugId]: true }))
-        let result = null
         const payload = {
+          action_key: actionKey,
+          to_status_code: toStatusCode,
           remark: extraPayload.remark || undefined,
           fix_solution: extraPayload.fix_solution || undefined,
           verify_result: extraPayload.verify_result || undefined,
         }
-        if (transition.action === 'start') {
-          result = await startBugApi(bugId, payload)
-        } else if (transition.action === 'fix') {
-          result = await fixBugApi(bugId, payload)
-        } else if (transition.action === 'verify') {
-          result = await verifyBugApi(bugId, payload)
-        } else if (transition.action === 'reopen') {
-          result = await reopenBugApi(bugId, payload)
-        } else if (transition.action === 'reject') {
-          result = await rejectBugApi(bugId, payload)
-        }
+        const result = await transitionBugApi(bugId, payload)
 
         if (!result?.success) {
           message.error(result?.message || '状态更新失败')
@@ -794,14 +802,18 @@ function BugListPage() {
       const currentStatus = String(row?.status_code || '').trim().toUpperCase()
       const nextStatus = String(nextStatusCode || '').trim().toUpperCase()
       if (!currentStatus || !nextStatus || currentStatus === nextStatus) return
-      const transition = (QUICK_STATUS_TRANSITION_MAP[currentStatus] || []).find(
-        (item) => String(item?.toStatus || '').trim().toUpperCase() === nextStatus,
+      const transition = (workflowTransitionMap.get(currentStatus) || []).find(
+        (item) => String(item?.to_status_code || '').trim().toUpperCase() === nextStatus,
       )
       if (!transition) {
         message.warning('当前状态不支持直接切换到目标状态')
         return
       }
-      if (transition.requiredField) {
+      const requireAnyField =
+        Number(transition?.require_remark) === 1 ||
+        Number(transition?.require_fix_solution) === 1 ||
+        Number(transition?.require_verify_result) === 1
+      if (requireAnyField) {
         transitionForm.resetFields()
         setStatusDialog({
           open: true,
@@ -812,7 +824,7 @@ function BugListPage() {
       }
       await runQuickTransition(row, transition)
     },
-    [runQuickTransition, transitionForm],
+    [runQuickTransition, transitionForm, workflowTransitionMap],
   )
 
   const submitQuickTransitionWithForm = useCallback(async () => {
@@ -1386,7 +1398,7 @@ function BugListPage() {
         destroyOnHidden
       >
         <Form form={transitionForm} layout="vertical">
-          {statusDialog.transition?.requiredField === 'remark' ? (
+          {Number(statusDialog.transition?.require_remark) === 1 ? (
             <Form.Item
               label="备注"
               name="remark"
@@ -1395,13 +1407,22 @@ function BugListPage() {
               <Input.TextArea rows={3} maxLength={2000} placeholder="请输入备注信息" />
             </Form.Item>
           ) : null}
-          {statusDialog.transition?.requiredField === 'fix_solution' ? (
+          {Number(statusDialog.transition?.require_fix_solution) === 1 ? (
             <Form.Item
               label="修复方案&影响范围"
               name="fix_solution"
               rules={[{ required: true, message: '请输入修复方案&影响范围' }]}
             >
               <Input.TextArea rows={3} maxLength={2000} placeholder="请输入修复方案与影响范围" />
+            </Form.Item>
+          ) : null}
+          {Number(statusDialog.transition?.require_verify_result) === 1 ? (
+            <Form.Item
+              label="验证结果"
+              name="verify_result"
+              rules={[{ required: true, message: '请输入验证结果' }]}
+            >
+              <Input.TextArea rows={3} maxLength={2000} placeholder="请输入验证结果" />
             </Form.Item>
           ) : null}
         </Form>

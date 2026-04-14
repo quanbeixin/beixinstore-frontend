@@ -47,6 +47,7 @@ const FeishuContacts = lazy(() => import('./pages/integration/FeishuContactsPage
 const FeishuUserBindings = lazy(() => import('./pages/integration/FeishuUserBindingsPage'))
 const BugList = lazy(() => import('./pages/bug/BugListPage'))
 const BugDetail = lazy(() => import('./pages/bug/BugDetailPage'))
+const BugWorkflowConfig = lazy(() => import('./pages/bug/BugWorkflowConfigPage'))
 const FeedbackList = lazy(() => import('./pages/feedback/FeedbackListPage'))
 const FeedbackDashboard = lazy(() => import('./pages/feedback/FeedbackDashboardPage'))
 const FeedbackAIPromptConfig = lazy(() => import('./pages/feedback/AIPromptConfigPage'))
@@ -64,6 +65,7 @@ const PAGE_COMPONENTS = {
   archiveDemands: ArchiveDemands,
   bugList: BugList,
   bugDetail: BugDetail,
+  bugWorkflowConfig: BugWorkflowConfig,
   feedbackList: FeedbackList,
   feedbackDashboard: FeedbackDashboard,
   feedbackAIPromptConfig: FeedbackAIPromptConfig,

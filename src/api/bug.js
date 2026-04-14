@@ -40,12 +40,24 @@ export function rejectBugApi(id, payload = {}) {
   return request.post(`/work/bugs/${id}/reject`, payload)
 }
 
+export function transitionBugApi(id, payload = {}) {
+  return request.post(`/work/bugs/${id}/transition`, payload)
+}
+
 export function createBugCommentApi(id, payload = {}) {
   return request.post(`/work/bugs/${id}/comments`, payload)
 }
 
 export function getBugAssigneesApi(params) {
   return request.get('/work/bugs/assignees', { params })
+}
+
+export function getBugWorkflowConfigApi() {
+  return request.get('/work/bugs/workflow/config')
+}
+
+export function updateBugWorkflowConfigApi(payload) {
+  return request.put('/work/bugs/workflow/config', payload)
 }
 
 export function getBugViewsApi() {

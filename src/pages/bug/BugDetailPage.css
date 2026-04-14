@@ -198,6 +198,26 @@
   cursor: zoom-in;
 }
 
+.bug-detail-page__description-content {
+  white-space: pre-wrap;
+}
+
+.bug-detail-page__upload-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  outline: none;
+}
+
+.bug-detail-page__upload-entry:focus-visible .ant-btn {
+  box-shadow: 0 0 0 2px rgba(80, 119, 205, 0.22);
+}
+
+.bug-detail-page__upload-hint {
+  font-size: 12px;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .bug-detail-page__block,
   .bug-detail-page__head,
@@ -238,5 +258,9 @@
 
   .bug-detail-page__head-actions .ant-btn {
     min-width: 86px;
+  }
+
+  .bug-detail-page__upload-entry {
+    align-items: flex-start;
   }
 }

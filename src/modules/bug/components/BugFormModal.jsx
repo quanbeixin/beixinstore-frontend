@@ -7,6 +7,15 @@ import { getBugAssigneesApi } from '../../../api/bug'
 import { pinyinSelectFilter } from '../../../utils/selectSearch'
 import './bug-form-modal.css'
 
+const BUG_DESCRIPTION_TEMPLATE = `【前置条件】
+
+【复现步骤】
+
+【实际结果】
+
+【预期结果】
+-`
+
 function mapDictOptions(rows) {
   return (rows || []).map((item) => ({
     label: item?.item_name || item?.item_code || '-',
@@ -26,6 +35,29 @@ function mapAssigneeOptions(rows) {
     label: item?.name || item?.username || `用户${item?.id}`,
     value: item?.id,
   }))
+}
+
+function buildDescriptionInitialValue(initialValues = null) {
+  const description = String(initialValues?.description || '').trim()
+  if (description) return description
+
+  const reproduceSteps = String(initialValues?.reproduce_steps || '').trim()
+  const actualResult = String(initialValues?.actual_result || '').trim()
+  const expectedResult = String(initialValues?.expected_result || '').trim()
+  const hasLegacyContent = reproduceSteps || actualResult || expectedResult
+  if (!hasLegacyContent) return BUG_DESCRIPTION_TEMPLATE
+
+  return `【前置条件】
+
+【复现步骤】
+${reproduceSteps}
+
+【实际结果】
+${actualResult}
+
+【预期结果】
+${expectedResult}
+-`
 }
 
 function BugFormModal({
@@ -136,7 +168,7 @@ function BugFormModal({
       : []
     const nextValues = {
       title: initialValues?.title || '',
-      description: initialValues?.description || '',
+      description: buildDescriptionInitialValue(initialValues),
       severity_code: initialValues?.severity_code || undefined,
       bug_type_code: initialValues?.bug_type_code || undefined,
       product_code: initialValues?.product_code || undefined,
@@ -144,9 +176,6 @@ function BugFormModal({
       demand_id: nextDemandId || undefined,
       assignee_ids: initialAssigneeIds,
       watcher_ids: initialWatcherIds,
-      reproduce_steps: initialValues?.reproduce_steps || '',
-      expected_result: initialValues?.expected_result || '',
-      actual_result: initialValues?.actual_result || '',
       environment_info: initialValues?.environment_info || '',
     }
     form.setFieldsValue(nextValues)
@@ -204,15 +233,16 @@ function BugFormModal({
 
   const formContent = (
     <Form form={form} layout="vertical" disabled={loadingOptions || confirmLoading}>
+      <Form.Item
+        label="Bug标题"
+        name="title"
+        style={{ width: '100%' }}
+        rules={[{ required: true, message: '请输入Bug标题' }]}
+      >
+        <Input maxLength={200} placeholder="简明描述问题现象" />
+      </Form.Item>
+
       <Space size={12} style={{ width: '100%' }} wrap>
-        <Form.Item
-          label="Bug标题"
-          name="title"
-          style={{ minWidth: 320, flex: 1 }}
-          rules={[{ required: true, message: '请输入Bug标题' }]}
-        >
-          <Input maxLength={200} placeholder="简明描述问题现象" />
-        </Form.Item>
         <Form.Item
           label="处理人"
           name="assignee_ids"
@@ -276,35 +306,11 @@ function BugFormModal({
       </Form.Item>
 
       <Form.Item
-        label="Bug描述"
+        label="描述"
         name="description"
         rules={[{ required: true, message: '请输入Bug描述' }]}
       >
-        <Input.TextArea rows={3} maxLength={20000} placeholder="简明说明问题背景和影响范围" />
-      </Form.Item>
-
-      <Form.Item
-        label="重现步骤"
-        name="reproduce_steps"
-        rules={[{ required: true, message: '请输入重现步骤' }]}
-      >
-        <Input.TextArea rows={4} maxLength={20000} placeholder="按顺序描述如何复现该问题" />
-      </Form.Item>
-
-      <Form.Item
-        label="预期结果"
-        name="expected_result"
-        rules={[{ required: true, message: '请输入预期结果' }]}
-      >
-        <Input.TextArea rows={3} maxLength={20000} placeholder="正确行为应该是什么" />
-      </Form.Item>
-
-      <Form.Item
-        label="实际结果"
-        name="actual_result"
-        rules={[{ required: true, message: '请输入实际结果' }]}
-      >
-        <Input.TextArea rows={3} maxLength={20000} placeholder="实际发生了什么" />
+        <Input.TextArea rows={11} maxLength={20000} placeholder={BUG_DESCRIPTION_TEMPLATE} />
       </Form.Item>
 
       <Form.Item label="复现环境" name="environment_info">
@@ -347,8 +353,8 @@ function BugFormModal({
         className="bug-form-modal"
         onClose={onCancel}
         footer={actionButtons}
-        destroyOnClose
-        maskClosable
+        destroyOnHidden
+        mask={{ closable: true }}
       >
         {formContent}
       </Drawer>
