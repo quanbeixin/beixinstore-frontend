@@ -62,6 +62,7 @@ const DEFAULT_VISIBLE_COLUMNS = [
 ]
 
 const DEFAULT_PRODUCT_OPTIONS = ['A1', 'Minimix', 'Vimi', 'Couplelens', 'Veeo', 'Heyo', 'POPDoll', 'Beyo', 'Viyo']
+const PINNED_PRODUCT_OPTIONS = ['Pixop', 'Facefame']
 const DEFAULT_CHANNEL_OPTIONS = ['邮件', '表单', '商店评论', '其他']
 const DUPLICATE_TIME_WINDOW_MINUTES = 5
 const DUPLICATE_TIME_WINDOW_MS = DUPLICATE_TIME_WINDOW_MINUTES * 60 * 1000
@@ -326,11 +327,11 @@ function FeedbackListPage() {
   }, [fetchRows, filters.searchText])
 
   const productTabs = useMemo(() => {
-    const products = [...new Set([...(dictProductNames || []), ...(rows || []).map((item) => item.product)].filter(Boolean))]
+    const products = [...new Set([...(dictProductNames || []), ...PINNED_PRODUCT_OPTIONS].filter(Boolean))]
     return [{ key: 'all', label: '全部' }].concat(
       products.map((product) => ({ key: product, label: product })),
     )
-  }, [rows, dictProductNames])
+  }, [dictProductNames])
 
   const groupedRows = useMemo(() => {
     const list = Array.isArray(rows) ? rows : []
@@ -380,9 +381,8 @@ function FeedbackListPage() {
   }, [rows])
 
   const productOptions = useMemo(
-    () =>
-      [...new Set([...(dictProductNames || []), ...(rows || []).map((item) => item.product)].filter(Boolean))],
-    [rows, dictProductNames],
+    () => [...new Set([...(dictProductNames || []), ...PINNED_PRODUCT_OPTIONS].filter(Boolean))],
+    [dictProductNames],
   )
 
   const channelOptions = useMemo(
