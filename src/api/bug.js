@@ -48,6 +48,26 @@ export function getBugAssigneesApi(params) {
   return request.get('/work/bugs/assignees', { params })
 }
 
+export function getBugViewsApi() {
+  return request.get('/work/bugs/views')
+}
+
+export function getBugViewByIdApi(viewId) {
+  return request.get(`/work/bugs/views/${viewId}`)
+}
+
+export function createBugViewApi(payload) {
+  return request.post('/work/bugs/views', payload)
+}
+
+export function updateBugViewApi(viewId, payload) {
+  return request.put(`/work/bugs/views/${viewId}`, payload)
+}
+
+export function deleteBugViewApi(viewId) {
+  return request.delete(`/work/bugs/views/${viewId}`)
+}
+
 export function getDemandBugsApi(demandId, params) {
   return request.get(`/work/demands/${demandId}/bugs`, { params })
 }

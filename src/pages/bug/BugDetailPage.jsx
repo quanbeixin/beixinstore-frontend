@@ -220,12 +220,6 @@ function BugDetailPage() {
         return
       }
 
-      if (actionKey === 'verify' && !verifyResult) {
-        jumpToField('verify_result', '验证结果不能为空')
-        message.warning('请先填写验证结果，再执行“验证通过”')
-        return
-      }
-
       if ((actionKey === 'reopen' || actionKey === 'reject') && !remark) {
         jumpToField('remark', '备注不能为空')
         message.warning('请先填写备注，再执行当前操作')
@@ -595,7 +589,7 @@ function BugDetailPage() {
                     <Form.Item
                       label="验证结果"
                       name="verify_result"
-                      extra="执行“验证通过”时必填；重新打开建议填写"
+                      extra="执行“验证通过”时选填；重新打开建议填写"
                     >
                       <Input.TextArea rows={3} maxLength={20000} placeholder="描述验证结果" />
                     </Form.Item>

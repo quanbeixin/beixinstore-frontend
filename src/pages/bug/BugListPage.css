@@ -68,6 +68,10 @@
   margin-bottom: 8px;
 }
 
+.bug-list-page__filter-row--view {
+  margin-bottom: 8px;
+}
+
 .bug-list-page__filter-label {
   font-size: 12px;
   color: var(--bug-list-muted);

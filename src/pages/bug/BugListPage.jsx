@@ -1,9 +1,10 @@
-import { BugOutlined, FilterOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
-import { Button, Card, DatePicker, Empty, Form, Image, Input, Modal, Popover, Segmented, Select, Space, Spin, Table, Tag, Typography, message } from 'antd'
+import { BugOutlined, DeleteOutlined, FilterOutlined, LinkOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from '@ant-design/icons'
+import { Button, Card, DatePicker, Empty, Form, Image, Input, Modal, Popconfirm, Popover, Segmented, Select, Space, Spin, Table, Tag, Typography, message } from 'antd'
+import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { getDictItemsApi } from '../../api/configDict'
-import { createBugApi, fixBugApi, getBugAssigneesApi, getBugByIdApi, getBugsApi, rejectBugApi, reopenBugApi, startBugApi, verifyBugApi } from '../../api/bug'
+import { createBugApi, createBugViewApi, deleteBugViewApi, fixBugApi, getBugAssigneesApi, getBugByIdApi, getBugViewByIdApi, getBugViewsApi, getBugsApi, rejectBugApi, reopenBugApi, startBugApi, updateBugViewApi, verifyBugApi } from '../../api/bug'
 import { hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
 import { pinyinSelectFilter } from '../../utils/selectSearch'
@@ -25,6 +26,11 @@ const GROUP_FIELD_LABEL_MAP = GROUP_FIELD_OPTIONS.reduce((acc, item) => {
   acc[item.value] = item.label
   return acc
 }, {})
+const BUG_VIEW_VISIBILITY_OPTIONS = [
+  { label: '仅自己可见', value: 'PRIVATE' },
+  { label: '共享给他人', value: 'SHARED' },
+]
+const BUG_VIEW_ALLOWED_PAGE_SIZE = new Set([20, 50, 100])
 const QUICK_STATUS_TRANSITION_MAP = Object.freeze({
   NEW: [{ toStatus: 'PROCESSING', action: 'start' }],
   REOPENED: [{ toStatus: 'PROCESSING', action: 'start' }],
@@ -33,7 +39,7 @@ const QUICK_STATUS_TRANSITION_MAP = Object.freeze({
     { toStatus: 'CLOSED', action: 'reject', requiredField: 'remark', requiredLabel: '备注' },
   ],
   FIXED: [
-    { toStatus: 'CLOSED', action: 'verify', requiredField: 'verify_result', requiredLabel: '验证结果' },
+    { toStatus: 'CLOSED', action: 'verify' },
     { toStatus: 'REOPENED', action: 'reopen', requiredField: 'remark', requiredLabel: '备注' },
   ],
   CLOSED: [{ toStatus: 'REOPENED', action: 'reopen', requiredField: 'remark', requiredLabel: '备注' }],
@@ -71,6 +77,36 @@ function mapSegmentedOptions(rows) {
       value: item?.item_code || '',
     })),
   )
+}
+
+function normalizeViewConfig(config = {}) {
+  const source = config && typeof config === 'object' ? config : {}
+  const groupFields = (Array.isArray(source.group_fields) ? source.group_fields : [])
+    .map((item) => String(item || '').trim())
+    .filter((item, index, arr) => GROUP_FIELD_OPTIONS.some((option) => option.value === item) && arr.indexOf(item) === index)
+    .slice(0, 3)
+  const pageSize = Number(source.page_size || 0)
+  return {
+    keyword: String(source.keyword || '').trim(),
+    status_code: String(source.status_code || '').trim().toUpperCase(),
+    severity_code: String(source.severity_code || '').trim().toUpperCase(),
+    assignee_id: Number.isInteger(Number(source.assignee_id)) && Number(source.assignee_id) > 0 ? Number(source.assignee_id) : undefined,
+    reporter_id: Number.isInteger(Number(source.reporter_id)) && Number(source.reporter_id) > 0 ? Number(source.reporter_id) : undefined,
+    start_date: String(source.start_date || '').trim(),
+    end_date: String(source.end_date || '').trim(),
+    group_fields: groupFields,
+    page_size: BUG_VIEW_ALLOWED_PAGE_SIZE.has(pageSize) ? pageSize : 20,
+  }
+}
+
+function buildViewDateRange(config = {}) {
+  const start = String(config.start_date || '').trim()
+  const end = String(config.end_date || '').trim()
+  if (!start || !end) return null
+  const startValue = dayjs(start, 'YYYY-MM-DD')
+  const endValue = dayjs(end, 'YYYY-MM-DD')
+  if (!startValue.isValid() || !endValue.isValid()) return null
+  return [startValue, endValue]
 }
 
 function resolveGroupBucket(field, row) {
@@ -137,6 +173,7 @@ function buildGroupedTreeRows(sourceRows, groupFields, level = 0, parentKey = 'r
 
 function BugListPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const canCreate = hasPermission('bug.create')
   const canTransition = hasPermission('bug.transition')
 
@@ -170,10 +207,38 @@ function BugListPage() {
     bug: null,
     transition: null,
   })
+  const [viewListLoading, setViewListLoading] = useState(false)
+  const [viewSaveLoading, setViewSaveLoading] = useState(false)
+  const [bugViews, setBugViews] = useState([])
+  const [activeViewId, setActiveViewId] = useState(undefined)
+  const [saveViewModalOpen, setSaveViewModalOpen] = useState(false)
   const [transitionForm] = Form.useForm()
+  const [saveViewForm] = Form.useForm()
   const groupingLimitWarnedRef = useRef(false)
 
   const isGroupingEnabled = groupFields.length > 0
+
+  const activeView = useMemo(
+    () => bugViews.find((item) => Number(item?.id) === Number(activeViewId)) || null,
+    [activeViewId, bugViews],
+  )
+  const bugViewOptions = useMemo(
+    () =>
+      (bugViews || []).map((item) => {
+        const id = Number(item?.id || 0)
+        const isOwner = Boolean(item?.is_owner)
+        const creatorName = String(item?.creator_name || '').trim()
+        const label = isOwner
+          ? item?.view_name || `视图${id}`
+          : `${item?.view_name || `视图${id}`}（来自${creatorName || '共享'}）`
+        return {
+          label,
+          value: id,
+          searchText: `${item?.view_name || ''} ${creatorName}`.trim(),
+        }
+      }),
+    [bugViews],
+  )
 
   const loadDicts = useCallback(async () => {
     try {
@@ -234,6 +299,97 @@ function BugListPage() {
     start_date: createdRange?.[0]?.format?.('YYYY-MM-DD') || undefined,
     end_date: createdRange?.[1]?.format?.('YYYY-MM-DD') || undefined,
   }), [assigneeFilter, createdRange, keyword, reporterFilter, severityFilter, statusFilter])
+
+  const buildCurrentViewConfig = useCallback(
+    () => ({
+      keyword: String(keyword || '').trim(),
+      status_code: String(statusFilter || '').trim().toUpperCase(),
+      severity_code: String(severityFilter || '').trim().toUpperCase(),
+      assignee_id: Number(assigneeFilter || 0) > 0 ? Number(assigneeFilter) : null,
+      reporter_id: Number(reporterFilter || 0) > 0 ? Number(reporterFilter) : null,
+      start_date: createdRange?.[0]?.format?.('YYYY-MM-DD') || '',
+      end_date: createdRange?.[1]?.format?.('YYYY-MM-DD') || '',
+      group_fields: Array.isArray(groupFields) ? groupFields : [],
+      page_size: BUG_VIEW_ALLOWED_PAGE_SIZE.has(Number(pageSize)) ? Number(pageSize) : 20,
+    }),
+    [assigneeFilter, createdRange, groupFields, keyword, pageSize, reporterFilter, severityFilter, statusFilter],
+  )
+
+  const setViewQueryParam = useCallback(
+    (viewId, { replace = true } = {}) => {
+      const params = new URLSearchParams(location.search || '')
+      const normalizedViewId = Number(viewId || 0)
+      if (normalizedViewId > 0) {
+        params.set('view_id', String(normalizedViewId))
+      } else {
+        params.delete('view_id')
+      }
+      const search = params.toString()
+      navigate(
+        {
+          pathname: location.pathname,
+          search: search ? `?${search}` : '',
+        },
+        { replace },
+      )
+    },
+    [location.pathname, location.search, navigate],
+  )
+
+  const applyViewState = useCallback((rawConfig = {}) => {
+    const config = normalizeViewConfig(rawConfig)
+    setKeyword(config.keyword || '')
+    setSearchInput(config.keyword || '')
+    setStatusFilter(config.status_code || '')
+    setSeverityFilter(config.severity_code || '')
+    setAssigneeFilter(config.assignee_id || undefined)
+    setReporterFilter(config.reporter_id || undefined)
+    setCreatedRange(buildViewDateRange(config))
+    setGroupFields(Array.isArray(config.group_fields) ? config.group_fields : [])
+    setPageSize(config.page_size || 20)
+    setPage(1)
+  }, [])
+
+  const loadBugViews = useCallback(async () => {
+    setViewListLoading(true)
+    try {
+      const result = await getBugViewsApi()
+      if (!result?.success) {
+        throw new Error(result?.message || '加载视图失败')
+      }
+      setBugViews(Array.isArray(result?.data) ? result.data : [])
+    } catch (error) {
+      message.error(error?.message || '加载视图失败')
+    } finally {
+      setViewListLoading(false)
+    }
+  }, [])
+
+  const loadAndApplyBugView = useCallback(
+    async (viewId, { syncUrl = true, silent = false } = {}) => {
+      const normalizedViewId = Number(viewId || 0)
+      if (!normalizedViewId) return
+
+      let targetView = (bugViews || []).find((item) => Number(item?.id || 0) === normalizedViewId) || null
+      if (!targetView) {
+        const result = await getBugViewByIdApi(normalizedViewId)
+        if (!result?.success || !result?.data) {
+          throw new Error(result?.message || '视图不存在或无权限查看')
+        }
+        targetView = result.data
+      }
+
+      applyViewState(targetView?.config || {})
+      setActiveViewId(normalizedViewId)
+      if (syncUrl) {
+        setViewQueryParam(normalizedViewId)
+      }
+      if (!silent) {
+        message.success(`已应用视图：${targetView?.view_name || normalizedViewId}`)
+      }
+    },
+    [applyViewState, bugViews, setViewQueryParam],
+  )
 
   const loadBugs = useCallback(async () => {
     setLoading(true)
@@ -311,8 +467,23 @@ function BugListPage() {
   }, [loadUserOptions])
 
   useEffect(() => {
+    loadBugViews()
+  }, [loadBugViews])
+
+  useEffect(() => {
     loadBugs()
   }, [loadBugs])
+
+  useEffect(() => {
+    const viewIdFromQuery = Number(new URLSearchParams(location.search || '').get('view_id') || 0)
+    if (!viewIdFromQuery) return
+    if (Number(activeViewId || 0) === viewIdFromQuery) return
+
+    loadAndApplyBugView(viewIdFromQuery, { syncUrl: false, silent: true }).catch((error) => {
+      message.error(error?.message || '加载分享视图失败')
+      setViewQueryParam(0)
+    })
+  }, [activeViewId, loadAndApplyBugView, location.search, setViewQueryParam])
 
   const activeFilterCount = useMemo(
     () =>
@@ -338,6 +509,114 @@ function BugListPage() {
     setPage(1)
     setPageSize(20)
   }, [])
+
+  const openSaveViewModal = useCallback(() => {
+    const defaultName = activeView?.view_name
+      ? `${activeView.view_name}-副本`
+      : `Bug视图-${dayjs().format('MMDD-HHmm')}`
+    saveViewForm.setFieldsValue({
+      name: defaultName,
+      visibility: activeView?.visibility || 'PRIVATE',
+    })
+    setSaveViewModalOpen(true)
+  }, [activeView?.view_name, activeView?.visibility, saveViewForm])
+
+  const submitCreateBugView = useCallback(async () => {
+    try {
+      const values = await saveViewForm.validateFields()
+      setViewSaveLoading(true)
+      const result = await createBugViewApi({
+        view_name: String(values?.name || '').trim(),
+        visibility: String(values?.visibility || 'PRIVATE').trim().toUpperCase(),
+        config: buildCurrentViewConfig(),
+      })
+      if (!result?.success || !result?.data) {
+        throw new Error(result?.message || '保存视图失败')
+      }
+      const createdViewId = Number(result?.data?.id || 0)
+      await loadBugViews()
+      if (createdViewId > 0) {
+        await loadAndApplyBugView(createdViewId, { syncUrl: true, silent: true })
+      }
+      setSaveViewModalOpen(false)
+      saveViewForm.resetFields()
+      message.success(result?.message || '视图已保存')
+    } catch (error) {
+      if (error?.errorFields) return
+      message.error(error?.message || '保存视图失败')
+    } finally {
+      setViewSaveLoading(false)
+    }
+  }, [buildCurrentViewConfig, loadAndApplyBugView, loadBugViews, saveViewForm])
+
+  const handleUpdateActiveView = useCallback(async () => {
+    const viewId = Number(activeView?.id || 0)
+    if (!viewId) return
+    try {
+      setViewSaveLoading(true)
+      const result = await updateBugViewApi(viewId, {
+        view_name: activeView?.view_name || `视图${viewId}`,
+        visibility: activeView?.visibility || 'PRIVATE',
+        config: buildCurrentViewConfig(),
+      })
+      if (!result?.success) {
+        throw new Error(result?.message || '更新视图失败')
+      }
+      await loadBugViews()
+      message.success(result?.message || '视图已更新')
+    } catch (error) {
+      message.error(error?.message || '更新视图失败')
+    } finally {
+      setViewSaveLoading(false)
+    }
+  }, [activeView?.id, activeView?.view_name, activeView?.visibility, buildCurrentViewConfig, loadBugViews])
+
+  const handleDeleteActiveView = useCallback(async () => {
+    const viewId = Number(activeView?.id || 0)
+    if (!viewId) return
+    try {
+      setViewSaveLoading(true)
+      const result = await deleteBugViewApi(viewId)
+      if (!result?.success) {
+        throw new Error(result?.message || '删除视图失败')
+      }
+      setActiveViewId(undefined)
+      setViewQueryParam(0)
+      await loadBugViews()
+      message.success(result?.message || '视图已删除')
+    } catch (error) {
+      message.error(error?.message || '删除视图失败')
+    } finally {
+      setViewSaveLoading(false)
+    }
+  }, [activeView?.id, loadBugViews, setViewQueryParam])
+
+  const handleCopyViewLink = useCallback(async () => {
+    const viewId = Number(activeView?.id || 0)
+    if (!viewId) return
+    const shareUrl = `${window.location.origin}${location.pathname}?view_id=${viewId}`
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl)
+        message.success('视图链接已复制')
+        return
+      }
+      throw new Error('clipboard unavailable')
+    } catch {
+      Modal.info({
+        title: '复制链接',
+        content: (
+          <Input
+            value={shareUrl}
+            readOnly
+            onFocus={(event) => {
+              event.target.select()
+            }}
+          />
+        ),
+      })
+    }
+  }, [activeView?.id, location.pathname])
 
   const tableDataSource = useMemo(() => {
     if (!isGroupingEnabled) return rows
@@ -766,6 +1045,81 @@ function BugListPage() {
         }
       >
         <div className="bug-list-page__filter-panel">
+          <div className="bug-list-page__filter-row bug-list-page__filter-row--view">
+            <Text strong className="bug-list-page__filter-label">
+              视图
+            </Text>
+            <Select
+              size="small"
+              showSearch
+              allowClear
+              style={{ width: 280 }}
+              value={activeViewId}
+              options={bugViewOptions}
+              loading={viewListLoading}
+              filterOption={pinyinSelectFilter}
+              placeholder="选择已保存视图"
+              onChange={(value) => {
+                const nextViewId = Number(value || 0)
+                if (!nextViewId) {
+                  setActiveViewId(undefined)
+                  setViewQueryParam(0)
+                  return
+                }
+                loadAndApplyBugView(nextViewId, { syncUrl: true, silent: false }).catch((error) => {
+                  message.error(error?.message || '应用视图失败')
+                })
+              }}
+            />
+            <Button size="small" icon={<SaveOutlined />} onClick={openSaveViewModal}>
+              存为视图
+            </Button>
+            <Button
+              size="small"
+              loading={viewSaveLoading}
+              disabled={!activeView?.can_edit}
+              onClick={() => {
+                void handleUpdateActiveView()
+              }}
+            >
+              更新当前视图
+            </Button>
+            <Button
+              size="small"
+              icon={<LinkOutlined />}
+              disabled={!activeViewId}
+              onClick={() => {
+                void handleCopyViewLink()
+              }}
+            >
+              复制链接
+            </Button>
+            <Popconfirm
+              title="确认删除这个视图吗？"
+              okText="删除"
+              cancelText="取消"
+              disabled={!activeView?.can_delete}
+              onConfirm={() => {
+                void handleDeleteActiveView()
+              }}
+            >
+              <Button
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                disabled={!activeView?.can_delete}
+                loading={viewSaveLoading}
+              >
+                删除视图
+              </Button>
+            </Popconfirm>
+            {activeView ? (
+              <Tag color={activeView.visibility === 'SHARED' ? 'green' : 'default'}>
+                {activeView.visibility === 'SHARED' ? '共享视图' : '个人视图'}
+              </Tag>
+            ) : null}
+          </div>
+
           <div className="bug-list-page__filter-row bug-list-page__filter-row--status">
             <Text strong className="bug-list-page__filter-label">
               状态筛选
@@ -881,7 +1235,15 @@ function BugListPage() {
             >
               查询
             </Button>
-            <Button size="small" icon={<FilterOutlined />} onClick={resetFilters}>
+            <Button
+              size="small"
+              icon={<FilterOutlined />}
+              onClick={() => {
+                resetFilters()
+                setActiveViewId(undefined)
+                setViewQueryParam(0)
+              }}
+            >
               清空筛选
             </Button>
             <Text type="secondary" className="bug-list-page__total">
@@ -937,6 +1299,38 @@ function BugListPage() {
           }}
         />
       </Card>
+
+      <Modal
+        title="保存筛选视图"
+        open={saveViewModalOpen}
+        onCancel={() => {
+          setSaveViewModalOpen(false)
+          saveViewForm.resetFields()
+        }}
+        onOk={() => {
+          void submitCreateBugView()
+        }}
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={viewSaveLoading}
+        destroyOnHidden
+      >
+        <Form form={saveViewForm} layout="vertical">
+          <Form.Item
+            label="视图名称"
+            name="name"
+            rules={[
+              { required: true, message: '请输入视图名称' },
+              { max: 100, message: '视图名称最多100字符' },
+            ]}
+          >
+            <Input maxLength={100} placeholder="例如：处理中-支付模块-张三负责" />
+          </Form.Item>
+          <Form.Item label="可见范围" name="visibility" initialValue="PRIVATE">
+            <Select size="small" options={BUG_VIEW_VISIBILITY_OPTIONS} />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <BugFormModal
         open={createOpen}
@@ -1008,15 +1402,6 @@ function BugListPage() {
               rules={[{ required: true, message: '请输入修复方案&影响范围' }]}
             >
               <Input.TextArea rows={3} maxLength={2000} placeholder="请输入修复方案与影响范围" />
-            </Form.Item>
-          ) : null}
-          {statusDialog.transition?.requiredField === 'verify_result' ? (
-            <Form.Item
-              label="验证结果"
-              name="verify_result"
-              rules={[{ required: true, message: '请输入验证结果' }]}
-            >
-              <Input.TextArea rows={3} maxLength={2000} placeholder="请输入验证结果" />
             </Form.Item>
           ) : null}
         </Form>
