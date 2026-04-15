@@ -48,6 +48,22 @@ export function createBugCommentApi(id, payload = {}) {
   return request.post(`/work/bugs/${id}/comments`, payload)
 }
 
+export function updateBugCommentApi(id, commentLogId, payload = {}) {
+  return request.put(`/work/bugs/${id}/comments/${commentLogId}`, payload)
+}
+
+export function getBugCommentAttachmentPolicyApi(id, commentLogId, payload = {}) {
+  return request.post(`/work/bugs/${id}/comments/${commentLogId}/attachments/policy`, payload)
+}
+
+export function createBugCommentAttachmentApi(id, commentLogId, payload = {}) {
+  return request.post(`/work/bugs/${id}/comments/${commentLogId}/attachments`, payload)
+}
+
+export function deleteBugCommentAttachmentApi(id, commentLogId, attachmentId) {
+  return request.delete(`/work/bugs/${id}/comments/${commentLogId}/attachments/${attachmentId}`)
+}
+
 export function getBugAssigneesApi(params) {
   return request.get('/work/bugs/assignees', { params })
 }

@@ -167,8 +167,8 @@ function downloadCsv(filename, rows = []) {
 }
 
 function formatDemandNodeSchedule(record) {
-  const plannedStart = formatBeijingDate(record?.current_node_planned_start_date)
-  const plannedEnd = formatBeijingDate(record?.current_node_planned_end_date)
+  const plannedStart = formatBeijingDate(record?.current_node_planned_start_date, '')
+  const plannedEnd = formatBeijingDate(record?.current_node_planned_end_date, '')
 
   if (plannedStart && plannedEnd) return `${plannedStart} ~ ${plannedEnd}`
   if (plannedStart) return `${plannedStart} ~ -`

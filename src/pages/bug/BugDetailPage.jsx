@@ -4,6 +4,9 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
+  MessageOutlined,
+  PaperClipOutlined,
+  PlayCircleOutlined,
   RedoOutlined,
   ReloadOutlined,
   SendOutlined,
@@ -18,6 +21,7 @@ import {
   Form,
   Image,
   Input,
+  Modal,
   Popconfirm,
   Select,
   Space,
@@ -40,9 +44,11 @@ import {
   getBugByIdApi,
   getBugWorkflowConfigApi,
   transitionBugApi,
+  updateBugCommentApi,
   updateBugApi,
 } from '../../api/bug'
 import { BugFormModal, BugStatusFlow } from '../../modules/bug'
+import { uploadCommentDraftAttachments } from '../../modules/bug/utils/attachmentUpload'
 import { buildWorkflowTransitionMap, normalizeBugWorkflowTransitions } from '../../modules/bug/utils/workflow'
 import { getCurrentUser, hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
@@ -51,6 +57,7 @@ import './BugDetailPage.css'
 
 const { Paragraph, Text, Title } = Typography
 const IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)(\?.*)?$/i
+const VIDEO_EXT_PATTERN = /\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i
 const ACTION_ICON_MAP = Object.freeze({
   start: <SendOutlined />,
   fix: <CheckCircleOutlined />,
@@ -86,6 +93,18 @@ function isImageAttachment(row) {
   return IMAGE_EXT_PATTERN.test(fileName) || IMAGE_EXT_PATTERN.test(objectUrl)
 }
 
+function isVideoAttachment(row) {
+  const mimeType = String(row?.mime_type || '').trim().toLowerCase()
+  if (mimeType.startsWith('video/')) return true
+
+  const fileExt = String(row?.file_ext || '').trim().toLowerCase()
+  if (['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(fileExt)) return true
+
+  const fileName = String(row?.file_name || '').trim()
+  const objectUrl = getAttachmentUrl(row)
+  return VIDEO_EXT_PATTERN.test(fileName) || VIDEO_EXT_PATTERN.test(objectUrl)
+}
+
 function extractClipboardFiles(clipboardData) {
   if (!clipboardData) return []
   const byItems = Array.from(clipboardData.items || [])
@@ -98,6 +117,54 @@ function extractClipboardFiles(clipboardData) {
     if (!dedup.has(key)) dedup.set(key, file)
   })
   return Array.from(dedup.values())
+}
+
+function isImageFile(file) {
+  const mimeType = String(file?.type || file?.originFileObj?.type || '').toLowerCase()
+  if (mimeType.startsWith('image/')) return true
+
+  const fileName = String(file?.name || file?.fileName || file?.originFileObj?.name || '').toLowerCase()
+  return /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i.test(fileName)
+}
+
+function isVideoFile(file) {
+  const mimeType = String(file?.type || file?.originFileObj?.type || '').toLowerCase()
+  if (mimeType.startsWith('video/')) return true
+
+  const fileName = String(file?.name || file?.fileName || file?.originFileObj?.name || '').toLowerCase()
+  return /\.(mp4|webm|ogg|mov|m4v)$/i.test(fileName)
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('图片预览生成失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function formatAttachmentSize(fileSize) {
+  const size = Number(fileSize || 0)
+  if (!size) return '-'
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`
+  return `${Math.max(1, Math.round(size / 1024))} KB`
+}
+
+function prependUniqueAttachment(attachments = [], nextAttachment) {
+  const list = Array.isArray(attachments) ? attachments : []
+  const candidate = nextAttachment || null
+  if (!candidate) return list
+  const candidateId = Number(candidate?.id || 0)
+  const candidateObjectKey = String(candidate?.object_key || '').trim()
+  const deduped = list.filter((item) => {
+    const itemId = Number(item?.id || 0)
+    const itemObjectKey = String(item?.object_key || '').trim()
+    if (candidateId > 0 && itemId === candidateId) return false
+    if (candidateObjectKey && itemObjectKey === candidateObjectKey) return false
+    return true
+  })
+  return [candidate, ...deduped]
 }
 
 function BugDetailPage() {
@@ -117,11 +184,34 @@ function BugDetailPage() {
   const [editOpen, setEditOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [workflowTransitions, setWorkflowTransitions] = useState([])
+  const [activeTabKey, setActiveTabKey] = useState('detail')
   const [remarkForm] = Form.useForm()
   const [commentForm] = Form.useForm()
   const [commentSubmitting, setCommentSubmitting] = useState(false)
+  const [commentDraftFileList, setCommentDraftFileList] = useState([])
+  const [commentPreviewOpen, setCommentPreviewOpen] = useState(false)
+  const [commentPreviewImage, setCommentPreviewImage] = useState('')
+  const [commentPreviewType, setCommentPreviewType] = useState('image')
+  const [commentPreviewTitle, setCommentPreviewTitle] = useState('')
+  const [editingCommentId, setEditingCommentId] = useState(0)
+  const [editingCommentValue, setEditingCommentValue] = useState('')
+  const [editingCommentSubmitting, setEditingCommentSubmitting] = useState(false)
+  const [replyingCommentId, setReplyingCommentId] = useState(0)
+  const [replyValue, setReplyValue] = useState('')
+  const [replySubmitting, setReplySubmitting] = useState(false)
   const [mentionUserOptions, setMentionUserOptions] = useState([])
   const [mentionUserLoading, setMentionUserLoading] = useState(false)
+
+  const openMediaPreview = useCallback(({ src, title, type = 'image' }) => {
+    if (!src) {
+      message.warning('当前附件无法生成预览')
+      return
+    }
+    setCommentPreviewImage(src)
+    setCommentPreviewType(type)
+    setCommentPreviewTitle(title || '附件预览')
+    setCommentPreviewOpen(true)
+  }, [])
 
   const loadDetail = useCallback(async () => {
     if (!bugId) return
@@ -332,16 +422,35 @@ function BugDetailPage() {
       width: 90,
       render: (_, row) => {
         const objectUrl = getAttachmentUrl(row)
-        if (!objectUrl || !isImageAttachment(row)) return '-'
-        return (
-          <Image
-            className="bug-detail-page__attachment-thumbnail"
-            src={objectUrl}
-            alt={row?.file_name || '附件缩略图'}
-            width={56}
-            height={56}
-          />
-        )
+        if (!objectUrl) return '-'
+        if (isImageAttachment(row)) {
+          return (
+            <Image
+              className="bug-detail-page__attachment-thumbnail"
+              src={objectUrl}
+              alt={row?.file_name || '附件缩略图'}
+              width={56}
+              height={56}
+            />
+          )
+        }
+        if (isVideoAttachment(row)) {
+          return (
+            <Button
+              type="text"
+              size="small"
+              icon={<PlayCircleOutlined />}
+              onClick={() => openMediaPreview({
+                src: objectUrl,
+                title: row?.file_name || '视频附件预览',
+                type: 'video',
+              })}
+            >
+              预览
+            </Button>
+          )
+        }
+        return '-'
       },
     },
     {
@@ -351,10 +460,30 @@ function BugDetailPage() {
       render: (value, row) => {
         const fileName = value || '-'
         const downloadUrl = String(row?.download_file_url || '').trim() || getAttachmentUrl(row)
+        const previewUrl = getAttachmentUrl(row)
+        const previewable = Boolean(previewUrl) && (isImageAttachment(row) || isVideoAttachment(row))
         if (!downloadUrl) return fileName
         return (
           <Space size={6}>
             <span>{fileName}</span>
+            {previewable ? (
+              <Button
+                type="text"
+                size="small"
+                style={{ paddingInline: 4, height: 22 }}
+                icon={isVideoAttachment(row) ? <PlayCircleOutlined /> : undefined}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  openMediaPreview({
+                    src: previewUrl,
+                    title: row?.file_name || '附件预览',
+                    type: isVideoAttachment(row) ? 'video' : 'image',
+                  })
+                }}
+              >
+                预览
+              </Button>
+            ) : null}
             <a href={downloadUrl} target="_blank" rel="noreferrer" title="下载附件" onClick={(event) => event.stopPropagation()}>
               <Button type="text" size="small" icon={<DownloadOutlined />} style={{ paddingInline: 4, height: 22 }} />
             </a>
@@ -401,7 +530,14 @@ function BugDetailPage() {
                       return
                     }
                     message.success('附件删除成功')
-                    await loadDetail()
+                    setDetail((currentDetail) => {
+                      if (!currentDetail) return currentDetail
+                      const currentAttachments = Array.isArray(currentDetail.attachments) ? currentDetail.attachments : []
+                      return {
+                        ...currentDetail,
+                        attachments: currentAttachments.filter((item) => Number(item?.id || 0) !== Number(row.id)),
+                      }
+                    })
                   } catch (error) {
                     message.error(error?.message || '附件删除失败')
                   } finally {
@@ -482,9 +618,16 @@ function BugDetailPage() {
     try {
       setUploading(true)
       const uploaded = await uploadAttachmentFile(file)
+      setDetail((currentDetail) => {
+        if (!currentDetail) return currentDetail
+        const currentAttachments = Array.isArray(currentDetail.attachments) ? currentDetail.attachments : []
+        return {
+          ...currentDetail,
+          attachments: prependUniqueAttachment(currentAttachments, uploaded),
+        }
+      })
       message.success('附件上传成功')
       onSuccess?.(uploaded, file)
-      await loadDetail()
     } catch (error) {
       message.error(error?.message || '附件上传失败')
       onError?.(error)
@@ -501,11 +644,13 @@ function BugDetailPage() {
     event.preventDefault()
     setUploading(true)
     let successCount = 0
+    const uploadedAttachments = []
     const errors = []
     try {
       for (const file of files) {
         try {
-          await uploadAttachmentFile(file)
+          const uploaded = await uploadAttachmentFile(file)
+          uploadedAttachments.push(uploaded)
           successCount += 1
         } catch (error) {
           errors.push(error?.message || '附件上传失败')
@@ -513,7 +658,18 @@ function BugDetailPage() {
       }
 
       if (successCount > 0) {
-        await loadDetail()
+        setDetail((currentDetail) => {
+          if (!currentDetail) return currentDetail
+          const currentAttachments = Array.isArray(currentDetail.attachments) ? currentDetail.attachments : []
+          const nextAttachments = uploadedAttachments.reduce(
+            (accumulator, attachment) => prependUniqueAttachment(accumulator, attachment),
+            currentAttachments,
+          )
+          return {
+            ...currentDetail,
+            attachments: nextAttachments,
+          }
+        })
         if (errors.length > 0) {
           message.warning(`截图粘贴上传完成：成功 ${successCount} 个，失败 ${errors.length} 个`)
         } else {
@@ -532,7 +688,67 @@ function BugDetailPage() {
     event?.currentTarget?.focus?.()
   }, [])
 
+  const handleCommentAttachmentChange = useCallback(({ fileList }) => {
+    setCommentDraftFileList(fileList.slice(0, 9))
+  }, [])
+
+  const handleCommentAttachmentPreview = useCallback(async (file) => {
+    if (!isImageFile(file) && !isVideoFile(file)) {
+      message.info('当前附件暂不支持预览')
+      return
+    }
+
+    try {
+      let previewSrc = file?.url || file?.thumbUrl || file?.preview || ''
+      const rawFile = file?.originFileObj
+      if (!previewSrc && rawFile instanceof Blob && isImageFile(file)) {
+        previewSrc = await readFileAsDataUrl(rawFile)
+      }
+      if (!previewSrc && rawFile instanceof Blob && isVideoFile(file)) {
+        previewSrc = URL.createObjectURL(rawFile)
+      }
+      if (!previewSrc) {
+        message.warning('当前附件无法生成预览')
+        return
+      }
+
+      if (!file.preview) {
+        file.preview = previewSrc
+      }
+      openMediaPreview({
+        src: previewSrc,
+        title: file?.name || rawFile?.name || '评论附件预览',
+        type: isVideoFile(file) ? 'video' : 'image',
+      })
+    } catch (error) {
+      message.error(error?.message || '附件预览生成失败')
+    }
+  }, [openMediaPreview])
+
+  const applyCommentResponseDetail = useCallback(async (result) => {
+    if (result?.data?.detail) {
+      setDetail(result.data.detail)
+      return
+    }
+    await loadDetail()
+  }, [loadDetail])
+
   const handleSubmitComment = async () => {
+    const viewportX = typeof window !== 'undefined' ? window.scrollX : 0
+    const viewportY = typeof window !== 'undefined' ? window.scrollY : 0
+    const restoreViewportPosition = () => {
+      if (typeof window === 'undefined') return
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          window.scrollTo({
+            left: viewportX,
+            top: viewportY,
+            behavior: 'auto',
+          })
+        })
+      })
+    }
+
     try {
       const values = await commentForm.validateFields()
       const comment = String(values.comment || '').trim()
@@ -551,9 +767,35 @@ function BugDetailPage() {
         message.error(result?.message || '评论发送失败')
         return
       }
-      message.success(result?.message || '评论已发布')
+      const commentLogId = Number(result?.data?.comment_log_id || 0)
+      if (commentDraftFileList.length > 0) {
+        if (!commentLogId) {
+          message.warning('评论已发布，但未获取评论记录编号，附件未上传成功')
+        } else {
+          const uploadResult = await uploadCommentDraftAttachments(bugId, commentLogId, commentDraftFileList)
+          if (uploadResult.failures.length > 0) {
+            message.warning(
+              `评论已发布，评论附件上传成功 ${uploadResult.successCount}/${uploadResult.total}，失败文件可重新评论补传`,
+            )
+          } else {
+            message.success(`评论已发布，已上传 ${uploadResult.successCount} 个评论附件`)
+          }
+        }
+      } else {
+        message.success(result?.message || '评论已发布')
+      }
+      await applyCommentResponseDetail(result)
       commentForm.resetFields()
-      await loadDetail()
+      setCommentDraftFileList([])
+      setCommentPreviewOpen(false)
+      setCommentPreviewImage('')
+      setCommentPreviewType('image')
+      setCommentPreviewTitle('')
+      setEditingCommentId(0)
+      setEditingCommentValue('')
+      setReplyingCommentId(0)
+      setReplyValue('')
+      restoreViewportPosition()
     } catch (error) {
       if (error?.errorFields) return
       message.error(error?.message || '评论发送失败')
@@ -561,6 +803,90 @@ function BugDetailPage() {
       setCommentSubmitting(false)
     }
   }
+
+  const handleStartEditComment = useCallback((commentLog) => {
+    setReplyingCommentId(0)
+    setReplyValue('')
+    setEditingCommentId(Number(commentLog?.id || 0))
+    setEditingCommentValue(String(commentLog?.remark || '').trim())
+  }, [])
+
+  const handleCancelEditComment = useCallback(() => {
+    setEditingCommentId(0)
+    setEditingCommentValue('')
+  }, [])
+
+  const handleSaveEditComment = useCallback(async (commentLogId) => {
+    const nextComment = String(editingCommentValue || '').trim()
+    if (!nextComment) {
+      message.warning('评论内容不能为空')
+      return
+    }
+
+    try {
+      setEditingCommentSubmitting(true)
+      const result = await updateBugCommentApi(bugId, commentLogId, {
+        comment: nextComment,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '评论更新失败')
+        return
+      }
+      message.success(result?.message || '评论已更新')
+      await applyCommentResponseDetail(result)
+      setEditingCommentId(0)
+      setEditingCommentValue('')
+    } catch (error) {
+      message.error(error?.message || '评论更新失败')
+    } finally {
+      setEditingCommentSubmitting(false)
+    }
+  }, [applyCommentResponseDetail, bugId, editingCommentValue])
+
+  const handleStartReplyComment = useCallback((commentLog) => {
+    setEditingCommentId(0)
+    setEditingCommentValue('')
+    setReplyingCommentId(Number(commentLog?.id || 0))
+    setReplyValue('')
+  }, [])
+
+  const handleCancelReplyComment = useCallback(() => {
+    setReplyingCommentId(0)
+    setReplyValue('')
+  }, [])
+
+  const handleSubmitReply = useCallback(async (parentComment) => {
+    const parentCommentId = Number(parentComment?.id || 0)
+    const nextComment = String(replyValue || '').trim()
+    if (!parentCommentId) {
+      message.warning('回复目标无效')
+      return
+    }
+    if (!nextComment) {
+      message.warning('回复内容不能为空')
+      return
+    }
+
+    try {
+      setReplySubmitting(true)
+      const result = await createBugCommentApi(bugId, {
+        comment: nextComment,
+        parent_comment_id: parentCommentId,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '回复发送失败')
+        return
+      }
+      message.success(result?.message || '回复已发布')
+      await applyCommentResponseDetail(result)
+      setReplyingCommentId(0)
+      setReplyValue('')
+    } catch (error) {
+      message.error(error?.message || '回复发送失败')
+    } finally {
+      setReplySubmitting(false)
+    }
+  }, [applyCommentResponseDetail, bugId, replyValue])
 
   const normalizedStatusLogs = useMemo(() => {
     const rows = Array.isArray(detail?.status_logs) ? detail.status_logs : []
@@ -578,6 +904,25 @@ function BugDetailPage() {
   const commentLogs = useMemo(
     () => normalizedStatusLogs.filter((item) => Boolean(item?.__isCommentLog)),
     [normalizedStatusLogs],
+  )
+
+  const replyCommentMap = useMemo(() => {
+    const map = new Map()
+    commentLogs
+      .filter((item) => Number(item?.parent_comment_id || 0) > 0)
+      .sort((left, right) => Number(left?.id || 0) - Number(right?.id || 0))
+      .forEach((item) => {
+        const parentCommentId = Number(item?.parent_comment_id || 0)
+        const list = map.get(parentCommentId) || []
+        list.push(item)
+        map.set(parentCommentId, list)
+      })
+    return map
+  }, [commentLogs])
+
+  const topLevelCommentLogs = useMemo(
+    () => commentLogs.filter((item) => !Number(item?.parent_comment_id || 0)),
+    [commentLogs],
   )
 
   const operationLogs = useMemo(
@@ -655,6 +1000,8 @@ function BugDetailPage() {
             >
               <Tabs
                 className="bug-detail-page__content-tabs"
+                activeKey={activeTabKey}
+                onChange={setActiveTabKey}
                 items={[
                   {
                     key: 'detail',
@@ -852,6 +1199,23 @@ function BugDetailPage() {
                                 optionFilterProp="label"
                               />
                             </Form.Item>
+                            <Form.Item
+                              label="附件（可选）"
+                              extra="评论发布成功后会自动上传，并展示在这条评论下方，不会进入 Bug 主附件区。"
+                            >
+                              <Upload
+                                className="bug-detail-page__comment-upload"
+                                beforeUpload={() => false}
+                                fileList={commentDraftFileList}
+                                listType="picture"
+                                multiple
+                                maxCount={9}
+                                onChange={handleCommentAttachmentChange}
+                                onPreview={handleCommentAttachmentPreview}
+                              >
+                                <Button>选择附件</Button>
+                              </Upload>
+                            </Form.Item>
                             <Button type="primary" onClick={handleSubmitComment} loading={commentSubmitting}>
                               发表评论并通知
                             </Button>
@@ -860,25 +1224,303 @@ function BugDetailPage() {
 
                         <div className="bug-detail-page__tab-section">
                           <div className="bug-detail-page__tab-section-title">评论记录</div>
-                          {commentLogs.length === 0 ? (
+                          {topLevelCommentLogs.length === 0 ? (
                             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无评论记录" />
                           ) : (
                             <div className="bug-detail-page__log-list">
-                              {commentLogs.map((item, index) => (
-                                <div
-                                  className="bug-detail-page__log-list-item"
-                                  key={`comment-log-${item?.id || item?.created_at || 'comment'}-${index}`}
-                                >
-                                  <div className="bug-detail-page__log-item">
-                                    <div className="bug-detail-page__log-main">
-                                      <Text strong>{item.operator_name || '-'}</Text>
-                                      <Text type="secondary">发表评论</Text>
+                              {topLevelCommentLogs.map((item, index) => {
+                                const commentId = Number(item?.id || 0)
+                                const isEditingCurrent = editingCommentId === commentId
+                                const isReplyingCurrent = replyingCommentId === commentId
+                                const isOwnComment = Number(item?.operator_id || 0) === currentUserId
+                                const commentAttachments = Array.isArray(item?.attachments) ? item.attachments : []
+                                const replies = replyCommentMap.get(commentId) || []
+                                return (
+                                  <div
+                                    className="bug-detail-page__log-list-item bug-detail-page__comment-thread-item"
+                                    key={`comment-log-${item?.id || item?.created_at || 'comment'}-${index}`}
+                                  >
+                                    <div className="bug-detail-page__comment-card">
+                                      <div className="bug-detail-page__log-item">
+                                        <div className="bug-detail-page__log-main">
+                                          <Text strong>{item.operator_name || '-'}</Text>
+                                          <Text type="secondary">发表评论</Text>
+                                          {item.edited_at ? <Text type="secondary">已编辑</Text> : null}
+                                        </div>
+                                        <div className="bug-detail-page__log-time">{formatBeijingDateTime(item.created_at)}</div>
+                                        {isEditingCurrent ? (
+                                          <div className="bug-detail-page__comment-editor">
+                                            <Input.TextArea
+                                              rows={3}
+                                              maxLength={20000}
+                                              value={editingCommentValue}
+                                              onChange={(event) => setEditingCommentValue(event.target.value)}
+                                              placeholder="请输入评论内容"
+                                            />
+                                            <Space size={8}>
+                                              <Button
+                                                type="primary"
+                                                size="small"
+                                                loading={editingCommentSubmitting}
+                                                onClick={() => handleSaveEditComment(commentId)}
+                                              >
+                                                保存
+                                              </Button>
+                                              <Button size="small" onClick={handleCancelEditComment}>
+                                                取消
+                                              </Button>
+                                            </Space>
+                                          </div>
+                                        ) : item.remark ? (
+                                          <div className="bug-detail-page__log-remark">{item.remark}</div>
+                                        ) : null}
+                                      </div>
+                                      <div className="bug-detail-page__comment-actions">
+                                        {isOwnComment ? (
+                                          <Button
+                                            type="text"
+                                            size="small"
+                                            className="bug-detail-page__comment-action-btn"
+                                            icon={<EditOutlined />}
+                                            title="编辑评论"
+                                            onClick={() => handleStartEditComment(item)}
+                                          />
+                                        ) : null}
+                                        <Button
+                                          type="text"
+                                          size="small"
+                                          className="bug-detail-page__comment-action-btn"
+                                          icon={<MessageOutlined />}
+                                          title="回复评论"
+                                          onClick={() => handleStartReplyComment(item)}
+                                        />
+                                      </div>
                                     </div>
-                                    <div className="bug-detail-page__log-time">{formatBeijingDateTime(item.created_at)}</div>
-                                    {item.remark ? <div className="bug-detail-page__log-remark">{item.remark}</div> : null}
+                                    {commentAttachments.length > 0 ? (
+                                      <div className="bug-detail-page__comment-attachments">
+                                        {commentAttachments.map((attachment) => {
+                                          const attachmentUrl = getAttachmentUrl(attachment)
+                                          const isImage = isImageAttachment(attachment)
+                                          const isVideo = isVideoAttachment(attachment)
+                                          return (
+                                            <div
+                                              className="bug-detail-page__comment-attachment"
+                                              key={`comment-attachment-${attachment.id}`}
+                                            >
+                                              {isImage && attachmentUrl ? (
+                                                <Image
+                                                  className="bug-detail-page__comment-attachment-image"
+                                                  src={attachmentUrl}
+                                                  alt={attachment.file_name || '评论附件'}
+                                                  width={72}
+                                                  height={72}
+                                                />
+                                              ) : isVideo && attachmentUrl ? (
+                                                <button
+                                                  type="button"
+                                                  className="bug-detail-page__comment-attachment-icon bug-detail-page__comment-attachment-icon--video"
+                                                  onClick={() => openMediaPreview({
+                                                    src: attachmentUrl,
+                                                    title: attachment.file_name || '评论视频附件',
+                                                    type: 'video',
+                                                  })}
+                                                >
+                                                  <PlayCircleOutlined />
+                                                  <span>预览视频</span>
+                                                </button>
+                                              ) : (
+                                                <div className="bug-detail-page__comment-attachment-icon">
+                                                  <PaperClipOutlined />
+                                                </div>
+                                              )}
+                                              <div className="bug-detail-page__comment-attachment-meta">
+                                                <div className="bug-detail-page__comment-attachment-name">
+                                                  {attachmentUrl ? (
+                                                    <a href={attachmentUrl} target="_blank" rel="noreferrer">
+                                                      {attachment.file_name || '未命名附件'}
+                                                    </a>
+                                                  ) : (
+                                                    <span>{attachment.file_name || '未命名附件'}</span>
+                                                  )}
+                                                </div>
+                                                <div className="bug-detail-page__comment-attachment-extra">
+                                                  <span>{formatAttachmentSize(attachment.file_size)}</span>
+                                                  <span>{attachment.uploaded_by_name || item.operator_name || '-'}</span>
+                                                  <span>{formatBeijingDateTime(attachment.created_at)}</span>
+                                                </div>
+                                              </div>
+                                              {attachmentUrl ? (
+                                                <a href={attachment.download_file_url || attachmentUrl} target="_blank" rel="noreferrer">
+                                                  <Button
+                                                    type="text"
+                                                    size="small"
+                                                    icon={<DownloadOutlined />}
+                                                    title="下载附件"
+                                                  />
+                                                </a>
+                                              ) : null}
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    ) : null}
+                                    {isReplyingCurrent ? (
+                                      <div className="bug-detail-page__comment-reply-box">
+                                        <Input.TextArea
+                                          rows={2}
+                                          maxLength={20000}
+                                          value={replyValue}
+                                          onChange={(event) => setReplyValue(event.target.value)}
+                                          placeholder={`回复 ${item.operator_name || '该评论'}...`}
+                                        />
+                                        <Space size={8}>
+                                          <Button
+                                            type="primary"
+                                            size="small"
+                                            loading={replySubmitting}
+                                            onClick={() => handleSubmitReply(item)}
+                                          >
+                                            回复
+                                          </Button>
+                                          <Button size="small" onClick={handleCancelReplyComment}>
+                                            取消
+                                          </Button>
+                                        </Space>
+                                      </div>
+                                    ) : null}
+                                    {replies.length > 0 ? (
+                                      <div className="bug-detail-page__comment-reply-list">
+                                        {replies.map((reply) => {
+                                          const replyId = Number(reply?.id || 0)
+                                          const isOwnReply = Number(reply?.operator_id || 0) === currentUserId
+                                          const isEditingReply = editingCommentId === replyId
+                                          const replyAttachments = Array.isArray(reply?.attachments) ? reply.attachments : []
+                                          return (
+                                            <div className="bug-detail-page__comment-reply-item" key={`comment-reply-${replyId}`}>
+                                              <div className="bug-detail-page__comment-card bug-detail-page__comment-card--reply">
+                                                <div className="bug-detail-page__log-item">
+                                                  <div className="bug-detail-page__log-main">
+                                                    <Text strong>{reply.operator_name || '-'}</Text>
+                                                    <Text type="secondary">回复了评论</Text>
+                                                    {reply.edited_at ? <Text type="secondary">已编辑</Text> : null}
+                                                  </div>
+                                                  <div className="bug-detail-page__log-time">{formatBeijingDateTime(reply.created_at)}</div>
+                                                  {isEditingReply ? (
+                                                    <div className="bug-detail-page__comment-editor">
+                                                      <Input.TextArea
+                                                        rows={2}
+                                                        maxLength={20000}
+                                                        value={editingCommentValue}
+                                                        onChange={(event) => setEditingCommentValue(event.target.value)}
+                                                        placeholder="请输入回复内容"
+                                                      />
+                                                      <Space size={8}>
+                                                        <Button
+                                                          type="primary"
+                                                          size="small"
+                                                          loading={editingCommentSubmitting}
+                                                          onClick={() => handleSaveEditComment(replyId)}
+                                                        >
+                                                          保存
+                                                        </Button>
+                                                        <Button size="small" onClick={handleCancelEditComment}>
+                                                          取消
+                                                        </Button>
+                                                      </Space>
+                                                    </div>
+                                                  ) : reply.remark ? (
+                                                    <div className="bug-detail-page__log-remark">{reply.remark}</div>
+                                                  ) : null}
+                                                </div>
+                                                <div className="bug-detail-page__comment-actions">
+                                                  {isOwnReply ? (
+                                                    <Button
+                                                      type="text"
+                                                      size="small"
+                                                      className="bug-detail-page__comment-action-btn"
+                                                      icon={<EditOutlined />}
+                                                      title="编辑回复"
+                                                      onClick={() => handleStartEditComment(reply)}
+                                                    />
+                                                  ) : null}
+                                                </div>
+                                              </div>
+                                              {replyAttachments.length > 0 ? (
+                                                <div className="bug-detail-page__comment-attachments bug-detail-page__comment-attachments--reply">
+                                                  {replyAttachments.map((attachment) => {
+                                                    const attachmentUrl = getAttachmentUrl(attachment)
+                                                    const isImage = isImageAttachment(attachment)
+                                                    const isVideo = isVideoAttachment(attachment)
+                                                    return (
+                                                      <div
+                                                        className="bug-detail-page__comment-attachment"
+                                                        key={`reply-attachment-${attachment.id}`}
+                                                      >
+                                                        {isImage && attachmentUrl ? (
+                                                          <Image
+                                                            className="bug-detail-page__comment-attachment-image"
+                                                            src={attachmentUrl}
+                                                            alt={attachment.file_name || '回复附件'}
+                                                            width={72}
+                                                            height={72}
+                                                          />
+                                                        ) : isVideo && attachmentUrl ? (
+                                                          <button
+                                                            type="button"
+                                                            className="bug-detail-page__comment-attachment-icon bug-detail-page__comment-attachment-icon--video"
+                                                            onClick={() => openMediaPreview({
+                                                              src: attachmentUrl,
+                                                              title: attachment.file_name || '回复视频附件',
+                                                              type: 'video',
+                                                            })}
+                                                          >
+                                                            <PlayCircleOutlined />
+                                                            <span>预览视频</span>
+                                                          </button>
+                                                        ) : (
+                                                          <div className="bug-detail-page__comment-attachment-icon">
+                                                            <PaperClipOutlined />
+                                                          </div>
+                                                        )}
+                                                        <div className="bug-detail-page__comment-attachment-meta">
+                                                          <div className="bug-detail-page__comment-attachment-name">
+                                                            {attachmentUrl ? (
+                                                              <a href={attachmentUrl} target="_blank" rel="noreferrer">
+                                                                {attachment.file_name || '未命名附件'}
+                                                              </a>
+                                                            ) : (
+                                                              <span>{attachment.file_name || '未命名附件'}</span>
+                                                            )}
+                                                          </div>
+                                                          <div className="bug-detail-page__comment-attachment-extra">
+                                                            <span>{formatAttachmentSize(attachment.file_size)}</span>
+                                                            <span>{attachment.uploaded_by_name || reply.operator_name || '-'}</span>
+                                                            <span>{formatBeijingDateTime(attachment.created_at)}</span>
+                                                          </div>
+                                                        </div>
+                                                        {attachmentUrl ? (
+                                                          <a href={attachment.download_file_url || attachmentUrl} target="_blank" rel="noreferrer">
+                                                            <Button
+                                                              type="text"
+                                                              size="small"
+                                                              icon={<DownloadOutlined />}
+                                                              title="下载附件"
+                                                            />
+                                                          </a>
+                                                        ) : null}
+                                                      </div>
+                                                    )
+                                                  })}
+                                                </div>
+                                              ) : null}
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    ) : null}
                                   </div>
-                                </div>
-                              ))}
+                                )
+                              })}
                             </div>
                           )}
                         </div>
@@ -943,6 +1585,29 @@ function BugDetailPage() {
                 await loadDetail()
               }}
             />
+            <Modal
+              open={commentPreviewOpen}
+              title={commentPreviewTitle}
+              footer={null}
+              onCancel={() => setCommentPreviewOpen(false)}
+              centered
+              width={860}
+            >
+              {commentPreviewType === 'video' ? (
+                <video
+                  className="bug-detail-page__comment-preview-video"
+                  src={commentPreviewImage}
+                  controls
+                  preload="metadata"
+                />
+              ) : (
+                <img
+                  className="bug-detail-page__comment-preview-image"
+                  src={commentPreviewImage}
+                  alt={commentPreviewTitle || '评论附件预览'}
+                />
+              )}
+            </Modal>
           </>
         ) : (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Bug不存在或已被删除" />

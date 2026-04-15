@@ -675,7 +675,8 @@
 }
 
 .work-demand-detail__tabs .demand-bug-panel__stat-card {
-  background: linear-gradient(180deg, #fbfcff 0%, #f4f7fe 100%);
+  border-color: rgba(223, 230, 242, 0.74);
+  background: linear-gradient(180deg, rgba(253, 254, 255, 0.88) 0%, rgba(246, 248, 253, 0.84) 100%);
 }
 
 .work-demand-detail__tabs .demand-bug-panel__stat-value {

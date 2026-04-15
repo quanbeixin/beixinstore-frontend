@@ -1,4 +1,9 @@
-import { createBugAttachmentApi, getBugAttachmentPolicyApi } from '../../../api/bug'
+import {
+  createBugAttachmentApi,
+  createBugCommentAttachmentApi,
+  getBugAttachmentPolicyApi,
+  getBugCommentAttachmentPolicyApi,
+} from '../../../api/bug'
 
 function normalizeFile(fileLike) {
   if (!fileLike) return null
@@ -14,12 +19,8 @@ function getFileExt(fileName = '') {
   return text.slice(dotIndex + 1).slice(0, 50)
 }
 
-async function uploadSingleAttachment(bugId, file) {
-  const policyRes = await getBugAttachmentPolicyApi(bugId, {
-    file_name: file?.name || 'file',
-    mime_type: file?.type || '',
-    file_size: file?.size || 0,
-  })
+async function uploadSingleAttachment({ getPolicy, register }, file) {
+  const policyRes = await getPolicy(file)
   if (!policyRes?.success) {
     throw new Error(policyRes?.message || `获取上传策略失败: ${file?.name || 'file'}`)
   }
@@ -43,22 +44,13 @@ async function uploadSingleAttachment(bugId, file) {
     throw new Error(`上传失败: ${file?.name || '文件'}`)
   }
 
-  const registerRes = await createBugAttachmentApi(bugId, {
-    file_name: file?.name || 'file',
-    file_ext: getFileExt(file?.name || ''),
-    file_size: file?.size || 0,
-    mime_type: file?.type || '',
-    storage_provider: 'ALIYUN_OSS',
-    bucket_name: policy.bucket_name,
-    object_key: policy.object_key,
-    object_url: policy.object_url || '',
-  })
+  const registerRes = await register(file, policy)
   if (!registerRes?.success) {
     throw new Error(registerRes?.message || `附件登记失败: ${file?.name || '文件'}`)
   }
 }
 
-export async function uploadDraftAttachments(bugId, files = []) {
+async function uploadAttachmentBatch({ files = [], getPolicy, register }) {
   const normalizedFiles = (files || []).map(normalizeFile).filter(Boolean)
   let successCount = 0
   const failures = []
@@ -66,7 +58,7 @@ export async function uploadDraftAttachments(bugId, files = []) {
   for (const file of normalizedFiles) {
     try {
       // Keep sequence stable to simplify policy and error feedback.
-      await uploadSingleAttachment(bugId, file)
+      await uploadSingleAttachment({ getPolicy, register }, file)
       successCount += 1
     } catch (error) {
       failures.push({
@@ -81,4 +73,50 @@ export async function uploadDraftAttachments(bugId, files = []) {
     successCount,
     failures,
   }
+}
+
+export async function uploadDraftAttachments(bugId, files = []) {
+  return uploadAttachmentBatch({
+    files,
+    getPolicy: (file) =>
+      getBugAttachmentPolicyApi(bugId, {
+        file_name: file?.name || 'file',
+        mime_type: file?.type || '',
+        file_size: file?.size || 0,
+      }),
+    register: (file, policy) =>
+      createBugAttachmentApi(bugId, {
+        file_name: file?.name || 'file',
+        file_ext: getFileExt(file?.name || ''),
+        file_size: file?.size || 0,
+        mime_type: file?.type || '',
+        storage_provider: 'ALIYUN_OSS',
+        bucket_name: policy.bucket_name,
+        object_key: policy.object_key,
+        object_url: policy.object_url || '',
+      }),
+  })
+}
+
+export async function uploadCommentDraftAttachments(bugId, commentLogId, files = []) {
+  return uploadAttachmentBatch({
+    files,
+    getPolicy: (file) =>
+      getBugCommentAttachmentPolicyApi(bugId, commentLogId, {
+        file_name: file?.name || 'file',
+        mime_type: file?.type || '',
+        file_size: file?.size || 0,
+      }),
+    register: (file, policy) =>
+      createBugCommentAttachmentApi(bugId, commentLogId, {
+        file_name: file?.name || 'file',
+        file_ext: getFileExt(file?.name || ''),
+        file_size: file?.size || 0,
+        mime_type: file?.type || '',
+        storage_provider: 'ALIYUN_OSS',
+        bucket_name: policy.bucket_name,
+        object_key: policy.object_key,
+        object_url: policy.object_url || '',
+      }),
+  })
 }

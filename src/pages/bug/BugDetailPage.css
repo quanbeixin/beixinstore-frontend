@@ -272,6 +272,25 @@
   padding-bottom: 0;
 }
 
+.bug-detail-page__comment-thread-item {
+  display: grid;
+  gap: 10px;
+}
+
+.bug-detail-page__comment-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bug-detail-page__comment-card--reply {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f7f9fc;
+  border: 1px solid #e0e6f0;
+}
+
 .bug-detail-page__log-main {
   display: flex;
   gap: 10px;
@@ -287,6 +306,66 @@
 .bug-detail-page__log-remark {
   color: #3a4558;
   line-height: 1.6;
+}
+
+.bug-detail-page__comment-actions {
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.bug-detail-page__comment-thread-item:hover .bug-detail-page__comment-actions,
+.bug-detail-page__comment-card--reply:hover .bug-detail-page__comment-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.bug-detail-page__comment-action-btn.ant-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid #d9e0eb;
+  background: #fff;
+  color: #667085;
+  box-shadow: 0 8px 20px rgba(28, 39, 58, 0.06);
+}
+
+.bug-detail-page__comment-action-btn.ant-btn:hover {
+  color: #2f67d8 !important;
+  border-color: #c6d5f5 !important;
+  background: #f7faff !important;
+}
+
+.bug-detail-page__comment-editor,
+.bug-detail-page__comment-reply-box {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.bug-detail-page__comment-reply-box {
+  margin-left: 18px;
+  padding-left: 14px;
+  border-left: 2px solid #dbe3f1;
+}
+
+.bug-detail-page__comment-reply-list {
+  display: grid;
+  gap: 8px;
+  margin-left: 18px;
+  padding-left: 14px;
+  border-left: 2px solid #e1e7f1;
+}
+
+.bug-detail-page__comment-reply-item {
+  display: grid;
+  gap: 8px;
+}
+
+.bug-detail-page__comment-attachments--reply {
+  margin-top: 0;
 }
 
 .bug-detail-page__attachment-thumbnail.ant-image-img {
@@ -310,6 +389,119 @@
 
 .bug-detail-page__upload-hint {
   font-size: 12px;
+}
+
+.bug-detail-page__comment-upload .ant-upload-select {
+  width: auto;
+}
+
+.bug-detail-page__comment-upload .ant-upload-list {
+  margin-top: 8px;
+}
+
+.bug-detail-page__comment-upload .ant-upload-list-item {
+  border-radius: 8px;
+}
+
+.bug-detail-page__comment-upload .ant-upload-list-item-thumbnail img {
+  object-fit: cover;
+}
+
+.bug-detail-page__comment-attachments {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.bug-detail-page__comment-attachment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #dbe1eb;
+  background: #f4f7fb;
+}
+
+.bug-detail-page__comment-attachment-image.ant-image-img {
+  border-radius: 10px;
+  border: 1px solid #d9dfe9;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
+.bug-detail-page__comment-attachment-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #eef3fb 0%, #e4ebf6 100%);
+  border: 1px solid #d6ddea;
+  color: #5b6780;
+  font-size: 20px;
+}
+
+.bug-detail-page__comment-attachment-icon--video {
+  gap: 6px;
+  flex-direction: column;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.bug-detail-page__comment-attachment-icon--video span {
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.bug-detail-page__comment-attachment-meta {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+
+.bug-detail-page__comment-attachment-name {
+  min-width: 0;
+  color: #2b3548;
+  font-weight: 600;
+}
+
+.bug-detail-page__comment-attachment-name a,
+.bug-detail-page__comment-attachment-name span {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+}
+
+.bug-detail-page__comment-attachment-extra {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: #6e7890;
+  font-size: 12px;
+}
+
+.bug-detail-page__comment-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: 72vh;
+  margin: 0 auto;
+  border-radius: 10px;
+  background: #f5f6f8;
+}
+
+.bug-detail-page__comment-preview-video {
+  display: block;
+  width: 100%;
+  max-height: 72vh;
+  margin: 0 auto;
+  border-radius: 10px;
+  background: #000;
 }
 
 .bug-detail-page__tab-section .ant-form-item:last-child {
@@ -359,5 +551,24 @@
 
   .bug-detail-page__upload-entry {
     align-items: flex-start;
+  }
+
+  .bug-detail-page__comment-attachment {
+    align-items: flex-start;
+  }
+
+  .bug-detail-page__comment-attachment-icon,
+  .bug-detail-page__comment-attachment-image.ant-image-img {
+    width: 64px !important;
+    height: 64px !important;
+  }
+
+  .bug-detail-page__comment-card {
+    flex-direction: column;
+  }
+
+  .bug-detail-page__comment-actions {
+    opacity: 1;
+    pointer-events: auto;
   }
 }

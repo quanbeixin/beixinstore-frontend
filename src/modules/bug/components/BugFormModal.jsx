@@ -16,6 +16,31 @@ const BUG_DESCRIPTION_TEMPLATE = `【前置条件】
 【预期结果】
 -`
 
+function isImageFile(file) {
+  const mimeType = String(file?.type || file?.originFileObj?.type || '').toLowerCase()
+  if (mimeType.startsWith('image/')) return true
+
+  const fileName = String(file?.name || file?.fileName || file?.originFileObj?.name || '').toLowerCase()
+  return /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(fileName)
+}
+
+function isVideoFile(file) {
+  const mimeType = String(file?.type || file?.originFileObj?.type || '').toLowerCase()
+  if (mimeType.startsWith('video/')) return true
+
+  const fileName = String(file?.name || file?.fileName || file?.originFileObj?.name || '').toLowerCase()
+  return /\.(mp4|webm|ogg|mov|m4v)$/i.test(fileName)
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('图片预览生成失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
 function mapDictOptions(rows) {
   return (rows || []).map((item) => ({
     label: item?.item_name || item?.item_code || '-',
@@ -76,6 +101,10 @@ function BugFormModal({
   const [form] = Form.useForm()
   const selectedDemandId = Form.useWatch('demand_id', form)
   const [draftFileList, setDraftFileList] = useState([])
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewImage, setPreviewImage] = useState('')
+  const [previewType, setPreviewType] = useState('image')
+  const [previewTitle, setPreviewTitle] = useState('')
   const pastedFileCountRef = useRef(0)
 
   const [loadingOptions, setLoadingOptions] = useState(false)
@@ -85,6 +114,7 @@ function BugFormModal({
   const [stageOptions, setStageOptions] = useState([])
   const [demandOptions, setDemandOptions] = useState([])
   const [assigneeOptions, setAssigneeOptions] = useState([])
+  const isCreateMode = !initialValues?.id
 
   const normalizedDemandPreset = String(demandIdPreset || '').trim()
 
@@ -134,6 +164,10 @@ function BugFormModal({
   useEffect(() => {
     if (open) return
     setDraftFileList([])
+    setPreviewOpen(false)
+    setPreviewImage('')
+    setPreviewType('image')
+    setPreviewTitle('')
     pastedFileCountRef.current = 0
   }, [open])
 
@@ -152,6 +186,38 @@ function BugFormModal({
       pastedFileCountRef.current = 0
       return nextList
     })
+  }, [])
+
+  const handleAttachmentPreview = useCallback(async (file) => {
+    if (!isImageFile(file) && !isVideoFile(file)) {
+      message.info('当前附件暂不支持预览')
+      return
+    }
+
+    try {
+      let previewSrc = file?.url || file?.thumbUrl || file?.preview || ''
+      const rawFile = file?.originFileObj
+      if (!previewSrc && rawFile instanceof Blob && isImageFile(file)) {
+        previewSrc = await readFileAsDataUrl(rawFile)
+      }
+      if (!previewSrc && rawFile instanceof Blob && isVideoFile(file)) {
+        previewSrc = URL.createObjectURL(rawFile)
+      }
+      if (!previewSrc) {
+        message.warning('当前附件无法生成预览')
+        return
+      }
+
+      if (!file.preview) {
+        file.preview = previewSrc
+      }
+      setPreviewImage(previewSrc)
+      setPreviewType(isVideoFile(file) ? 'video' : 'image')
+      setPreviewTitle(file?.name || rawFile?.name || '附件预览')
+      setPreviewOpen(true)
+    } catch (error) {
+      message.error(error?.message || '附件预览生成失败')
+    }
   }, [])
 
   useEffect(() => {
@@ -176,7 +242,6 @@ function BugFormModal({
       demand_id: nextDemandId || undefined,
       assignee_ids: initialAssigneeIds,
       watcher_ids: initialWatcherIds,
-      environment_info: initialValues?.environment_info || '',
     }
     form.setFieldsValue(nextValues)
     loadAssignees(nextDemandId)
@@ -206,7 +271,6 @@ function BugFormModal({
           bug_type_code: values.bug_type_code || null,
           product_code: values.product_code || null,
           issue_stage: values.issue_stage || null,
-          environment_info: values.environment_info || null,
         },
         {
           draftAttachments: draftFileList.map((item) => item?.originFileObj || item).filter(Boolean),
@@ -257,10 +321,6 @@ function BugFormModal({
             <Input.TextArea rows={9} maxLength={20000} placeholder={BUG_DESCRIPTION_TEMPLATE} />
           </Form.Item>
 
-          <Form.Item label="复现环境" name="environment_info">
-            <Input.TextArea rows={2} maxLength={20000} placeholder="环境、浏览器、系统、设备等，可选" />
-          </Form.Item>
-
           {showDraftAttachments ? (
             <Form.Item
               label="附件"
@@ -272,9 +332,11 @@ function BugFormModal({
                   multiple
                   beforeUpload={() => false}
                   pastable
+                  listType="picture"
                   fileList={draftFileList}
                   onChange={handleAttachmentChange}
-                  showUploadList={{ showPreviewIcon: false }}
+                  onPreview={handleAttachmentPreview}
+                  showUploadList={{ showPreviewIcon: true }}
                   maxCount={9}
                 >
                   <p className="ant-upload-drag-icon">
@@ -305,8 +367,12 @@ function BugFormModal({
               <Select allowClear options={bugTypeOptions} placeholder="可选" />
             </Form.Item>
 
-            <Form.Item label="Bug阶段" name="issue_stage">
-              <Select allowClear options={stageOptions} placeholder="可选" />
+            <Form.Item
+              label="Bug阶段"
+              name="issue_stage"
+              rules={isCreateMode ? [{ required: true, message: '请选择Bug阶段' }] : []}
+            >
+              <Select allowClear={!isCreateMode} options={stageOptions} placeholder={isCreateMode ? '请选择' : '可选'} />
             </Form.Item>
 
             <Form.Item label="关联需求" name="demand_id">
@@ -354,19 +420,44 @@ function BugFormModal({
     </Form>
   )
 
+  const previewModal = (
+    <Modal
+      open={previewOpen}
+      title={previewTitle}
+      footer={null}
+      onCancel={() => setPreviewOpen(false)}
+      centered
+      width={860}
+    >
+      {previewType === 'video' ? (
+        <video
+          className="bug-form-modal__preview-video"
+          src={previewImage}
+          controls
+          preload="metadata"
+        />
+      ) : (
+        <img className="bug-form-modal__preview-image" src={previewImage} alt={previewTitle || '附件预览'} />
+      )}
+    </Modal>
+  )
+
   if (isDrawer) {
     return (
       <Drawer
         open={open}
         title={title}
-        width={900}
+        size={900}
         className="bug-form-modal"
         onClose={onCancel}
         footer={actionButtons}
         destroyOnHidden
         mask={{ closable: true }}
       >
-        {formContent}
+        <>
+          {formContent}
+          {previewModal}
+        </>
       </Drawer>
     )
   }
@@ -382,7 +473,10 @@ function BugFormModal({
       destroyOnHidden
       mask={{ closable: true }}
     >
-      {formContent}
+      <>
+        {formContent}
+        {previewModal}
+      </>
     </Modal>
   )
 }

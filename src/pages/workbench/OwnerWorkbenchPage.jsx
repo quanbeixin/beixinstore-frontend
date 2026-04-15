@@ -514,8 +514,19 @@ function OwnerWorkbench() {
     const logId = Number(item?.id || 0)
     if (!logId) return
 
-    const ownerEstimateHours = toNumber(item?.actual_hours, 0)
+    const rawActualHours = typeof item?.actual_hours === 'string' ? item.actual_hours.trim() : item?.actual_hours
+    const ownerEstimateHours = toNumber(rawActualHours, 0)
     const resolvedTaskDifficultyCode = item?.self_task_difficulty_code || item?.task_difficulty_code || 'N1'
+
+    if (rawActualHours === '' || rawActualHours === null || rawActualHours === undefined) {
+      message.warning('该事项未填写个人实际用时，不支持快捷评估')
+      return
+    }
+
+    if (ownerEstimateHours <= 0) {
+      message.warning('该事项尚未完成，不支持快捷评估')
+      return
+    }
 
     try {
       setNoEstimateLoadingMap((prev) => ({

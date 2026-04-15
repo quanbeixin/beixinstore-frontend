@@ -1,10 +1,10 @@
-import { BugOutlined, DeleteOutlined, EditOutlined, FilterOutlined, LinkOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from '@ant-design/icons'
+import { BugOutlined, DeleteOutlined, FilterOutlined, LinkOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from '@ant-design/icons'
 import { Button, Card, DatePicker, Empty, Form, Image, Input, Modal, Popconfirm, Popover, Segmented, Select, Space, Spin, Table, Tag, Typography, message } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getDictItemsApi } from '../../api/configDict'
-import { createBugApi, createBugViewApi, deleteBugApi, deleteBugViewApi, getBugAssigneesApi, getBugByIdApi, getBugViewByIdApi, getBugViewsApi, getBugWorkflowConfigApi, getBugsApi, transitionBugApi, updateBugApi, updateBugViewApi } from '../../api/bug'
+import { createBugApi, createBugViewApi, deleteBugViewApi, getBugAssigneesApi, getBugByIdApi, getBugViewByIdApi, getBugViewsApi, getBugWorkflowConfigApi, getBugsApi, transitionBugApi, updateBugViewApi } from '../../api/bug'
 import { hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
 import { pinyinSelectFilter } from '../../utils/selectSearch'
@@ -165,17 +165,10 @@ function BugListPage() {
   const canCreate = hasPermission('bug.create')
   const canTransition = hasPermission('bug.transition')
   const canUpdate = hasPermission('bug.update')
-  const canDelete = hasPermission('bug.delete')
 
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [editSubmitting, setEditSubmitting] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
-  const [editingBugId, setEditingBugId] = useState(0)
-  const [editingInitialValues, setEditingInitialValues] = useState(null)
-  const [editingRowLoadingId, setEditingRowLoadingId] = useState(0)
-  const [deletingBugId, setDeletingBugId] = useState(0)
   const [rows, setRows] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -329,6 +322,12 @@ function BugListPage() {
     }),
     [assigneeFilter, createdRange, groupFields, keyword, pageSize, reporterFilter, severityFilter, statusFilter],
   )
+  const activeViewConfig = useMemo(() => normalizeViewConfig(activeView?.config || {}), [activeView?.config])
+  const currentViewConfig = useMemo(() => normalizeViewConfig(buildCurrentViewConfig()), [buildCurrentViewConfig])
+  const isActiveViewDirty = useMemo(() => {
+    if (!activeView) return false
+    return JSON.stringify(activeViewConfig) !== JSON.stringify(currentViewConfig)
+  }, [activeView, activeViewConfig, currentViewConfig])
 
   const setViewQueryParam = useCallback(
     (viewId, { replace = true } = {}) => {
@@ -502,7 +501,7 @@ function BugListPage() {
       message.error(error?.message || '加载分享视图失败')
       setViewQueryParam(0)
     })
-  }, [activeViewId, loadAndApplyBugView, location.search, setViewQueryParam])
+  }, [loadAndApplyBugView, location.search, setViewQueryParam])
 
   const activeFilterCount = useMemo(
     () =>
@@ -525,6 +524,7 @@ function BugListPage() {
     setAssigneeFilter(undefined)
     setReporterFilter(undefined)
     setCreatedRange(null)
+    setGroupFields([])
     setPage(1)
     setPageSize(20)
   }, [])
@@ -855,49 +855,6 @@ function BugListPage() {
     }
   }, [runQuickTransition, statusDialog.bug, statusDialog.transition, transitionForm])
 
-  const handleOpenEditBug = useCallback(
-    async (row) => {
-      const bugId = Number(row?.id || 0)
-      if (!bugId) return
-      try {
-        setEditingRowLoadingId(bugId)
-        const result = await getBugByIdApi(bugId)
-        if (!result?.success || !result?.data) {
-          throw new Error(result?.message || '加载Bug详情失败')
-        }
-        setEditingBugId(bugId)
-        setEditingInitialValues(result.data)
-        setEditOpen(true)
-      } catch (error) {
-        message.error(error?.message || '加载Bug详情失败')
-      } finally {
-        setEditingRowLoadingId(0)
-      }
-    },
-    [],
-  )
-
-  const handleDeleteBug = useCallback(
-    async (row) => {
-      const bugId = Number(row?.id || 0)
-      if (!bugId) return
-      try {
-        setDeletingBugId(bugId)
-        const result = await deleteBugApi(bugId)
-        if (!result?.success) {
-          throw new Error(result?.message || '删除Bug失败')
-        }
-        message.success(result?.message || 'Bug已删除')
-        await loadBugs()
-      } catch (error) {
-        message.error(error?.message || '删除Bug失败')
-      } finally {
-        setDeletingBugId(0)
-      }
-    },
-    [loadBugs],
-  )
-
   const columns = useMemo(
     () => [
       {
@@ -1079,58 +1036,8 @@ function BugListPage() {
           return formatBeijingDateTime(value)
         },
       },
-      {
-        title: '操作',
-        key: 'actions',
-        width: 130,
-        fixed: 'right',
-        render: (_, row) => {
-          if (row?.__isGroup) return '-'
-          if (!canUpdate && !canDelete) return '-'
-          const bugId = Number(row?.id || 0)
-          return (
-            <Space size={4}>
-              {canUpdate ? (
-                <Button
-                  type="link"
-                  size="small"
-                  icon={<EditOutlined />}
-                  style={{ paddingInline: 0 }}
-                  loading={editingRowLoadingId === bugId}
-                  onClick={() => {
-                    void handleOpenEditBug(row)
-                  }}
-                >
-                  编辑
-                </Button>
-              ) : null}
-              {canDelete ? (
-                <Popconfirm
-                  title="确认删除该Bug？"
-                  okText="删除"
-                  cancelText="取消"
-                  onConfirm={() => {
-                    void handleDeleteBug(row)
-                  }}
-                >
-                  <Button
-                    type="link"
-                    danger
-                    size="small"
-                    icon={<DeleteOutlined />}
-                    style={{ paddingInline: 0 }}
-                    loading={deletingBugId === bugId}
-                  >
-                    删除
-                  </Button>
-                </Popconfirm>
-              ) : null}
-            </Space>
-          )
-        },
-      },
     ],
-    [activeAttachmentBugId, canDelete, canTransition, canUpdate, deletingBugId, editingRowLoadingId, getQuickStatusOptions, handleDeleteBug, handleOpenEditBug, handleQuickStatusChange, loadBugAttachments, navigate, renderAttachmentPreviewContent, statusUpdatingMap],
+    [activeAttachmentBugId, canTransition, canUpdate, getQuickStatusOptions, handleQuickStatusChange, loadBugAttachments, navigate, renderAttachmentPreviewContent, statusUpdatingMap],
   )
 
   return (
@@ -1182,6 +1089,7 @@ function BugListPage() {
               onChange={(value) => {
                 const nextViewId = Number(value || 0)
                 if (!nextViewId) {
+                  resetFilters()
                   setActiveViewId(undefined)
                   setViewQueryParam(0)
                   return
@@ -1196,13 +1104,14 @@ function BugListPage() {
             </Button>
             <Button
               size="small"
+              type={isActiveViewDirty ? 'primary' : 'default'}
               loading={viewSaveLoading}
-              disabled={!activeView?.can_edit}
+              disabled={!activeView?.can_edit || !isActiveViewDirty}
               onClick={() => {
                 void handleUpdateActiveView()
               }}
             >
-              更新当前视图
+              {isActiveViewDirty ? '保存视图变更' : '更新当前视图'}
             </Button>
             <Button
               size="small"
@@ -1238,6 +1147,7 @@ function BugListPage() {
                 {activeView.visibility === 'SHARED' ? '共享视图' : '个人视图'}
               </Tag>
             ) : null}
+            {activeView && isActiveViewDirty ? <Tag color="gold">已修改未保存</Tag> : null}
           </div>
 
           <div className="bug-list-page__filter-row bug-list-page__filter-row--status">
@@ -1492,43 +1402,6 @@ function BugListPage() {
           }
         }}
       />
-
-      <BugFormModal
-        open={editOpen}
-        title={editingBugId > 0 ? `编辑Bug #${editingBugId}` : '编辑Bug'}
-        submitText="保存"
-        presentation="drawer"
-        confirmLoading={editSubmitting}
-        initialValues={editingInitialValues}
-        showDraftAttachments={false}
-        onCancel={() => {
-          setEditOpen(false)
-          setEditingBugId(0)
-          setEditingInitialValues(null)
-        }}
-        onSubmit={async (values) => {
-          const bugId = Number(editingBugId || 0)
-          if (!bugId) return
-          setEditSubmitting(true)
-          try {
-            const result = await updateBugApi(bugId, values)
-            if (!result?.success) {
-              message.error(result?.message || '更新Bug失败')
-              return
-            }
-            message.success(result?.message || 'Bug已更新')
-            setEditOpen(false)
-            setEditingBugId(0)
-            setEditingInitialValues(null)
-            await loadBugs()
-          } catch (error) {
-            message.error(error?.message || '更新Bug失败')
-          } finally {
-            setEditSubmitting(false)
-          }
-        }}
-      />
-
       <Modal
         title="补充流转信息"
         open={statusDialog.open}

@@ -1,5 +1,5 @@
 import { BugOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, Col, Empty, Input, Popconfirm, Row, Select, Space, Table, Tag, Typography, message } from 'antd'
+import { Button, Card, Empty, Input, Popconfirm, Select, Space, Table, Tag, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createBugApi, getDemandBugsApi, getDemandBugStatsApi, reopenBugApi } from '../../../api/bug'
@@ -11,7 +11,6 @@ import { uploadDraftAttachments } from '../utils/attachmentUpload'
 import './demand-bug-panel.css'
 
 const { Search } = Input
-const { Text } = Typography
 
 function DemandBugPanel({ demandId }) {
   const navigate = useNavigate()
@@ -173,16 +172,18 @@ function DemandBugPanel({ demandId }) {
 
   return (
     <div className="demand-bug-panel">
-      <Row gutter={[12, 12]}>
+      <div className="demand-bug-panel__stats-row">
         {(stats || []).map((item) => (
-          <Col xs={12} md={4} key={item.status_code}>
-            <Card size="small" className="demand-bug-panel__stat-card" variant="borderless">
-              <Text type="secondary">{item.status_name}</Text>
-              <div className="demand-bug-panel__stat-value">{item.total || 0}</div>
-            </Card>
-          </Col>
+          <div
+            className="demand-bug-panel__stat-card"
+            data-status={String(item?.status_code || '').trim().toUpperCase() || 'DEFAULT'}
+            key={item.status_code}
+          >
+            <div className="demand-bug-panel__stat-label">{item.status_name}</div>
+            <div className="demand-bug-panel__stat-value">{item.total || 0}</div>
+          </div>
         ))}
-      </Row>
+      </div>
 
       <Card
         size="small"
