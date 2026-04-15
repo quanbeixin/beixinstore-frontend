@@ -77,6 +77,26 @@ export function getWorkDemandsApi(params) {
   return cachedRequest(key, () => request.get('/work/demands', { params }))
 }
 
+export function getDemandViewsApi() {
+  return request.get('/work/demands/views')
+}
+
+export function getDemandViewByIdApi(viewId) {
+  return request.get(`/work/demands/views/${viewId}`)
+}
+
+export function createDemandViewApi(payload) {
+  return request.post('/work/demands/views', payload)
+}
+
+export function updateDemandViewApi(viewId, payload) {
+  return request.put(`/work/demands/views/${viewId}`, payload)
+}
+
+export function deleteDemandViewApi(viewId) {
+  return request.delete(`/work/demands/views/${viewId}`)
+}
+
 export function getWorkDemandByIdApi(demandId) {
   return request.get(`/work/demands/${demandId}`)
 }

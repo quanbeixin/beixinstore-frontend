@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { WorkflowInspector } from '../../workflow'
 import { getDemandWorkflowNodeDisplayName } from '../utils/demandWorkflow.mapper'
 import { getCurrentUser } from '../../../utils/access'
+import { pinyinSelectFilter } from '../../../utils/selectSearch'
 import './demand-node-inspector.css'
 
 const { Text } = Typography
@@ -355,6 +356,7 @@ function DemandNodeInspector({
                   <Select
                     showSearch
                     optionFilterProp="label"
+                    filterOption={pinyinSelectFilter}
                     value={workflowParticipantUserIds?.[0]}
                     options={workflowAssigneeOptions}
                     placeholder="选择节点负责人"
@@ -560,6 +562,7 @@ function DemandNodeInspector({
             <Select
               showSearch
               optionFilterProp="label"
+              filterOption={pinyinSelectFilter}
               value={quickTaskDraft.assignee_user_id}
               options={workflowAssigneeOptions}
               placeholder="请选择执行人"

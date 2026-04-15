@@ -6,9 +6,11 @@ import {
   DownloadOutlined,
   EditOutlined,
   LeftOutlined,
+  LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
   RobotOutlined,
+  SaveOutlined,
   SearchOutlined,
   ThunderboltOutlined,
   UnorderedListOutlined,
@@ -48,8 +50,12 @@ import {
   assignDemandWorkflowNodeApi,
   createOwnerAssignedLogApi,
   createWorkDemandApi,
+  createDemandViewApi,
   deleteWorkDemandApi,
+  deleteDemandViewApi,
   getDemandWorkflowApi,
+  getDemandViewByIdApi,
+  getDemandViewsApi,
   getProjectTemplateByIdApi,
   getProjectTemplatesApi,
   getWorkflowAssigneesApi,
@@ -60,6 +66,7 @@ import {
   rejectDemandWorkflowNodeApi,
   replaceDemandWorkflowLatestApi,
   submitDemandWorkflowNodeApi,
+  updateDemandViewApi,
   updateDemandWorkflowNodeHoursApi,
   updateDemandWorkflowTaskHoursApi,
   updateWorkDemandApi,
@@ -79,6 +86,7 @@ import {
   formatBeijingDateTime,
   getBeijingTodayDateString,
 } from '../../utils/datetime'
+import { pinyinSelectFilter } from '../../utils/selectSearch'
 import './WorkDemandsPage.css'
 
 const { Search } = Input
@@ -204,6 +212,11 @@ const DETAIL_LOG_FILTER_OPTIONS = [
   { label: '已逾期', value: 'OVERDUE' },
 ]
 const DEMAND_GROUP_COLLAPSE_STATE_KEY_PREFIX = 'work_demands_group_collapsed_state'
+const DEMAND_LIST_SCROLL_RESTORE_KEY_PREFIX = 'work_demands_list_scroll_restore'
+const DEMAND_VIEW_VISIBILITY_OPTIONS = [
+  { label: '仅自己可见', value: 'PRIVATE' },
+  { label: '共享给他人', value: 'SHARED' },
+]
 
 function readCollapsedGroupKeys(storageKey) {
   if (typeof window === 'undefined' || !storageKey) return []
@@ -234,6 +247,86 @@ function writeCollapsedGroupKeys(storageKey, keys = []) {
   } catch {
     // 忽略存储失败，避免影响主流程
   }
+}
+
+function readListScrollRestore(storageKey) {
+  if (typeof window === 'undefined' || !storageKey) return null
+  try {
+    const raw = window.sessionStorage.getItem(storageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    const scrollY = Number(parsed?.scrollY)
+    if (!Number.isFinite(scrollY) || scrollY < 0) return null
+    return {
+      scrollY,
+      shouldRestore: Boolean(parsed?.shouldRestore),
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeListScrollRestore(storageKey, payload = null) {
+  if (typeof window === 'undefined' || !storageKey) return
+  try {
+    if (!payload) {
+      window.sessionStorage.removeItem(storageKey)
+      return
+    }
+    const scrollY = Number(payload?.scrollY)
+    window.sessionStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        scrollY: Number.isFinite(scrollY) && scrollY >= 0 ? scrollY : 0,
+        shouldRestore: Boolean(payload?.shouldRestore),
+      }),
+    )
+  } catch {
+    // 忽略存储失败，避免影响主流程
+  }
+}
+
+function normalizeDemandViewConfig(config = {}) {
+  const source = config && typeof config === 'object' ? config : {}
+  const templateIds = Array.from(
+    new Set(
+      (Array.isArray(source.template_ids) ? source.template_ids : [])
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item > 0),
+    ),
+  ).sort((a, b) => a - b)
+  const priorityOrder = String(source.priority_order || '').trim().toLowerCase()
+  const activeTabKey = String(source.active_tab_key || '').trim()
+
+  return {
+    keyword: String(source.keyword || '').trim(),
+    status: String(source.status || '').trim().toUpperCase(),
+    priority: String(source.priority || '').trim().toUpperCase(),
+    template_ids: templateIds,
+    active_tab_key: activeTabKey || '__ALL__',
+    owner_user_id: Number.isInteger(Number(source.owner_user_id)) && Number(source.owner_user_id) > 0
+      ? Number(source.owner_user_id)
+      : undefined,
+    updated_start_date: /^\d{4}-\d{2}-\d{2}$/.test(String(source.updated_start_date || '').trim())
+      ? String(source.updated_start_date || '').trim()
+      : '',
+    updated_end_date: /^\d{4}-\d{2}-\d{2}$/.test(String(source.updated_end_date || '').trim())
+      ? String(source.updated_end_date || '').trim()
+      : '',
+    scope_filter: String(source.scope_filter || '').trim().toLowerCase() === 'mine' ? 'mine' : 'all',
+    priority_order: priorityOrder === 'asc' || priorityOrder === 'desc' ? priorityOrder : '',
+    compact_view: Boolean(source.compact_view),
+  }
+}
+
+function buildDemandViewDateRange(config = {}) {
+  const start = String(config.updated_start_date || '').trim()
+  const end = String(config.updated_end_date || '').trim()
+  if (!start || !end) return []
+  const startValue = dayjs(start, 'YYYY-MM-DD')
+  const endValue = dayjs(end, 'YYYY-MM-DD')
+  if (!startValue.isValid() || !endValue.isValid()) return []
+  return [startValue, endValue]
 }
 
 function getStatusTagColor(status) {
@@ -470,6 +563,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const isLaunchPlanPage = pageMode === 'launchPlan'
   const listBasePath = isMyDemandsPage ? '/my-demands' : isLaunchPlanPage ? '/launch-plan' : '/work-demands'
   const groupCollapseStorageKey = `${DEMAND_GROUP_COLLAPSE_STATE_KEY_PREFIX}:${listBasePath}`
+  const listScrollRestoreStorageKey = `${DEMAND_LIST_SCROLL_RESTORE_KEY_PREFIX}:${listBasePath}`
   const [myDemandTabKey, setMyDemandTabKey] = useState('owned')
   const access = useMemo(() => getAccessSnapshot(), [])
   const canUseDemandPoolAnalysis = Boolean(access?.is_super_admin)
@@ -489,6 +583,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const currentUser = getCurrentUser()
 
   const [form] = Form.useForm()
+  const [saveViewForm] = Form.useForm()
   const modalTemplateId = Form.useWatch('template_id', form)
   const modalParticipantRoles = Form.useWatch('participant_roles', form)
   const modalParticipantRoleUserMap = Form.useWatch('participant_role_user_map', form)
@@ -522,6 +617,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [keywordInput, setKeywordInput] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
+  const [templateFilter, setTemplateFilter] = useState([])
   const [prioritySortOrder, setPrioritySortOrder] = useState()
   const [businessGroupFilter, setBusinessGroupFilter] = useState('')
   const [showCompletedTabOnly, setShowCompletedTabOnly] = useState(false)
@@ -538,6 +634,11 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [selectedAgentId, setSelectedAgentId] = useState(null)
   const [analysisExecuting, setAnalysisExecuting] = useState(false)
   const [analysisResult, setAnalysisResult] = useState(null)
+  const [viewListLoading, setViewListLoading] = useState(false)
+  const [viewSaveLoading, setViewSaveLoading] = useState(false)
+  const [demandViews, setDemandViews] = useState([])
+  const [activeViewId, setActiveViewId] = useState(undefined)
+  const [saveViewModalOpen, setSaveViewModalOpen] = useState(false)
   const [feishuChatOptionsLoading, setFeishuChatOptionsLoading] = useState(false)
   const [feishuChatOptions, setFeishuChatOptions] = useState([])
 
@@ -579,6 +680,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [detailStatus, setDetailStatus] = useState('')
   const [detailTabKey, setDetailTabKey] = useState('basic')
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState(() => readCollapsedGroupKeys(groupCollapseStorageKey))
+  const listScrollRestoreRef = useRef(null)
+  const hasAppliedListScrollRestoreRef = useRef(false)
 
   const detailLogStats = useMemo(() => {
     const total = detailLogs.length
@@ -796,6 +899,29 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     [],
   )
 
+  const activeView = useMemo(
+    () => demandViews.find((item) => Number(item?.id) === Number(activeViewId)) || null,
+    [activeViewId, demandViews],
+  )
+
+  const demandViewOptions = useMemo(
+    () =>
+      (demandViews || []).map((item) => {
+        const id = Number(item?.id || 0)
+        const isOwner = Boolean(item?.is_owner)
+        const creatorName = String(item?.creator_name || '').trim()
+        const label = isOwner
+          ? item?.view_name || `视图${id}`
+          : `${item?.view_name || `视图${id}`}（来自${creatorName || '共享'}）`
+        return {
+          label,
+          value: id,
+          searchText: `${item?.view_name || ''} ${creatorName}`.trim(),
+        }
+      }),
+    [demandViews],
+  )
+
   const activeDemandTabKey = showCompletedTabOnly
     ? '__DONE__'
     : showCancelledTabOnly
@@ -806,6 +932,51 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     : showCancelledTabOnly
       ? CANCELLED_TAB_STATUS_OPTIONS
       : NON_COMPLETED_STATUS_OPTIONS
+
+  const buildCurrentDemandViewConfig = useCallback(
+    () => ({
+      keyword: String(keyword || '').trim(),
+      status: showCompletedTabOnly || showCancelledTabOnly ? '' : String(statusFilter || '').trim().toUpperCase(),
+      priority: String(priorityFilter || '').trim().toUpperCase(),
+      template_ids: Array.isArray(templateFilter) ? templateFilter : [],
+      active_tab_key: activeDemandTabKey,
+      owner_user_id: Number(ownerFilter || 0) > 0 ? Number(ownerFilter) : null,
+      updated_start_date: updatedRange?.[0]?.format?.('YYYY-MM-DD') || '',
+      updated_end_date: updatedRange?.[1]?.format?.('YYYY-MM-DD') || '',
+      scope_filter: scopeFilter === 'mine' ? 'mine' : 'all',
+      priority_order: prioritySortOrder === 'ascend' ? 'asc' : prioritySortOrder === 'descend' ? 'desc' : '',
+      compact_view: Boolean(compactView),
+    }),
+    [
+      activeDemandTabKey,
+      compactView,
+      keyword,
+      ownerFilter,
+      priorityFilter,
+      prioritySortOrder,
+      scopeFilter,
+      showCancelledTabOnly,
+      showCompletedTabOnly,
+      statusFilter,
+      templateFilter,
+      updatedRange,
+    ],
+  )
+
+  const activeViewConfig = useMemo(
+    () => normalizeDemandViewConfig(activeView?.config || {}),
+    [activeView?.config],
+  )
+
+  const currentDemandViewConfig = useMemo(
+    () => normalizeDemandViewConfig(buildCurrentDemandViewConfig()),
+    [buildCurrentDemandViewConfig],
+  )
+
+  const isActiveViewDirty = useMemo(() => {
+    if (!activeView) return false
+    return JSON.stringify(activeViewConfig) !== JSON.stringify(currentDemandViewConfig)
+  }, [activeView, activeViewConfig, currentDemandViewConfig])
 
   const participantRoleOptions = useMemo(() => {
     const rows = Array.isArray(participantRoleItems) ? participantRoleItems : []
@@ -1026,6 +1197,16 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     return Number.isInteger(id) && id > 0 ? id : undefined
   }, [projectTemplates])
 
+  const selectedTemplateLabels = useMemo(
+    () =>
+      (Array.isArray(templateFilter) ? templateFilter : [])
+        .map((item) => Number(item))
+        .filter((id) => Number.isInteger(id) && id > 0)
+        .map((id) => String(templateByIdMap.get(id)?.name || '').trim())
+        .filter(Boolean),
+    [templateByIdMap, templateFilter],
+  )
+
   const loadTemplateByIdIfMissing = useCallback(async (rawTemplateId) => {
     if (!canUseProjectTemplates) return
     const id = Number(rawTemplateId)
@@ -1227,6 +1408,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         params.status = statusFilter
       }
       if (priorityFilter) params.priority = priorityFilter
+      if (Array.isArray(templateFilter) && templateFilter.length > 0) {
+        params.template_ids = templateFilter.join(',')
+      }
       if (prioritySortOrder === 'ascend') params.priority_order = 'asc'
       if (prioritySortOrder === 'descend') params.priority_order = 'desc'
       if (businessGroupFilter) params.business_group_code = businessGroupFilter
@@ -1276,6 +1460,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     keyword,
     statusFilter,
     priorityFilter,
+    templateFilter,
     prioritySortOrder,
     businessGroupFilter,
     showCompletedTabOnly,
@@ -1287,6 +1472,113 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     myDemandTabKey,
     scopeFilter,
   ])
+
+  const setViewQueryParam = useCallback(
+    (viewId, { replace = true } = {}) => {
+      const params = new URLSearchParams(location.search || '')
+      const normalizedViewId = Number(viewId || 0)
+      if (normalizedViewId > 0) {
+        params.set('view_id', String(normalizedViewId))
+      } else {
+        params.delete('view_id')
+      }
+      const search = params.toString()
+      navigate(
+        {
+          pathname: location.pathname,
+          search: search ? `?${search}` : '',
+        },
+        { replace },
+      )
+    },
+    [location.pathname, location.search, navigate],
+  )
+
+  const applyDemandViewState = useCallback((rawConfig = {}) => {
+    const config = normalizeDemandViewConfig(rawConfig)
+    const nextTabKey = config.active_tab_key || '__ALL__'
+
+    setKeyword(config.keyword || '')
+    setKeywordInput(config.keyword || '')
+    setStatusFilter(config.status || '')
+    setPriorityFilter(config.priority || '')
+    setTemplateFilter(Array.isArray(config.template_ids) ? config.template_ids : [])
+    setOwnerFilter(config.owner_user_id || undefined)
+    setUpdatedRange(buildDemandViewDateRange(config))
+    setScopeFilter(config.scope_filter === 'mine' ? 'mine' : 'all')
+    setPrioritySortOrder(
+      config.priority_order === 'asc'
+        ? 'ascend'
+        : config.priority_order === 'desc'
+          ? 'descend'
+          : undefined,
+    )
+    setCompactView(Boolean(config.compact_view))
+
+    if (nextTabKey === '__DONE__') {
+      setShowCompletedTabOnly(true)
+      setShowCancelledTabOnly(false)
+      setBusinessGroupFilter('')
+      setStatusFilter('')
+    } else if (nextTabKey === '__CANCELLED__') {
+      setShowCompletedTabOnly(false)
+      setShowCancelledTabOnly(true)
+      setBusinessGroupFilter('')
+      setStatusFilter('')
+    } else {
+      setShowCompletedTabOnly(false)
+      setShowCancelledTabOnly(false)
+      setBusinessGroupFilter(nextTabKey === '__ALL__' ? '' : nextTabKey)
+    }
+
+    setPage(1)
+  }, [])
+
+  const loadDemandViews = useCallback(async () => {
+    if (isMyDemandsPage || isLaunchPlanPage || !canView) {
+      setDemandViews([])
+      setActiveViewId(undefined)
+      return
+    }
+    setViewListLoading(true)
+    try {
+      const result = await getDemandViewsApi()
+      if (!result?.success) {
+        throw new Error(result?.message || '加载视图失败')
+      }
+      setDemandViews(Array.isArray(result?.data) ? result.data : [])
+    } catch (error) {
+      message.error(error?.message || '加载视图失败')
+    } finally {
+      setViewListLoading(false)
+    }
+  }, [canView, isLaunchPlanPage, isMyDemandsPage])
+
+  const loadAndApplyDemandView = useCallback(
+    async (viewId, { syncUrl = true, silent = false } = {}) => {
+      const normalizedViewId = Number(viewId || 0)
+      if (!normalizedViewId) return
+
+      let targetView = (demandViews || []).find((item) => Number(item?.id || 0) === normalizedViewId) || null
+      if (!targetView) {
+        const result = await getDemandViewByIdApi(normalizedViewId)
+        if (!result?.success || !result?.data) {
+          throw new Error(result?.message || '视图不存在或无权限查看')
+        }
+        targetView = result.data
+      }
+
+      applyDemandViewState(targetView?.config || {})
+      setActiveViewId(normalizedViewId)
+      if (syncUrl) {
+        setViewQueryParam(normalizedViewId)
+      }
+      if (!silent) {
+        message.success(`已应用视图：${targetView?.view_name || normalizedViewId}`)
+      }
+    },
+    [applyDemandViewState, demandViews, setViewQueryParam],
+  )
 
   useEffect(() => {
     loadUsers()
@@ -1360,6 +1652,30 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   useEffect(() => {
     loadDemandAgentOptions()
   }, [loadDemandAgentOptions])
+
+  useEffect(() => {
+    loadDemandViews()
+  }, [loadDemandViews])
+
+  useEffect(() => {
+    if (isDetailPage || isMyDemandsPage || isLaunchPlanPage) return
+    const viewIdFromQuery = Number(new URLSearchParams(location.search || '').get('view_id') || 0)
+    if (!viewIdFromQuery) return
+    if (Number(activeViewId || 0) === viewIdFromQuery) return
+
+    loadAndApplyDemandView(viewIdFromQuery, { syncUrl: false, silent: true }).catch((error) => {
+      message.error(error?.message || '加载分享视图失败')
+      setViewQueryParam(0)
+    })
+  }, [
+    activeViewId,
+    isDetailPage,
+    isLaunchPlanPage,
+    isMyDemandsPage,
+    loadAndApplyDemandView,
+    location.search,
+    setViewQueryParam,
+  ])
 
   const loadFeishuChatOptions = useCallback(async (keywordText = '') => {
     setFeishuChatOptionsLoading(true)
@@ -1713,12 +2029,28 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const openDetailDrawer = useCallback(
     (record) => {
       if (!record?.id) return
+      writeListScrollRestore(listScrollRestoreStorageKey, {
+        scrollY: typeof window === 'undefined' ? 0 : window.scrollY || window.pageYOffset || 0,
+        shouldRestore: true,
+      })
+      listScrollRestoreRef.current = readListScrollRestore(listScrollRestoreStorageKey)
+      hasAppliedListScrollRestoreRef.current = false
       navigate(`${listBasePath}/${record.id}`)
     },
-    [listBasePath, navigate],
+    [listBasePath, listScrollRestoreStorageKey, navigate],
   )
 
   const closeDetailDrawer = useCallback(() => {
+    const cachedRestore = readListScrollRestore(listScrollRestoreStorageKey)
+    if (cachedRestore) {
+      const nextRestore = {
+        ...cachedRestore,
+        shouldRestore: true,
+      }
+      writeListScrollRestore(listScrollRestoreStorageKey, nextRestore)
+      listScrollRestoreRef.current = nextRestore
+      hasAppliedListScrollRestoreRef.current = false
+    }
     setDetailDemand(null)
     setDetailLogs([])
     setDetailLogFilter('ALL')
@@ -1742,7 +2074,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setWorkflowDueAt(null)
     setWorkflowExpectedStartAt(null)
     navigate(listBasePath)
-  }, [listBasePath, navigate])
+  }, [listBasePath, listScrollRestoreStorageKey, navigate])
 
   useEffect(() => {
     if (!isDetailPage || !routeDemandId) return
@@ -1789,6 +2121,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
   useEffect(() => {
     if (isDetailPage) return
+    listScrollRestoreRef.current = readListScrollRestore(listScrollRestoreStorageKey)
+    hasAppliedListScrollRestoreRef.current = false
     setDetailPageLoading(false)
     setDetailDemand(null)
     setDetailLogs([])
@@ -1812,7 +2146,33 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setWorkflowParticipantUserIds([])
     setWorkflowDueAt(null)
     setWorkflowExpectedStartAt(null)
-  }, [isDetailPage])
+  }, [isDetailPage, listScrollRestoreStorageKey])
+
+  useEffect(() => {
+    if (isDetailPage || loading) return
+    const restoreMeta = listScrollRestoreRef.current || readListScrollRestore(listScrollRestoreStorageKey)
+    if (!restoreMeta?.shouldRestore || hasAppliedListScrollRestoreRef.current) return
+
+    hasAppliedListScrollRestoreRef.current = true
+    const applyRestore = () => {
+      window.scrollTo({
+        top: restoreMeta.scrollY,
+        behavior: 'auto',
+      })
+      writeListScrollRestore(listScrollRestoreStorageKey, null)
+      listScrollRestoreRef.current = null
+    }
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(applyRestore)
+      })
+      return
+    }
+
+    const timer = window.setTimeout(applyRestore, 0)
+    return () => window.clearTimeout(timer)
+  }, [demands, isDetailPage, listScrollRestoreStorageKey, loading])
 
   useEffect(() => {
     if (!selectedWorkflowNode) {
@@ -2454,15 +2814,126 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setKeywordInput('')
     setStatusFilter('')
     setPriorityFilter('')
+    setTemplateFilter([])
     setPrioritySortOrder(undefined)
     setBusinessGroupFilter('')
     setBusinessGroupAllCount(0)
     setBusinessGroupCounts([])
+    setShowCompletedTabOnly(false)
+    setShowCancelledTabOnly(false)
     setOwnerFilter(undefined)
     setUpdatedRange([])
     setScopeFilter('all')
     setPage(1)
   }
+
+  const openSaveViewModal = useCallback(() => {
+    const defaultName = activeView?.view_name
+      ? `${activeView.view_name}-副本`
+      : `需求池视图-${dayjs().format('MMDD-HHmm')}`
+    saveViewForm.setFieldsValue({
+      name: defaultName,
+      visibility: activeView?.visibility || 'PRIVATE',
+    })
+    setSaveViewModalOpen(true)
+  }, [activeView?.view_name, activeView?.visibility, saveViewForm])
+
+  const submitCreateDemandView = useCallback(async () => {
+    try {
+      const values = await saveViewForm.validateFields()
+      setViewSaveLoading(true)
+      const result = await createDemandViewApi({
+        view_name: String(values?.name || '').trim(),
+        visibility: String(values?.visibility || 'PRIVATE').trim().toUpperCase(),
+        config: buildCurrentDemandViewConfig(),
+      })
+      if (!result?.success || !result?.data) {
+        throw new Error(result?.message || '保存视图失败')
+      }
+      const createdViewId = Number(result?.data?.id || 0)
+      await loadDemandViews()
+      if (createdViewId > 0) {
+        await loadAndApplyDemandView(createdViewId, { syncUrl: true, silent: true })
+      }
+      setSaveViewModalOpen(false)
+      saveViewForm.resetFields()
+      message.success(result?.message || '视图已保存')
+    } catch (error) {
+      if (error?.errorFields) return
+      message.error(error?.message || '保存视图失败')
+    } finally {
+      setViewSaveLoading(false)
+    }
+  }, [buildCurrentDemandViewConfig, loadAndApplyDemandView, loadDemandViews, saveViewForm])
+
+  const handleUpdateActiveView = useCallback(async () => {
+    const viewId = Number(activeView?.id || 0)
+    if (!viewId) return
+    try {
+      setViewSaveLoading(true)
+      const result = await updateDemandViewApi(viewId, {
+        view_name: activeView?.view_name || `视图${viewId}`,
+        visibility: activeView?.visibility || 'PRIVATE',
+        config: buildCurrentDemandViewConfig(),
+      })
+      if (!result?.success) {
+        throw new Error(result?.message || '更新视图失败')
+      }
+      await loadDemandViews()
+      message.success(result?.message || '视图已更新')
+    } catch (error) {
+      message.error(error?.message || '更新视图失败')
+    } finally {
+      setViewSaveLoading(false)
+    }
+  }, [activeView?.id, activeView?.view_name, activeView?.visibility, buildCurrentDemandViewConfig, loadDemandViews])
+
+  const handleDeleteActiveView = useCallback(async () => {
+    const viewId = Number(activeView?.id || 0)
+    if (!viewId) return
+    try {
+      setViewSaveLoading(true)
+      const result = await deleteDemandViewApi(viewId)
+      if (!result?.success) {
+        throw new Error(result?.message || '删除视图失败')
+      }
+      setActiveViewId(undefined)
+      setViewQueryParam(0)
+      await loadDemandViews()
+      message.success(result?.message || '视图已删除')
+    } catch (error) {
+      message.error(error?.message || '删除视图失败')
+    } finally {
+      setViewSaveLoading(false)
+    }
+  }, [activeView?.id, loadDemandViews, setViewQueryParam])
+
+  const handleCopyViewLink = useCallback(async () => {
+    const viewId = Number(activeView?.id || 0)
+    if (!viewId) return
+    const shareUrl = `${window.location.origin}${location.pathname}?view_id=${viewId}`
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl)
+        message.success('视图链接已复制')
+        return
+      }
+      throw new Error('clipboard unavailable')
+    } catch {
+      Modal.info({
+        title: '复制链接',
+        content: (
+          <Input
+            value={shareUrl}
+            readOnly
+            onFocus={(event) => {
+              event.target.select()
+            }}
+          />
+        ),
+      })
+    }
+  }, [activeView?.id, location.pathname])
 
   const selectedDemandAgentOption = useMemo(
     () => agentOptions.find((item) => Number(item?.id) === Number(selectedAgentId)) || null,
@@ -2487,6 +2958,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       business_group_label: selectedBusinessGroupLabel,
       owner_user_id: ownerFilter || null,
       owner_label: selectedOwnerLabel,
+      template_ids: Array.isArray(templateFilter) ? templateFilter : [],
+      template_labels: selectedTemplateLabels,
+      template_label: selectedTemplateLabels.join('、'),
       updated_start_date:
         Array.isArray(updatedRange) && updatedRange[0] ? updatedRange[0].format('YYYY-MM-DD') : '',
       updated_end_date:
@@ -2517,11 +2991,13 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     ownerFilter,
     ownerOptions,
     priorityFilter,
+    selectedTemplateLabels,
     prioritySortOrder,
     scopeFilter,
     showCancelledTabOnly,
     showCompletedTabOnly,
     statusFilter,
+    templateFilter,
     updatedRange,
   ])
 
@@ -2971,6 +3447,84 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                 }}
               />
             )}
+            {!isMyDemandsPage && !isLaunchPlanPage ? (
+              <Space wrap style={{ marginBottom: 12 }}>
+                <Text strong>视图</Text>
+                <Select
+                  size="small"
+                  showSearch
+                  allowClear
+                  style={{ minWidth: 260 }}
+                  value={activeViewId}
+                  options={demandViewOptions}
+                  loading={viewListLoading}
+                  filterOption={pinyinSelectFilter}
+                  placeholder="选择已保存视图"
+                  onChange={(value) => {
+                    const nextViewId = Number(value || 0)
+                    if (!nextViewId) {
+                      handleResetFilters()
+                      setCompactView(Number(getUserPreferences()?.demand_list_compact_default || 0) === 1)
+                      setActiveViewId(undefined)
+                      setViewQueryParam(0)
+                      return
+                    }
+                    loadAndApplyDemandView(nextViewId, { syncUrl: true, silent: false }).catch((error) => {
+                      message.error(error?.message || '应用视图失败')
+                    })
+                  }}
+                />
+                <Button size="small" icon={<SaveOutlined />} onClick={openSaveViewModal}>
+                  存为视图
+                </Button>
+                <Button
+                  size="small"
+                  type={isActiveViewDirty ? 'primary' : 'default'}
+                  loading={viewSaveLoading}
+                  disabled={!activeView?.can_edit || !isActiveViewDirty}
+                  onClick={() => {
+                    void handleUpdateActiveView()
+                  }}
+                >
+                  {isActiveViewDirty ? '保存视图变更' : '更新当前视图'}
+                </Button>
+                <Button
+                  size="small"
+                  icon={<LinkOutlined />}
+                  disabled={!activeViewId}
+                  onClick={() => {
+                    void handleCopyViewLink()
+                  }}
+                >
+                  复制链接
+                </Button>
+                <Popconfirm
+                  title="确认删除这个视图吗？"
+                  okText="删除"
+                  cancelText="取消"
+                  disabled={!activeView?.can_delete}
+                  onConfirm={() => {
+                    void handleDeleteActiveView()
+                  }}
+                >
+                  <Button
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                    disabled={!activeView?.can_delete}
+                    loading={viewSaveLoading}
+                  >
+                    删除视图
+                  </Button>
+                </Popconfirm>
+                {activeView ? (
+                  <Tag color={activeView.visibility === 'SHARED' ? 'green' : 'default'}>
+                    {activeView.visibility === 'SHARED' ? '共享视图' : '个人视图'}
+                  </Tag>
+                ) : null}
+                {activeView && isActiveViewDirty ? <Tag color="gold">已修改未保存</Tag> : null}
+              </Space>
+            ) : null}
             <Space wrap>
               <Search
                 allowClear
@@ -3012,6 +3566,21 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                 value={priorityFilter || undefined}
                 onChange={(value) => {
                   setPriorityFilter(value || '')
+                  setPage(1)
+                }}
+              />
+              <Select
+                allowClear
+                mode="multiple"
+                showSearch
+                optionFilterProp="label"
+                maxTagCount="responsive"
+                style={{ width: 260 }}
+                placeholder="需求模板"
+                options={projectTemplateOptions}
+                value={Array.isArray(templateFilter) ? templateFilter : []}
+                onChange={(value) => {
+                  setTemplateFilter(Array.isArray(value) ? value : [])
                   setPage(1)
                 }}
               />
@@ -3153,6 +3722,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               expandable={{
                 rowExpandable: (record) => Boolean(record?.__group),
                 expandedRowKeys: expandedGroupKeys,
+                expandIconColumnIndex: 1,
                 onExpandedRowsChange: (nextExpandedRows) => {
                   const expandedSet = new Set(
                     (Array.isArray(nextExpandedRows) ? nextExpandedRows : [])
@@ -3207,6 +3777,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
             <Select
               showSearch
               optionFilterProp="label"
+              filterOption={pinyinSelectFilter}
               options={ownerOptions}
               placeholder="请选择需求负责人"
               disabled={Boolean(editingDemand) && !canTransferOwner}
@@ -3250,6 +3821,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                       allowClear
                       showSearch
                       optionFilterProp="label"
+                      filterOption={pinyinSelectFilter}
                       options={ownerOptions}
                       value={item.userId}
                       placeholder={`请选择${item.roleLabel}人员（可选）`}
@@ -3289,6 +3861,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               allowClear
               showSearch
               optionFilterProp="label"
+              filterOption={pinyinSelectFilter}
               options={ownerOptions}
               placeholder="选择项目负责人（可选）"
             />
@@ -3583,6 +4156,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               allowClear
                               showSearch
                               optionFilterProp="label"
+                              filterOption={pinyinSelectFilter}
                               value={detailProjectManager}
                               options={ownerOptions}
                               placeholder="选择项目负责人（可选）"
@@ -3833,6 +4407,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                                     allowClear
                                     showSearch
                                     optionFilterProp="label"
+                                    filterOption={pinyinSelectFilter}
                                     value={item.userId}
                                     options={ownerOptions}
                                     placeholder={`请选择${item.roleLabel}人员（可选）`}
@@ -4006,6 +4581,38 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           )}
         </Card>
       ) : null}
+
+      <Modal
+        title="保存需求池视图"
+        open={saveViewModalOpen}
+        onCancel={() => {
+          if (viewSaveLoading) return
+          setSaveViewModalOpen(false)
+        }}
+        onOk={() => {
+          void submitCreateDemandView()
+        }}
+        confirmLoading={viewSaveLoading}
+        okText="保存"
+        cancelText="取消"
+        destroyOnHidden
+      >
+        <Form form={saveViewForm} layout="vertical">
+          <Form.Item
+            label="视图名称"
+            name="name"
+            rules={[
+              { required: true, message: '请输入视图名称' },
+              { max: 100, message: '视图名称最多100字符' },
+            ]}
+          >
+            <Input maxLength={100} placeholder="例如：我负责的P0需求" />
+          </Form.Item>
+          <Form.Item label="可见范围" name="visibility" initialValue="PRIVATE">
+            <Select options={DEMAND_VIEW_VISIBILITY_OPTIONS} />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       {!isMyDemandsPage && !isLaunchPlanPage && !canCreate ? (
         <div style={{ marginTop: 12, color: '#667085', display: 'flex', alignItems: 'center', gap: 8 }}>
