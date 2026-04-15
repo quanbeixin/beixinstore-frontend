@@ -286,6 +286,35 @@ function writeListScrollRestore(storageKey, payload = null) {
   }
 }
 
+function getDemandListScrollContainer() {
+  if (typeof document === 'undefined') return null
+  return document.querySelector('.app-content')
+}
+
+function readDemandListScrollTop() {
+  const container = getDemandListScrollContainer()
+  if (container && Number.isFinite(container.scrollTop)) {
+    return Math.max(0, Number(container.scrollTop) || 0)
+  }
+  if (typeof window === 'undefined') return 0
+  return Math.max(0, Number(window.scrollY || window.pageYOffset || 0))
+}
+
+function restoreDemandListScrollTop(scrollTop = 0) {
+  const nextTop = Math.max(0, Number(scrollTop) || 0)
+  const container = getDemandListScrollContainer()
+  if (container) {
+    container.scrollTop = nextTop
+    return
+  }
+  if (typeof window !== 'undefined') {
+    window.scrollTo({
+      top: nextTop,
+      behavior: 'auto',
+    })
+  }
+}
+
 function normalizeDemandViewConfig(config = {}) {
   const source = config && typeof config === 'object' ? config : {}
   const templateIds = Array.from(
@@ -661,6 +690,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [detailDocLink, setDetailDocLink] = useState('')
   const [detailUiDesignLink, setDetailUiDesignLink] = useState('')
   const [detailTestCaseLink, setDetailTestCaseLink] = useState('')
+  const [detailFrontendTechSolution, setDetailFrontendTechSolution] = useState('')
+  const [detailBackendTechSolution, setDetailBackendTechSolution] = useState('')
   const [detailCodeBranch, setDetailCodeBranch] = useState('')
   const [detailReleaseNote, setDetailReleaseNote] = useState('')
   const [detailGroupChatMode, setDetailGroupChatMode] = useState('none')
@@ -1770,6 +1801,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       doc_link: '',
       ui_design_link: '',
       test_case_link: '',
+      frontend_tech_solution: '',
+      backend_tech_solution: '',
       code_branch: '',
       release_note: '',
       group_chat_mode: 'none',
@@ -1809,6 +1842,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       doc_link: record.doc_link || '',
       ui_design_link: record.ui_design_link || '',
       test_case_link: record.test_case_link || '',
+      frontend_tech_solution: record.frontend_tech_solution || '',
+      backend_tech_solution: record.backend_tech_solution || '',
       code_branch: record.code_branch || '',
       release_note: record.release_note || '',
       group_chat_mode: record.group_chat_mode || 'none',
@@ -1898,6 +1933,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         doc_link: values.doc_link || null,
         ui_design_link: values.ui_design_link || null,
         test_case_link: values.test_case_link || null,
+        frontend_tech_solution: values.frontend_tech_solution || null,
+        backend_tech_solution: values.backend_tech_solution || null,
         code_branch: values.code_branch || null,
         release_note: values.release_note || null,
         group_chat_mode: values.group_chat_mode || 'none',
@@ -2030,7 +2067,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     (record) => {
       if (!record?.id) return
       writeListScrollRestore(listScrollRestoreStorageKey, {
-        scrollY: typeof window === 'undefined' ? 0 : window.scrollY || window.pageYOffset || 0,
+        scrollY: readDemandListScrollTop(),
         shouldRestore: true,
       })
       listScrollRestoreRef.current = readListScrollRestore(listScrollRestoreStorageKey)
@@ -2066,6 +2103,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setDetailDocLink('')
     setDetailUiDesignLink('')
     setDetailTestCaseLink('')
+    setDetailFrontendTechSolution('')
+    setDetailBackendTechSolution('')
     setDetailTabKey('basic')
     setWorkflowData(null)
     setWorkflowWarning('')
@@ -2139,6 +2178,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setDetailDocLink('')
     setDetailUiDesignLink('')
     setDetailTestCaseLink('')
+    setDetailFrontendTechSolution('')
+    setDetailBackendTechSolution('')
     setDetailTabKey('basic')
     setWorkflowData(null)
     setWorkflowWarning('')
@@ -2155,10 +2196,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
     hasAppliedListScrollRestoreRef.current = true
     const applyRestore = () => {
-      window.scrollTo({
-        top: restoreMeta.scrollY,
-        behavior: 'auto',
-      })
+      restoreDemandListScrollTop(restoreMeta.scrollY)
       writeListScrollRestore(listScrollRestoreStorageKey, null)
       listScrollRestoreRef.current = null
     }
@@ -2223,6 +2261,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setDetailDocLink('')
       setDetailUiDesignLink('')
       setDetailTestCaseLink('')
+      setDetailFrontendTechSolution('')
+      setDetailBackendTechSolution('')
       setDetailCodeBranch('')
       setDetailReleaseNote('')
       setDetailGroupChatMode('none')
@@ -2253,6 +2293,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setDetailDocLink(detailDemand.doc_link || '')
     setDetailUiDesignLink(detailDemand.ui_design_link || '')
     setDetailTestCaseLink(detailDemand.test_case_link || '')
+    setDetailFrontendTechSolution(detailDemand.frontend_tech_solution || '')
+    setDetailBackendTechSolution(detailDemand.backend_tech_solution || '')
     setDetailCodeBranch(detailDemand.code_branch || '')
     setDetailReleaseNote(detailDemand.release_note || '')
     setDetailGroupChatMode(detailDemand.group_chat_mode || 'none')
@@ -2412,6 +2454,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         doc_link: detailDocLink || null,
         ui_design_link: detailUiDesignLink || null,
         test_case_link: detailTestCaseLink || null,
+        frontend_tech_solution: detailFrontendTechSolution || null,
+        backend_tech_solution: detailBackendTechSolution || null,
         code_branch: detailCodeBranch || null,
         release_note: detailReleaseNote || null,
         group_chat_mode: detailGroupChatMode || 'none',
@@ -3941,6 +3985,14 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
             <Input maxLength={500} placeholder="例如 测试用例平台链接（可选）" />
           </Form.Item>
 
+          <Form.Item label="前端技术方案" name="frontend_tech_solution">
+            <Input.TextArea rows={4} maxLength={10000} placeholder="填写前端技术方案、实现思路、组件拆分或注意事项（可选）" />
+          </Form.Item>
+
+          <Form.Item label="后端技术方案" name="backend_tech_solution">
+            <Input.TextArea rows={4} maxLength={10000} placeholder="填写后端技术方案、接口设计、数据结构或联调注意事项（可选）" />
+          </Form.Item>
+
           <Form.Item label="代码分支（选填）" name="code_branch">
             <Input maxLength={255} placeholder="例如 feature/req-123（可选）" />
           </Form.Item>
@@ -4344,6 +4396,26 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                                 </Button>
                               </div>
                             ) : null}
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">前端技术方案</Text>
+                            <Input.TextArea
+                              value={detailFrontendTechSolution}
+                              rows={4}
+                              maxLength={10000}
+                              placeholder="填写前端技术方案、实现思路、组件拆分或注意事项"
+                              onChange={(event) => setDetailFrontendTechSolution(event.target.value)}
+                            />
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">后端技术方案</Text>
+                            <Input.TextArea
+                              value={detailBackendTechSolution}
+                              rows={4}
+                              maxLength={10000}
+                              placeholder="填写后端技术方案、接口设计、数据结构或联调注意事项"
+                              onChange={(event) => setDetailBackendTechSolution(event.target.value)}
+                            />
                           </div>
                           <div className="work-demand-detail__field">
                             <Text type="secondary">代码分支（选填）</Text>

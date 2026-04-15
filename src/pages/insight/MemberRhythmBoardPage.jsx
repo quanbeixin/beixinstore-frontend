@@ -339,6 +339,12 @@ function MemberRhythmBoard() {
       value: toNumber(summary.member_count, 0),
     },
     {
+      key: 'total_recorded_days',
+      title: '有记录天数总计',
+      value: toNumber(summary.total_recorded_days ?? summary.total_filled_days, 0),
+      extra: `真实工作日总计：${toNumber(summary.total_workday_count, 0)}`,
+    },
+    {
       key: 'avg_actual_hours_per_day',
       title: '日均实际用时(h)',
       value: toNumber(summary.avg_actual_hours_per_day, 0),
@@ -366,14 +372,8 @@ function MemberRhythmBoard() {
       extra: `低负荷天数：${toNumber(summary.low_load_day_count, 0)}`,
     },
     {
-      key: 'total_owner_estimate_hours',
-      title: '负责人预估总用时(h)',
-      value: toNumber(summary.total_owner_estimate_hours, 0),
-      precision: 1,
-    },
-    {
       key: 'total_actual_hours',
-      title: '个人实际总用时(h)',
+      title: '实际总用时(h)',
       value: toNumber(summary.total_actual_hours, 0),
       precision: 1,
     },
@@ -451,8 +451,6 @@ function MemberRhythmBoard() {
     const calendarDayCount = toNumber(summary.calendar_day_count, 0)
     const avgSaturation = formatRate(summary.avg_saturation_rate)
     const actualHours = toNumber(summary.total_actual_hours, 0).toFixed(1)
-    const ownerEstimateHours = toNumber(summary.total_owner_estimate_hours, 0).toFixed(1)
-    const personalEstimateHours = toNumber(summary.total_personal_estimate_hours, 0).toFixed(1)
     const avgActualPerDay = toNumber(summary.avg_actual_hours_per_day, 0).toFixed(1)
     const overloadMemberCount = toNumber(summary.overload_member_count, 0)
     const overloadDayCount = toNumber(summary.overload_day_count, 0)
@@ -494,9 +492,7 @@ function MemberRhythmBoard() {
       `- 单成员真实工作日：${workdayCount}`,
       `- 真实工作日总计：${totalWorkdayCount}`,
       `- 有记录天数总计：${recordedDays}`,
-      `- 负责人预估总用时：${ownerEstimateHours}h`,
-      `- 个人预估总用时：${personalEstimateHours}h`,
-      `- 个人实际总用时：${actualHours}h`,
+      `- 实际总用时：${actualHours}h`,
       `- 日均实际用时：${avgActualPerDay}h`,
       `- 平均饱和度：${avgSaturation}`,
       '',
@@ -676,21 +672,7 @@ function MemberRhythmBoard() {
         ),
     },
     {
-      title: '负责人预估(h)',
-      dataIndex: 'total_owner_estimate_hours',
-      key: 'total_owner_estimate_hours',
-      width: 130,
-      render: (value) => toNumber(value, 0).toFixed(1),
-    },
-    {
-      title: '个人预估(h)',
-      dataIndex: 'total_personal_estimate_hours',
-      key: 'total_personal_estimate_hours',
-      width: 120,
-      render: (value) => toNumber(value, 0).toFixed(1),
-    },
-    {
-      title: '个人实际(h)',
+      title: '实际投入(h)',
       dataIndex: 'total_actual_hours',
       key: 'total_actual_hours',
       width: 120,
@@ -800,21 +782,7 @@ function MemberRhythmBoard() {
             width: 100,
           },
           {
-            title: '负责人预估(h)',
-            dataIndex: 'owner_estimate_hours',
-            key: 'owner_estimate_hours',
-            width: 130,
-            render: (value) => toNumber(value, 0).toFixed(1),
-          },
-          {
-            title: '个人预估(h)',
-            dataIndex: 'personal_estimate_hours',
-            key: 'personal_estimate_hours',
-            width: 120,
-            render: (value) => toNumber(value, 0).toFixed(1),
-          },
-          {
-            title: '个人实际(h)',
+            title: '实际投入(h)',
             dataIndex: 'actual_hours',
             key: 'actual_hours',
             width: 120,
@@ -836,11 +804,7 @@ function MemberRhythmBoard() {
               log_date: calendarDay.date,
               log_count: toNumber(matchedRow.log_count, 0),
               demand_count: toNumber(matchedRow.demand_count, 0),
-              owner_estimate_hours: toNumber(matchedRow.owner_estimate_hours, 0),
-              personal_estimate_hours: toNumber(matchedRow.personal_estimate_hours, 0),
               actual_hours: toNumber(matchedRow.actual_hours, 0),
-              variance_owner_hours: toNumber(matchedRow.variance_owner_hours, 0),
-              variance_personal_hours: toNumber(matchedRow.variance_personal_hours, 0),
               saturation_rate: toNumber(matchedRow.saturation_rate, 0),
               items: Array.isArray(matchedRow.items) ? matchedRow.items : [],
               is_workday: Boolean(calendarDay.is_workday),
@@ -858,8 +822,6 @@ function MemberRhythmBoard() {
     const hasAnyContent = mergedRows.some(
       (item) =>
         Number(item.log_count || 0) > 0 ||
-        Number(item.owner_estimate_hours || 0) > 0 ||
-        Number(item.personal_estimate_hours || 0) > 0 ||
         Number(item.actual_hours || 0) > 0,
     )
     if (mergedRows.length === 0) {
@@ -905,21 +867,7 @@ function MemberRhythmBoard() {
             width: 90,
           },
           {
-            title: '负责人预估(h)',
-            dataIndex: 'owner_estimate_hours',
-            key: 'owner_estimate_hours',
-            width: 130,
-            render: (value) => toNumber(value, 0).toFixed(1),
-          },
-          {
-            title: '个人预估(h)',
-            dataIndex: 'personal_estimate_hours',
-            key: 'personal_estimate_hours',
-            width: 120,
-            render: (value) => toNumber(value, 0).toFixed(1),
-          },
-          {
-            title: '个人实际(h)',
+            title: '实际投入(h)',
             dataIndex: 'actual_hours',
             key: 'actual_hours',
             width: 120,
@@ -1159,7 +1107,7 @@ function MemberRhythmBoard() {
           <Text>3. 平均饱和度口径：`个人实际总工时 / (真实工作日数 × 8.5h)`。</Text>
           <Text>4. 某个真实工作日即使没有工作也没有填报，也会按 `0h` 计入节奏。</Text>
           <Text>5. 节假日当天如果实际发生了工时，会计入总工时，但不会把该日计入真实工作日分母。</Text>
-          <Text>6. 三类用时分别为：负责人预估、个人预估、个人实际。</Text>
+          <Text>6. 本页主视图只展示实际投入，不展示负责人预估与个人预估，避免跨天事项拆分带来的口径失真。</Text>
         </Space>
       </Modal>
 
