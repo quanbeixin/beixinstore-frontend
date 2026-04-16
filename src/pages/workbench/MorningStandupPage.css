@@ -437,6 +437,12 @@
   color: #d97706;
 }
 
+.morning-member-item-hours {
+  margin-left: 4px;
+  color: #0f172a;
+  font-weight: 600;
+}
+
 .morning-member-item-desc {
   margin-top: 6px;
   color: #475569;

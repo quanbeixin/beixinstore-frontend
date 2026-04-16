@@ -433,6 +433,19 @@ function clampPercent(value) {
   return Math.max(0, Math.min(100, num))
 }
 
+function formatCompactHours(value) {
+  const num = toNumber(value, 0)
+  if (Number.isInteger(num)) return String(num)
+  return num.toFixed(1).replace(/\.0$/, '')
+}
+
+function formatMemberItemHoursProgress(item) {
+  const estimate = toNumber(item?.personal_estimate_hours, 0)
+  const completed = toNumber(item?.cumulative_actual_hours, 0)
+  if (estimate <= 0 && completed <= 0) return '-'
+  return `${formatCompactHours(completed)}/${formatCompactHours(estimate)} h`
+}
+
 function getMemberItemClassName(overdue, dueToday) {
   if (overdue) return 'morning-member-item morning-member-item--overdue'
   if (dueToday) return 'morning-member-item morning-member-item--due'
@@ -1881,6 +1894,12 @@ function MorningStandupBoard() {
                       {formatBeijingDate(item.expected_completion_date)}
                     </span>
                     {overdue ? '（逾期）' : dueToday ? '（今日到期）' : ''}
+                  </div>
+                  <div className="morning-member-item-meta">
+                    工时进度:
+                    <span className="morning-member-item-hours">
+                      {formatMemberItemHoursProgress(item)}
+                    </span>
                   </div>
                   <div className="morning-member-item-desc">
                     {item.description || '-'}
