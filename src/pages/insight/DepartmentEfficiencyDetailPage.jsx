@@ -383,7 +383,7 @@ function DepartmentEfficiencyDetailPage() {
       ),
       dataIndex: 'owner_estimate_coverage_rate',
       key: 'owner_estimate_coverage_rate',
-      width: 120,
+      width: 150,
       render: (value) => formatPercent(value),
     },
     {
@@ -510,7 +510,7 @@ function DepartmentEfficiencyDetailPage() {
       title: 'Owner评估覆盖率',
       dataIndex: 'owner_estimate_coverage_rate',
       key: 'owner_estimate_coverage_rate',
-      width: 120,
+      width: 150,
       render: (value) => formatPercent(value),
     },
     {

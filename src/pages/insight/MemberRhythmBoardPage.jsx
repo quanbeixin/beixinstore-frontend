@@ -632,7 +632,7 @@ function MemberRhythmBoard() {
     {
       title: '成员',
       key: 'member',
-      width: 220,
+      width: 110,
       render: (_, row) => (
         <Space orientation="vertical" size={2}>
           <Button type="link" style={{ paddingInline: 0, fontWeight: 600 }} onClick={() => goMemberDetail(row.user_id)}>
@@ -646,7 +646,7 @@ function MemberRhythmBoard() {
       ),
     },
     {
-      title: '有记录天数',
+      title: '实际投入天数',
       dataIndex: 'recorded_days',
       key: 'recorded_days',
       width: 90,
@@ -699,7 +699,7 @@ function MemberRhythmBoard() {
       render: (value) => getSaturationTag(value),
     },
     {
-      title: '最后记录',
+      title: '最后投入日期',
       dataIndex: 'last_log_date',
       key: 'last_log_date',
       width: 120,

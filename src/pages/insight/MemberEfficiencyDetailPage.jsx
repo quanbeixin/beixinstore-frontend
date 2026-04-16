@@ -760,7 +760,7 @@ function MemberEfficiencyDetailPage() {
       ),
       dataIndex: 'owner_estimate_coverage_rate',
       key: 'owner_estimate_coverage_rate',
-      width: 130,
+      width: 150,
       render: (value) => formatPercent(value),
     },
     {

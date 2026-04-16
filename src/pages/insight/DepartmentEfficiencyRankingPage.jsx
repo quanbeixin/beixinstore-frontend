@@ -475,7 +475,7 @@ function DepartmentEfficiencyRankingPage() {
       ),
       dataIndex: 'owner_estimate_coverage_rate',
       key: 'owner_estimate_coverage_rate',
-      width: 130,
+      width: 150,
       sorter: hoursSorter('owner_estimate_coverage_rate'),
       sortDirections: ['descend', 'ascend'],
       render: (value, row) => (
@@ -610,17 +610,6 @@ function DepartmentEfficiencyRankingPage() {
       key: 'last_log_date',
       width: 120,
       render: (value) => formatBeijingDate(value),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 100,
-      fixed: 'right',
-      render: (_, row) => (
-        <Button type="link" style={{ paddingInline: 0 }} onClick={() => goMemberDetail(row)}>
-          查看明细
-        </Button>
-      ),
     },
   ]
 
