@@ -96,6 +96,7 @@ const DEMAND_POOL_AGENT_SCENE = 'DEMAND_POOL_ANALYSIS'
 const WORKFLOW_ASSIGNEE_PAGE_SIZE = 500
 const WORKFLOW_ASSIGNEE_MAX_PAGES = 50
 const DEMAND_LIST_PAGE_SIZE = 1000
+const DETAIL_BASIC_AUTO_SAVE_DEBOUNCE_MS = 800
 const FEISHU_CHAT_QUERY_PAGE_SIZE = 100
 const FEISHU_CHAT_QUERY_MAX_PAGES = 30
 const FEISHU_CHAT_QUERY_MAX_ITEMS = 3000
@@ -423,6 +424,74 @@ function toNullableDateTimeValue(value) {
   return maybe.isValid() ? maybe : null
 }
 
+function normalizeOptionalPositiveInt(value) {
+  const num = Number(value)
+  return Number.isInteger(num) && num > 0 ? num : null
+}
+
+function formatOptionalDateValue(value) {
+  if (!value) return null
+  const maybe = dayjs.isDayjs(value) ? value : dayjs(value)
+  return maybe.isValid() ? maybe.format('YYYY-MM-DD') : null
+}
+
+function buildDetailBasicSnapshot(source = {}) {
+  const normalizedGroupChatMode = ['none', 'bind', 'auto'].includes(String(source.group_chat_mode || '').toLowerCase())
+    ? String(source.group_chat_mode || '').toLowerCase()
+    : 'none'
+  const normalizedGroupChatId =
+    normalizedGroupChatMode === 'bind' || normalizedGroupChatMode === 'auto'
+      ? normalizeFeishuChatId(source.group_chat_id) || null
+      : null
+
+  return {
+    name: String(source.name || ''),
+    status: String(source.status || ''),
+    template_id: normalizeOptionalPositiveInt(source.template_id),
+    project_manager: normalizeOptionalPositiveInt(source.project_manager),
+    business_group_code: source.business_group_code ? String(source.business_group_code) : null,
+    health_status: String(source.health_status || 'green'),
+    expected_release_date: formatOptionalDateValue(source.expected_release_date),
+    doc_link: String(source.doc_link || ''),
+    ui_design_link: String(source.ui_design_link || ''),
+    test_case_link: String(source.test_case_link || ''),
+    frontend_tech_solution: String(source.frontend_tech_solution || ''),
+    backend_tech_solution: String(source.backend_tech_solution || ''),
+    code_branch: String(source.code_branch || ''),
+    release_note: String(source.release_note || ''),
+    group_chat_mode: normalizedGroupChatMode,
+    group_chat_id: normalizedGroupChatId,
+  }
+}
+
+function areDetailBasicSnapshotsEqual(left, right) {
+  return JSON.stringify(left || {}) === JSON.stringify(right || {})
+}
+
+function buildDetailBasicPayload(snapshot = {}) {
+  return {
+    name: snapshot.name,
+    status: snapshot.status,
+    template_id: snapshot.template_id,
+    project_manager: snapshot.project_manager,
+    business_group_code: snapshot.business_group_code,
+    health_status: snapshot.health_status || 'green',
+    expected_release_date: snapshot.expected_release_date,
+    doc_link: snapshot.doc_link || null,
+    ui_design_link: snapshot.ui_design_link || null,
+    test_case_link: snapshot.test_case_link || null,
+    frontend_tech_solution: snapshot.frontend_tech_solution || null,
+    backend_tech_solution: snapshot.backend_tech_solution || null,
+    code_branch: snapshot.code_branch || null,
+    release_note: snapshot.release_note || null,
+    group_chat_mode: snapshot.group_chat_mode || 'none',
+    group_chat_id:
+      snapshot.group_chat_mode === 'bind' || snapshot.group_chat_mode === 'auto'
+        ? snapshot.group_chat_id || null
+        : null,
+  }
+}
+
 function deriveNodeScheduleFromTasks(tasks = []) {
   const rows = Array.isArray(tasks) ? tasks : []
   if (rows.length === 0) {
@@ -597,7 +666,6 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const access = useMemo(() => getAccessSnapshot(), [])
   const canUseDemandPoolAnalysis = Boolean(access?.is_super_admin)
   const canView = hasPermission('demand.view')
-  const canViewUsers = hasPermission('user.view')
   const canCreate = hasPermission('demand.create')
   const canCreateInCurrentPage = canCreate && !isMyDemandsPage && !isLaunchPlanPage
   const canUseProjectTemplates =
@@ -676,6 +744,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [detailLogs, setDetailLogs] = useState([])
   const [detailLogsLoading, setDetailLogsLoading] = useState(false)
   const [detailSaving, setDetailSaving] = useState(false)
+  const [detailBasicAutoSaveState, setDetailBasicAutoSaveState] = useState({
+    status: 'idle',
+    text: '自动保存已开启',
+  })
   const [detailLogFilter, setDetailLogFilter] = useState('ALL')
   const [detailName, setDetailName] = useState('')
   const [detailTemplateId, setDetailTemplateId] = useState()
@@ -684,8 +756,6 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [detailProjectManager, setDetailProjectManager] = useState()
   const [detailBusinessGroupCode, setDetailBusinessGroupCode] = useState(undefined)
   const [detailHealthStatus, setDetailHealthStatus] = useState('green')
-  const [detailActualStartTime, setDetailActualStartTime] = useState(null)
-  const [detailActualEndTime, setDetailActualEndTime] = useState(null)
   const [detailExpectedReleaseDate, setDetailExpectedReleaseDate] = useState(null)
   const [detailDocLink, setDetailDocLink] = useState('')
   const [detailUiDesignLink, setDetailUiDesignLink] = useState('')
@@ -713,6 +783,71 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState(() => readCollapsedGroupKeys(groupCollapseStorageKey))
   const listScrollRestoreRef = useRef(null)
   const hasAppliedListScrollRestoreRef = useRef(false)
+  const detailBasicAutoSaveTimerRef = useRef(null)
+  const detailBasicLastSavedSnapshotRef = useRef(null)
+  const detailBasicDraftRef = useRef(null)
+  const detailBasicSkipSyncDemandIdRef = useRef(null)
+  const detailBasicAutoSaveQueuedRef = useRef(false)
+  const detailBasicAutoSaveInFlightRef = useRef(false)
+  const detailBasicNextDelayRef = useRef(DETAIL_BASIC_AUTO_SAVE_DEBOUNCE_MS)
+
+  const detailBasicDraft = useMemo(
+    () =>
+      buildDetailBasicSnapshot({
+        name: detailName,
+        status: detailStatus || detailDemand?.status || '',
+        template_id: detailTemplateId,
+        project_manager: detailProjectManager,
+        business_group_code: detailBusinessGroupCode,
+        health_status: detailHealthStatus,
+        expected_release_date: detailExpectedReleaseDate,
+        doc_link: detailDocLink,
+        ui_design_link: detailUiDesignLink,
+        test_case_link: detailTestCaseLink,
+        frontend_tech_solution: detailFrontendTechSolution,
+        backend_tech_solution: detailBackendTechSolution,
+        code_branch: detailCodeBranch,
+        release_note: detailReleaseNote,
+        group_chat_mode: detailGroupChatMode,
+        group_chat_id: detailGroupChatId,
+      }),
+    [
+      detailBackendTechSolution,
+      detailBusinessGroupCode,
+      detailCodeBranch,
+      detailDemand?.status,
+      detailDocLink,
+      detailExpectedReleaseDate,
+      detailFrontendTechSolution,
+      detailGroupChatId,
+      detailGroupChatMode,
+      detailHealthStatus,
+      detailName,
+      detailProjectManager,
+      detailReleaseNote,
+      detailStatus,
+      detailTemplateId,
+      detailTestCaseLink,
+      detailUiDesignLink,
+    ],
+  )
+
+  const queueDetailBasicAutoSave = useCallback((mode = 'debounced') => {
+    detailBasicNextDelayRef.current = mode === 'immediate' ? 0 : DETAIL_BASIC_AUTO_SAVE_DEBOUNCE_MS
+  }, [])
+
+  const detailBasicAutoSaveIndicatorNode = useMemo(() => {
+    if (detailBasicAutoSaveState.status === 'saving') {
+      return <Text type="secondary">保存中...</Text>
+    }
+    if (detailBasicAutoSaveState.status === 'error') {
+      return <Text type="danger">{detailBasicAutoSaveState.text || '保存失败'}</Text>
+    }
+    if (detailBasicAutoSaveState.status === 'saved') {
+      return <Text type="secondary">{detailBasicAutoSaveState.text || '已保存'}</Text>
+    }
+    return <Text type="secondary">{detailBasicAutoSaveState.text || '自动保存已开启'}</Text>
+  }, [detailBasicAutoSaveState])
 
   const detailLogStats = useMemo(() => {
     const total = detailLogs.length
@@ -1324,7 +1459,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   }, [selectedWorkflowNode])
 
   const loadUsers = useCallback(async () => {
-    if (!canView || !canViewUsers) {
+    if (!canView) {
       setUsers([])
       return
     }
@@ -1362,7 +1497,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     } catch {
       // fallback to current user only
     }
-  }, [canView, canViewUsers])
+  }, [canView])
 
   const loadWorkflowAssignees = useCallback(async () => {
     if (!canManageWorkflow) {
@@ -2097,8 +2232,6 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setDetailProjectManager(undefined)
     setDetailBusinessGroupCode(undefined)
     setDetailHealthStatus('green')
-    setDetailActualStartTime(null)
-    setDetailActualEndTime(null)
     setDetailExpectedReleaseDate(null)
     setDetailDocLink('')
     setDetailUiDesignLink('')
@@ -2172,8 +2305,6 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setDetailProjectManager(undefined)
     setDetailBusinessGroupCode(undefined)
     setDetailHealthStatus('green')
-    setDetailActualStartTime(null)
-    setDetailActualEndTime(null)
     setDetailExpectedReleaseDate(null)
     setDetailDocLink('')
     setDetailUiDesignLink('')
@@ -2247,6 +2378,19 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   useEffect(() => {
     if (!isDetailPage) return
     if (!detailDemand) {
+      detailBasicLastSavedSnapshotRef.current = null
+      detailBasicDraftRef.current = null
+      detailBasicSkipSyncDemandIdRef.current = null
+      detailBasicAutoSaveQueuedRef.current = false
+      detailBasicAutoSaveInFlightRef.current = false
+      if (detailBasicAutoSaveTimerRef.current) {
+        window.clearTimeout(detailBasicAutoSaveTimerRef.current)
+        detailBasicAutoSaveTimerRef.current = null
+      }
+      setDetailBasicAutoSaveState({
+        status: 'idle',
+        text: '自动保存已开启',
+      })
       setDetailStatus('')
       setDetailName('')
       setDetailTemplateId(undefined)
@@ -2255,8 +2399,6 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setDetailProjectManager(undefined)
       setDetailBusinessGroupCode(undefined)
       setDetailHealthStatus('green')
-      setDetailActualStartTime(null)
-      setDetailActualEndTime(null)
       setDetailExpectedReleaseDate(null)
       setDetailDocLink('')
       setDetailUiDesignLink('')
@@ -2269,8 +2411,54 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setDetailGroupChatId(undefined)
       return
     }
-    setDetailName(detailDemand.name || '')
-    setDetailTemplateId(detailDemand.template_id ? Number(detailDemand.template_id) : defaultProjectTemplateId)
+    const shouldSkipBasicSync = Number(detailBasicSkipSyncDemandIdRef.current || 0) === Number(detailDemand.id || 0)
+    const serverBasicSnapshot = buildDetailBasicSnapshot({
+      name: detailDemand.name || '',
+      status: detailDemand.status || 'TODO',
+      template_id: detailDemand.template_id ? Number(detailDemand.template_id) : defaultProjectTemplateId,
+      project_manager: detailDemand.project_manager ? Number(detailDemand.project_manager) : undefined,
+      business_group_code: detailDemand.business_group_code || undefined,
+      health_status: detailDemand.health_status || 'green',
+      expected_release_date: detailDemand.expected_release_date ? dayjs(detailDemand.expected_release_date) : null,
+      doc_link: detailDemand.doc_link || '',
+      ui_design_link: detailDemand.ui_design_link || '',
+      test_case_link: detailDemand.test_case_link || '',
+      frontend_tech_solution: detailDemand.frontend_tech_solution || '',
+      backend_tech_solution: detailDemand.backend_tech_solution || '',
+      code_branch: detailDemand.code_branch || '',
+      release_note: detailDemand.release_note || '',
+      group_chat_mode: detailDemand.group_chat_mode || 'none',
+      group_chat_id: normalizeFeishuChatId(detailDemand.group_chat_id) || undefined,
+    })
+    detailBasicLastSavedSnapshotRef.current = serverBasicSnapshot
+    if (shouldSkipBasicSync) {
+      detailBasicSkipSyncDemandIdRef.current = null
+    } else {
+      setDetailName(detailDemand.name || '')
+      setDetailTemplateId(detailDemand.template_id ? Number(detailDemand.template_id) : defaultProjectTemplateId)
+      setDetailProjectManager(detailDemand.project_manager ? Number(detailDemand.project_manager) : undefined)
+      setDetailBusinessGroupCode(detailDemand.business_group_code || undefined)
+      setDetailHealthStatus(detailDemand.health_status || 'green')
+      setDetailExpectedReleaseDate(detailDemand.expected_release_date ? dayjs(detailDemand.expected_release_date) : null)
+      setDetailDocLink(detailDemand.doc_link || '')
+      setDetailUiDesignLink(detailDemand.ui_design_link || '')
+      setDetailTestCaseLink(detailDemand.test_case_link || '')
+      setDetailFrontendTechSolution(detailDemand.frontend_tech_solution || '')
+      setDetailBackendTechSolution(detailDemand.backend_tech_solution || '')
+      setDetailCodeBranch(detailDemand.code_branch || '')
+      setDetailReleaseNote(detailDemand.release_note || '')
+      setDetailGroupChatMode(detailDemand.group_chat_mode || 'none')
+      setDetailGroupChatId(normalizeFeishuChatId(detailDemand.group_chat_id) || undefined)
+      if (!canEditDemandRecord(detailDemand)) {
+        setDetailStatus('')
+      } else {
+        setDetailStatus(detailDemand.status || 'TODO')
+      }
+    }
+    setDetailBasicAutoSaveState({
+      status: 'idle',
+      text: '自动保存已开启',
+    })
     setDetailParticipantRoles(
       Array.isArray(detailDemand.participant_roles) && detailDemand.participant_roles.length > 0
         ? detailDemand.participant_roles
@@ -2284,27 +2472,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           : DEFAULT_DEMAND_PARTICIPANT_ROLES,
       ),
     )
-    setDetailProjectManager(detailDemand.project_manager ? Number(detailDemand.project_manager) : undefined)
-    setDetailBusinessGroupCode(detailDemand.business_group_code || undefined)
-    setDetailHealthStatus(detailDemand.health_status || 'green')
-    setDetailActualStartTime(toNullableDateTimeValue(detailDemand.actual_start_time))
-    setDetailActualEndTime(toNullableDateTimeValue(detailDemand.actual_end_time))
-    setDetailExpectedReleaseDate(detailDemand.expected_release_date ? dayjs(detailDemand.expected_release_date) : null)
-    setDetailDocLink(detailDemand.doc_link || '')
-    setDetailUiDesignLink(detailDemand.ui_design_link || '')
-    setDetailTestCaseLink(detailDemand.test_case_link || '')
-    setDetailFrontendTechSolution(detailDemand.frontend_tech_solution || '')
-    setDetailBackendTechSolution(detailDemand.backend_tech_solution || '')
-    setDetailCodeBranch(detailDemand.code_branch || '')
-    setDetailReleaseNote(detailDemand.release_note || '')
-    setDetailGroupChatMode(detailDemand.group_chat_mode || 'none')
-    setDetailGroupChatId(normalizeFeishuChatId(detailDemand.group_chat_id) || undefined)
-
-    if (!canEditDemandRecord(detailDemand)) {
-      setDetailStatus('')
-      return
-    }
-    setDetailStatus(detailDemand.status || 'TODO')
+    if (!canEditDemandRecord(detailDemand)) return
   }, [isDetailPage, detailDemand, canEditDemandRecord, defaultProjectTemplateId])
 
   useEffect(() => {
@@ -2357,6 +2525,149 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     loadDemandWorkflow(mergedDetail.id)
   }, [isDetailPage, loadDemands, detailDemand, fetchDemandRelatedLogs, loadDemandWorkflow])
 
+  useEffect(() => {
+    detailBasicDraftRef.current = detailBasicDraft
+  }, [detailBasicDraft])
+
+  const saveDetailBasicDraft = useCallback(
+    async ({ showValidationMessage = false, showSaveErrorToast = false } = {}) => {
+      if (!detailDemand?.id || !canEditDemandRecord(detailDemand)) return false
+
+      const snapshot = detailBasicDraftRef.current || detailBasicDraft
+      const lastSavedSnapshot = detailBasicLastSavedSnapshotRef.current
+      if (areDetailBasicSnapshotsEqual(snapshot, lastSavedSnapshot)) {
+        return true
+      }
+
+      const nextName = String(snapshot?.name || '').trim()
+      if (!nextName) {
+        setDetailBasicAutoSaveState({
+          status: 'error',
+          text: '未保存：需求名称不能为空',
+        })
+        if (showValidationMessage) {
+          message.warning('需求名称不能为空')
+        }
+        return false
+      }
+      if (!snapshot?.template_id) {
+        setDetailBasicAutoSaveState({
+          status: 'error',
+          text: '未保存：请选择需求模板',
+        })
+        if (showValidationMessage) {
+          message.warning('请选择需求模板')
+        }
+        return false
+      }
+      if (!String(snapshot?.status || '').trim()) {
+        setDetailBasicAutoSaveState({
+          status: 'error',
+          text: '未保存：请选择状态',
+        })
+        if (showValidationMessage) {
+          message.warning('请选择状态')
+        }
+        return false
+      }
+
+      if (detailBasicAutoSaveInFlightRef.current) {
+        detailBasicAutoSaveQueuedRef.current = true
+        return false
+      }
+
+      detailBasicAutoSaveInFlightRef.current = true
+      setDetailBasicAutoSaveState({
+        status: 'saving',
+        text: '保存中...',
+      })
+
+      try {
+        const result = await updateWorkDemandApi(detailDemand.id, buildDetailBasicPayload(snapshot))
+        if (!result?.success) {
+          setDetailBasicAutoSaveState({
+            status: 'error',
+            text: result?.message || '保存失败，请重试',
+          })
+          if (showSaveErrorToast) {
+            message.error(result?.message || '保存失败')
+          }
+          return false
+        }
+
+        detailBasicLastSavedSnapshotRef.current = snapshot
+        const hasNewerLocalChanges = !areDetailBasicSnapshotsEqual(detailBasicDraftRef.current, snapshot)
+        setDetailBasicAutoSaveState({
+          status: 'saved',
+          text:
+            result?.data?.workflow_auto_replaced
+              ? '已保存，流程已同步'
+              : result?.data?.workflow_sync_notice
+                ? '已保存，流程待同步'
+                : '已自动保存',
+        })
+
+        if (!hasNewerLocalChanges && result?.data) {
+          detailBasicSkipSyncDemandIdRef.current = Number(result.data.id || detailDemand.id)
+          await refreshListAndDetail(result.data)
+        }
+        return true
+      } catch (error) {
+        setDetailBasicAutoSaveState({
+          status: 'error',
+          text: error?.message || '保存失败，请重试',
+        })
+        if (showSaveErrorToast) {
+          message.error(error?.message || '保存失败')
+        }
+        return false
+      } finally {
+        detailBasicAutoSaveInFlightRef.current = false
+        if (detailBasicAutoSaveQueuedRef.current) {
+          detailBasicAutoSaveQueuedRef.current = false
+          window.setTimeout(() => {
+            saveDetailBasicDraft()
+          }, 0)
+        }
+      }
+    },
+    [canEditDemandRecord, detailBasicDraft, detailDemand, refreshListAndDetail],
+  )
+
+  const flushDetailBasicAutoSave = useCallback(() => {
+    if (detailBasicAutoSaveTimerRef.current) {
+      window.clearTimeout(detailBasicAutoSaveTimerRef.current)
+      detailBasicAutoSaveTimerRef.current = null
+    }
+    return saveDetailBasicDraft({
+      showValidationMessage: true,
+      showSaveErrorToast: true,
+    })
+  }, [saveDetailBasicDraft])
+
+  useEffect(() => {
+    if (!detailDemand?.id || !canEditDemandRecord(detailDemand)) return undefined
+    if (areDetailBasicSnapshotsEqual(detailBasicDraft, detailBasicLastSavedSnapshotRef.current)) {
+      return undefined
+    }
+
+    if (detailBasicAutoSaveTimerRef.current) {
+      window.clearTimeout(detailBasicAutoSaveTimerRef.current)
+    }
+    const delay = detailBasicNextDelayRef.current
+    detailBasicNextDelayRef.current = DETAIL_BASIC_AUTO_SAVE_DEBOUNCE_MS
+    detailBasicAutoSaveTimerRef.current = window.setTimeout(() => {
+      saveDetailBasicDraft()
+    }, delay)
+
+    return () => {
+      if (detailBasicAutoSaveTimerRef.current) {
+        window.clearTimeout(detailBasicAutoSaveTimerRef.current)
+        detailBasicAutoSaveTimerRef.current = null
+      }
+    }
+  }, [canEditDemandRecord, detailBasicDraft, detailDemand, saveDetailBasicDraft])
+
   const handleQuickStatusUpdate = useCallback(async (record, nextStatus) => {
     if (!record?.id || !canEditDemandRecord(record)) return
     try {
@@ -2408,74 +2719,27 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     }
   }, [canEditDemandRecord, refreshListAndDetail])
 
-  const handleSaveDetail = async () => {
+  const handleSaveDetailRoles = async () => {
     if (!detailDemand?.id || !canEditDemandRecord(detailDemand)) return
-    const nextName = String(detailName || '').trim()
-    if (!nextName) {
-      message.warning('需求名称不能为空')
-      return
-    }
-    if (!detailTemplateId) {
-      message.warning('请选择需求模板')
-      return
-    }
-    const nextStatus = String(detailStatus || detailDemand.status || '').trim()
-    if (!nextStatus) {
-      message.warning('请选择状态')
-      return
-    }
     const normalizedDetailParticipantRoles = normalizeParticipantRoles(detailParticipantRoles)
     if (normalizedDetailParticipantRoles.length === 0) {
       message.warning('请选择需求涉及角色')
       return
     }
-    if (detailActualStartTime && detailActualEndTime && detailActualStartTime.isAfter(detailActualEndTime)) {
-      message.warning('实际开始时间不能晚于实际结束时间')
-      return
-    }
     try {
       setDetailSaving(true)
       const result = await updateWorkDemandApi(detailDemand.id, {
-        name: nextName,
-        status: nextStatus,
-        management_mode: 'advanced',
-        template_id: detailTemplateId,
         participant_roles: normalizedDetailParticipantRoles,
         participant_role_user_map: normalizeParticipantRoleUserMap(
           detailParticipantRoleUserMap,
           normalizedDetailParticipantRoles,
         ),
-        project_manager: detailProjectManager ?? null,
-        business_group_code: detailBusinessGroupCode ?? null,
-        health_status: detailHealthStatus || 'green',
-        actual_start_time: detailActualStartTime ? detailActualStartTime.format('YYYY-MM-DD HH:mm:ss') : null,
-        actual_end_time: detailActualEndTime ? detailActualEndTime.format('YYYY-MM-DD HH:mm:ss') : null,
-        expected_release_date: detailExpectedReleaseDate ? detailExpectedReleaseDate.format('YYYY-MM-DD') : null,
-        doc_link: detailDocLink || null,
-        ui_design_link: detailUiDesignLink || null,
-        test_case_link: detailTestCaseLink || null,
-        frontend_tech_solution: detailFrontendTechSolution || null,
-        backend_tech_solution: detailBackendTechSolution || null,
-        code_branch: detailCodeBranch || null,
-        release_note: detailReleaseNote || null,
-        group_chat_mode: detailGroupChatMode || 'none',
-        group_chat_id:
-          detailGroupChatMode === 'bind' || detailGroupChatMode === 'auto'
-            ? normalizeFeishuChatId(detailGroupChatId) || null
-            : null,
       })
       if (!result?.success) {
         message.error(result?.message || '保存失败')
         return
       }
-      if (result?.data?.workflow_auto_replaced) {
-        message.success('需求信息已更新，流程已自动同步')
-      } else if (result?.data?.workflow_sync_notice) {
-        message.success('需求信息已更新')
-        message.warning(result.data.workflow_sync_notice)
-      } else {
-        message.success('需求信息已更新')
-      }
+      message.success('涉及角色已更新')
       await refreshListAndDetail(result?.data || null)
     } catch (error) {
       message.error(error?.message || '保存失败')
@@ -4159,8 +4423,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               activeKey={detailTabKey}
               onChange={setDetailTabKey}
               tabBarExtraContent={
-                canEditDemandRecord(detailDemand) && (detailTabKey === 'basic' || detailTabKey === 'roles') ? (
-                  <Button type="primary" onClick={handleSaveDetail} loading={detailSaving}>
+                canEditDemandRecord(detailDemand) && detailTabKey === 'basic' ? (
+                  detailBasicAutoSaveIndicatorNode
+                ) : canEditDemandRecord(detailDemand) && detailTabKey === 'roles' ? (
+                  <Button type="primary" onClick={handleSaveDetailRoles} loading={detailSaving}>
                     保存变更
                   </Button>
                 ) : null
@@ -4180,6 +4446,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               maxLength={200}
                               placeholder="请输入需求名称"
                               onChange={(event) => setDetailName(event.target.value)}
+                              onBlur={flushDetailBasicAutoSave}
                             />
                           </div>
                           <div className="work-demand-detail__field">
@@ -4188,7 +4455,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               value={detailStatus || undefined}
                               options={STATUS_OPTIONS}
                               placeholder="请选择状态"
-                              onChange={(value) => setDetailStatus(value)}
+                              onChange={(value) => {
+                                queueDetailBasicAutoSave('immediate')
+                                setDetailStatus(value)
+                              }}
                             />
                           </div>
                           <div className="work-demand-detail__field">
@@ -4199,7 +4469,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               value={detailTemplateId}
                               options={projectTemplateOptions}
                               placeholder="请选择需求模板"
-                              onChange={(value) => setDetailTemplateId(value)}
+                              onChange={(value) => {
+                                queueDetailBasicAutoSave('immediate')
+                                setDetailTemplateId(value)
+                              }}
                             />
                           </div>
                           <div className="work-demand-detail__field">
@@ -4212,7 +4485,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               value={detailProjectManager}
                               options={ownerOptions}
                               placeholder="选择项目负责人（可选）"
-                              onChange={(value) => setDetailProjectManager(value)}
+                              onChange={(value) => {
+                                queueDetailBasicAutoSave('immediate')
+                                setDetailProjectManager(value)
+                              }}
                             />
                           </div>
                           <div className="work-demand-detail__field">
@@ -4224,7 +4500,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               value={detailBusinessGroupCode}
                               options={businessGroupOptions}
                               placeholder="请选择业务组"
-                              onChange={(value) => setDetailBusinessGroupCode(value)}
+                              onChange={(value) => {
+                                queueDetailBasicAutoSave('immediate')
+                                setDetailBusinessGroupCode(value)
+                              }}
                             />
                           </div>
                           <div className="work-demand-detail__field">
@@ -4232,7 +4511,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                             <Select
                               value={detailHealthStatus}
                               options={HEALTH_STATUS_OPTIONS}
-                              onChange={(value) => setDetailHealthStatus(value)}
+                              onChange={(value) => {
+                                queueDetailBasicAutoSave('immediate')
+                                setDetailHealthStatus(value)
+                              }}
                             />
                           </div>
                           <div className="work-demand-detail__field work-demand-detail__field--full">
@@ -4240,7 +4522,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                             <Radio.Group
                               options={DEMAND_GROUP_CHAT_MODE_OPTIONS}
                               value={detailGroupChatMode}
-                              onChange={(event) => setDetailGroupChatMode(event?.target?.value || 'none')}
+                              onChange={(event) => {
+                                queueDetailBasicAutoSave('immediate')
+                                setDetailGroupChatMode(event?.target?.value || 'none')
+                              }}
                             />
                           </div>
                           {detailGroupChatMode === 'bind' ? (
@@ -4256,7 +4541,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                                 notFoundContent={feishuChatOptionsLoading ? '加载中...' : '暂无可选飞书群'}
                                 options={feishuChatOptions}
                                 placeholder="选择当前应用可访问的飞书群"
-                                onChange={(value) => setDetailGroupChatId(normalizeFeishuChatId(value) || undefined)}
+                                onChange={(value) => {
+                                  queueDetailBasicAutoSave('immediate')
+                                  setDetailGroupChatId(normalizeFeishuChatId(value) || undefined)
+                                }}
                               />
                             </div>
                           ) : null}
@@ -4295,7 +4583,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               value={detailExpectedReleaseDate}
                               format="YYYY-MM-DD"
                               placeholder="选择预期上线日期"
-                              onChange={(value) => setDetailExpectedReleaseDate(value)}
+                              onChange={(value) => {
+                                queueDetailBasicAutoSave('immediate')
+                                setDetailExpectedReleaseDate(value)
+                              }}
                             />
                           </div>
                           <div className="work-demand-detail__field work-demand-detail__field--full">
@@ -4304,6 +4595,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               value={detailDocLink}
                               placeholder="填写 PRD链接"
                               onChange={(event) => setDetailDocLink(event.target.value)}
+                              onBlur={flushDetailBasicAutoSave}
                             />
                             {normalizePreviewUrl(detailDocLink) ? (
                               <div className="work-demand-detail__link-preview">
@@ -4337,6 +4629,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               value={detailUiDesignLink}
                               placeholder="填写 UI设计稿地址"
                               onChange={(event) => setDetailUiDesignLink(event.target.value)}
+                              onBlur={flushDetailBasicAutoSave}
                             />
                             {normalizePreviewUrl(detailUiDesignLink) ? (
                               <div className="work-demand-detail__link-preview">
@@ -4370,6 +4663,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               value={detailTestCaseLink}
                               placeholder="填写 测试用例CASE地址"
                               onChange={(event) => setDetailTestCaseLink(event.target.value)}
+                              onBlur={flushDetailBasicAutoSave}
                             />
                             {normalizePreviewUrl(detailTestCaseLink) ? (
                               <div className="work-demand-detail__link-preview">
@@ -4405,6 +4699,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               maxLength={10000}
                               placeholder="填写前端技术方案、实现思路、组件拆分或注意事项"
                               onChange={(event) => setDetailFrontendTechSolution(event.target.value)}
+                              onBlur={flushDetailBasicAutoSave}
                             />
                           </div>
                           <div className="work-demand-detail__field work-demand-detail__field--full">
@@ -4415,6 +4710,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               maxLength={10000}
                               placeholder="填写后端技术方案、接口设计、数据结构或联调注意事项"
                               onChange={(event) => setDetailBackendTechSolution(event.target.value)}
+                              onBlur={flushDetailBasicAutoSave}
                             />
                           </div>
                           <div className="work-demand-detail__field">
@@ -4424,6 +4720,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               maxLength={255}
                               placeholder="填写代码分支，例如 feature/req-123"
                               onChange={(event) => setDetailCodeBranch(event.target.value)}
+                              onBlur={flushDetailBasicAutoSave}
                             />
                           </div>
                           <div className="work-demand-detail__field work-demand-detail__field--full">
@@ -4434,6 +4731,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               maxLength={2000}
                               placeholder="补充上线说明、注意事项、回滚提示等"
                               onChange={(event) => setDetailReleaseNote(event.target.value)}
+                              onBlur={flushDetailBasicAutoSave}
                             />
                           </div>
                         </div>
