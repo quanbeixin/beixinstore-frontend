@@ -1,9 +1,10 @@
-import { Button, Drawer, Form, Input, Modal, Select, Space, Upload, message } from 'antd'
-import { InboxOutlined } from '@ant-design/icons'
+import { Alert, Button, Drawer, Form, Image, Input, Modal, Select, Space, Upload, message } from 'antd'
+import { EyeOutlined, InboxOutlined } from '@ant-design/icons'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getDictItemsApi } from '../../../api/configDict'
 import { getWorkDemandsApi } from '../../../api/work'
 import { getBugAssigneesApi } from '../../../api/bug'
+import { precheckDraftAttachment } from '../utils/attachmentUpload'
 import { pinyinSelectFilter } from '../../../utils/selectSearch'
 import './bug-form-modal.css'
 
@@ -39,6 +40,21 @@ function readFileAsDataUrl(file) {
     reader.onerror = () => reject(new Error('图片预览生成失败'))
     reader.readAsDataURL(file)
   })
+}
+
+function buildUploadFileSignature(fileLike) {
+  const rawFile = fileLike?.originFileObj instanceof File ? fileLike.originFileObj : fileLike
+  return `${rawFile?.name || fileLike?.name || ''}|${rawFile?.size || fileLike?.size || 0}|${rawFile?.type || fileLike?.type || ''}`
+}
+
+function mergeUniqueUploadFiles(fileList = []) {
+  const dedup = new Map()
+  ;(Array.isArray(fileList) ? fileList : []).forEach((item, index) => {
+    if (!item) return
+    const key = buildUploadFileSignature(item) || `${item?.uid || 'file'}|${index}`
+    if (!dedup.has(key)) dedup.set(key, item)
+  })
+  return Array.from(dedup.values())
 }
 
 function mapDictOptions(rows) {
@@ -105,7 +121,14 @@ function BugFormModal({
   const [previewImage, setPreviewImage] = useState('')
   const [previewType, setPreviewType] = useState('image')
   const [previewTitle, setPreviewTitle] = useState('')
+  const [attachmentChecking, setAttachmentChecking] = useState(false)
+  const [attachmentRejectList, setAttachmentRejectList] = useState([])
+  const draftFileListRef = useRef([])
   const pastedFileCountRef = useRef(0)
+  const attachmentPasteDedupRef = useRef({ signature: '', timestamp: 0 })
+  const attachmentCheckingCountRef = useRef(0)
+  const rejectedAttachmentQueueRef = useRef([])
+  const rejectedAttachmentFlushTimerRef = useRef(null)
 
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [severityOptions, setSeverityOptions] = useState([])
@@ -164,29 +187,126 @@ function BugFormModal({
   useEffect(() => {
     if (open) return
     setDraftFileList([])
+    draftFileListRef.current = []
     setPreviewOpen(false)
     setPreviewImage('')
     setPreviewType('image')
     setPreviewTitle('')
     pastedFileCountRef.current = 0
+    attachmentCheckingCountRef.current = 0
+    rejectedAttachmentQueueRef.current = []
+    if (rejectedAttachmentFlushTimerRef.current) {
+      window.clearTimeout(rejectedAttachmentFlushTimerRef.current)
+      rejectedAttachmentFlushTimerRef.current = null
+    }
+    setAttachmentChecking(false)
+    setAttachmentRejectList([])
   }, [open])
 
   const handleAttachmentPaste = useCallback((event) => {
+    if (event?.nativeEvent?.__bugFormAttachmentHandled) return
     const clipboardFiles = Array.from(event?.clipboardData?.files || []).filter(Boolean)
+    const signature = clipboardFiles.map((file) => buildUploadFileSignature(file)).join('||')
+    const now = Date.now()
+    if (
+      signature &&
+      attachmentPasteDedupRef.current.signature === signature &&
+      now - Number(attachmentPasteDedupRef.current.timestamp || 0) < 1200
+    ) {
+      return
+    }
+    attachmentPasteDedupRef.current = { signature, timestamp: now }
+    if (event?.nativeEvent) {
+      event.nativeEvent.__bugFormAttachmentHandled = true
+    }
     pastedFileCountRef.current = clipboardFiles.length
   }, [])
 
   const handleAttachmentChange = useCallback(({ fileList }) => {
-    const nextList = fileList.slice(0, 9)
-    setDraftFileList((prevList) => {
-      const addedCount = Math.max(0, nextList.length - prevList.length)
-      if (addedCount > 0 && pastedFileCountRef.current > 0) {
-        message.success(`已粘贴 ${Math.min(addedCount, pastedFileCountRef.current)} 个附件`)
-      }
-      pastedFileCountRef.current = 0
-      return nextList
-    })
+    const prevList = Array.isArray(draftFileListRef.current) ? draftFileListRef.current : []
+    const nextList = mergeUniqueUploadFiles(fileList).slice(0, 9)
+    draftFileListRef.current = nextList
+    setDraftFileList(nextList)
+
+    const addedCount = Math.max(0, nextList.length - prevList.length)
+    if (addedCount > 0 && pastedFileCountRef.current > 0) {
+      message.success(`已粘贴 ${Math.min(addedCount, pastedFileCountRef.current)} 个附件`)
+    }
+    if (Array.isArray(fileList) && mergeUniqueUploadFiles(fileList).length < fileList.length) {
+      message.info('检测到重复附件，已自动去重')
+    }
+    pastedFileCountRef.current = 0
   }, [])
+
+  const flushRejectedAttachmentQueue = useCallback(() => {
+    const queuedItems = Array.isArray(rejectedAttachmentQueueRef.current) ? rejectedAttachmentQueueRef.current : []
+    if (queuedItems.length === 0) return
+    rejectedAttachmentQueueRef.current = []
+    if (rejectedAttachmentFlushTimerRef.current) {
+      window.clearTimeout(rejectedAttachmentFlushTimerRef.current)
+      rejectedAttachmentFlushTimerRef.current = null
+    }
+
+    const dedupedItems = []
+    const seen = new Set()
+    queuedItems.forEach((item) => {
+      const fileName = String(item?.fileName || '未命名文件').trim() || '未命名文件'
+      const reason = String(item?.reason || '附件预检失败').trim() || '附件预检失败'
+      const key = `${fileName}__${reason}`
+      if (seen.has(key)) return
+      seen.add(key)
+      dedupedItems.push({ fileName, reason })
+    })
+
+    if (dedupedItems.length === 0) return
+
+    setAttachmentRejectList((prev) => {
+      const next = [...dedupedItems]
+      ;(Array.isArray(prev) ? prev : []).forEach((item) => {
+        const fileName = String(item?.fileName || '未命名文件').trim() || '未命名文件'
+        const reason = String(item?.reason || '附件预检失败').trim() || '附件预检失败'
+        const key = `${fileName}__${reason}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          next.push({ fileName, reason })
+        }
+      })
+      return next.slice(0, 8)
+    })
+
+    const previewNames = dedupedItems.map((item) => item.fileName).slice(0, 3)
+    const suffix = dedupedItems.length > 3 ? ` 等 ${dedupedItems.length} 个文件` : previewNames.join('、')
+    message.warning(`以下附件预检失败：${suffix}。详情见下方失败列表`)
+  }, [])
+
+  const queueRejectedAttachment = useCallback((fileName, reason) => {
+    rejectedAttachmentQueueRef.current = [
+      ...(Array.isArray(rejectedAttachmentQueueRef.current) ? rejectedAttachmentQueueRef.current : []),
+      {
+        fileName: String(fileName || '未命名文件').trim() || '未命名文件',
+        reason: String(reason || '附件预检失败').trim() || '附件预检失败',
+      },
+    ]
+    if (rejectedAttachmentFlushTimerRef.current) return
+    rejectedAttachmentFlushTimerRef.current = window.setTimeout(() => {
+      flushRejectedAttachmentQueue()
+    }, 160)
+  }, [flushRejectedAttachmentQueue])
+
+  const handleBeforeUpload = useCallback(async (file) => {
+    attachmentCheckingCountRef.current += 1
+    setAttachmentChecking(true)
+    try {
+      await precheckDraftAttachment(file)
+      return false
+    } catch (error) {
+      queueRejectedAttachment(file?.name || '未命名文件', error?.message || '附件预检失败')
+      return Upload.LIST_IGNORE
+    } finally {
+      attachmentCheckingCountRef.current = Math.max(0, attachmentCheckingCountRef.current - 1)
+      setAttachmentChecking(attachmentCheckingCountRef.current > 0)
+    }
+  }, [queueRejectedAttachment])
 
   const handleAttachmentPreview = useCallback(async (file) => {
     if (!isImageFile(file) && !isVideoFile(file)) {
@@ -219,6 +339,30 @@ function BugFormModal({
       message.error(error?.message || '附件预览生成失败')
     }
   }, [])
+
+  const renderDraftUploadItem = useCallback((originNode, file) => {
+    const previewable = isImageFile(file) || isVideoFile(file)
+    return (
+      <div className="bug-form-modal__upload-list-item">
+        {originNode}
+        {previewable ? (
+          <Button
+            type="link"
+            size="small"
+            className="bug-form-modal__upload-preview-btn"
+            icon={<EyeOutlined />}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              void handleAttachmentPreview(file)
+            }}
+          >
+            预览
+          </Button>
+        ) : null}
+      </div>
+    )
+  }, [handleAttachmentPreview])
 
   useEffect(() => {
     if (!open) return
@@ -330,20 +474,48 @@ function BugFormModal({
                 <Upload.Dragger
                   className="bug-form-modal__dragger"
                   multiple
-                  beforeUpload={() => false}
+                  beforeUpload={handleBeforeUpload}
                   pastable
                   listType="picture"
                   fileList={draftFileList}
                   onChange={handleAttachmentChange}
                   onPreview={handleAttachmentPreview}
-                  showUploadList={{ showPreviewIcon: true }}
+                  showUploadList={{ showPreviewIcon: false }}
+                  itemRender={renderDraftUploadItem}
                   maxCount={9}
+                  disabled={attachmentChecking}
                 >
                   <p className="ant-upload-drag-icon">
                     <InboxOutlined />
                   </p>
                   <p className="ant-upload-text">点击、拖拽或粘贴上传附件（最多 9 个）</p>
+                  <p className="ant-upload-hint">
+                    {attachmentChecking ? '正在校验附件...' : '文件会在加入列表前先做可上传性校验'}
+                  </p>
                 </Upload.Dragger>
+                {attachmentRejectList.length > 0 ? (
+                  <Alert
+                    className="bug-form-modal__attachment-alert"
+                    type="warning"
+                    showIcon
+                    message={`最近有 ${attachmentRejectList.length} 个附件未通过预检`}
+                    description={
+                      <div className="bug-form-modal__attachment-alert-list">
+                        {attachmentRejectList.map((item, index) => (
+                          <div
+                            className="bug-form-modal__attachment-alert-item"
+                            key={`${item.fileName}-${item.reason}-${index}`}
+                          >
+                            <span className="bug-form-modal__attachment-alert-name">{item.fileName}</span>
+                            <span className="bug-form-modal__attachment-alert-reason">{item.reason}</span>
+                          </div>
+                        ))}
+                      </div>
+                    }
+                    closable
+                    onClose={() => setAttachmentRejectList([])}
+                  />
+                ) : null}
               </div>
             </Form.Item>
           ) : null}
@@ -437,7 +609,15 @@ function BugFormModal({
           preload="metadata"
         />
       ) : (
-        <img className="bug-form-modal__preview-image" src={previewImage} alt={previewTitle || '附件预览'} />
+        <Image
+          className="bug-form-modal__preview-image"
+          src={previewImage}
+          alt={previewTitle || '附件预览'}
+          preview={{
+            zIndex: 2100,
+            mask: <span className="bug-form-modal__image-mask-hint">点击放大</span>,
+          }}
+        />
       )}
     </Modal>
   )

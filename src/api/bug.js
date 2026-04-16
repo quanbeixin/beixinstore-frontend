@@ -108,6 +108,10 @@ export function getBugAttachmentPolicyApi(id, payload = {}) {
   return request.post(`/work/bugs/${id}/attachments/policy`, payload)
 }
 
+export function precheckBugAttachmentApi(payload = {}) {
+  return request.post('/work/bugs/attachments/precheck', payload)
+}
+
 export function createBugAttachmentApi(id, payload) {
   return request.post(`/work/bugs/${id}/attachments`, payload)
 }

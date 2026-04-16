@@ -218,6 +218,65 @@
   margin-bottom: 2px;
 }
 
+.bug-form-modal__upload-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bug-form-modal__upload-list-item .ant-upload-list-item-container,
+.bug-form-modal__upload-list-item .ant-upload-list-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.bug-form-modal__upload-preview-btn {
+  flex: none;
+  padding-inline: 4px;
+}
+
+.bug-form-modal__attachment-alert {
+  margin-top: 10px;
+  border-radius: 10px;
+}
+
+.bug-form-modal__attachment-alert-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.bug-form-modal__attachment-alert-item {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px dashed rgba(31, 38, 51, 0.08);
+}
+
+.bug-form-modal__attachment-alert-item:last-child {
+  border-bottom: none;
+}
+
+.bug-form-modal__attachment-alert-name {
+  min-width: 0;
+  flex: 1;
+  font-weight: 600;
+  color: #2b3343;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bug-form-modal__attachment-alert-reason {
+  flex: none;
+  max-width: 60%;
+  color: #7a3741;
+  text-align: right;
+  word-break: break-word;
+}
+
 .bug-form-modal__dragger.ant-upload-wrapper .ant-upload-drag .ant-upload-drag-icon .anticon {
   font-size: 20px;
   color: #3a66d4;
@@ -262,6 +321,12 @@
   margin: 0 auto;
   border-radius: 10px;
   background: #f5f6f8;
+}
+
+.bug-form-modal__image-mask-hint {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .bug-form-modal__preview-video {

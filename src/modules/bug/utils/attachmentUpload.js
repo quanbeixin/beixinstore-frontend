@@ -3,6 +3,7 @@ import {
   createBugCommentAttachmentApi,
   getBugAttachmentPolicyApi,
   getBugCommentAttachmentPolicyApi,
+  precheckBugAttachmentApi,
 } from '../../../api/bug'
 
 function normalizeFile(fileLike) {
@@ -17,6 +18,23 @@ function getFileExt(fileName = '') {
   const dotIndex = text.lastIndexOf('.')
   if (dotIndex <= 0 || dotIndex >= text.length - 1) return ''
   return text.slice(dotIndex + 1).slice(0, 50)
+}
+
+export async function precheckDraftAttachment(fileLike) {
+  const file = normalizeFile(fileLike)
+  if (!file) {
+    throw new Error('附件文件无效')
+  }
+
+  const result = await precheckBugAttachmentApi({
+    file_name: file?.name || 'file',
+    mime_type: file?.type || '',
+    file_size: file?.size || 0,
+  })
+  if (!result?.success) {
+    throw new Error(result?.message || `${file?.name || '文件'}预检失败`)
+  }
+  return result.data || {}
 }
 
 async function uploadSingleAttachment({ getPolicy, register }, file) {

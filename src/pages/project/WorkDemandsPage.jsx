@@ -652,6 +652,24 @@ function isLaunchPlanOverdueDemand(record) {
   return expectedReleaseDate < getBeijingTodayDateString()
 }
 
+function isDemandReleased(record) {
+  if (!record) return false
+  const status = String(record?.status || '').trim().toUpperCase()
+  return status === 'DONE'
+}
+
+function isLaunchPlanGroupBeforeToday(record) {
+  if (!record?.__group) return false
+  const releaseDate = formatBeijingDate(record?.expected_release_date, '')
+  if (!releaseDate) return false
+  return releaseDate < getBeijingTodayDateString()
+}
+
+function isLaunchPlanGroupWithoutDate(record) {
+  if (!record?.__group) return false
+  return !formatBeijingDate(record?.expected_release_date, '')
+}
+
 function WorkDemands({ pageMode = 'pool' } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -1248,8 +1266,11 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           expected_release_date: isLaunchPlanPage ? groupMeta.groupKey : '',
           name: groupMeta.groupName,
           children: [],
-          __sortTime: isLaunchPlanPage ? Number.MAX_SAFE_INTEGER : 0,
+          __sortTime:
+            isLaunchPlanPage && groupMeta.groupKey === '__UNSCHEDULED__' ? Number.NEGATIVE_INFINITY : isLaunchPlanPage ? Number.MAX_SAFE_INTEGER : 0,
           __overdueCount: 0,
+          __releasedCount: 0,
+          __allReleased: false,
         })
       }
       const group = groupMap.get(groupMeta.groupKey)
@@ -1262,16 +1283,25 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         if (isLaunchPlanOverdueDemand(item)) {
           group.__overdueCount += 1
         }
+        if (isDemandReleased(item)) {
+          group.__releasedCount += 1
+        }
       } else {
         const createdAt = dayjs(item?.created_at).valueOf()
         if (Number.isFinite(createdAt) && createdAt > group.__sortTime) {
           group.__sortTime = createdAt
         }
       }
+      if (isLaunchPlanPage) {
+        const childCount = Number(group.children?.length || 0)
+        group.__allReleased = childCount > 0 && Number(group.__releasedCount || 0) >= childCount
+      }
     })
 
     return Array.from(groupMap.values()).sort((a, b) => {
       if (isLaunchPlanPage) {
+        const allReleasedDiff = Number(a?.__allReleased) - Number(b?.__allReleased)
+        if (allReleasedDiff !== 0) return allReleasedDiff
         if (a.__sortTime !== b.__sortTime) return b.__sortTime - a.__sortTime
         return String(b.name || '').localeCompare(String(a.name || ''), 'zh-CN')
       }
@@ -1294,15 +1324,39 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     [groupedDemands],
   )
 
+  const launchPlanDefaultCollapsedGroupKeys = useMemo(() => {
+    if (!isLaunchPlanPage) return []
+    return groupedDemands
+      .filter((item) => {
+        if (!item?.__group) return false
+        const childCount = Number(item?.children?.length || 0)
+        if (childCount <= 0) return false
+        return (
+          Number(item?.__releasedCount || 0) >= childCount ||
+          isLaunchPlanGroupBeforeToday(item) ||
+          isLaunchPlanGroupWithoutDate(item)
+        )
+      })
+      .map((item) => String(item?.id || '').trim())
+      .filter(Boolean)
+  }, [groupedDemands, isLaunchPlanPage])
+
   useEffect(() => {
     const availableSet = new Set(groupedDemandKeys)
+    const defaultCollapsedSet = new Set(launchPlanDefaultCollapsedGroupKeys)
     setCollapsedGroupKeys((prev) => {
       const normalizedPrev = Array.isArray(prev) ? prev : []
       const cleaned = normalizedPrev.filter((key) => availableSet.has(String(key || '').trim()))
-      if (cleaned.length === normalizedPrev.length) return normalizedPrev
-      return cleaned
+      const next = Array.from(new Set([...cleaned, ...defaultCollapsedSet]))
+      if (
+        next.length === normalizedPrev.length &&
+        next.every((item, index) => String(item || '').trim() === String(normalizedPrev[index] || '').trim())
+      ) {
+        return normalizedPrev
+      }
+      return next
     })
-  }, [groupedDemandKeys])
+  }, [groupedDemandKeys, launchPlanDefaultCollapsedGroupKeys])
 
   useEffect(() => {
     writeCollapsedGroupKeys(groupCollapseStorageKey, collapsedGroupKeys)
@@ -1584,6 +1638,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         params.completed_only = true
       } else if (showCancelledTabOnly) {
         params.cancelled_only = true
+      } else if (isLaunchPlanPage) {
+        params.exclude_cancelled = true
       } else {
         params.exclude_completed = true
         params.exclude_cancelled = true
@@ -3371,23 +3427,24 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         title: '需求名称',
         dataIndex: 'name',
         key: 'name',
-        width: 260,
+        width: 340,
         fixed: 'left',
         ellipsis: true,
         render: (value, record) =>
           record?.__group ? (
             isLaunchPlanPage ? (
               <div className="work-demand-list__launch-group-head">
-                <Space size={8} wrap>
+                <Space size={8} wrap={false} className="work-demand-list__launch-group-meta">
                   <span className="work-demand-list__launch-group-date">
                     <CalendarOutlined />
                     {record?.name || '未设置预期上线时间'}
                   </span>
+                  {record?.__allReleased ? <Tag className="work-demand-list__launch-group-status-tag" color="success">已上线</Tag> : null}
                   {Number(record?.__overdueCount || 0) > 0 ? <Tag color="error">{`延期 ${record.__overdueCount}`}</Tag> : null}
+                  <Text className="work-demand-list__launch-group-count">
+                    {`共 ${Number(record?.children?.length || 0)} 条需求`}
+                  </Text>
                 </Space>
-                <Text className="work-demand-list__launch-group-count">
-                  {`共 ${Number(record?.children?.length || 0)} 条需求`}
-                </Text>
               </div>
             ) : (
               <Space size={8}>
@@ -3696,12 +3753,14 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   }, [groupedDemands, isLaunchPlanPage, isMyDemandsPage])
 
   return (
-    <div style={{ padding: 12 }}>
+    <div style={{ padding: 8 }}>
       {!isDetailPage ? (
         <>
           <Card
+            size="small"
+            className="work-demand-list__panel"
             variant="borderless"
-            style={{ marginBottom: 16 }}
+            style={{ marginBottom: 10 }}
             extra={
               <Space>
                 <Button icon={<ReloadOutlined />} onClick={loadDemands} loading={loading}>
@@ -3756,7 +3815,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               />
             )}
             {!isMyDemandsPage && !isLaunchPlanPage ? (
-              <Space wrap style={{ marginBottom: 12 }}>
+              <Space wrap size={[8, 8]} className="work-demand-list__view-bar">
                 <Text strong>视图</Text>
                 <Select
                   size="small"
@@ -3833,7 +3892,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                 {activeView && isActiveViewDirty ? <Tag color="gold">已修改未保存</Tag> : null}
               </Space>
             ) : null}
-            <Space wrap>
+            <Space wrap size={[8, 8]} className="work-demand-list__filter-bar">
               <Search
                 allowClear
                 placeholder="搜索需求ID或名称"
@@ -4018,10 +4077,11 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
             ) : null}
           </Card>
 
-          <Card variant="borderless">
+          <Card size="small" className="work-demand-list__table-card" variant="borderless">
             <Table
               rowKey="id"
               loading={loading}
+              size="small"
               columns={demandColumns}
               dataSource={groupedDemands}
               rowClassName={(record) =>
@@ -4041,7 +4101,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                   setCollapsedGroupKeys(nextCollapsed)
                 },
               }}
-              indentSize={18}
+              indentSize={14}
               scroll={{ x: compactView ? 1820 : 2380 }}
               pagination={false}
               onChange={(_pagination, _filters, sorter) => {

@@ -1,10 +1,11 @@
-import { BugOutlined, DeleteOutlined, FilterOutlined, LinkOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from '@ant-design/icons'
+import { BugOutlined, DeleteOutlined, FilterOutlined, LinkOutlined, PaperClipOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from '@ant-design/icons'
 import { Button, Card, DatePicker, Empty, Form, Image, Input, Modal, Popconfirm, Popover, Segmented, Select, Space, Spin, Table, Tag, Typography, message } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getDictItemsApi } from '../../api/configDict'
 import { createBugApi, createBugViewApi, deleteBugViewApi, getBugAssigneesApi, getBugByIdApi, getBugViewByIdApi, getBugViewsApi, getBugWorkflowConfigApi, getBugsApi, transitionBugApi, updateBugViewApi } from '../../api/bug'
+import { getWorkDemandsApi } from '../../api/work'
 import { hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
 import { pinyinSelectFilter } from '../../utils/selectSearch'
@@ -16,6 +17,7 @@ import './BugListPage.css'
 const { Text } = Typography
 const { RangePicker } = DatePicker
 const IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)(\?.*)?$/i
+const VIDEO_EXT_PATTERN = /\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i
 const GROUP_FETCH_PAGE_SIZE = 100
 const GROUP_FETCH_LIMIT = 1000
 const GROUP_FIELD_OPTIONS = [
@@ -49,6 +51,18 @@ function isImageAttachment(row) {
   return IMAGE_EXT_PATTERN.test(fileName) || IMAGE_EXT_PATTERN.test(objectUrl)
 }
 
+function isVideoAttachment(row) {
+  const mimeType = String(row?.mime_type || '').trim().toLowerCase()
+  if (mimeType.startsWith('video/')) return true
+
+  const fileExt = String(row?.file_ext || '').trim().toLowerCase()
+  if (['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(fileExt)) return true
+
+  const fileName = String(row?.file_name || '').trim()
+  const objectUrl = getAttachmentUrl(row)
+  return VIDEO_EXT_PATTERN.test(fileName) || VIDEO_EXT_PATTERN.test(objectUrl)
+}
+
 function mapDictOptions(rows) {
   return [{ label: '全部', value: undefined }].concat(
     (rows || []).map((item) => ({
@@ -67,6 +81,21 @@ function mapSegmentedOptions(rows) {
   )
 }
 
+function mapDemandOptions(rows) {
+  return (rows || [])
+    .map((item) => {
+      const demandId = String(item?.id || '').trim()
+      if (!demandId) return null
+      const demandName = String(item?.name || '').trim() || demandId
+      return {
+        label: `${demandId} · ${demandName}`,
+        value: demandId,
+        searchText: `${demandId} ${demandName}`.trim(),
+      }
+    })
+    .filter(Boolean)
+}
+
 function normalizeViewConfig(config = {}) {
   const source = config && typeof config === 'object' ? config : {}
   const groupFields = (Array.isArray(source.group_fields) ? source.group_fields : [])
@@ -78,6 +107,7 @@ function normalizeViewConfig(config = {}) {
     keyword: String(source.keyword || '').trim(),
     status_code: String(source.status_code || '').trim().toUpperCase(),
     severity_code: String(source.severity_code || '').trim().toUpperCase(),
+    demand_id: String(source.demand_id || '').trim(),
     assignee_id: Number.isInteger(Number(source.assignee_id)) && Number(source.assignee_id) > 0 ? Number(source.assignee_id) : undefined,
     reporter_id: Number.isInteger(Number(source.reporter_id)) && Number(source.reporter_id) > 0 ? Number(source.reporter_id) : undefined,
     start_date: String(source.start_date || '').trim(),
@@ -159,6 +189,12 @@ function buildGroupedTreeRows(sourceRows, groupFields, level = 0, parentKey = 'r
     })
 }
 
+function openDemandDetailInNewTab(demandId) {
+  const normalizedDemandId = String(demandId || '').trim()
+  if (!normalizedDemandId) return
+  window.open(`/work-demands/${encodeURIComponent(normalizedDemandId)}`, '_blank', 'noopener,noreferrer')
+}
+
 function BugListPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -179,9 +215,12 @@ function BugListPage() {
   const [severityFilter, setSeverityFilter] = useState('')
   const [groupFields, setGroupFields] = useState([])
   const [groupLimitExceeded, setGroupLimitExceeded] = useState(false)
+  const [demandFilter, setDemandFilter] = useState()
   const [assigneeFilter, setAssigneeFilter] = useState()
   const [reporterFilter, setReporterFilter] = useState()
   const [createdRange, setCreatedRange] = useState(null)
+  const [demandOptions, setDemandOptions] = useState([])
+  const [demandOptionsLoading, setDemandOptionsLoading] = useState(false)
   const [userOptions, setUserOptions] = useState([])
   const [userOptionsLoading, setUserOptionsLoading] = useState(false)
   const [statusSegmentOptions, setStatusSegmentOptions] = useState([{ label: '全部状态', value: '' }])
@@ -191,6 +230,10 @@ function BugListPage() {
   const [attachmentPreviewMap, setAttachmentPreviewMap] = useState({})
   const [attachmentPreviewLoadingMap, setAttachmentPreviewLoadingMap] = useState({})
   const [activeAttachmentBugId, setActiveAttachmentBugId] = useState(0)
+  const [attachmentModalOpen, setAttachmentModalOpen] = useState(false)
+  const [attachmentModalType, setAttachmentModalType] = useState('image')
+  const [attachmentModalSrc, setAttachmentModalSrc] = useState('')
+  const [attachmentModalTitle, setAttachmentModalTitle] = useState('')
   const [statusUpdatingMap, setStatusUpdatingMap] = useState({})
   const [statusDialog, setStatusDialog] = useState({
     open: false,
@@ -205,6 +248,17 @@ function BugListPage() {
   const [transitionForm] = Form.useForm()
   const [saveViewForm] = Form.useForm()
   const groupingLimitWarnedRef = useRef(false)
+
+  const openAttachmentPreview = useCallback(({ src, type = 'image', title = '附件预览' }) => {
+    if (!src) {
+      message.warning('当前附件暂不支持预览')
+      return
+    }
+    setAttachmentModalSrc(src)
+    setAttachmentModalType(type)
+    setAttachmentModalTitle(title)
+    setAttachmentModalOpen(true)
+  }, [])
 
   const isGroupingEnabled = groupFields.length > 0
 
@@ -284,6 +338,19 @@ function BugListPage() {
     }
   }, [])
 
+  const loadDemandOptions = useCallback(async () => {
+    setDemandOptionsLoading(true)
+    try {
+      const result = await getWorkDemandsApi({ page: 1, pageSize: 500 })
+      const rows = Array.isArray(result?.data?.list) ? result.data.list : []
+      setDemandOptions(mapDemandOptions(rows))
+    } catch (error) {
+      message.error(error?.message || '加载需求筛选项失败')
+    } finally {
+      setDemandOptionsLoading(false)
+    }
+  }, [])
+
   const loadWorkflowConfig = useCallback(async () => {
     try {
       const result = await getBugWorkflowConfigApi()
@@ -302,17 +369,19 @@ function BugListPage() {
     keyword: keyword || undefined,
     status_code: statusFilter || undefined,
     severity_code: severityFilter || undefined,
+    demand_id: demandFilter || undefined,
     assignee_id: assigneeFilter || undefined,
     reporter_id: reporterFilter || undefined,
     start_date: createdRange?.[0]?.format?.('YYYY-MM-DD') || undefined,
     end_date: createdRange?.[1]?.format?.('YYYY-MM-DD') || undefined,
-  }), [assigneeFilter, createdRange, keyword, reporterFilter, severityFilter, statusFilter])
+  }), [assigneeFilter, createdRange, demandFilter, keyword, reporterFilter, severityFilter, statusFilter])
 
   const buildCurrentViewConfig = useCallback(
     () => ({
       keyword: String(keyword || '').trim(),
       status_code: String(statusFilter || '').trim().toUpperCase(),
       severity_code: String(severityFilter || '').trim().toUpperCase(),
+      demand_id: String(demandFilter || '').trim(),
       assignee_id: Number(assigneeFilter || 0) > 0 ? Number(assigneeFilter) : null,
       reporter_id: Number(reporterFilter || 0) > 0 ? Number(reporterFilter) : null,
       start_date: createdRange?.[0]?.format?.('YYYY-MM-DD') || '',
@@ -320,7 +389,7 @@ function BugListPage() {
       group_fields: Array.isArray(groupFields) ? groupFields : [],
       page_size: BUG_VIEW_ALLOWED_PAGE_SIZE.has(Number(pageSize)) ? Number(pageSize) : 20,
     }),
-    [assigneeFilter, createdRange, groupFields, keyword, pageSize, reporterFilter, severityFilter, statusFilter],
+    [assigneeFilter, createdRange, demandFilter, groupFields, keyword, pageSize, reporterFilter, severityFilter, statusFilter],
   )
   const activeViewConfig = useMemo(() => normalizeViewConfig(activeView?.config || {}), [activeView?.config])
   const currentViewConfig = useMemo(() => normalizeViewConfig(buildCurrentViewConfig()), [buildCurrentViewConfig])
@@ -356,6 +425,7 @@ function BugListPage() {
     setSearchInput(config.keyword || '')
     setStatusFilter(config.status_code || '')
     setSeverityFilter(config.severity_code || '')
+    setDemandFilter(config.demand_id || undefined)
     setAssigneeFilter(config.assignee_id || undefined)
     setReporterFilter(config.reporter_id || undefined)
     setCreatedRange(buildViewDateRange(config))
@@ -481,6 +551,10 @@ function BugListPage() {
   }, [loadUserOptions])
 
   useEffect(() => {
+    loadDemandOptions()
+  }, [loadDemandOptions])
+
+  useEffect(() => {
     loadWorkflowConfig()
   }, [loadWorkflowConfig])
 
@@ -509,11 +583,12 @@ function BugListPage() {
         keyword,
         statusFilter,
         severityFilter,
+        demandFilter,
         assigneeFilter,
         reporterFilter,
         Array.isArray(createdRange) && createdRange.length === 2 ? 'created_range' : '',
       ].filter(Boolean).length,
-    [keyword, statusFilter, severityFilter, assigneeFilter, reporterFilter, createdRange],
+    [keyword, statusFilter, severityFilter, demandFilter, assigneeFilter, reporterFilter, createdRange],
   )
 
   const resetFilters = useCallback(() => {
@@ -521,6 +596,7 @@ function BugListPage() {
     setKeyword('')
     setStatusFilter('')
     setSeverityFilter('')
+    setDemandFilter(undefined)
     setAssigneeFilter(undefined)
     setReporterFilter(undefined)
     setCreatedRange(null)
@@ -701,6 +777,8 @@ function BugListPage() {
           {attachments.slice(0, 6).map((attachment) => {
             const fileUrl = getAttachmentUrl(attachment)
             const imageAttachment = Boolean(fileUrl) && isImageAttachment(attachment)
+            const videoAttachment = Boolean(fileUrl) && isVideoAttachment(attachment)
+            const previewable = imageAttachment || videoAttachment
             return (
               <div className="bug-list-page__attachment-item" key={attachment.id || `${attachment.file_name}-${attachment.object_key}`}>
                 {imageAttachment ? (
@@ -710,20 +788,39 @@ function BugListPage() {
                     height={44}
                     src={fileUrl}
                     alt={attachment?.file_name || '附件缩略图'}
+                    preview={{
+                      zIndex: 2100,
+                      mask: <span className="bug-list-page__image-mask-hint">放大</span>,
+                    }}
                   />
+                ) : videoAttachment ? (
+                  <button
+                    type="button"
+                    className="bug-list-page__attachment-fallback bug-list-page__attachment-fallback--video"
+                    onClick={() => openAttachmentPreview({
+                      src: fileUrl,
+                      type: 'video',
+                      title: attachment?.file_name || '视频附件预览',
+                    })}
+                  >
+                    <PlayCircleOutlined />
+                  </button>
                 ) : (
                   <div className="bug-list-page__attachment-fallback">文</div>
                 )}
-                {fileUrl ? (
-                  <a
-                    href={fileUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="bug-list-page__attachment-name"
+                {previewable ? (
+                  <button
+                    type="button"
+                    className="bug-list-page__attachment-name bug-list-page__attachment-name--button"
                     title={attachment?.file_name || ''}
+                    onClick={() => openAttachmentPreview({
+                      src: fileUrl,
+                      type: videoAttachment ? 'video' : 'image',
+                      title: attachment?.file_name || '附件预览',
+                    })}
                   >
                     {attachment?.file_name || '-'}
-                  </a>
+                  </button>
                 ) : (
                   <span className="bug-list-page__attachment-name bug-list-page__attachment-name--disabled">
                     {attachment?.file_name || '-'}
@@ -745,7 +842,7 @@ function BugListPage() {
         </div>
       )
     },
-    [attachmentPreviewLoadingMap, attachmentPreviewMap, navigate],
+    [attachmentPreviewLoadingMap, attachmentPreviewMap, navigate, openAttachmentPreview],
   )
 
   const getQuickStatusOptions = useCallback(
@@ -953,7 +1050,19 @@ function BugListPage() {
         ellipsis: true,
         render: (value, row) => {
           if (row?.__isGroup) return '-'
-          return value || row.demand_id || '-'
+          const demandId = String(row?.demand_id || '').trim()
+          const demandName = String(value || row.demand_id || '').trim()
+          if (!demandId || !demandName) return '-'
+          return (
+            <Button
+              type="link"
+              size="small"
+              className="bug-list-page__title-link"
+              onClick={() => openDemandDetailInNewTab(demandId)}
+            >
+              {demandName}
+            </Button>
+          )
         },
       },
       {
@@ -1176,6 +1285,22 @@ function BugListPage() {
               placeholder="严重程度"
               onChange={(value) => {
                 setSeverityFilter(String(value || ''))
+                setPage(1)
+              }}
+            />
+            <Select
+              size="small"
+              showSearch
+              allowClear
+              className="bug-list-page__filter-control"
+              value={demandFilter}
+              options={demandOptions}
+              loading={demandOptionsLoading}
+              filterOption={pinyinSelectFilter}
+              optionFilterProp="label"
+              placeholder="关联需求"
+              onChange={(value) => {
+                setDemandFilter(value)
                 setPage(1)
               }}
             />
@@ -1446,6 +1571,35 @@ function BugListPage() {
             </Form.Item>
           ) : null}
         </Form>
+      </Modal>
+
+      <Modal
+        title={attachmentModalTitle || '附件预览'}
+        open={attachmentModalOpen}
+        footer={null}
+        onCancel={() => setAttachmentModalOpen(false)}
+        centered
+        width={860}
+        destroyOnHidden
+      >
+        {attachmentModalType === 'video' ? (
+          <video
+            className="bug-list-page__attachment-preview-video"
+            src={attachmentModalSrc}
+            controls
+            preload="metadata"
+          />
+        ) : (
+          <Image
+            className="bug-list-page__attachment-preview-image"
+            src={attachmentModalSrc}
+            alt={attachmentModalTitle || '附件预览'}
+            preview={{
+              zIndex: 2100,
+              mask: <span className="bug-list-page__image-mask-hint">点击放大</span>,
+            }}
+          />
+        )}
       </Modal>
     </div>
   )
