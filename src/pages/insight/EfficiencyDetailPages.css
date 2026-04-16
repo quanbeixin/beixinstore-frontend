@@ -256,6 +256,79 @@
   padding: 26px 0 8px;
 }
 
+.efficiency-distribution-detail {
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.18);
+}
+
+.efficiency-distribution-detail__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.efficiency-distribution-detail__title {
+  color: var(--eff-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.efficiency-distribution-detail__subtitle.ant-typography {
+  font-size: 12px;
+  color: #98a2b3;
+}
+
+.efficiency-distribution-detail__list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.efficiency-distribution-detail__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.efficiency-distribution-detail__row-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.efficiency-distribution-detail__row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.efficiency-distribution-detail__row-percent {
+  flex-shrink: 0;
+  color: #98a2b3;
+  font-size: 11px;
+}
+
+.efficiency-distribution-detail__row-meta {
+  flex-shrink: 0;
+  color: var(--eff-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .efficiency-table-link.ant-btn {
   padding-inline: 0;
   font-weight: 600;
@@ -277,6 +350,79 @@
 
 .efficiency-detail-table .ant-pagination {
   margin-bottom: 0;
+}
+
+.efficiency-owner-estimate-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.efficiency-owner-estimate-cell__tag.ant-tag {
+  margin-inline-end: 2px;
+  padding-inline: 7px;
+  border-radius: 999px;
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(248, 250, 252, 0.96);
+  color: #667085;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.efficiency-owner-estimate-cell__edit.ant-btn {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  color: #98a2b3;
+  opacity: 0;
+  transition: opacity 0.18s ease, color 0.18s ease, background-color 0.18s ease;
+}
+
+.efficiency-owner-estimate-cell:hover .efficiency-owner-estimate-cell__edit.ant-btn {
+  opacity: 1;
+}
+
+.efficiency-owner-estimate-cell__edit.ant-btn:hover,
+.efficiency-owner-estimate-cell__edit.ant-btn:focus-visible {
+  color: #344054;
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.efficiency-owner-estimate-modal__meta {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.efficiency-demand-cell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.efficiency-demand-cell__title,
+.efficiency-demand-cell__meta {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.efficiency-demand-phase-cell {
+  min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .efficiency-note-row {

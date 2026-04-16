@@ -7,11 +7,13 @@ import { formatBeijingDateTime } from '../../utils/datetime'
 
 const { Paragraph, Text, Title } = Typography
 const DEFAULT_NET_FORMULA_VARIABLE_OPTIONS = [
-  { code: 'OWNER_HOURS', label: 'Owner预估总工时' },
-  { code: 'PERSONAL_HOURS', label: '个人预估总工时' },
-  { code: 'ACTUAL_HOURS', label: '实际总工时' },
+  { code: 'OWNER_BASELINE_HOURS', label: 'Owner真实基线' },
+  { code: 'OWNER_COMPARABLE_ACTUAL_HOURS', label: 'Owner可比实际' },
   { code: 'TASK_DIFFICULTY_COEFF', label: '任务难度系数' },
   { code: 'JOB_LEVEL_COEFF', label: '职级权重系数' },
+  { code: 'OWNER_HOURS', label: 'Owner原始预估总工时' },
+  { code: 'PERSONAL_HOURS', label: '个人预估总工时' },
+  { code: 'ACTUAL_HOURS', label: '实际总工时' },
 ]
 const DEFAULT_NET_FORMULA_OPERATOR_OPTIONS = [
   { code: 'ADD', label: '+' },
@@ -19,7 +21,15 @@ const DEFAULT_NET_FORMULA_OPERATOR_OPTIONS = [
   { code: 'MUL', label: '×' },
   { code: 'DIV', label: '÷' },
 ]
-const DEFAULT_NET_FORMULA_EXPRESSION = ['ACTUAL_HOURS', 'MUL', 'TASK_DIFFICULTY_COEFF', 'DIV', 'JOB_LEVEL_COEFF']
+const DEFAULT_NET_FORMULA_EXPRESSION = [
+  'OWNER_COMPARABLE_ACTUAL_HOURS',
+  'SUB',
+  'OWNER_BASELINE_HOURS',
+  'MUL',
+  'TASK_DIFFICULTY_COEFF',
+  'DIV',
+  'JOB_LEVEL_COEFF',
+]
 
 function toDecimal2(value, fallback = 1) {
   const num = Number(value)
@@ -376,7 +386,7 @@ function EfficiencyFactorSettingsPage() {
             效能系数设置
           </Title>
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            当前版本支持维护三类配置：职级权重系数、任务难度系数、净效率公式。保存后将同步影响排行页与详情页的净效率口径。
+            当前版本支持维护三类配置：职级权重系数、任务难度系数、净效率公式。当前推荐口径以 Owner 可比实际与 Owner 真实基线的偏差为核心，再叠加任务难度和职级系数修正。
           </Paragraph>
           {!canManage ? (
             <Text type="secondary">当前账号仅可查看，修改需 `ADMIN` 或 `SUPER_ADMIN` 角色。</Text>
@@ -394,7 +404,7 @@ function EfficiencyFactorSettingsPage() {
           <Alert
             showIcon
             type="info"
-            title="净效率值由后端统一计算。这里保存后，部门人效排行、部门详情、个人人效详情会自动按同一公式生效。"
+            title="净效率值由后端统一计算。这里保存后，部门人效排行、部门详情、个人人效详情会自动按同一公式生效。当前默认公式等价于：(Owner可比实际 - Owner真实基线) × 任务难度系数 ÷ 职级权重系数。"
           />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             {Array.from({ length: formulaOperandCount }).map((_, operandIndex) => {

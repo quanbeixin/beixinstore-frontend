@@ -44,6 +44,53 @@ function formatNetEfficiencyValue(value) {
   return num.toFixed(2)
 }
 
+function getNetEfficiencyTextColor(value) {
+  const num = Number(value)
+  if (!Number.isFinite(num) || num === 0) return '#344054'
+  if (num > 8) return '#d92d20'
+  if (num > 2) return '#f04438'
+  if (num >= -2) return '#344054'
+  if (num >= -8) return '#039855'
+  return '#0f766e'
+}
+
+function formatHours(value) {
+  return toNumber(value, 0).toFixed(1)
+}
+
+function formatPercent(value) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return `${num.toFixed(2)}%`
+}
+
+function getVarianceTextColor(value, mode = 'owner') {
+  const num = Number(value)
+  if (!Number.isFinite(num) || num === 0) return undefined
+  const palette =
+    mode === 'personal'
+      ? {
+          severePositive: '#e35d6a',
+          mildPositive: '#f38744',
+          neutral: '#344054',
+          mildNegative: '#12a36b',
+          severeNegative: '#17807a',
+        }
+      : {
+          severePositive: '#d92d20',
+          mildPositive: '#f04438',
+          neutral: '#344054',
+          mildNegative: '#039855',
+          severeNegative: '#0f766e',
+        }
+
+  if (num > 4) return palette.severePositive
+  if (num > 1) return palette.mildPositive
+  if (num >= -1) return palette.neutral
+  if (num >= -4) return palette.mildNegative
+  return palette.severeNegative
+}
+
 function getThisWeekRange() {
   const today = dayjs()
   const day = today.day()
@@ -62,14 +109,33 @@ function getDefaultCustomRange() {
 }
 
 function buildCsvContent(rows = []) {
-  const headers = ['排名', '员工姓名', '职级', 'Owner预估总工时(h)', '个人预估总工时(h)', '实际总工时(h)', '净效率值', '最近填报日期']
+  const headers = [
+    '排名',
+    '员工姓名',
+    '职级',
+    '事项数',
+    '可比/应评估',
+    'Owner评估覆盖率',
+    'Owner真实基线(h)',
+    '个人预估总工时(h)',
+    '实际总工时(h)',
+    'Owner偏差(h)',
+    '个人偏差(h)',
+    '净效率值',
+    '最近填报日期',
+  ]
   const csvRows = rows.map((row) => [
     row.rank,
     row.username || '-',
     row.job_level_name || row.job_level || '-',
-    toNumber(row.total_owner_estimate_hours, 0).toFixed(1),
-    toNumber(row.total_personal_estimate_hours, 0).toFixed(1),
-    toNumber(row.total_actual_hours, 0).toFixed(1),
+    toNumber(row.item_count, 0),
+    `${toNumber(row.owner_estimate_covered_item_count, 0)}/${toNumber(row.owner_required_item_count, 0)}`,
+    formatPercent(row.owner_estimate_coverage_rate),
+    formatHours(row.total_owner_baseline_hours),
+    formatHours(row.total_personal_estimate_hours),
+    formatHours(row.total_actual_hours),
+    formatHours(row.variance_owner_baseline_hours),
+    formatHours(row.variance_personal_hours),
     row.net_efficiency_value === null || row.net_efficiency_value === undefined ? '-' : row.net_efficiency_value,
     row.last_log_date || '-',
   ])
@@ -118,6 +184,17 @@ function DepartmentEfficiencyRankingPage() {
       department_id: null,
       department_name: '-',
       member_count: 0,
+      total_item_count: 0,
+      total_owner_required_item_count: 0,
+      total_owner_estimate_covered_item_count: 0,
+      total_owner_estimate_missing_item_count: 0,
+      total_owner_estimate_non_owner_item_count: 0,
+      owner_estimate_coverage_rate: 0,
+      total_owner_baseline_hours: 0,
+      total_owner_comparable_actual_hours: 0,
+      variance_owner_baseline_hours: 0,
+      total_personal_estimate_item_count: 0,
+      personal_estimate_coverage_rate: 0,
       avg_actual_hours: 0,
       total_owner_estimate_hours: 0,
       total_personal_estimate_hours: 0,
@@ -192,7 +269,7 @@ function DepartmentEfficiencyRankingPage() {
         end_date: dateRange?.[1]?.format('YYYY-MM-DD'),
         keyword: String(keyword || '').trim() || undefined,
         sort_order: sortOrder,
-        completed_only: true,
+        completed_only: false,
       })
 
       if (!result?.success) {
@@ -271,14 +348,43 @@ function DepartmentEfficiencyRankingPage() {
     content: { fontSize: 20, fontWeight: 600, lineHeight: 1.2, color: '#101828' },
   }
   const hoursSorter = (field) => (left, right) => toNumber(left?.[field], 0) - toNumber(right?.[field], 0)
+  const countSorter = (field) => (left, right) => toNumber(left?.[field], 0) - toNumber(right?.[field], 0)
   const netEfficiencyFormulaTip = summary.net_efficiency_formula_text ? (
     <Space orientation="vertical" size={2}>
-      <span>当前页统计范围：仅统计已完成事项</span>
-      <span>实际公式：实际总工时 = SUM(已完成事项的 actual_hours)</span>
+      <span>当前页统计范围：统计当前周期内全部事项</span>
+      <span>当前默认按净效率值排序，可切换为从高到低或从低到高</span>
+      <span>实际公式：实际总工时 = SUM(当前周期事项的 actual_hours)</span>
       <span>{`净效率值公式：${summary.net_efficiency_formula_text}`}</span>
+      <span>看异常时仍建议结合可比/应评估、Owner真实基线与偏差一起判断</span>
     </Space>
   ) : (
     '当前净效率值按已配置公式计算'
+  )
+  const ownerCoverageTip = (
+    <Space orientation="vertical" size={2}>
+      <span>只统计当前周期内需要 Owner 评估的事项。</span>
+      <span>{`当前范围内需要 Owner 评估事项：${toNumber(summary.total_owner_required_item_count, 0)} 个`}</span>
+      <span>{`可比事项：${toNumber(summary.total_owner_estimate_covered_item_count, 0)} 个`}</span>
+      <span>{`缺失：${toNumber(summary.total_owner_estimate_missing_item_count, 0)} 个`}</span>
+      <span>{`非 Owner 事项：${toNumber(summary.total_owner_estimate_non_owner_item_count, 0)} 个，不计入覆盖率分母`}</span>
+    </Space>
+  )
+  const ownerBaselineTip = (
+    <Space orientation="vertical" size={2}>
+      <span>Owner真实基线只累计存在真实 Owner 评估值的事项。</span>
+      <span>{`可比事项数：${toNumber(summary.total_owner_estimate_covered_item_count, 0)} 个`}</span>
+      <span>{`真实基线：${formatHours(summary.total_owner_baseline_hours)} h`}</span>
+      <span>{`Owner可比实际：${formatHours(summary.total_owner_comparable_actual_hours)} h`}</span>
+      <span>{`Owner偏差：${formatHours(summary.variance_owner_baseline_hours)} h`}</span>
+    </Space>
+  )
+  const personalCoverageTip = (
+    <Space orientation="vertical" size={2}>
+      <span>个人预估覆盖率按当前周期事项统计。</span>
+      <span>{`当前周期事项：${toNumber(summary.total_item_count, 0)} 个`}</span>
+      <span>{`存在个人预估：${toNumber(summary.total_personal_estimate_item_count, 0)} 个`}</span>
+      <span>{`覆盖率：${formatPercent(summary.personal_estimate_coverage_rate)}`}</span>
+    </Space>
   )
 
   const columns = [
@@ -313,13 +419,107 @@ function DepartmentEfficiencyRankingPage() {
       render: (_, row) => <Tag color="processing">{row.job_level_name || row.job_level || '-'}</Tag>,
     },
     {
-      title: 'Owner预估(h)',
-      dataIndex: 'total_owner_estimate_hours',
-      key: 'total_owner_estimate_hours',
-      width: 130,
-      sorter: hoursSorter('total_owner_estimate_hours'),
+      title: '事项数',
+      dataIndex: 'item_count',
+      key: 'item_count',
+      width: 110,
+      sorter: countSorter('item_count'),
       sortDirections: ['descend', 'ascend'],
-      render: (value) => toNumber(value, 0).toFixed(1),
+      render: (value) => toNumber(value, 0),
+    },
+    {
+      title: '可比/应评估',
+      key: 'owner_comparable_ratio',
+      width: 150,
+      sorter: (left, right) => {
+        const leftCovered = toNumber(left?.owner_estimate_covered_item_count, 0)
+        const rightCovered = toNumber(right?.owner_estimate_covered_item_count, 0)
+        const leftRequired = toNumber(left?.owner_required_item_count, 0)
+        const rightRequired = toNumber(right?.owner_required_item_count, 0)
+        if (leftRequired !== rightRequired) return leftRequired - rightRequired
+        return leftCovered - rightCovered
+      },
+      sortDirections: ['descend', 'ascend'],
+      render: (_, row) => {
+        const covered = toNumber(row.owner_estimate_covered_item_count, 0)
+        const required = toNumber(row.owner_required_item_count, 0)
+        return (
+          <Tooltip
+          title={
+            <Space orientation="vertical" size={2}>
+              <span>{`可比事项：${covered} 个`}</span>
+              <span>{`应评估事项：${required} 个`}</span>
+              <span>{`缺失评估：${toNumber(row.owner_estimate_missing_item_count, 0)} 个`}</span>
+              <span>{`非 Owner 事项：${toNumber(row.owner_estimate_non_owner_item_count, 0)} 个`}</span>
+            </Space>
+          }
+        >
+          <Space size={6}>
+            <Text strong>{`${covered}/${required}`}</Text>
+            {toNumber(row.owner_estimate_missing_item_count, 0) > 0 ? (
+              <Tag color="warning">缺 {toNumber(row.owner_estimate_missing_item_count, 0)}</Tag>
+            ) : null}
+          </Space>
+        </Tooltip>
+      )
+    },
+    },
+    {
+      title: (
+        <Space size={4}>
+          <span>Owner评估覆盖率</span>
+          <Tooltip title="只统计需要 Owner 评估的事项，非 Owner 事项不计入分母；可比事项数会进入真实分析口径">
+            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
+      dataIndex: 'owner_estimate_coverage_rate',
+      key: 'owner_estimate_coverage_rate',
+      width: 130,
+      sorter: hoursSorter('owner_estimate_coverage_rate'),
+      sortDirections: ['descend', 'ascend'],
+      render: (value, row) => (
+        <Tooltip
+          title={
+            <Space orientation="vertical" size={2}>
+              <span>{`需要 Owner 评估：${toNumber(row.owner_required_item_count, 0)} 个`}</span>
+              <span>{`可比事项：${toNumber(row.owner_estimate_covered_item_count, 0)} 个`}</span>
+              <span>{`缺失：${toNumber(row.owner_estimate_missing_item_count, 0)} 个`}</span>
+              <span>{`非 Owner 事项：${toNumber(row.owner_estimate_non_owner_item_count, 0)} 个`}</span>
+            </Space>
+          }
+        >
+          <Text>{formatPercent(value)}</Text>
+        </Tooltip>
+      ),
+    },
+    {
+      title: (
+        <Space size={4}>
+          <span>Owner真实基线(h)</span>
+          <Tooltip title="仅统计有真实 Owner 评估值的事项，不混入非 Owner 事项与兜底口径；与 Owner可比实际一起形成可比分析">
+            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
+      dataIndex: 'total_owner_baseline_hours',
+      key: 'total_owner_baseline_hours',
+      width: 150,
+      sorter: hoursSorter('total_owner_baseline_hours'),
+      sortDirections: ['descend', 'ascend'],
+      render: (value, row) => (
+        <Tooltip
+          title={
+            <Space orientation="vertical" size={2}>
+              <span>{`真实基线：${formatHours(value)} h`}</span>
+              <span>{`Owner可比实际：${formatHours(row.total_owner_comparable_actual_hours)} h`}</span>
+              <span>{`Owner偏差：${formatHours(row.variance_owner_baseline_hours)} h`}</span>
+            </Space>
+          }
+        >
+          <Text>{formatHours(value)}</Text>
+        </Tooltip>
+      ),
     },
     {
       title: '个人预估(h)',
@@ -328,7 +528,7 @@ function DepartmentEfficiencyRankingPage() {
       width: 130,
       sorter: hoursSorter('total_personal_estimate_hours'),
       sortDirections: ['descend', 'ascend'],
-      render: (value) => toNumber(value, 0).toFixed(1),
+      render: (value) => formatHours(value),
     },
     {
       title: '实际工时(h)',
@@ -337,13 +537,55 @@ function DepartmentEfficiencyRankingPage() {
       width: 120,
       sorter: hoursSorter('total_actual_hours'),
       sortDirections: ['descend', 'ascend'],
-      render: (value) => <Text strong>{toNumber(value, 0).toFixed(1)}</Text>,
+      render: (value) => <Text strong>{formatHours(value)}</Text>,
+    },
+    {
+      title: (
+        <Space size={4}>
+          <span>Owner偏差(h)</span>
+          <Tooltip title="按可比口径计算：Owner偏差 = Owner可比实际 - Owner真实基线，只统计存在真实 Owner 评估值的事项">
+            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
+      dataIndex: 'variance_owner_baseline_hours',
+      key: 'variance_owner_baseline_hours',
+      width: 130,
+      sorter: hoursSorter('variance_owner_baseline_hours'),
+      sortDirections: ['descend', 'ascend'],
+      render: (value) => (
+        <Text style={{ color: getVarianceTextColor(value, 'owner') }}>
+          {Number(value) > 0 ? '+' : ''}
+          {formatHours(value)}
+        </Text>
+      ),
+    },
+    {
+      title: (
+        <Space size={4}>
+          <span>个人偏差(h)</span>
+          <Tooltip title="按成员个人预估口径计算：个人偏差 = 实际工时 - 个人预估工时">
+            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
+      dataIndex: 'variance_personal_hours',
+      key: 'variance_personal_hours',
+      width: 130,
+      sorter: hoursSorter('variance_personal_hours'),
+      sortDirections: ['descend', 'ascend'],
+      render: (value) => (
+        <Text style={{ color: getVarianceTextColor(value, 'personal') }}>
+          {Number(value) > 0 ? '+' : ''}
+          {formatHours(value)}
+        </Text>
+      ),
     },
     {
       title: (
         <Space size={4}>
           <span>净效率值</span>
-          <Tooltip title={netEfficiencyFormulaTip}>
+                  <Tooltip title={netEfficiencyFormulaTip}>
             <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
           </Tooltip>
         </Space>
@@ -351,8 +593,16 @@ function DepartmentEfficiencyRankingPage() {
       dataIndex: 'net_efficiency_value',
       key: 'net_efficiency_value',
       width: 100,
+      sorter: hoursSorter('net_efficiency_value'),
+      sortDirections: ['descend', 'ascend'],
       render: (value) =>
-        value === null || value === undefined ? <Text type="secondary">-</Text> : <Text strong>{formatNetEfficiencyValue(value)}</Text>,
+        value === null || value === undefined ? (
+          <Text type="secondary">-</Text>
+        ) : (
+          <Text strong style={{ color: getNetEfficiencyTextColor(value) }}>
+            {formatNetEfficiencyValue(value)}
+          </Text>
+        ),
     },
     {
       title: '最近填报',
@@ -423,8 +673,8 @@ function DepartmentEfficiencyRankingPage() {
             value={sortOrder}
             onChange={setSortOrder}
             options={[
-              { label: '净效率值降序', value: 'desc' },
-              { label: '净效率值升序', value: 'asc' },
+              { label: '效率值高优先', value: 'desc' },
+              { label: '效率值低优先', value: 'asc' },
             ]}
           />
         </Space>
@@ -463,7 +713,12 @@ function DepartmentEfficiencyRankingPage() {
             </Col>
             <Col xs={24} sm={12} xl={4}>
               <Card variant="borderless" style={summaryCardStyle} styles={{ body: summaryCardBodyStyle }}>
-                <Statistic title="平均实际工时(h)" value={toNumber(summary.avg_actual_hours, 0)} precision={1} styles={summaryStatisticStyles} />
+                <Statistic title="成员数" value={toNumber(summary.member_count, 0)} styles={summaryStatisticStyles} />
+              </Card>
+            </Col>
+            <Col xs={24} sm={12} xl={4}>
+              <Card variant="borderless" style={summaryCardStyle} styles={{ body: summaryCardBodyStyle }}>
+                <Statistic title="事项数" value={toNumber(summary.total_item_count, 0)} styles={summaryStatisticStyles} />
               </Card>
             </Col>
             <Col xs={24} sm={12} xl={4}>
@@ -473,12 +728,20 @@ function DepartmentEfficiencyRankingPage() {
             </Col>
             <Col xs={24} sm={12} xl={4}>
               <Card variant="borderless" style={summaryCardStyle} styles={{ body: summaryCardBodyStyle }}>
-                <Statistic title="净效率值" value={formatNetEfficiencyValue(summary.net_efficiency_value)} styles={summaryStatisticStyles} />
-              </Card>
-            </Col>
-            <Col xs={24} sm={12} xl={4}>
-              <Card variant="borderless" style={summaryCardStyle} styles={{ body: summaryCardBodyStyle }}>
-                <Statistic title="总Owner预估(h)" value={toNumber(summary.total_owner_estimate_hours, 0)} precision={1} styles={summaryStatisticStyles} />
+                <Statistic
+                  title={
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <span>Owner评估覆盖率</span>
+                      <Tooltip title={ownerCoverageTip}>
+                        <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+                      </Tooltip>
+                    </div>
+                  }
+                  value={toNumber(summary.owner_estimate_coverage_rate, 0)}
+                  precision={2}
+                  suffix="%"
+                  styles={summaryStatisticStyles}
+                />
               </Card>
             </Col>
             <Col xs={24} sm={12} xl={4}>
@@ -486,27 +749,43 @@ function DepartmentEfficiencyRankingPage() {
                 <Statistic
                   title={
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <span>总个人预估(h)</span>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        成员数 {toNumber(summary.member_count, 0)}
-                      </Text>
+                      <span>个人预估覆盖率</span>
+                      <Tooltip title={personalCoverageTip}>
+                        <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+                      </Tooltip>
                     </div>
                   }
-                  value={toNumber(summary.total_personal_estimate_hours, 0)}
-                  precision={1}
+                  value={toNumber(summary.personal_estimate_coverage_rate, 0)}
+                  precision={2}
+                  suffix="%"
                   styles={summaryStatisticStyles}
                 />
               </Card>
             </Col>
           </Row>
 
-          <Card title="部门人效排行" variant="borderless">
+          <Card
+            title={
+              <Space size={6}>
+                <span>部门人效排行</span>
+                <Tooltip title={ownerBaselineTip}>
+                  <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+                </Tooltip>
+              </Space>
+            }
+            variant="borderless"
+            extra={
+              <Text type="secondary">
+                当前默认按净效率值从高到低排序，也可以切换为从低到高
+              </Text>
+            }
+          >
             <Table
               rowKey="user_id"
               loading={loading}
               columns={columns}
               dataSource={rows}
-              scroll={{ x: 1320 }}
+              scroll={{ x: 1780 }}
               pagination={{
                 pageSize: 20,
                 showSizeChanger: false,
