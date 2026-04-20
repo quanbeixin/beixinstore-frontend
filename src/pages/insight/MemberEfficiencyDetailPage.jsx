@@ -562,7 +562,7 @@ function MemberEfficiencyDetailPage() {
       return
     }
     const rows = [
-      ['日期', '事项类型', '事项状态', '职级', '关联需求', '阶段', '可比/应评估', 'Owner原始评估(h)', 'Owner真实基线(h)', 'Owner可比实际(h)', 'Owner偏差(h)', '个人预估(h)', '实际工时(h)', '个人偏差(h)', '净效率值', '描述'],
+      ['日期', '事项类型', '事项状态', '职级', '关联需求', '阶段', '可比/应评估', 'Owner评估(h)', 'Owner偏差(h)', '个人预估(h)', '实际工时(h)', '个人偏差(h)', '净效率值', '描述'],
       ...workItemList.map((item) => [
         item.log_date || '-',
         item.item_type_name || '-',
@@ -572,8 +572,6 @@ function MemberEfficiencyDetailPage() {
         item.phase_name || item.phase_key || '-',
         `${toNumber(item.owner_estimate_covered, 0)}/${toNumber(item.owner_estimate_required, 0)}`,
         formatHours(item.raw_owner_estimate_hours),
-        formatHours(item.owner_baseline_hours),
-        formatHours(item.owner_comparable_actual_hours),
         formatHours(item.variance_owner_baseline_hours),
         formatHours(item.personal_estimate_hours),
         formatHours(item.actual_hours),
@@ -885,26 +883,11 @@ function MemberEfficiencyDetailPage() {
             }),
     },
     {
-      title: 'Owner原始评估(h)',
+      title: 'Owner评估(h)',
       dataIndex: 'raw_owner_estimate_hours',
       key: 'raw_owner_estimate_hours',
       width: 152,
       render: (value, row) => renderEditableOwnerEstimateCell(value, row, row.total_raw_owner_estimate_hours),
-    },
-    {
-      title: 'Owner真实基线(h)',
-      dataIndex: 'owner_baseline_hours',
-      key: 'owner_baseline_hours',
-      width: 120,
-      render: (value, row) => (row.__isTypeGroup ? formatHours(row.total_owner_baseline_hours) : formatHours(value)),
-    },
-    {
-      title: 'Owner可比实际(h)',
-      dataIndex: 'owner_comparable_actual_hours',
-      key: 'owner_comparable_actual_hours',
-      width: 130,
-      render: (value, row) =>
-        row.__isTypeGroup ? <Text strong>{formatHours(row.total_owner_comparable_actual_hours)}</Text> : <Text strong>{formatHours(value)}</Text>,
     },
     {
       title: 'Owner偏差(h)',
@@ -1125,7 +1108,7 @@ function MemberEfficiencyDetailPage() {
                 dataSource={workItemTreeData}
                 size="small"
                 className="efficiency-detail-table"
-                scroll={{ x: 1700 }}
+                scroll={{ x: 1450 }}
                 expandable={{
                   defaultExpandAllRows: true,
                   rowExpandable: (record) => Array.isArray(record.children) && record.children.length > 0,
