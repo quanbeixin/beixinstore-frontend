@@ -77,23 +77,11 @@ const EMPTY_WEEKLY_COMPLETED = {
   member_tree: [],
 }
 
-async function copyTextWithFallback(text) {
-  const normalizedText = String(text || '')
-  if (!normalizedText) return false
-
-  if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(normalizedText)
-      return true
-    } catch {
-      // fallback for non-secure context or blocked clipboard permissions
-    }
-  }
-
+function copyTextLegacy(text) {
   if (typeof document === 'undefined' || !document.body) return false
 
   const textarea = document.createElement('textarea')
-  textarea.value = normalizedText
+  textarea.value = String(text || '')
   textarea.setAttribute('readonly', 'readonly')
   textarea.style.position = 'fixed'
   textarea.style.opacity = '0'
@@ -110,6 +98,30 @@ async function copyTextWithFallback(text) {
     return false
   } finally {
     document.body.removeChild(textarea)
+  }
+}
+
+async function copyTextWithFallback(text) {
+  const normalizedText = String(text || '')
+  if (!normalizedText) return false
+
+  if (copyTextLegacy(normalizedText)) {
+    return true
+  }
+
+  const canUseAsyncClipboard =
+    typeof window !== 'undefined' &&
+    window.isSecureContext &&
+    typeof navigator !== 'undefined' &&
+    typeof navigator?.clipboard?.writeText === 'function'
+
+  if (!canUseAsyncClipboard) return false
+
+  try {
+    await navigator.clipboard.writeText(normalizedText)
+    return true
+  } catch {
+    return false
   }
 }
 

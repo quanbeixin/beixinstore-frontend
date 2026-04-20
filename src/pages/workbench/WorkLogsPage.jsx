@@ -1296,15 +1296,6 @@ function WorkLogs({ mode = 'dashboard' }) {
       message.warning('暂无可复制的周报内容')
       return
     }
-    if (navigator?.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(weeklySummaryText)
-        message.success('周报文案已复制')
-        return
-      } catch {
-        // 继续走降级方案
-      }
-    }
     const textarea = document.createElement('textarea')
     textarea.value = weeklySummaryText
     textarea.style.position = 'fixed'
@@ -1313,13 +1304,28 @@ function WorkLogs({ mode = 'dashboard' }) {
     textarea.focus()
     textarea.select()
     try {
-      document.execCommand('copy')
-      message.success('周报文案已复制')
+      const copied = document.execCommand('copy')
+      if (copied) {
+        message.success('周报文案已复制')
+        return
+      }
     } catch {
-      message.error('复制失败，请手动复制')
+      // ignore and fallback to async clipboard
     } finally {
       document.body.removeChild(textarea)
     }
+
+    if (window.isSecureContext && navigator?.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(weeklySummaryText)
+        message.success('周报文案已复制')
+        return
+      } catch {
+        // noop
+      }
+    }
+
+    message.error('复制失败，请手动复制')
   }
 
   useEffect(() => {

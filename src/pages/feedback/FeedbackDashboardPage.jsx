@@ -32,6 +32,10 @@ function formatPercent(value) {
   return `${Number(value).toFixed(1)}%`
 }
 
+function getPrimaryCategory(record) {
+  return String(record?.ai_primary_category || record?.ai_category || '').trim()
+}
+
 function FeedbackDashboardPage() {
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState([])
@@ -86,7 +90,7 @@ function FeedbackDashboardPage() {
   const categoryRows = useMemo(() => {
     const map = {}
     filteredRows.forEach((item) => {
-      const key = item?.ai_category || '未分类'
+      const key = getPrimaryCategory(item) || '未分类'
       map[key] = (map[key] || 0) + 1
     })
 

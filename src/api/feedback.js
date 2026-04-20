@@ -1,5 +1,7 @@
 import { request } from './http'
 
+const FEEDBACK_ANALYZE_TIMEOUT = 120000
+
 export function getAllFeedbackApi(params) {
   return request.get('/feedback', { params })
 }
@@ -33,12 +35,14 @@ export function batchImportFeedbackApi(list) {
 }
 
 export function analyzeUnprocessedFeedbackApi(limit = 10) {
-  return request.post('/feedback/analyze/unprocessed', null, {
+  return request.post('/feedback/analyze/unprocessed', {}, {
     params: { limit },
-    timeout: 120000,
+    timeout: FEEDBACK_ANALYZE_TIMEOUT,
   })
 }
 
 export function analyzeSingleFeedbackApi(id) {
-  return request.post(`/feedback/${id}/analyze`)
+  return request.post(`/feedback/${id}/analyze`, {}, {
+    timeout: FEEDBACK_ANALYZE_TIMEOUT,
+  })
 }

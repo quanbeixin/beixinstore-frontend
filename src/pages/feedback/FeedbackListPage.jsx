@@ -48,8 +48,10 @@ const { TextArea, Search } = Input
 const VISIBLE_COLUMN_STORAGE_KEY = 'feedbackListVisibleColumns'
 const DEFAULT_VISIBLE_COLUMNS = [
   'date',
+  'email_subject',
   'user_question_cn',
-  'ai_category',
+  'ai_primary_category',
+  'ai_secondary_categories',
   'ai_reply',
   'ai_reply_en',
   'user_email',
@@ -78,7 +80,19 @@ function readVisibleColumns() {
     if (!raw) return DEFAULT_VISIBLE_COLUMNS
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_VISIBLE_COLUMNS
-    return parsed
+    const normalized = parsed.map((item) => (item === 'ai_category' ? 'ai_primary_category' : item))
+    if (!normalized.includes('email_subject')) {
+      const dateIndex = normalized.indexOf('date')
+      if (dateIndex >= 0) {
+        normalized.splice(dateIndex + 1, 0, 'email_subject')
+      } else {
+        normalized.unshift('email_subject')
+      }
+    }
+    if (!normalized.includes('action')) {
+      normalized.push('action')
+    }
+    return normalized
   } catch {
     return DEFAULT_VISIBLE_COLUMNS
   }
@@ -99,22 +113,10 @@ function toDateTimeString(value) {
   return d.format('YYYY-MM-DD HH:mm:ss')
 }
 
-async function copyTextWithFallback(text) {
-  const normalizedText = String(text || '')
-  if (!normalizedText) return false
-
-  if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(normalizedText)
-      return true
-    } catch {
-      // fallback for non-secure context or blocked clipboard permissions
-    }
-  }
-
+function copyTextLegacy(text) {
   if (typeof document === 'undefined' || !document.body) return false
   const textarea = document.createElement('textarea')
-  textarea.value = normalizedText
+  textarea.value = String(text || '')
   textarea.setAttribute('readonly', 'readonly')
   textarea.style.position = 'fixed'
   textarea.style.opacity = '0'
@@ -131,6 +133,30 @@ async function copyTextWithFallback(text) {
     return false
   } finally {
     document.body.removeChild(textarea)
+  }
+}
+
+async function copyTextWithFallback(text) {
+  const normalizedText = String(text || '')
+  if (!normalizedText) return false
+
+  if (copyTextLegacy(normalizedText)) {
+    return true
+  }
+
+  const canUseAsyncClipboard =
+    typeof window !== 'undefined' &&
+    window.isSecureContext &&
+    typeof navigator !== 'undefined' &&
+    typeof navigator?.clipboard?.writeText === 'function'
+
+  if (!canUseAsyncClipboard) return false
+
+  try {
+    await navigator.clipboard.writeText(normalizedText)
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -156,11 +182,44 @@ function truncateText(value, maxChars) {
   return `${chars.slice(0, maxChars).join('')}...`
 }
 
+function normalizeCategoryList(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((item) => String(item || '').trim()).filter(Boolean))]
+  }
+  if (typeof value === 'string') {
+    return [...new Set(value.split(/[,\n，；;|]/).map((item) => String(item || '').trim()).filter(Boolean))]
+  }
+  return []
+}
+
+function getPrimaryCategory(record) {
+  return String(record?.ai_primary_category || record?.ai_category || '').trim()
+}
+
+function getSecondaryCategories(record) {
+  return normalizeCategoryList(record?.ai_secondary_categories)
+}
+
+function getAllCategories(record) {
+  const primary = getPrimaryCategory(record)
+  const all = normalizeCategoryList(record?.ai_all_categories)
+  if (all.length > 0) return all
+  return [primary].concat(getSecondaryCategories(record)).filter(Boolean)
+}
+
 function parseImportRows(jsonRows) {
   return (Array.isArray(jsonRows) ? jsonRows : [])
     .map((row) => ({
       date: toDateTimeString(new Date()),
       user_email: row['用户邮箱'] || row.user_email || '',
+      email_subject:
+        row['邮件标题'] ||
+        row['邮件主题'] ||
+        row.email_subject ||
+        row.subject ||
+        row['标题'] ||
+        row['主题'] ||
+        '',
       product: row['产品'] || row.product || '',
       channel: row['反馈渠道'] || row.channel || '',
       user_question: row['用户问题'] || row.user_question || '',
@@ -391,7 +450,7 @@ function FeedbackListPage() {
   )
 
   const aiCategoryOptions = useMemo(
-    () => [...new Set((rows || []).map((item) => item.ai_category).filter(Boolean))],
+    () => [...new Set((rows || []).flatMap((item) => getAllCategories(item)).filter(Boolean))],
     [rows],
   )
 
@@ -446,6 +505,8 @@ function FeedbackListPage() {
     editForm.setFieldsValue({
       ...record,
       date: record?.date ? dayjs(record.date) : null,
+      ai_primary_category: getPrimaryCategory(record) || undefined,
+      ai_secondary_categories: getSecondaryCategories(record),
     })
     setIsEditModalOpen(true)
   }
@@ -496,6 +557,9 @@ function FeedbackListPage() {
       const payload = {
         ...values,
         date: values.date ? values.date.format('YYYY-MM-DD HH:mm:ss') : null,
+        ai_category: values.ai_primary_category || null,
+        ai_primary_category: values.ai_primary_category || null,
+        ai_secondary_categories: Array.isArray(values.ai_secondary_categories) ? values.ai_secondary_categories : [],
       }
 
       await updateFeedbackApi(editingRow.id, payload)
@@ -516,6 +580,7 @@ function FeedbackListPage() {
       const payload = {
         date: dayjs().format('YYYY-MM-DD HH:mm:ss'),
         user_email: values.user_email || 'example@gmail.com',
+        email_subject: values.email_subject || null,
         product: values.product,
         channel: values.channel,
         user_question: values.user_question,
@@ -631,6 +696,30 @@ function FeedbackListPage() {
       render: (value) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-'),
     },
     {
+      title: '邮件标题',
+      dataIndex: 'email_subject',
+      key: 'email_subject',
+      width: 220,
+      ellipsis: true,
+      render: (value) => (
+        <Space size={4} style={{ maxWidth: 200 }}>
+          <Tooltip title={value} placement="topLeft" styles={{ root: { maxWidth: 420 } }}>
+            <span style={{ display: 'inline-block', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {value || '-'}
+            </span>
+          </Tooltip>
+          {value ? (
+            <Button
+              type="text"
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => handleCopy(value, '邮件标题')}
+            />
+          ) : null}
+        </Space>
+      ),
+    },
+    {
       title: '问题描述（中文）',
       dataIndex: 'user_question_cn',
       key: 'user_question_cn',
@@ -646,12 +735,12 @@ function FeedbackListPage() {
     },
     {
       title: 'AI 分类',
-      dataIndex: 'ai_category',
-      key: 'ai_category',
+      dataIndex: 'ai_primary_category',
+      key: 'ai_primary_category',
       width: 160,
-      render: (value) => {
-        if (!value) return '-'
-        const fullText = String(value || '')
+      render: (_, record) => {
+        const fullText = getPrimaryCategory(record)
+        if (!fullText) return '-'
         const shortText = truncateText(fullText, AI_CATEGORY_PREVIEW_CHARS)
         const colorMap = {
           Bug: 'red',
@@ -662,6 +751,26 @@ function FeedbackListPage() {
         return (
           <Tooltip title={fullText} placement="topLeft" styles={{ root: { maxWidth: 420 } }}>
             <Tag color={colorMap[fullText] || 'default'}>{shortText}</Tag>
+          </Tooltip>
+        )
+      },
+    },
+    {
+      title: 'AI 次分类',
+      dataIndex: 'ai_secondary_categories',
+      key: 'ai_secondary_categories',
+      width: 220,
+      render: (_, record) => {
+        const secondaryCategories = getSecondaryCategories(record)
+        if (secondaryCategories.length === 0) return '-'
+        return (
+          <Tooltip title={secondaryCategories.join('、')} placement="topLeft" styles={{ root: { maxWidth: 420 } }}>
+            <Space size={[4, 4]} wrap>
+              {secondaryCategories.slice(0, 2).map((item) => (
+                <Tag key={item}>{truncateText(item, 10)}</Tag>
+              ))}
+              {secondaryCategories.length > 2 ? <Tag>+{secondaryCategories.length - 2}</Tag> : null}
+            </Space>
           </Tooltip>
         )
       },
@@ -838,12 +947,14 @@ function FeedbackListPage() {
   const columnOptions = [
     { label: '提交日期', value: 'date' },
     { label: '用户邮箱', value: 'user_email' },
+    { label: '邮件标题', value: 'email_subject' },
     { label: '产品', value: 'product' },
     { label: '问题描述', value: 'user_question' },
     { label: '问题描述（中文）', value: 'user_question_cn' },
     { label: 'AI 回复', value: 'ai_reply' },
     { label: 'AI 回复英文', value: 'ai_reply_en' },
-    { label: 'AI分类', value: 'ai_category' },
+    { label: 'AI主分类', value: 'ai_primary_category' },
+    { label: 'AI次分类', value: 'ai_secondary_categories' },
     { label: 'AI处理', value: 'ai_processed' },
     { label: '是否新需求', value: 'is_new_request' },
     { label: '状态', value: 'status' },
@@ -867,7 +978,7 @@ function FeedbackListPage() {
         <Space wrap size={10}>
           <Search
             style={{ width: 280 }}
-            placeholder="搜索邮箱、问题、AI回复..."
+            placeholder="搜索邮箱、邮件标题、问题、AI回复..."
             value={filters.searchText}
             onChange={(event) => handleFilterChange('searchText', event.target.value)}
             allowClear
@@ -1032,6 +1143,9 @@ function FeedbackListPage() {
           <Form.Item label="用户邮箱" name="user_email" rules={[{ type: 'email', message: '邮箱格式不正确' }]}> 
             <Input placeholder="选填，默认为 example@gmail.com" />
           </Form.Item>
+          <Form.Item label="邮件标题" name="email_subject">
+            <Input placeholder="选填，支持录入邮件标题" />
+          </Form.Item>
           <Form.Item label="产品" name="product" rules={[{ required: true, message: '请选择产品' }]}> 
             <Select
               options={productOptions.map((item) => ({ label: item, value: item }))}
@@ -1072,6 +1186,9 @@ function FeedbackListPage() {
           <Form.Item name="user_email" label="用户邮箱">
             <Input />
           </Form.Item>
+          <Form.Item name="email_subject" label="邮件标题">
+            <Input />
+          </Form.Item>
           <Form.Item name="product" label="产品">
             <Select
               allowClear
@@ -1089,8 +1206,16 @@ function FeedbackListPage() {
           <Form.Item name="user_question" label="问题详情">
             <TextArea rows={4} />
           </Form.Item>
-          <Form.Item name="ai_category" label="AI分类">
+          <Form.Item name="ai_primary_category" label="AI主分类">
             <Select
+              allowClear
+              showSearch
+              options={aiCategoryOptions.map((item) => ({ label: item, value: item }))}
+            />
+          </Form.Item>
+          <Form.Item name="ai_secondary_categories" label="AI次分类">
+            <Select
+              mode="multiple"
               allowClear
               showSearch
               options={aiCategoryOptions.map((item) => ({ label: item, value: item }))}
@@ -1148,6 +1273,7 @@ function FeedbackListPage() {
             <ul style={{ marginTop: 0, paddingLeft: 18 }}>
               <li>支持 .xlsx / .xls / .csv</li>
               <li>必填字段：用户邮箱、产品、反馈渠道、用户问题</li>
+              <li>可选字段：邮件标题</li>
               <li>支持中文列名与英文列名混用</li>
             </ul>
             <a
@@ -1157,6 +1283,7 @@ function FeedbackListPage() {
                 const template = [
                   {
                     用户邮箱: 'example@email.com',
+                    邮件标题: '误开通订阅，申请退款',
                     产品: '产品名称',
                     反馈渠道: '邮件',
                     用户问题: '问题描述',
@@ -1187,6 +1314,7 @@ function FeedbackListPage() {
               <h3>基本信息</h3>
               <p><strong>提交日期：</strong>{toDateTimeString(viewingRow.date) || '-'}</p>
               <p><strong>用户邮箱：</strong>{viewingRow.user_email || '-'}</p>
+              <p><strong>邮件标题：</strong>{viewingRow.email_subject || '-'}</p>
               <p><strong>产品：</strong>{viewingRow.product || '-'}</p>
               <p><strong>反馈渠道：</strong>{viewingRow.channel || '-'}</p>
               <p>
@@ -1213,7 +1341,8 @@ function FeedbackListPage() {
 
             <div style={{ marginBottom: 12 }}>
               <h3>AI 分析</h3>
-              <p><strong>分类：</strong>{viewingRow.ai_category || '-'}</p>
+              <p><strong>主分类：</strong>{getPrimaryCategory(viewingRow) || '-'}</p>
+              <p><strong>次分类：</strong>{getSecondaryCategories(viewingRow).join('、') || '-'}</p>
               <p><strong>情绪：</strong>{viewingRow.ai_sentiment || '-'}</p>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <strong>AI 自动回复（中文）</strong>

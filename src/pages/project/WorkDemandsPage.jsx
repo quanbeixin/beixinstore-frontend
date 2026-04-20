@@ -176,23 +176,11 @@ function downloadCsv(filename, rows = []) {
   URL.revokeObjectURL(url)
 }
 
-async function copyTextWithFallback(text) {
-  const normalizedText = String(text || '')
-  if (!normalizedText) return false
-
-  if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(normalizedText)
-      return true
-    } catch {
-      // fallback for non-secure context or blocked clipboard permissions
-    }
-  }
-
+function copyTextLegacy(text) {
   if (typeof document === 'undefined' || !document.body) return false
 
   const textarea = document.createElement('textarea')
-  textarea.value = normalizedText
+  textarea.value = String(text || '')
   textarea.setAttribute('readonly', 'readonly')
   textarea.style.position = 'fixed'
   textarea.style.opacity = '0'
@@ -209,6 +197,30 @@ async function copyTextWithFallback(text) {
     return false
   } finally {
     document.body.removeChild(textarea)
+  }
+}
+
+async function copyTextWithFallback(text) {
+  const normalizedText = String(text || '')
+  if (!normalizedText) return false
+
+  if (copyTextLegacy(normalizedText)) {
+    return true
+  }
+
+  const canUseAsyncClipboard =
+    typeof window !== 'undefined' &&
+    window.isSecureContext &&
+    typeof navigator !== 'undefined' &&
+    typeof navigator?.clipboard?.writeText === 'function'
+
+  if (!canUseAsyncClipboard) return false
+
+  try {
+    await navigator.clipboard.writeText(normalizedText)
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -3438,12 +3450,12 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       message.warning('当前没有可复制的分析结果')
       return
     }
-    if (!navigator?.clipboard?.writeText) {
-      message.error('当前浏览器不支持复制')
-      return
-    }
     try {
-      await navigator.clipboard.writeText(text)
+      const copied = await copyTextWithFallback(text)
+      if (!copied) {
+        message.error('复制失败，请检查浏览器复制权限')
+        return
+      }
       message.success('分析结果已复制')
     } catch (error) {
       message.error(error?.message || '复制失败')
