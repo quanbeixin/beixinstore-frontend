@@ -22,9 +22,9 @@ const DEFAULT_NET_FORMULA_OPERATOR_OPTIONS = [
   { code: 'DIV', label: '÷' },
 ]
 const DEFAULT_NET_FORMULA_EXPRESSION = [
-  'OWNER_COMPARABLE_ACTUAL_HOURS',
-  'SUB',
   'OWNER_BASELINE_HOURS',
+  'SUB',
+  'OWNER_COMPARABLE_ACTUAL_HOURS',
   'MUL',
   'TASK_DIFFICULTY_COEFF',
   'DIV',
@@ -404,7 +404,7 @@ function EfficiencyFactorSettingsPage() {
           <Alert
             showIcon
             type="info"
-            title="净效率值由后端统一计算。这里保存后，部门人效排行、部门详情、个人人效详情会自动按同一公式生效。当前默认公式等价于：(Owner可比实际 - Owner真实基线) × 任务难度系数 ÷ 职级权重系数。"
+            title="净效率值由后端统一计算。这里保存后，部门人效排行、部门详情、个人人效详情会自动按同一公式生效。当前默认公式等价于：(Owner真实基线 - Owner可比实际) × 任务难度系数 ÷ 职级权重系数。正值表示节省工时，负值表示超出预估。"
           />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             {Array.from({ length: formulaOperandCount }).map((_, operandIndex) => {

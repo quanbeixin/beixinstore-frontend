@@ -33,9 +33,9 @@ import './EfficiencyDetailPages.css'
 const { RangePicker } = DatePicker
 const { Text } = Typography
 const DEFAULT_NET_EFFICIENCY_FORMULA_EXPRESSION = [
-  'OWNER_COMPARABLE_ACTUAL_HOURS',
-  'SUB',
   'OWNER_BASELINE_HOURS',
+  'SUB',
+  'OWNER_COMPARABLE_ACTUAL_HOURS',
   'MUL',
   'TASK_DIFFICULTY_COEFF',
   'DIV',
@@ -63,11 +63,11 @@ function formatNetEfficiencyValue(value) {
 function getNetEfficiencyTextColor(value) {
   const num = Number(value)
   if (!Number.isFinite(num) || num === 0) return '#344054'
-  if (num > 8) return '#d92d20'
-  if (num > 2) return '#f04438'
-  if (num >= -2) return '#344054'
-  if (num >= -8) return '#039855'
-  return '#0f766e'
+  if (num > 8) return '#0f766e'
+  if (num > 2) return '#039855'
+  if (num <= -8) return '#d92d20'
+  if (num < -2) return '#f04438'
+  return '#344054'
 }
 
 function formatHours(value) {

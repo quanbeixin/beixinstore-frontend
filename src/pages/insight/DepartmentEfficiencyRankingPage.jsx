@@ -47,11 +47,11 @@ function formatNetEfficiencyValue(value) {
 function getNetEfficiencyTextColor(value) {
   const num = Number(value)
   if (!Number.isFinite(num) || num === 0) return '#344054'
-  if (num > 8) return '#d92d20'
-  if (num > 2) return '#f04438'
-  if (num >= -2) return '#344054'
-  if (num >= -8) return '#039855'
-  return '#0f766e'
+  if (num > 8) return '#0f766e'
+  if (num > 2) return '#039855'
+  if (num <= -8) return '#d92d20'
+  if (num < -2) return '#f04438'
+  return '#344054'
 }
 
 function formatHours(value) {
@@ -355,7 +355,7 @@ function DepartmentEfficiencyRankingPage() {
       <span>当前默认按净效率值排序，可切换为从高到低或从低到高</span>
       <span>实际公式：实际总工时 = SUM(当前周期事项的 actual_hours)</span>
       <span>{`净效率值公式：${summary.net_efficiency_formula_text}`}</span>
-      <span>看异常时仍建议结合可比/应评估、Owner真实基线与偏差一起判断</span>
+      <span>当前口径下，正值表示低于 Owner 评估、节省工时；负值表示超出 Owner 评估、存在超时</span>
     </Space>
   ) : (
     '当前净效率值按已配置公式计算'

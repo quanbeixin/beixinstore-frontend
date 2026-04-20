@@ -1,4 +1,5 @@
 import { request } from './http'
+import { cachedRequest, clearCache } from '../utils/requestCache'
 
 export function getAgentsApi(params) {
   return request.get('/agents', { params })
@@ -21,14 +22,22 @@ export function updateAgentEnabledApi(id, enabled) {
 }
 
 export function getAgentOptionsApi(sceneCode) {
-  return request.get('/agents/options', {
-    params: {
-      scene_code: sceneCode,
-    },
-  })
+  const normalizedSceneCode = String(sceneCode || '').trim()
+  const cacheKey = `agent-options-${normalizedSceneCode || 'all'}`
+  return cachedRequest(
+    cacheKey,
+    () =>
+      request.get('/agents/options', {
+        params: {
+          scene_code: normalizedSceneCode,
+        },
+      }),
+    10000,
+  )
 }
 
 export function executeAgentApi(payload) {
+  clearCache()
   return request.post('/agents/execute', payload, {
     timeout: 120000,
   })
