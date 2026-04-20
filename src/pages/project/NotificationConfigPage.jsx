@@ -14,8 +14,12 @@ const SCENE_META = {
   task_deadline: { label: '任务截止提醒', desc: '按提前天数触发截止提醒' },
   task_complete: { label: '任务完成', desc: '任务完成时触发' },
   node_complete: { label: '节点完成', desc: '节点完成时触发' },
+  bug_create: { label: 'Bug创建', desc: 'Bug新建时触发' },
+  bug_update: { label: 'Bug编辑', desc: 'Bug编辑保存时触发' },
   bug_assign: { label: 'Bug指派', desc: 'Bug被分配给处理人时触发' },
   bug_status_change: { label: 'Bug状态变更', desc: 'Bug状态发生变化时触发' },
+  bug_comment_create: { label: 'Bug评论新增', desc: 'Bug新增评论时触发' },
+  bug_comment_update: { label: 'Bug评论编辑', desc: 'Bug编辑评论时触发' },
   bug_fixed: { label: 'Bug已修复', desc: 'Bug标记为已修复时触发' },
   bug_reopen: { label: 'Bug重新打开', desc: 'Bug被重新打开时触发' },
 }
@@ -27,6 +31,7 @@ const RECEIVER_ROLE_OPTIONS = [
   { label: '项目负责人', value: 'project_manager' },
   { label: 'Bug处理人', value: 'bug_assignee' },
   { label: 'Bug发现人', value: 'bug_reporter' },
+  { label: 'Bug关注人', value: 'bug_watcher' },
 ]
 
 const DEFAULT_SCENE_CONFIG = {
@@ -36,8 +41,12 @@ const DEFAULT_SCENE_CONFIG = {
   task_deadline: { enabled: 1, receiver_roles: ['task_assignee'], advance_days: 1 },
   task_complete: { enabled: 1, receiver_roles: ['task_creator'], advance_days: 0 },
   node_complete: { enabled: 1, receiver_roles: ['project_manager'], advance_days: 0 },
+  bug_create: { enabled: 1, receiver_roles: ['bug_assignee', 'bug_watcher'], advance_days: 0 },
+  bug_update: { enabled: 1, receiver_roles: ['bug_watcher'], advance_days: 0 },
   bug_assign: { enabled: 1, receiver_roles: ['bug_assignee'], advance_days: 0 },
-  bug_status_change: { enabled: 1, receiver_roles: ['bug_reporter'], advance_days: 0 },
+  bug_status_change: { enabled: 1, receiver_roles: ['bug_reporter', 'bug_watcher'], advance_days: 0 },
+  bug_comment_create: { enabled: 1, receiver_roles: ['bug_watcher'], advance_days: 0 },
+  bug_comment_update: { enabled: 1, receiver_roles: ['bug_watcher'], advance_days: 0 },
   bug_fixed: { enabled: 1, receiver_roles: ['bug_reporter'], advance_days: 0 },
   bug_reopen: { enabled: 1, receiver_roles: ['bug_assignee'], advance_days: 0 },
 }

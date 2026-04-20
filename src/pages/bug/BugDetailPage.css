@@ -285,11 +285,16 @@
 }
 
 .bug-detail-page__meta-link-btn.ant-btn-link {
+  display: inline-block;
+  max-width: 100%;
   padding: 0;
   height: auto;
   font-size: 14px;
   font-weight: 700;
   color: #25569d;
+  text-align: left;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .bug-detail-page__meta-link-btn.ant-btn-link:hover {
@@ -323,8 +328,76 @@
 }
 
 .bug-detail-page__description-content {
-  white-space: pre-wrap;
   line-height: 1.66;
+  color: #243246;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.bug-detail-page__description-content p {
+  margin: 0 0 12px;
+}
+
+.bug-detail-page__description-content p:last-child {
+  margin-bottom: 0;
+}
+
+.bug-detail-page__description-content h2,
+.bug-detail-page__description-content h3 {
+  margin: 16px 0 10px;
+  line-height: 1.35;
+}
+
+.bug-detail-page__description-content ul,
+.bug-detail-page__description-content ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+
+.bug-detail-page__description-content blockquote {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-left: 3px solid #8fb0eb;
+  background: rgba(237, 243, 255, 0.72);
+  color: #445572;
+}
+
+.bug-detail-page__description-content pre {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 10px;
+  background: #151b28;
+  color: #e7edf8;
+}
+
+.bug-detail-page__description-content code {
+  padding: 0.08em 0.36em;
+  border-radius: 6px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}
+
+.bug-detail-page__description-content pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.bug-detail-page__description-content a {
+  color: #25569d;
+  text-decoration: underline;
+}
+
+.bug-detail-page__description-content img {
+  display: block;
+  max-width: min(100%, 680px);
+  height: auto;
+  margin: 12px 0;
+  border-radius: 12px;
+  border: 1px solid rgba(197, 207, 223, 0.88);
+  background: #f8fafc;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
 }
 
 .bug-detail-page__log-item {

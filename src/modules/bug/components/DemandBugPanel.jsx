@@ -37,11 +37,13 @@ import {
   getDemandBugsApi,
   getDemandBugStatsApi,
   transitionBugApi,
+  updateBugApi,
 } from '../../../api/bug'
 import { hasPermission } from '../../../utils/access'
 import { formatBeijingDateTime } from '../../../utils/datetime'
 import { pinyinSelectFilter } from '../../../utils/selectSearch'
 import { uploadDraftAttachments } from '../utils/attachmentUpload'
+import { replacePendingDescriptionImages, stripPendingDescriptionImages } from '../utils/descriptionRichText'
 import { buildWorkflowTransitionMap, normalizeBugWorkflowTransitions } from '../utils/workflow'
 import BugFormModal from './BugFormModal'
 import './demand-bug-panel.css'
@@ -91,7 +93,7 @@ function isVideoAttachment(row) {
 }
 
 function mapDictOptions(rows) {
-  return [{ label: '全部', value: undefined }].concat(
+  return [{ label: '全部', value: '' }].concat(
     (rows || []).map((item) => ({
       label: item?.item_name || item?.item_code || '-',
       value: item?.item_code,
@@ -196,7 +198,7 @@ function DemandBugPanel({ demandId }) {
   const [userOptionsLoading, setUserOptionsLoading] = useState(false)
   const [statusSegmentOptions, setStatusSegmentOptions] = useState([{ label: '全部状态', value: '' }])
   const [statusNameMap, setStatusNameMap] = useState({})
-  const [severityOptions, setSeverityOptions] = useState([{ label: '全部', value: undefined }])
+  const [severityOptions, setSeverityOptions] = useState([{ label: '全部', value: '' }])
   const [workflowTransitions, setWorkflowTransitions] = useState([])
   const [attachmentPreviewMap, setAttachmentPreviewMap] = useState({})
   const [attachmentPreviewLoadingMap, setAttachmentPreviewLoadingMap] = useState({})
@@ -513,7 +515,7 @@ function DemandBugPanel({ demandId }) {
                     alt={attachment?.file_name || '附件缩略图'}
                     preview={{
                       zIndex: 2100,
-                      mask: <span className="demand-bug-panel__image-mask-hint">放大</span>,
+                      cover: <span className="demand-bug-panel__image-mask-hint">放大</span>,
                     }}
                   />
                 ) : videoAttachment ? (
@@ -929,7 +931,7 @@ function DemandBugPanel({ demandId }) {
               size="small"
               showSearch
               className="demand-bug-panel__filter-control demand-bug-panel__filter-control--sm"
-              value={severityFilter || undefined}
+              value={severityFilter}
               options={severityOptions}
               filterOption={pinyinSelectFilter}
               placeholder="严重程度"
@@ -1092,25 +1094,56 @@ function DemandBugPanel({ demandId }) {
         submitText="创建"
         presentation="drawer"
         demandIdPreset={demandId}
-        lockDemand
         confirmLoading={submitting}
         onCancel={() => setCreateOpen(false)}
         onSubmit={async (values, extra) => {
           setSubmitting(true)
           try {
-            const result = await createBugApi(values)
+            const baseDescription = stripPendingDescriptionImages(values.description)
+            const pendingDescriptionImages = Array.isArray(extra?.pendingDescriptionImages) ? extra.pendingDescriptionImages : []
+            const result = await createBugApi({
+              ...values,
+              description: baseDescription,
+            })
             if (!result?.success) {
               message.error(result?.message || '创建Bug失败')
               return
             }
             const bugId = Number(result?.data?.id || 0)
             const draftAttachments = extra?.draftAttachments || []
+            let uploadResult = { total: draftAttachments.length, successCount: 0, successes: [], failures: [] }
             if (bugId > 0 && draftAttachments.length > 0) {
-              const uploadResult = await uploadDraftAttachments(bugId, draftAttachments)
+              uploadResult = await uploadDraftAttachments(bugId, draftAttachments)
+            }
+
+            if (bugId > 0 && pendingDescriptionImages.length > 0) {
+              const tokenAttachmentMap = new Map()
+              const attachmentBySignature = new Map(
+                (Array.isArray(uploadResult.successes) ? uploadResult.successes : []).map((item) => [item.signature, item.attachment]),
+              )
+              pendingDescriptionImages.forEach((item) => {
+                const token = String(item?.token || '').trim()
+                const signature = String(item?.signature || '').trim()
+                if (!token || !signature) return
+                const attachment = attachmentBySignature.get(signature)
+                if (attachment) tokenAttachmentMap.set(token, attachment)
+              })
+              const finalDescription = replacePendingDescriptionImages(values.description, tokenAttachmentMap)
+              if (finalDescription && finalDescription !== baseDescription) {
+                const updateResult = await updateBugApi(bugId, {
+                  ...values,
+                  description: finalDescription,
+                  skip_notification: true,
+                })
+                if (!updateResult?.success) {
+                  message.warning(updateResult?.message || 'Bug已创建，但描述中的图片回填失败')
+                }
+              }
+            }
+
+            if (draftAttachments.length > 0) {
               if (uploadResult.failures.length > 0) {
-                message.warning(
-                  `Bug已创建，附件上传成功 ${uploadResult.successCount}/${uploadResult.total}，请在详情页补传失败附件`,
-                )
+                message.warning(`Bug已创建，附件上传成功 ${uploadResult.successCount}/${uploadResult.total}，请在详情页补传失败附件`)
               } else {
                 message.success(`Bug创建成功，已上传 ${uploadResult.successCount} 个附件`)
               }
@@ -1183,7 +1216,7 @@ function DemandBugPanel({ demandId }) {
             alt={attachmentModalTitle || '附件预览'}
             preview={{
               zIndex: 2100,
-              mask: <span className="demand-bug-panel__image-mask-hint">点击放大</span>,
+              cover: <span className="demand-bug-panel__image-mask-hint">点击放大</span>,
             }}
           />
         )}

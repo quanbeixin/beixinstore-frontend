@@ -36,6 +36,7 @@ import {
   Table,
   Tag,
   Tabs,
+  Tooltip,
   Typography,
   message,
 } from 'antd'
@@ -173,6 +174,42 @@ function downloadCsv(filename, rows = []) {
   link.click()
   document.body.removeChild(link)
   URL.revokeObjectURL(url)
+}
+
+async function copyTextWithFallback(text) {
+  const normalizedText = String(text || '')
+  if (!normalizedText) return false
+
+  if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(normalizedText)
+      return true
+    } catch {
+      // fallback for non-secure context or blocked clipboard permissions
+    }
+  }
+
+  if (typeof document === 'undefined' || !document.body) return false
+
+  const textarea = document.createElement('textarea')
+  textarea.value = normalizedText
+  textarea.setAttribute('readonly', 'readonly')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  textarea.style.pointerEvents = 'none'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    document.body.removeChild(textarea)
+  }
 }
 
 function formatDemandNodeSchedule(record) {
@@ -3413,6 +3450,28 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     }
   }, [analysisResult?.response_text])
 
+  const handleCopyDemandName = useCallback(async (event, name) => {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+
+    const text = String(name || '').trim()
+    if (!text) {
+      message.warning('当前没有可复制的需求名称')
+      return
+    }
+
+    try {
+      const copied = await copyTextWithFallback(text)
+      if (!copied) {
+        message.error('复制失败，请检查浏览器复制权限')
+        return
+      }
+      message.success('需求名称已复制')
+    } catch (error) {
+      message.error(error?.message || '复制失败')
+    }
+  }, [])
+
   const demandColumns = useMemo(() => {
     const columns = [
       {
@@ -3455,9 +3514,35 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               </Space>
             )
           ) : (
-            <Button type="link" style={{ padding: 0 }} onClick={() => openDetailDrawer(record)}>
-              <Text strong>{value}</Text>
-            </Button>
+            isLaunchPlanPage ? (
+              <div className="work-demand-list__name-cell">
+                <Button
+                  type="link"
+                  className="work-demand-list__name-trigger"
+                  onClick={() => openDetailDrawer(record)}
+                >
+                  <span className="work-demand-list__name-text" title={value || '-'}>
+                    {value || '-'}
+                  </span>
+                </Button>
+                {String(value || '').trim() ? (
+                  <Tooltip title="复制需求名称">
+                    <Button
+                      type="text"
+                      size="small"
+                      className="work-demand-list__name-copy"
+                      icon={<CopyOutlined />}
+                      aria-label="复制需求名称"
+                      onClick={(event) => handleCopyDemandName(event, value)}
+                    />
+                  </Tooltip>
+                ) : null}
+              </div>
+            ) : (
+              <Button type="link" style={{ padding: 0 }} onClick={() => openDetailDrawer(record)}>
+                <Text strong>{value}</Text>
+              </Button>
+            )
           ),
       },
       {
@@ -3701,6 +3786,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     openDetailDrawer,
     openEditModal,
     canEditDemandRecord,
+    handleCopyDemandName,
     isQuickFieldSaving,
     handleQuickFieldSave,
     handleQuickStatusUpdate,

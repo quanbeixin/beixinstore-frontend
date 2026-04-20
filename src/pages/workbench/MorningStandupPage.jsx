@@ -769,6 +769,53 @@ function MorningStandupBoard() {
     return copy
   }, [members, currentUser?.id])
 
+  const handleCopyText = useCallback(async (text, successLabel) => {
+    const normalizedText = String(text || '').trim()
+    if (!normalizedText) {
+      message.warning('当前没有可复制的内容')
+      return
+    }
+
+    try {
+      const copied = await copyTextWithFallback(normalizedText)
+      if (!copied) {
+        message.error('复制失败，请检查浏览器复制权限')
+        return
+      }
+      message.success(successLabel)
+    } catch (error) {
+      message.error(error?.message || '复制失败')
+    }
+  }, [])
+
+  const renderDemandNameWithCopy = useCallback(
+    (value, demandId, maxLength = 30) => {
+      const text = String(value || demandId || '').trim()
+      if (!text) return '-'
+
+      return (
+        <span className="morning-demand-copyable">
+          <span>{renderDemandNameWithLimit(text, maxLength, demandId)}</span>
+          <Tooltip title="复制需求名称">
+            <Button
+              type="text"
+              size="small"
+              className="morning-demand-copyable__button"
+              icon={<CopyOutlined />}
+              aria-label="复制需求名称"
+              onClick={(event) => {
+                event?.preventDefault?.()
+                event?.stopPropagation?.()
+                handleCopyText(text, '需求名称已复制')
+              }}
+            />
+          </Tooltip>
+        </span>
+      )
+    },
+    [handleCopyText],
+  )
+
   const inProgressColumns = useMemo(
     () => [
       {
@@ -825,7 +872,7 @@ function MorningStandupBoard() {
           ) : (
             <Space size={4} wrap={false}>
               {record?.demand_priority ? <Tag color="volcano">{record.demand_priority}</Tag> : null}
-              <span>{renderDemandNameWithLimit(value, 30, record?.demand_id)}</span>
+              <span>{renderDemandNameWithCopy(value, record?.demand_id, 30)}</span>
             </Space>
           ),
       },
@@ -917,7 +964,7 @@ function MorningStandupBoard() {
         },
       },
     ],
-    [],
+    [renderDemandNameWithCopy],
   )
 
   const doneTodayColumns = useMemo(() => {
@@ -1554,25 +1601,6 @@ function MorningStandupBoard() {
     () => buildWeeklyCompletedCopyText(weeklyCompletedData, `${activeTabLabel} · `),
     [activeTabLabel, weeklyCompletedData],
   )
-
-  const handleCopyText = useCallback(async (text, successLabel) => {
-    const normalizedText = String(text || '').trim()
-    if (!normalizedText) {
-      message.warning('当前没有可复制的内容')
-      return
-    }
-
-    try {
-      const copied = await copyTextWithFallback(normalizedText)
-      if (!copied) {
-        message.error('复制失败，请检查浏览器复制权限')
-        return
-      }
-      message.success(successLabel)
-    } catch (error) {
-      message.error(error?.message || '复制失败')
-    }
-  }, [])
 
   const weeklyProgressColumns = useMemo(
     () => [

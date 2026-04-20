@@ -4,13 +4,14 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getDictItemsApi } from '../../api/configDict'
-import { createBugApi, createBugViewApi, deleteBugViewApi, getBugAssigneesApi, getBugByIdApi, getBugViewByIdApi, getBugViewsApi, getBugWorkflowConfigApi, getBugsApi, transitionBugApi, updateBugViewApi } from '../../api/bug'
+import { createBugApi, createBugViewApi, deleteBugViewApi, getBugAssigneesApi, getBugByIdApi, getBugViewByIdApi, getBugViewsApi, getBugWorkflowConfigApi, getBugsApi, transitionBugApi, updateBugApi, updateBugViewApi } from '../../api/bug'
 import { getWorkDemandsApi } from '../../api/work'
 import { hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
 import { pinyinSelectFilter } from '../../utils/selectSearch'
 import { BugFormModal } from '../../modules/bug'
 import { uploadDraftAttachments } from '../../modules/bug/utils/attachmentUpload'
+import { replacePendingDescriptionImages, stripPendingDescriptionImages } from '../../modules/bug/utils/descriptionRichText'
 import { buildWorkflowTransitionMap, normalizeBugWorkflowTransitions } from '../../modules/bug/utils/workflow'
 import './BugListPage.css'
 
@@ -24,6 +25,7 @@ const GROUP_FIELD_OPTIONS = [
   { label: '状态', value: 'status' },
   { label: '提交人', value: 'reporter' },
   { label: 'Bug分类', value: 'bug_type' },
+  { label: '处理人', value: 'assignee' },
 ]
 const GROUP_FIELD_LABEL_MAP = GROUP_FIELD_OPTIONS.reduce((acc, item) => {
   acc[item.value] = item.label
@@ -64,7 +66,7 @@ function isVideoAttachment(row) {
 }
 
 function mapDictOptions(rows) {
-  return [{ label: '全部', value: undefined }].concat(
+  return [{ label: '全部', value: '' }].concat(
     (rows || []).map((item) => ({
       label: item?.item_name || item?.item_code || '-',
       value: item?.item_code,
@@ -107,6 +109,7 @@ function normalizeViewConfig(config = {}) {
     keyword: String(source.keyword || '').trim(),
     status_code: String(source.status_code || '').trim().toUpperCase(),
     severity_code: String(source.severity_code || '').trim().toUpperCase(),
+      product_code: String(source.product_code || '').trim().toUpperCase(),
     demand_id: String(source.demand_id || '').trim(),
     assignee_id: Number.isInteger(Number(source.assignee_id)) && Number(source.assignee_id) > 0 ? Number(source.assignee_id) : undefined,
     reporter_id: Number.isInteger(Number(source.reporter_id)) && Number(source.reporter_id) > 0 ? Number(source.reporter_id) : undefined,
@@ -142,6 +145,12 @@ function resolveGroupBucket(field, row) {
     const code = String(row?.bug_type_code || 'UNSET').trim().toUpperCase() || 'UNSET'
     const label = String(row?.bug_type_name || row?.bug_type_code || '未分类').trim() || '未分类'
     return { key: code, value: label }
+  }
+  if (field === 'assignee') {
+    const userId = Number(row?.assignee_id || 0)
+    const label = String(row?.assignee_name || row?.assignee_names || '').trim() || '未分配'
+    const key = userId > 0 ? String(userId) : label
+    return { key, value: label }
   }
   return { key: 'UNKNOWN', value: '未分组' }
 }
@@ -216,6 +225,7 @@ function BugListPage() {
   const [groupFields, setGroupFields] = useState([])
   const [groupLimitExceeded, setGroupLimitExceeded] = useState(false)
   const [demandFilter, setDemandFilter] = useState()
+  const [productFilter, setProductFilter] = useState()
   const [assigneeFilter, setAssigneeFilter] = useState()
   const [reporterFilter, setReporterFilter] = useState()
   const [createdRange, setCreatedRange] = useState(null)
@@ -225,7 +235,9 @@ function BugListPage() {
   const [userOptionsLoading, setUserOptionsLoading] = useState(false)
   const [statusSegmentOptions, setStatusSegmentOptions] = useState([{ label: '全部状态', value: '' }])
   const [statusNameMap, setStatusNameMap] = useState({})
-  const [severityOptions, setSeverityOptions] = useState([{ label: '全部', value: undefined }])
+  const [severityOptions, setSeverityOptions] = useState([{ label: '全部', value: '' }])
+  const [productOptions, setProductOptions] = useState([{ label: '全部', value: '' }])
+  const [productOptionsLoading, setProductOptionsLoading] = useState(false)
   const [workflowTransitions, setWorkflowTransitions] = useState([])
   const [attachmentPreviewMap, setAttachmentPreviewMap] = useState({})
   const [attachmentPreviewLoadingMap, setAttachmentPreviewLoadingMap] = useState({})
@@ -290,9 +302,10 @@ function BugListPage() {
 
   const loadDicts = useCallback(async () => {
     try {
-      const [statusRes, severityRes] = await Promise.all([
+      const [statusRes, severityRes, productRes] = await Promise.all([
         getDictItemsApi('bug_status', { enabledOnly: true }),
         getDictItemsApi('bug_severity', { enabledOnly: true }),
+        getDictItemsApi('bug_product', { enabledOnly: true }),
       ])
       const statusRows = statusRes?.data || []
       setStatusSegmentOptions(mapSegmentedOptions(statusRows))
@@ -305,6 +318,7 @@ function BugListPage() {
         }, {}),
       )
       setSeverityOptions(mapDictOptions(severityRes?.data || []))
+      setProductOptions(mapDictOptions(productRes?.data || []))
     } catch (error) {
       message.error(error?.message || '加载Bug筛选项失败')
     }
@@ -368,19 +382,21 @@ function BugListPage() {
   const buildListQueryParams = useCallback(() => ({
     keyword: keyword || undefined,
     status_code: statusFilter || undefined,
+    product_code: productFilter || undefined,
     severity_code: severityFilter || undefined,
     demand_id: demandFilter || undefined,
     assignee_id: assigneeFilter || undefined,
     reporter_id: reporterFilter || undefined,
     start_date: createdRange?.[0]?.format?.('YYYY-MM-DD') || undefined,
     end_date: createdRange?.[1]?.format?.('YYYY-MM-DD') || undefined,
-  }), [assigneeFilter, createdRange, demandFilter, keyword, reporterFilter, severityFilter, statusFilter])
+  }), [assigneeFilter, createdRange, demandFilter, keyword, reporterFilter, severityFilter, statusFilter, productFilter])
 
   const buildCurrentViewConfig = useCallback(
     () => ({
       keyword: String(keyword || '').trim(),
       status_code: String(statusFilter || '').trim().toUpperCase(),
       severity_code: String(severityFilter || '').trim().toUpperCase(),
+      product_code: String(productFilter || '').trim().toUpperCase(),
       demand_id: String(demandFilter || '').trim(),
       assignee_id: Number(assigneeFilter || 0) > 0 ? Number(assigneeFilter) : null,
       reporter_id: Number(reporterFilter || 0) > 0 ? Number(reporterFilter) : null,
@@ -389,7 +405,7 @@ function BugListPage() {
       group_fields: Array.isArray(groupFields) ? groupFields : [],
       page_size: BUG_VIEW_ALLOWED_PAGE_SIZE.has(Number(pageSize)) ? Number(pageSize) : 20,
     }),
-    [assigneeFilter, createdRange, demandFilter, groupFields, keyword, pageSize, reporterFilter, severityFilter, statusFilter],
+    [assigneeFilter, createdRange, demandFilter, groupFields, keyword, pageSize, reporterFilter, severityFilter, statusFilter, productFilter],
   )
   const activeViewConfig = useMemo(() => normalizeViewConfig(activeView?.config || {}), [activeView?.config])
   const currentViewConfig = useMemo(() => normalizeViewConfig(buildCurrentViewConfig()), [buildCurrentViewConfig])
@@ -425,6 +441,7 @@ function BugListPage() {
     setSearchInput(config.keyword || '')
     setStatusFilter(config.status_code || '')
     setSeverityFilter(config.severity_code || '')
+    setProductFilter(config.product_code || undefined)
     setDemandFilter(config.demand_id || undefined)
     setAssigneeFilter(config.assignee_id || undefined)
     setReporterFilter(config.reporter_id || undefined)
@@ -1279,12 +1296,26 @@ function BugListPage() {
               size="small"
               showSearch
               className="bug-list-page__filter-control bug-list-page__filter-control--sm"
-              value={severityFilter || undefined}
+              value={severityFilter}
               options={severityOptions}
               filterOption={pinyinSelectFilter}
               placeholder="严重程度"
               onChange={(value) => {
                 setSeverityFilter(String(value || ''))
+                setPage(1)
+              }}
+            />
+            <Select
+              size="small"
+              showSearch
+              className="bug-list-page__filter-control bug-list-page__filter-control--sm"
+              value={productFilter}
+              options={productOptions}
+              loading={productOptionsLoading}
+              filterOption={pinyinSelectFilter}
+              placeholder="产品模块"
+              onChange={(value) => {
+                setProductFilter(String(value || ''))
                 setPage(1)
               }}
             />
@@ -1499,19 +1530,51 @@ function BugListPage() {
         onSubmit={async (values, extra) => {
           setSubmitting(true)
           try {
-            const result = await createBugApi(values)
+            const baseDescription = stripPendingDescriptionImages(values.description)
+            const pendingDescriptionImages = Array.isArray(extra?.pendingDescriptionImages) ? extra.pendingDescriptionImages : []
+            const result = await createBugApi({
+              ...values,
+              description: baseDescription,
+            })
             if (!result?.success) {
               message.error(result?.message || '创建Bug失败')
               return
             }
             const bugId = Number(result?.data?.id || 0)
             const draftAttachments = extra?.draftAttachments || []
+            let uploadResult = { total: draftAttachments.length, successCount: 0, successes: [], failures: [] }
             if (bugId > 0 && draftAttachments.length > 0) {
-              const uploadResult = await uploadDraftAttachments(bugId, draftAttachments)
+              uploadResult = await uploadDraftAttachments(bugId, draftAttachments)
+            }
+
+            if (bugId > 0 && pendingDescriptionImages.length > 0) {
+              const tokenAttachmentMap = new Map()
+              const attachmentBySignature = new Map(
+                (Array.isArray(uploadResult.successes) ? uploadResult.successes : []).map((item) => [item.signature, item.attachment]),
+              )
+              pendingDescriptionImages.forEach((item) => {
+                const token = String(item?.token || '').trim()
+                const signature = String(item?.signature || '').trim()
+                if (!token || !signature) return
+                const attachment = attachmentBySignature.get(signature)
+                if (attachment) tokenAttachmentMap.set(token, attachment)
+              })
+              const finalDescription = replacePendingDescriptionImages(values.description, tokenAttachmentMap)
+              if (finalDescription && finalDescription !== baseDescription) {
+                const updateResult = await updateBugApi(bugId, {
+                  ...values,
+                  description: finalDescription,
+                  skip_notification: true,
+                })
+                if (!updateResult?.success) {
+                  message.warning(updateResult?.message || 'Bug已创建，但描述中的图片回填失败')
+                }
+              }
+            }
+
+            if (draftAttachments.length > 0) {
               if (uploadResult.failures.length > 0) {
-                message.warning(
-                  `Bug已创建，附件上传成功 ${uploadResult.successCount}/${uploadResult.total}，请在详情页补传失败附件`,
-                )
+                message.warning(`Bug已创建，附件上传成功 ${uploadResult.successCount}/${uploadResult.total}，请在详情页补传失败附件`)
               } else {
                 message.success(`Bug创建成功，已上传 ${uploadResult.successCount} 个附件`)
               }

@@ -1,0 +1,133 @@
+.bug-rich-text-editor {
+  border: 1px solid #c7ccd6;
+  border-radius: 10px;
+  background: #fcfdff;
+  overflow: hidden;
+}
+
+.bug-rich-text-editor--disabled {
+  opacity: 0.86;
+}
+
+.bug-rich-text-editor__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(199, 204, 214, 0.9);
+  background: linear-gradient(180deg, #f8fafc 0%, #f2f5f9 100%);
+}
+
+.bug-rich-text-editor__toolbar-btn.ant-btn {
+  min-width: 36px;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.bug-rich-text-editor__hint {
+  font-size: 12px;
+  color: #6b7484;
+}
+
+.bug-rich-text-editor .tiptap {
+  min-height: 260px;
+  padding: 12px 14px;
+  color: #1f2633;
+  line-height: 1.72;
+  outline: none;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.bug-rich-text-editor .tiptap p {
+  margin: 0 0 12px;
+}
+
+.bug-rich-text-editor .tiptap p:last-child {
+  margin-bottom: 0;
+}
+
+.bug-rich-text-editor .tiptap h2,
+.bug-rich-text-editor .tiptap h3 {
+  margin: 16px 0 10px;
+  line-height: 1.35;
+}
+
+.bug-rich-text-editor .tiptap ul,
+.bug-rich-text-editor .tiptap ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+
+.bug-rich-text-editor .tiptap blockquote {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-left: 3px solid #8fb0eb;
+  background: rgba(237, 243, 255, 0.72);
+  color: #445572;
+}
+
+.bug-rich-text-editor .tiptap pre {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  overflow: auto;
+  background: #151b28;
+  color: #e7edf8;
+}
+
+.bug-rich-text-editor .tiptap code {
+  padding: 0.08em 0.36em;
+  border-radius: 6px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}
+
+.bug-rich-text-editor .tiptap pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.bug-rich-text-editor .tiptap hr {
+  margin: 14px 0;
+  border: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.5);
+}
+
+.bug-rich-text-editor .tiptap a {
+  color: #25569d;
+  text-decoration: underline;
+}
+
+.bug-rich-text-editor .tiptap img {
+  display: block;
+  max-width: min(100%, 560px);
+  height: auto;
+  margin: 10px 0;
+  border-radius: 12px;
+  border: 1px solid rgba(197, 207, 223, 0.88);
+  background: #f8fafc;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.bug-rich-text-editor .tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+@media (max-width: 900px) {
+  .bug-rich-text-editor__toolbar {
+    align-items: flex-start;
+  }
+
+  .bug-rich-text-editor .tiptap {
+    min-height: 220px;
+    padding: 10px 12px;
+  }
+}

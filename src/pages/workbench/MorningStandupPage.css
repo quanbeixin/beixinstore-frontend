@@ -419,6 +419,42 @@
   flex-wrap: wrap;
 }
 
+.morning-demand-copyable {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.morning-demand-copyable__button.ant-btn {
+  flex: 0 0 auto;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 6px;
+  color: #94a3b8;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.18s ease,
+    color 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.morning-demand-copyable:hover .morning-demand-copyable__button,
+.morning-demand-copyable:focus-within .morning-demand-copyable__button {
+  opacity: 1;
+  visibility: visible;
+}
+
+.morning-demand-copyable__button.ant-btn:hover,
+.morning-demand-copyable__button.ant-btn:focus-visible {
+  color: #0369a1;
+  background: rgba(224, 242, 254, 0.92);
+}
+
 .morning-member-item-meta {
   margin-top: 6px;
   color: var(--morning-muted);

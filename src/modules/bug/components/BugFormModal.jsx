@@ -4,18 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getDictItemsApi } from '../../../api/configDict'
 import { getWorkDemandsApi } from '../../../api/work'
 import { getBugAssigneesApi } from '../../../api/bug'
-import { precheckDraftAttachment } from '../utils/attachmentUpload'
+import { buildAttachmentFileSignature, precheckDraftAttachment, uploadBugAttachmentFile } from '../utils/attachmentUpload'
+import {
+  BUG_DESCRIPTION_TEMPLATE_TEXT,
+  buildBugDescriptionInitialHtml,
+  createPendingDescriptionImageToken,
+  hasMeaningfulBugDescription,
+  sanitizeBugDescriptionHtml,
+} from '../utils/descriptionRichText'
+import BugRichTextEditor from './BugRichTextEditor'
 import { pinyinSelectFilter } from '../../../utils/selectSearch'
 import './bug-form-modal.css'
-
-const BUG_DESCRIPTION_TEMPLATE = `【前置条件】
-
-【复现步骤】
-
-【实际结果】
-
-【预期结果】
--`
 
 function isImageFile(file) {
   const mimeType = String(file?.type || file?.originFileObj?.type || '').toLowerCase()
@@ -45,6 +44,19 @@ function readFileAsDataUrl(file) {
 function buildUploadFileSignature(fileLike) {
   const rawFile = fileLike?.originFileObj instanceof File ? fileLike.originFileObj : fileLike
   return `${rawFile?.name || fileLike?.name || ''}|${rawFile?.size || fileLike?.size || 0}|${rawFile?.type || fileLike?.type || ''}`
+}
+
+function buildDraftUploadFile(file, token = '') {
+  const safeFile = file instanceof File ? file : null
+  if (!safeFile) return null
+  return {
+    uid: token || `bug-desc-${Date.now()}-${safeFile.size || 0}`,
+    name: safeFile.name || 'image.png',
+    status: 'done',
+    size: safeFile.size || 0,
+    type: safeFile.type || '',
+    originFileObj: safeFile,
+  }
 }
 
 function mergeUniqueUploadFiles(fileList = []) {
@@ -78,29 +90,6 @@ function mapAssigneeOptions(rows) {
   }))
 }
 
-function buildDescriptionInitialValue(initialValues = null) {
-  const description = String(initialValues?.description || '').trim()
-  if (description) return description
-
-  const reproduceSteps = String(initialValues?.reproduce_steps || '').trim()
-  const actualResult = String(initialValues?.actual_result || '').trim()
-  const expectedResult = String(initialValues?.expected_result || '').trim()
-  const hasLegacyContent = reproduceSteps || actualResult || expectedResult
-  if (!hasLegacyContent) return BUG_DESCRIPTION_TEMPLATE
-
-  return `【前置条件】
-
-【复现步骤】
-${reproduceSteps}
-
-【实际结果】
-${actualResult}
-
-【预期结果】
-${expectedResult}
--`
-}
-
 function BugFormModal({
   open,
   onCancel,
@@ -124,6 +113,8 @@ function BugFormModal({
   const [attachmentChecking, setAttachmentChecking] = useState(false)
   const [attachmentRejectList, setAttachmentRejectList] = useState([])
   const draftFileListRef = useRef([])
+  const pendingDescriptionImageMapRef = useRef(new Map())
+  const pendingDescriptionPreviewUrlSetRef = useRef(new Set())
   const pastedFileCountRef = useRef(0)
   const attachmentPasteDedupRef = useRef({ signature: '', timestamp: 0 })
   const attachmentCheckingCountRef = useRef(0)
@@ -140,6 +131,19 @@ function BugFormModal({
   const isCreateMode = !initialValues?.id
 
   const normalizedDemandPreset = String(demandIdPreset || '').trim()
+
+  const resetPendingDescriptionImages = useCallback(() => {
+    pendingDescriptionPreviewUrlSetRef.current.forEach((url) => {
+      if (!url) return
+      try {
+        URL.revokeObjectURL(url)
+      } catch (error) {
+        console.warn('revoke bug description preview url failed', error)
+      }
+    })
+    pendingDescriptionPreviewUrlSetRef.current = new Set()
+    pendingDescriptionImageMapRef.current = new Map()
+  }, [])
 
   const loadOptions = useCallback(async () => {
     setLoadingOptions(true)
@@ -188,6 +192,7 @@ function BugFormModal({
     if (open) return
     setDraftFileList([])
     draftFileListRef.current = []
+    resetPendingDescriptionImages()
     setPreviewOpen(false)
     setPreviewImage('')
     setPreviewType('image')
@@ -201,7 +206,11 @@ function BugFormModal({
     }
     setAttachmentChecking(false)
     setAttachmentRejectList([])
-  }, [open])
+  }, [open, resetPendingDescriptionImages])
+
+  useEffect(() => () => {
+    resetPendingDescriptionImages()
+  }, [resetPendingDescriptionImages])
 
   const handleAttachmentPaste = useCallback((event) => {
     if (event?.nativeEvent?.__bugFormAttachmentHandled) return
@@ -364,6 +373,65 @@ function BugFormModal({
     )
   }, [handleAttachmentPreview])
 
+  const handleDescriptionImageUpload = useCallback(async (file) => {
+    const currentFile = file instanceof File ? file : null
+    if (!currentFile) {
+      throw new Error('图片文件无效')
+    }
+
+    await precheckDraftAttachment(currentFile)
+
+    if (isCreateMode) {
+      const signature = buildAttachmentFileSignature(currentFile)
+      const existingSignatures = new Set(
+        (Array.isArray(draftFileListRef.current) ? draftFileListRef.current : []).map((item) => buildUploadFileSignature(item)),
+      )
+      const shouldAppendToDraftList = !existingSignatures.has(signature)
+      if (shouldAppendToDraftList && (draftFileListRef.current?.length || 0) >= 9) {
+        throw new Error('附件列表最多保留 9 个，无法再插入更多图片')
+      }
+
+      const token = createPendingDescriptionImageToken()
+      const previewUrl = URL.createObjectURL(currentFile)
+      pendingDescriptionPreviewUrlSetRef.current.add(previewUrl)
+      pendingDescriptionImageMapRef.current.set(token, {
+        signature,
+        fileName: currentFile.name || '图片',
+        objectUrl: previewUrl,
+      })
+
+      if (shouldAppendToDraftList) {
+        const nextDraftFiles = mergeUniqueUploadFiles([
+          ...(Array.isArray(draftFileListRef.current) ? draftFileListRef.current : []),
+          buildDraftUploadFile(currentFile, token),
+        ]).slice(0, 9)
+        draftFileListRef.current = nextDraftFiles
+        setDraftFileList(nextDraftFiles)
+      }
+
+      return {
+        src: previewUrl,
+        token,
+        alt: currentFile.name || '图片',
+        title: currentFile.name || '图片',
+      }
+    }
+
+    const bugId = Number(initialValues?.id || 0)
+    if (!bugId) {
+      throw new Error('当前Bug尚未创建，无法上传图片')
+    }
+
+    const uploaded = await uploadBugAttachmentFile(bugId, currentFile)
+    message.success('图片已插入描述，并同步到附件列表')
+    return {
+      src: uploaded?.download_url || uploaded?.object_url || '',
+      attachmentId: uploaded?.id || null,
+      alt: currentFile.name || '图片',
+      title: currentFile.name || '图片',
+    }
+  }, [initialValues?.id, isCreateMode])
+
   useEffect(() => {
     if (!open) return
     const nextDemandId = normalizedDemandPreset || String(initialValues?.demand_id || '').trim()
@@ -378,7 +446,7 @@ function BugFormModal({
       : []
     const nextValues = {
       title: initialValues?.title || '',
-      description: buildDescriptionInitialValue(initialValues),
+      description: buildBugDescriptionInitialHtml(initialValues),
       severity_code: initialValues?.severity_code || undefined,
       bug_type_code: initialValues?.bug_type_code || undefined,
       product_code: initialValues?.product_code || undefined,
@@ -399,15 +467,35 @@ function BugFormModal({
   const handleOk = useCallback(async () => {
     try {
       const values = await form.validateFields()
+      const normalizedDescription = sanitizeBugDescriptionHtml(values.description, { keepPendingImages: true })
+      const currentDraftAttachments = (Array.isArray(draftFileListRef.current) ? draftFileListRef.current : [])
+        .map((item) => item?.originFileObj || item)
+        .filter(Boolean)
+      if (!hasMeaningfulBugDescription(normalizedDescription)) {
+        form.setFields([{ name: 'description', errors: ['请输入Bug描述'] }])
+        return
+      }
+      if (normalizedDescription.length > 20000) {
+        form.setFields([{ name: 'description', errors: ['描述内容过长，请精简后再保存'] }])
+        return
+      }
       const normalizedAssigneeIds = Array.from(
         new Set((Array.isArray(values.assignee_ids) ? values.assignee_ids : []).map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0)),
       )
       const normalizedWatcherIds = Array.from(
         new Set((Array.isArray(values.watcher_ids) ? values.watcher_ids : []).map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0)),
       )
+      const pendingDescriptionImages = Array.from(pendingDescriptionImageMapRef.current.entries())
+        .filter(([token]) => normalizedDescription.includes(token))
+        .map(([token, item]) => ({
+          token,
+          signature: item?.signature || '',
+          fileName: item?.fileName || '',
+        }))
       await onSubmit?.(
         {
           ...values,
+          description: normalizedDescription,
           assignee_ids: normalizedAssigneeIds,
           assignee_id: normalizedAssigneeIds[0] || null,
           watcher_ids: normalizedWatcherIds,
@@ -417,14 +505,15 @@ function BugFormModal({
           issue_stage: values.issue_stage || null,
         },
         {
-          draftAttachments: draftFileList.map((item) => item?.originFileObj || item).filter(Boolean),
+          draftAttachments: currentDraftAttachments,
+          pendingDescriptionImages,
         },
       )
     } catch (error) {
       if (error?.errorFields) return
       message.error(error?.message || '保存Bug失败')
     }
-  }, [draftFileList, form, onSubmit])
+  }, [form, onSubmit])
 
   const isDrawer = presentation === 'drawer'
   const actionButtons = useMemo(
@@ -460,9 +549,21 @@ function BugFormModal({
           <Form.Item
             label="描述"
             name="description"
-            rules={[{ required: true, message: '请输入Bug描述' }]}
+            extra="支持基础排版，支持直接粘贴截图；新建时会在创建成功后自动把正文图片同步成Bug附件。"
+            rules={[
+              {
+                validator: async (_, value) => {
+                  if (hasMeaningfulBugDescription(value)) return
+                  throw new Error('请输入Bug描述')
+                },
+              },
+            ]}
           >
-            <Input.TextArea rows={9} maxLength={20000} placeholder={BUG_DESCRIPTION_TEMPLATE} />
+            <BugRichTextEditor
+              placeholder={BUG_DESCRIPTION_TEMPLATE_TEXT}
+              disabled={loadingOptions || confirmLoading}
+              onUploadImage={handleDescriptionImageUpload}
+            />
           </Form.Item>
 
           {showDraftAttachments ? (
@@ -498,7 +599,7 @@ function BugFormModal({
                     className="bug-form-modal__attachment-alert"
                     type="warning"
                     showIcon
-                    message={`最近有 ${attachmentRejectList.length} 个附件未通过预检`}
+                    title={`最近有 ${attachmentRejectList.length} 个附件未通过预检`}
                     description={
                       <div className="bug-form-modal__attachment-alert-list">
                         {attachmentRejectList.map((item, index) => (
@@ -609,15 +710,15 @@ function BugFormModal({
           preload="metadata"
         />
       ) : (
-        <Image
-          className="bug-form-modal__preview-image"
-          src={previewImage}
-          alt={previewTitle || '附件预览'}
-          preview={{
-            zIndex: 2100,
-            mask: <span className="bug-form-modal__image-mask-hint">点击放大</span>,
-          }}
-        />
+          <Image
+            className="bug-form-modal__preview-image"
+            src={previewImage}
+            alt={previewTitle || '附件预览'}
+            preview={{
+              zIndex: 2100,
+              cover: <span className="bug-form-modal__image-mask-hint">点击放大</span>,
+            }}
+          />
       )}
     </Modal>
   )

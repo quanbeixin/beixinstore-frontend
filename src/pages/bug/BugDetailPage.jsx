@@ -49,7 +49,9 @@ import {
   updateBugApi,
 } from '../../api/bug'
 import { BugFormModal, BugStatusFlow } from '../../modules/bug'
+import BugRichTextEditor from '../../modules/bug/components/BugRichTextEditor'
 import { precheckDraftAttachment, uploadCommentDraftAttachments } from '../../modules/bug/utils/attachmentUpload'
+import { isProbablyHtml, plainTextToRichTextHtml, sanitizeBugDescriptionHtml, createPendingDescriptionImageToken } from '../../modules/bug/utils/descriptionRichText'
 import { buildWorkflowTransitionMap, normalizeBugWorkflowTransitions } from '../../modules/bug/utils/workflow'
 import { getCurrentUser, hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
@@ -201,7 +203,7 @@ function BugDetailPage() {
   const currentUserId = Number(getCurrentUser()?.id || 0)
   const canUpdate = hasPermission('bug.update')
   const canTransition = hasPermission('bug.transition')
-  const canDelete = hasPermission('bug.delete')
+  const canDelete = true
   const canManageAllFields = hasPermission('bug.manage')
 
   const [loading, setLoading] = useState(false)
@@ -223,12 +225,18 @@ function BugDetailPage() {
   const [commentPreviewImage, setCommentPreviewImage] = useState('')
   const [commentPreviewType, setCommentPreviewType] = useState('image')
   const [commentPreviewTitle, setCommentPreviewTitle] = useState('')
+
+  const descriptionContentHtml = useMemo(() => {
+    const rawDescription = String(detail?.description || '').trim()
+    if (!rawDescription) return plainTextToRichTextHtml('-')
+    return isProbablyHtml(rawDescription) ? sanitizeBugDescriptionHtml(rawDescription) : plainTextToRichTextHtml(rawDescription)
+  }, [detail?.description])
   const [editingCommentId, setEditingCommentId] = useState(0)
   const [editingCommentValue, setEditingCommentValue] = useState('')
   const [editingCommentSubmitting, setEditingCommentSubmitting] = useState(false)
   const [replyingCommentId, setReplyingCommentId] = useState(0)
   const [replyValue, setReplyValue] = useState('')
-  const [replyMentionUserId, setReplyMentionUserId] = useState(null)
+  const [replyMentionUserIds, setReplyMentionUserIds] = useState([])
   const [replyDraftFileList, setReplyDraftFileList] = useState([])
   const replyDraftFileListRef = useRef([])
   const replyPasteDedupRef = useRef({ signature: '', timestamp: 0 })
@@ -299,9 +307,69 @@ function BugDetailPage() {
     commentDraftFileListRef.current = Array.isArray(commentDraftFileList) ? commentDraftFileList : []
   }, [commentDraftFileList])
 
+  const handleCommentImageUpload = useCallback(async (file) => {
+    const currentFile = file instanceof File ? file : null
+    if (!currentFile) throw new Error('图片文件无效')
+
+    await precheckDraftAttachment(currentFile)
+
+    const token = createPendingDescriptionImageToken()
+    const previewUrl = URL.createObjectURL(currentFile)
+
+    const nextDraftFiles = Array.isArray(commentDraftFileListRef.current) ? commentDraftFileListRef.current.slice() : []
+    const candidate = {
+      uid: token,
+      name: currentFile.name || 'image.png',
+      status: 'done',
+      size: currentFile.size || 0,
+      type: currentFile.type || '',
+      originFileObj: currentFile,
+    }
+    nextDraftFiles.push(candidate)
+    commentDraftFileListRef.current = nextDraftFiles
+    setCommentDraftFileList(nextDraftFiles)
+
+    return {
+      src: previewUrl,
+      token,
+      alt: currentFile.name || '图片',
+      title: currentFile.name || '图片',
+    }
+  }, [])
+
   useEffect(() => {
     replyDraftFileListRef.current = Array.isArray(replyDraftFileList) ? replyDraftFileList : []
   }, [replyDraftFileList])
+
+  const handleReplyImageUpload = useCallback(async (file) => {
+    const currentFile = file instanceof File ? file : null
+    if (!currentFile) throw new Error('图片文件无效')
+
+    await precheckDraftAttachment(currentFile)
+
+    const token = createPendingDescriptionImageToken()
+    const previewUrl = URL.createObjectURL(currentFile)
+
+    const nextDraftFiles = Array.isArray(replyDraftFileListRef.current) ? replyDraftFileListRef.current.slice() : []
+    const candidate = {
+      uid: token,
+      name: currentFile.name || 'image.png',
+      status: 'done',
+      size: currentFile.size || 0,
+      type: currentFile.type || '',
+      originFileObj: currentFile,
+    }
+    nextDraftFiles.push(candidate)
+    replyDraftFileListRef.current = nextDraftFiles
+    setReplyDraftFileList(nextDraftFiles)
+
+    return {
+      src: previewUrl,
+      token,
+      alt: currentFile.name || '图片',
+      title: currentFile.name || '图片',
+    }
+  }, [])
 
   const loadMentionUserOptions = useCallback(async () => {
     setMentionUserLoading(true)
@@ -1023,7 +1091,7 @@ function BugDetailPage() {
     setEditingCommentValue('')
     setReplyingCommentId(0)
     setReplyValue('')
-    setReplyMentionUserId(null)
+    setReplyMentionUserIds([])
   }, [commentForm])
 
   const handleSubmitComment = async () => {
@@ -1045,7 +1113,9 @@ function BugDetailPage() {
     try {
       const values = await commentForm.validateFields()
       const comment = String(values.comment || '').trim()
-      const mentionUserId = Number(values.mention_user_id || 0) || null
+      const mentionUserIds = Array.from(
+        new Set((Array.isArray(values.mention_user_ids) ? values.mention_user_ids : []).map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0)),
+      )
       if (!comment) {
         message.warning('评论内容不能为空')
         return
@@ -1054,7 +1124,7 @@ function BugDetailPage() {
       setCommentSubmitting(true)
       const result = await createBugCommentApi(bugId, {
         comment,
-        mention_user_id: mentionUserId,
+        mention_user_ids: mentionUserIds,
       })
       if (!result?.success) {
         message.error(result?.message || '评论发送失败')
@@ -1081,7 +1151,7 @@ function BugDetailPage() {
   const handleStartEditComment = useCallback((commentLog) => {
     setReplyingCommentId(0)
     setReplyValue('')
-    setReplyMentionUserId(null)
+    setReplyMentionUserIds([])
     replyDraftFileListRef.current = []
     setReplyDraftFileList([])
     setEditingCommentId(Number(commentLog?.id || 0))
@@ -1125,7 +1195,7 @@ function BugDetailPage() {
     setEditingCommentValue('')
     setReplyingCommentId(Number(commentLog?.id || 0))
     setReplyValue('')
-    setReplyMentionUserId(null)
+    setReplyMentionUserIds([])
     replyDraftFileListRef.current = []
     setReplyDraftFileList([])
   }, [])
@@ -1133,7 +1203,7 @@ function BugDetailPage() {
   const handleCancelReplyComment = useCallback(() => {
     setReplyingCommentId(0)
     setReplyValue('')
-    setReplyMentionUserId(null)
+    setReplyMentionUserIds([])
     replyDraftFileListRef.current = []
     setReplyDraftFileList([])
   }, [])
@@ -1141,7 +1211,9 @@ function BugDetailPage() {
   const handleSubmitReply = useCallback(async (parentComment) => {
     const parentCommentId = Number(parentComment?.id || 0)
     const nextComment = String(replyValue || '').trim()
-    const nextMentionUserId = Number(replyMentionUserId || 0) || null
+    const nextMentionUserIds = Array.from(
+      new Set((Array.isArray(replyMentionUserIds) ? replyMentionUserIds : []).map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0)),
+    )
     if (!parentCommentId) {
       message.warning('回复目标无效')
       return
@@ -1156,7 +1228,7 @@ function BugDetailPage() {
       const result = await createBugCommentApi(bugId, {
         comment: nextComment,
         parent_comment_id: parentCommentId,
-        mention_user_id: nextMentionUserId,
+        mention_user_ids: nextMentionUserIds,
       })
       if (!result?.success) {
         message.error(result?.message || '回复发送失败')
@@ -1172,7 +1244,7 @@ function BugDetailPage() {
       await syncCommentDetailAfterMutation(result, syncOptions)
       setReplyingCommentId(0)
       setReplyValue('')
-      setReplyMentionUserId(null)
+      setReplyMentionUserIds([])
       replyDraftFileListRef.current = []
       setReplyDraftFileList([])
     } catch (error) {
@@ -1183,7 +1255,7 @@ function BugDetailPage() {
   }, [
     bugId,
     replyDraftFileList,
-    replyMentionUserId,
+    replyMentionUserIds,
     replyValue,
     syncCommentDetailAfterMutation,
     uploadCommentAttachmentsAfterSubmit,
@@ -1339,7 +1411,10 @@ function BugDetailPage() {
                             <div className="bug-detail-page__tab-section-title">问题描述</div>
                             <Descriptions column={1} size="small">
                               <Descriptions.Item label="描述">
-                                <Paragraph className="bug-detail-page__description-content">{detail.description || '-'}</Paragraph>
+                                <div
+                                  className="bug-detail-page__description-content"
+                                  dangerouslySetInnerHTML={{ __html: descriptionContentHtml }}
+                                />
                               </Descriptions.Item>
                               <Descriptions.Item label="复现环境">
                                 <Paragraph>{detail.environment_info || '-'}</Paragraph>
@@ -1533,17 +1608,15 @@ function BugDetailPage() {
                               name="comment"
                               rules={[{ required: true, message: '请输入评论内容' }]}
                             >
-                              <Input.TextArea
-                                autoSize={{ minRows: 3, maxRows: 12 }}
-                                maxLength={20000}
-                                placeholder="输入评论内容，可选择@某人并发送通知"
-                                onPaste={(event) => {
-                                  void handleCommentAttachmentPaste(event)
-                                }}
+                              <BugRichTextEditor
+                                placeholder="输入评论内容，可选择@多人并发送通知"
+                                onUploadImage={handleCommentImageUpload}
+                                onChange={() => { /* Form will receive value via onChange prop from Form.Item */ }}
                               />
                             </Form.Item>
-                            <Form.Item label="@某人（可选）" name="mention_user_id">
+                            <Form.Item label="@某人（可选，可多选）" name="mention_user_ids">
                               <Select
+                                mode="multiple"
                                 showSearch
                                 allowClear
                                 placeholder="选择需要通知的人员"
@@ -1551,6 +1624,7 @@ function BugDetailPage() {
                                 loading={mentionUserLoading}
                                 filterOption={(input, option) => pinyinSelectFilter(input, option)}
                                 optionFilterProp="label"
+                                maxTagCount="responsive"
                               />
                             </Form.Item>
                             <Form.Item
@@ -1642,7 +1716,10 @@ function BugDetailPage() {
                                             </Space>
                                           </div>
                                         ) : item.remark ? (
-                                          <div className="bug-detail-page__log-remark">{item.remark}</div>
+                                          <div
+                                            className="bug-detail-page__log-remark"
+                                            dangerouslySetInnerHTML={{ __html: sanitizeBugDescriptionHtml(item.remark || '') }}
+                                          />
                                         ) : null}
                                       </div>
                                       <div className="bug-detail-page__comment-actions">
@@ -1686,7 +1763,7 @@ function BugDetailPage() {
                                                   height={72}
                                                   preview={{
                                                     zIndex: 2100,
-                                                    mask: <span className="bug-detail-page__image-mask-hint">点击放大</span>,
+                                                    cover: <span className="bug-detail-page__image-mask-hint">点击放大</span>,
                                                   }}
                                                 />
                                               ) : isVideo && attachmentUrl ? (
@@ -1740,26 +1817,26 @@ function BugDetailPage() {
                                     ) : null}
                                     {isReplyingCurrent ? (
                                       <div className="bug-detail-page__comment-reply-box">
-                                        <Input.TextArea
-                                          autoSize={{ minRows: 2, maxRows: 10 }}
-                                          maxLength={20000}
-                                          value={replyValue}
-                                          onChange={(event) => setReplyValue(event.target.value)}
-                                          placeholder={`回复 ${item.operator_name || '该评论'}...`}
-                                          onPaste={(event) => {
-                                            void handleReplyAttachmentPaste(event)
-                                          }}
-                                        />
+                                        <div onPaste={(event) => { void handleReplyAttachmentPaste(event) }}>
+                                          <BugRichTextEditor
+                                            value={replyValue}
+                                            onChange={(html) => setReplyValue(html)}
+                                            placeholder={`回复 ${item.operator_name || '该评论'}...`}
+                                            onUploadImage={handleReplyImageUpload}
+                                          />
+                                        </div>
                                         <Select
+                                          mode="multiple"
                                           showSearch
                                           allowClear
-                                          placeholder="选择需要通知的人员（可选）"
+                                          placeholder="选择需要通知的人员（可选，可多选）"
                                           options={mentionUserOptions}
                                           loading={mentionUserLoading}
                                           filterOption={(input, option) => pinyinSelectFilter(input, option)}
                                           optionFilterProp="label"
-                                          value={replyMentionUserId ?? undefined}
-                                          onChange={(value) => setReplyMentionUserId(value ?? null)}
+                                          value={replyMentionUserIds}
+                                          onChange={(value) => setReplyMentionUserIds(Array.isArray(value) ? value : [])}
+                                          maxTagCount="responsive"
                                         />
                                         <div
                                           className="bug-detail-page__comment-upload-zone bug-detail-page__comment-upload-zone--reply"
@@ -1821,12 +1898,11 @@ function BugDetailPage() {
                                                   <div className="bug-detail-page__log-time">{formatBeijingDateTime(reply.created_at)}</div>
                                                   {isEditingReply ? (
                                                     <div className="bug-detail-page__comment-editor">
-                                                      <Input.TextArea
-                                                        autoSize={{ minRows: 2, maxRows: 10 }}
-                                                        maxLength={20000}
+                                                      <BugRichTextEditor
                                                         value={editingCommentValue}
-                                                        onChange={(event) => setEditingCommentValue(event.target.value)}
+                                                        onChange={(html) => setEditingCommentValue(html)}
                                                         placeholder="请输入回复内容"
+                                                        onUploadImage={handleReplyImageUpload}
                                                       />
                                                       <Space size={8} className="bug-detail-page__comment-editor-actions">
                                                         <Button
@@ -1843,7 +1919,10 @@ function BugDetailPage() {
                                                       </Space>
                                                     </div>
                                                   ) : reply.remark ? (
-                                                    <div className="bug-detail-page__log-remark">{reply.remark}</div>
+                                                    <div
+                                                      className="bug-detail-page__log-remark"
+                                                      dangerouslySetInnerHTML={{ __html: sanitizeBugDescriptionHtml(reply.remark || '') }}
+                                                    />
                                                   ) : null}
                                                 </div>
                                                 <div className="bug-detail-page__comment-actions">
@@ -1879,7 +1958,7 @@ function BugDetailPage() {
                                                             height={72}
                                                             preview={{
                                                               zIndex: 2100,
-                                                              mask: <span className="bug-detail-page__image-mask-hint">点击放大</span>,
+                                                              cover: <span className="bug-detail-page__image-mask-hint">点击放大</span>,
                                                             }}
                                                           />
                                                         ) : isVideo && attachmentUrl ? (
@@ -1970,7 +2049,12 @@ function BugDetailPage() {
                                       </Text>
                                     </div>
                                     <div className="bug-detail-page__log-time">{formatBeijingDateTime(item.created_at)}</div>
-                                    {item.remark ? <div className="bug-detail-page__log-remark">{item.remark}</div> : null}
+                                    {item.remark ? (
+                                      <div
+                                        className="bug-detail-page__log-remark"
+                                        dangerouslySetInnerHTML={{ __html: sanitizeBugDescriptionHtml(item.remark || '') }}
+                                      />
+                                    ) : null}
                                   </div>
                                 </div>
                               ))}
@@ -2025,7 +2109,7 @@ function BugDetailPage() {
                   alt={commentPreviewTitle || '评论附件预览'}
                   preview={{
                     zIndex: 2100,
-                    mask: <span className="bug-detail-page__image-mask-hint">点击放大</span>,
+                    cover: <span className="bug-detail-page__image-mask-hint">点击放大</span>,
                   }}
                 />
               )}

@@ -57,6 +57,7 @@ const BASE_BUSINESS_ROLE_OPTIONS = [
   { label: '需求处理人', value: 'demand_owner' },
   { label: '节点负责人', value: 'node_owner' },
   { label: '任务负责人（被指派人）', value: 'node_assignee' },
+  { label: 'Bug关注人', value: 'bug_watcher' },
 ]
 const DAILY_REPORT_BUSINESS_ROLE_OPTIONS = [
   { label: '团队人数', value: 'daily_report_team_all' },
@@ -156,6 +157,11 @@ const CONDITION_FIELD_OPTIONS_BY_EVENT = {
     { label: '优先级', value: 'priority' },
     { label: '业务线ID', value: 'business_line_id' },
   ],
+  bug_update: [
+    { label: '缺陷ID', value: 'bug_id' },
+    { label: '操作人ID', value: 'operator_id' },
+    { label: '业务线ID', value: 'business_line_id' },
+  ],
   bug_assign: [
     { label: '缺陷ID', value: 'bug_id' },
     { label: '严重级别', value: 'severity' },
@@ -166,6 +172,19 @@ const CONDITION_FIELD_OPTIONS_BY_EVENT = {
     { label: '缺陷ID', value: 'bug_id' },
     { label: '旧状态', value: 'from_status' },
     { label: '新状态', value: 'to_status' },
+    { label: '打回原因', value: 'reject_reason' },
+    { label: '业务线ID', value: 'business_line_id' },
+  ],
+  bug_comment_create: [
+    { label: '缺陷ID', value: 'bug_id' },
+    { label: '评论ID', value: 'comment_log_id' },
+    { label: '操作人ID', value: 'operator_id' },
+    { label: '业务线ID', value: 'business_line_id' },
+  ],
+  bug_comment_update: [
+    { label: '缺陷ID', value: 'bug_id' },
+    { label: '评论ID', value: 'comment_log_id' },
+    { label: '操作人ID', value: 'operator_id' },
     { label: '业务线ID', value: 'business_line_id' },
   ],
   bug_fixed: [
@@ -282,8 +301,11 @@ const EVENT_TYPE_GROUPED_OPTIONS = [
     label: '缺陷',
     options: [
       { label: 'Bug创建', value: 'bug_create' },
+      { label: 'Bug编辑', value: 'bug_update' },
       { label: 'Bug指派', value: 'bug_assign' },
       { label: 'Bug状态变更', value: 'bug_status_change' },
+      { label: 'Bug评论新增', value: 'bug_comment_create' },
+      { label: 'Bug评论编辑', value: 'bug_comment_update' },
       { label: 'Bug已修复', value: 'bug_fixed' },
       { label: 'Bug重新打开', value: 'bug_reopen' },
     ],
@@ -352,7 +374,10 @@ const DEFAULT_RECEIVER_FIELD_BY_EVENT = {
   worklog_deadline_remind: 'user_id',
   bug_assign: 'assignee_id',
   bug_create: 'assignee_id',
+  bug_update: 'reporter_id',
   bug_status_change: 'assignee_id',
+  bug_comment_create: 'reporter_id',
+  bug_comment_update: 'reporter_id',
   bug_fixed: 'assignee_id',
   bug_reopen: 'assignee_id',
 }
@@ -502,6 +527,16 @@ const EVENT_VARIABLE_OPTIONS_BY_EVENT = {
     { label: '优先级', value: 'priority' },
     { label: '提交人姓名', value: 'reporter_name' },
     { label: '接收人姓名', value: 'assignee_name' },
+    { label: '关注人姓名', value: 'watcher_names' },
+  ],
+  bug_update: [
+    { label: '缺陷ID', value: 'bug_id' },
+    { label: '缺陷编号', value: 'bug_no' },
+    { label: '缺陷标题', value: 'bug_title' },
+    { label: '缺陷内容', value: 'bug_content' },
+    { label: '操作人姓名', value: 'operator_name' },
+    { label: '提交人姓名', value: 'reporter_name' },
+    { label: '关注人姓名', value: 'watcher_names' },
   ],
   bug_assign: [
     { label: '缺陷ID', value: 'bug_id' },
@@ -521,7 +556,28 @@ const EVENT_VARIABLE_OPTIONS_BY_EVENT = {
     { label: '缺陷内容', value: 'bug_content' },
     { label: '旧状态', value: 'from_status' },
     { label: '新状态', value: 'to_status' },
+    { label: '打回原因', value: 'reject_reason' },
+    { label: '打回原因展示文案', value: 'reject_reason_display' },
     { label: '操作人姓名', value: 'operator_name' },
+    { label: '关注人姓名', value: 'watcher_names' },
+  ],
+  bug_comment_create: [
+    { label: '缺陷ID', value: 'bug_id' },
+    { label: '缺陷编号', value: 'bug_no' },
+    { label: '缺陷标题', value: 'bug_title' },
+    { label: '评论ID', value: 'comment_log_id' },
+    { label: '评论内容', value: 'comment_content' },
+    { label: '操作人姓名', value: 'operator_name' },
+    { label: '关注人姓名', value: 'watcher_names' },
+  ],
+  bug_comment_update: [
+    { label: '缺陷ID', value: 'bug_id' },
+    { label: '缺陷编号', value: 'bug_no' },
+    { label: '缺陷标题', value: 'bug_title' },
+    { label: '评论ID', value: 'comment_log_id' },
+    { label: '评论内容', value: 'comment_content' },
+    { label: '操作人姓名', value: 'operator_name' },
+    { label: '关注人姓名', value: 'watcher_names' },
   ],
   bug_fixed: [
     { label: '缺陷ID', value: 'bug_id' },
@@ -939,6 +995,21 @@ function buildMockEventData(sceneCode, businessLineId, now, currentUser = null) 
       priority: 'P1',
       reporter_name: '李四',
       assignee_name: '张三',
+      watcher_names: '王五、赵六',
+    }
+  }
+
+  if (sceneCode === 'bug_update') {
+    return {
+      ...base,
+      bug_id: 10001,
+      demand_id: 'REQ20260407001',
+      bug_no: 'BUG-10001',
+      bug_title: '支付页优惠金额显示错误',
+      bug_content: '修改严重程度和描述后，关注人需要收到通知。',
+      reporter_name: '李四',
+      operator_name: '张三',
+      watcher_names: '王五、赵六',
     }
   }
 
@@ -952,7 +1023,37 @@ function buildMockEventData(sceneCode, businessLineId, now, currentUser = null) 
       bug_content: '切换业务线筛选条件后，列表仍显示旧数据。',
       from_status: '处理中',
       to_status: '待验证',
+      reject_reason: '验证不通过，问题仍然存在',
       operator_name: '王五',
+      watcher_names: '赵六、孙七',
+    }
+  }
+
+  if (sceneCode === 'bug_comment_create') {
+    return {
+      ...base,
+      bug_id: 10005,
+      demand_id: 'REQ20260407001',
+      bug_no: 'BUG-10005',
+      bug_title: '登录页验证码偶发不显示',
+      comment_log_id: 8801,
+      comment_content: '我这边复现到了，怀疑和 CDN 缓存有关。',
+      operator_name: '张三',
+      watcher_names: '王五、赵六',
+    }
+  }
+
+  if (sceneCode === 'bug_comment_update') {
+    return {
+      ...base,
+      bug_id: 10006,
+      demand_id: 'REQ20260407001',
+      bug_no: 'BUG-10006',
+      bug_title: '导出结果缺少筛选条件',
+      comment_log_id: 8802,
+      comment_content: '已补充复现环境：仅线上可见，测试环境正常。',
+      operator_name: '李四',
+      watcher_names: '王五、赵六',
     }
   }
 
@@ -2140,7 +2241,7 @@ function NotificationRulesPage() {
                   <Alert
                     type="info"
                     showIcon
-                    message="规则会在计划时间触发，并按“业务事件类型”解析变量。"
+                    title="规则会在计划时间触发，并按“业务事件类型”解析变量。"
                     style={{ marginBottom: 8 }}
                   />
                 </>
@@ -2424,7 +2525,7 @@ function NotificationRulesPage() {
             showIcon
             type="info"
             style={{ marginTop: 12 }}
-            message="保存前摘要"
+            title="保存前摘要"
             description={`事件类型：${EVENT_TYPE_LABEL_MAP[String(effectiveEventType || '').toLowerCase()] || '未选择'}；接收配置：${receiverSummaryText}`}
           />
 

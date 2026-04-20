@@ -86,6 +86,61 @@
   padding-bottom: 8px;
 }
 
+.work-demand-list__name-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+}
+
+.work-demand-list__name-trigger.ant-btn.ant-btn-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  height: auto;
+}
+
+.work-demand-list__name-text {
+  display: inline-block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.work-demand-list__name-copy.ant-btn {
+  flex: 0 0 auto;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  color: #8ca0c0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.18s ease,
+    color 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.work-demand-list__name-cell:hover .work-demand-list__name-copy,
+.work-demand-list__name-cell:focus-within .work-demand-list__name-copy {
+  opacity: 1;
+  visibility: visible;
+}
+
+.work-demand-list__name-copy.ant-btn:hover,
+.work-demand-list__name-copy.ant-btn:focus-visible {
+  color: #1d4f91;
+  background: rgba(226, 236, 251, 0.88);
+}
+
 .work-demand-list__launch-group-row > td {
   border-top: 1px solid rgba(148, 185, 235, 0.32);
   border-bottom: 1px solid rgba(148, 185, 235, 0.32);
