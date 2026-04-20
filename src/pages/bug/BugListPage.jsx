@@ -875,7 +875,6 @@ function BugListPage() {
         const requiredLabels = []
         if (Number(item?.require_remark) === 1) requiredLabels.push('备注')
         if (Number(item?.require_fix_solution) === 1) requiredLabels.push('修复方案&影响范围')
-        if (Number(item?.require_verify_result) === 1) requiredLabels.push('验证结果')
         const suffix = requiredLabels.length > 0 ? `（需填写${requiredLabels.join('、')}）` : ''
         options.push({
           label: `${String(item?.action_name || '').trim() || statusName}${suffix}`,
@@ -900,7 +899,6 @@ function BugListPage() {
           to_status_code: toStatusCode,
           remark: extraPayload.remark || undefined,
           fix_solution: extraPayload.fix_solution || undefined,
-          verify_result: extraPayload.verify_result || undefined,
         }
         const result = await transitionBugApi(bugId, payload)
 
@@ -933,8 +931,7 @@ function BugListPage() {
       }
       const requireAnyField =
         Number(transition?.require_remark) === 1 ||
-        Number(transition?.require_fix_solution) === 1 ||
-        Number(transition?.require_verify_result) === 1
+        Number(transition?.require_fix_solution) === 1
       if (requireAnyField) {
         transitionForm.resetFields()
         setStatusDialog({
@@ -958,7 +955,6 @@ function BugListPage() {
       const payload = {
         remark: String(values.remark || '').trim(),
         fix_solution: String(values.fix_solution || '').trim(),
-        verify_result: String(values.verify_result || '').trim(),
       }
       await runQuickTransition(bug, transition, payload)
       setStatusDialog({ open: false, bug: null, transition: null })
@@ -1622,15 +1618,6 @@ function BugListPage() {
               rules={[{ required: true, message: '请输入修复方案&影响范围' }]}
             >
               <Input.TextArea rows={3} maxLength={2000} placeholder="请输入修复方案与影响范围" />
-            </Form.Item>
-          ) : null}
-          {Number(statusDialog.transition?.require_verify_result) === 1 ? (
-            <Form.Item
-              label="验证结果"
-              name="verify_result"
-              rules={[{ required: true, message: '请输入验证结果' }]}
-            >
-              <Input.TextArea rows={3} maxLength={2000} placeholder="请输入验证结果" />
             </Form.Item>
           ) : null}
         </Form>

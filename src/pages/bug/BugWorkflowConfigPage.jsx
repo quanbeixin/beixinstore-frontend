@@ -72,7 +72,6 @@ function buildClientRow(seed = {}, index = 0) {
     sort_order: toSortOrder(seed?.sort_order, (index + 1) * 10),
     require_remark: toBooleanNumber(seed?.require_remark, 0),
     require_fix_solution: toBooleanNumber(seed?.require_fix_solution, 0),
-    require_verify_result: toBooleanNumber(seed?.require_verify_result, 0),
   }
 }
 
@@ -89,7 +88,6 @@ function buildClientRowsFromTransitions(rows = []) {
       toSortOrder(item?.sort_order, (index + 1) * 10),
       Number(item?.require_remark) === 1 ? 1 : 0,
       Number(item?.require_fix_solution) === 1 ? 1 : 0,
-      Number(item?.require_verify_result) === 1 ? 1 : 0,
     ].join('|')
 
     if (!grouped.has(key)) {
@@ -167,7 +165,6 @@ function BugWorkflowConfigPage() {
             sort_order: maxSort + 10,
             require_remark: 0,
             require_fix_solution: 0,
-            require_verify_result: 0,
           },
           prev.length,
         ),
@@ -202,7 +199,6 @@ function BugWorkflowConfigPage() {
         sort_order: toSortOrder(item?.sort_order, (index + 1) * 10),
         require_remark: toBooleanNumber(item?.require_remark, 0),
         require_fix_solution: toBooleanNumber(item?.require_fix_solution, 0),
-        require_verify_result: toBooleanNumber(item?.require_verify_result, 0),
       }
       const targetCodes = toCodeList(item?.to_status_codes || item?.to_status_code)
 
@@ -366,20 +362,6 @@ function BugWorkflowConfigPage() {
             checked={Number(value) === 1}
             disabled={!editable}
             onChange={(checked) => updateRow(row.client_key, { require_fix_solution: checked ? 1 : 0 })}
-          />
-        ),
-      },
-      {
-        title: '验证结果必填',
-        dataIndex: 'require_verify_result',
-        key: 'require_verify_result',
-        width: 114,
-        render: (value, row) => (
-          <Switch
-            size="small"
-            checked={Number(value) === 1}
-            disabled={!editable}
-            onChange={(checked) => updateRow(row.client_key, { require_verify_result: checked ? 1 : 0 })}
           />
         ),
       },

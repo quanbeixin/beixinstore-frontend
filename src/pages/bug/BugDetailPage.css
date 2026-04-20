@@ -461,6 +461,15 @@
   line-height: 1.6;
 }
 
+.bug-detail-page__repair-content,
+.bug-detail-page__repair-text {
+  color: #3a4558;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
 .bug-detail-page__comment-actions {
   display: flex;
   gap: 8px;
