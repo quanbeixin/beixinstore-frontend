@@ -1,6 +1,6 @@
 import { Button, DatePicker, Input, InputNumber, Modal, Popconfirm, Select, Tag, Typography, message } from 'antd'
 import dayjs from 'dayjs'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { WorkflowInspector } from '../../workflow'
 import { getDemandWorkflowNodeDisplayName } from '../utils/demandWorkflow.mapper'
 import { getCurrentUser } from '../../../utils/access'
@@ -174,6 +174,38 @@ function DemandNodeInspector({
   const canEditTaskDetails =
     canManageWorkflow && isCurrentNode && canAssignSelectedWorkflowNode && !workflowActionBusy && !workflowSubmitting
   const hasTasks = selectedWorkflowNodeTasks.length > 0
+  const workflowAssigneeLabelMap = useMemo(() => {
+    const map = new Map()
+    ;(Array.isArray(workflowAssigneeOptions) ? workflowAssigneeOptions : []).forEach((item) => {
+      const userId = Number(item?.value)
+      if (!Number.isInteger(userId) || userId <= 0) return
+      const label = String(item?.label || '').trim()
+      if (!map.has(userId)) {
+        map.set(userId, label || `用户${userId}`)
+      }
+    })
+    return map
+  }, [workflowAssigneeOptions])
+  const readonlyAssigneeText = (() => {
+    const selectedIds = Array.from(
+      new Set(
+        (Array.isArray(node?.assignee_user_ids) ? node.assignee_user_ids : [])
+          .map((item) => Number(item))
+          .filter((item) => Number.isInteger(item) && item > 0),
+      ),
+    )
+    if (selectedIds.length > 0) {
+      return selectedIds
+        .map((userId, index) => {
+          if (index === 0) {
+            return workflowAssigneeLabelMap.get(userId) || node?.assignee_name || `用户${userId}`
+          }
+          return workflowAssigneeLabelMap.get(userId) || `用户${userId}`
+        })
+        .join('、')
+    }
+    return node?.assignee_name || '-'
+  })()
   const [taskDrafts, setTaskDrafts] = useState({})
   const buildQuickTaskDraft = () => ({
     task_title: summaryTitle || '',
@@ -191,12 +223,18 @@ function DemandNodeInspector({
 
   const handleParticipantsChange = (value) => {
     const previousUserIds = Array.isArray(workflowParticipantUserIds) ? workflowParticipantUserIds : []
-    const nextUserId = Number(value)
-    const nextUserIds = Number.isInteger(nextUserId) && nextUserId > 0 ? [nextUserId] : []
+    const nextUserIds = Array.from(
+      new Set(
+        (Array.isArray(value) ? value : [value])
+          .map((item) => Number(item))
+          .filter((item) => Number.isInteger(item) && item > 0),
+      ),
+    )
+    const nextPrimaryUserId = nextUserIds.length > 0 ? nextUserIds[0] : null
     onWorkflowParticipantsChange?.(nextUserIds)
     Promise.resolve(
       onSaveWorkflowOwner?.({
-        assignee_user_id: nextUserId || null,
+        assignee_user_id: nextPrimaryUserId,
         assignee_user_ids: nextUserIds,
       }),
     ).then((saved) => {
@@ -350,25 +388,27 @@ function DemandNodeInspector({
             </div>
 
             <div className="demand-node-inspector__info-grid">
-              <div className="demand-node-inspector__info-cell">
-                <span className="demand-node-inspector__label">节点负责人</span>
-                {canManageWorkflow ? (
-                  <Select
-                    showSearch
-                    optionFilterProp="label"
-                    filterOption={pinyinSelectFilter}
-                    value={workflowParticipantUserIds?.[0]}
-                    options={workflowAssigneeOptions}
-                    placeholder="选择节点负责人"
-                    disabled={!canEditArrangement}
-                    onChange={handleParticipantsChange}
-                  />
-                ) : (
-                  <Text className="demand-node-inspector__value-text">
-                    {node.assignee_name || '-'}
-                  </Text>
-                )}
-              </div>
+	              <div className="demand-node-inspector__info-cell">
+	                <span className="demand-node-inspector__label">节点负责人</span>
+	                {canManageWorkflow ? (
+	                  <Select
+	                    mode="multiple"
+	                    showSearch
+	                    optionFilterProp="label"
+	                    filterOption={pinyinSelectFilter}
+	                    maxTagCount="responsive"
+	                    value={Array.isArray(workflowParticipantUserIds) ? workflowParticipantUserIds : []}
+	                    options={workflowAssigneeOptions}
+	                    placeholder="选择节点负责人（可多选）"
+	                    disabled={!canEditArrangement}
+	                    onChange={handleParticipantsChange}
+	                  />
+	                ) : (
+	                  <Text className="demand-node-inspector__value-text">
+	                    {readonlyAssigneeText}
+	                  </Text>
+	                )}
+	              </div>
 
               <div className="demand-node-inspector__info-cell demand-node-inspector__info-cell--schedule">
                 <span className="demand-node-inspector__label">排期</span>

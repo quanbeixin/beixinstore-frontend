@@ -643,14 +643,90 @@ function normalizeParticipantRoleUserMap(value, participantRoles = []) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const roleSet = new Set(normalizeParticipantRoles(participantRoles))
   const result = {}
-  Object.entries(value).forEach(([roleKey, userIdRaw]) => {
+  Object.entries(value).forEach(([roleKey, userIdsRaw]) => {
     const role = String(roleKey || '').trim().replace(/\s+/g, '_').toUpperCase()
-    const userId = Number(userIdRaw)
     if (!role || !roleSet.has(role)) return
-    if (!Number.isInteger(userId) || userId <= 0) return
-    result[role] = userId
+    const userIds = Array.from(
+      new Set(
+        (Array.isArray(userIdsRaw) ? userIdsRaw : [userIdsRaw])
+          .map((item) => Number(item))
+          .filter((item) => Number.isInteger(item) && item > 0),
+      ),
+    )
+    if (userIds.length === 0) return
+    result[role] = userIds
   })
   return result
+}
+
+function parseWorkflowNodeParticipantRoles(node) {
+  const directRoles = normalizeParticipantRoles(node?.participant_roles)
+  if (directRoles.length > 0) return directRoles
+  const rawRemark = String(node?.remark || '').trim()
+  if (!rawRemark) return []
+  try {
+    const parsed = JSON.parse(rawRemark)
+    if (!parsed || typeof parsed !== 'object') return []
+    return normalizeParticipantRoles(parsed?.participant_roles || parsed?.participantRoles || [])
+  } catch {
+    return []
+  }
+}
+
+function isWorkflowNodeClosedStatus(status) {
+  const normalizedStatus = String(status || '').trim().toUpperCase()
+  return normalizedStatus === 'DONE' || normalizedStatus === 'CANCELLED' || normalizedStatus === 'CANCELED'
+}
+
+function buildRoleSyncAssignTargets({
+  workflow,
+  participantRoleUserMap = {},
+} = {}) {
+  const nodes = Array.isArray(workflow?.nodes) ? workflow.nodes : []
+  const currentNodeKeySet = new Set(
+    (Array.isArray(workflow?.current_nodes) && workflow.current_nodes.length > 0
+      ? workflow.current_nodes
+      : (workflow?.current_node ? [workflow.current_node] : []))
+      .map((item) => String(item?.node_key || '').trim().toUpperCase())
+      .filter(Boolean),
+  )
+  return nodes
+    .map((node, index) => {
+      const nodeKey = String(node?.node_key || '').trim().toUpperCase()
+      if (!nodeKey) return null
+      if (!currentNodeKeySet.has(nodeKey)) return null
+
+      const participantRoles = parseWorkflowNodeParticipantRoles(node)
+      if (participantRoles.length === 0) return null
+
+      const candidateUserIds = Array.from(
+        new Set(
+          participantRoles
+            .flatMap((role) =>
+              Array.isArray(participantRoleUserMap?.[role]) ? participantRoleUserMap[role] : [],
+            )
+            .map((item) => Number(item))
+            .filter((item) => Number.isInteger(item) && item > 0),
+        ),
+      )
+
+      const closedStatus = isWorkflowNodeClosedStatus(node?.status)
+      if (closedStatus || candidateUserIds.length === 0) return null
+
+      return {
+        node_key: nodeKey,
+        node_name: String(node?.phase_name || node?.node_name || nodeKey).trim() || nodeKey,
+        sort_order: Number.isFinite(Number(node?.sort_order)) ? Number(node.sort_order) : index + 1,
+        candidate_user_ids: candidateUserIds,
+      }
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftOrder = Number(left?.sort_order || 0)
+      const rightOrder = Number(right?.sort_order || 0)
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder
+      return String(left?.node_key || '').localeCompare(String(right?.node_key || ''), 'zh-CN')
+    })
 }
 
 function filterTemplateNodesByParticipantRoles(nodes, participantRoles = []) {
@@ -750,7 +826,6 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [saveViewForm] = Form.useForm()
   const modalTemplateId = Form.useWatch('template_id', form)
   const modalParticipantRoles = Form.useWatch('participant_roles', form)
-  const modalParticipantRoleUserMap = Form.useWatch('participant_role_user_map', form)
   const modalOwnerUserId = Form.useWatch('owner_user_id', form)
   const modalProjectManager = Form.useWatch('project_manager', form)
   const modalGroupChatMode = Form.useWatch('group_chat_mode', form)
@@ -820,6 +895,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [detailTemplateId, setDetailTemplateId] = useState()
   const [detailParticipantRoles, setDetailParticipantRoles] = useState(DEFAULT_DEMAND_PARTICIPANT_ROLES)
   const [detailParticipantRoleUserMap, setDetailParticipantRoleUserMap] = useState({})
+  const [modalParticipantRoleUserMapState, setModalParticipantRoleUserMapState] = useState({})
   const [detailProjectManager, setDetailProjectManager] = useState()
   const [detailBusinessGroupCode, setDetailBusinessGroupCode] = useState(undefined)
   const [detailHealthStatus, setDetailHealthStatus] = useState('green')
@@ -1028,10 +1104,12 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const ownerOptions = useMemo(() => {
     const map = new Map()
     users.forEach((user) => {
+      const userId = Number(user?.id)
+      if (!Number.isInteger(userId) || userId <= 0) return
       const displayName = user.real_name || user.username
-      if (!map.has(user.id)) {
-        map.set(user.id, {
-          value: user.id,
+      if (!map.has(userId)) {
+        map.set(userId, {
+          value: userId,
           label: displayName,
         })
       }
@@ -1046,10 +1124,11 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       })
     })
 
-    if (currentUser?.id && !map.has(currentUser.id)) {
+    const currentUserId = Number(currentUser?.id)
+    if (Number.isInteger(currentUserId) && currentUserId > 0 && !map.has(currentUserId)) {
       const displayName = currentUser.real_name || currentUser.username || '当前用户'
-      map.set(currentUser.id, {
-        value: currentUser.id,
+      map.set(currentUserId, {
+        value: currentUserId,
         label: displayName,
       })
     }
@@ -1236,15 +1315,25 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     return map
   }, [ownerOptions])
 
+  const roleSyncUserLabelMap = useMemo(() => {
+    const map = new Map(ownerLabelMap)
+    workflowAssigneeOptions.forEach((item) => {
+      const userId = Number(item?.value || 0)
+      if (!Number.isInteger(userId) || userId <= 0) return
+      map.set(userId, String(item?.label || '').trim() || `用户${userId}`)
+    })
+    return map
+  }, [ownerLabelMap, workflowAssigneeOptions])
+
   const modalRoleAssignmentRows = useMemo(() => {
     const normalizedRoles = normalizeParticipantRoles(modalParticipantRoles)
-    const mapValue = normalizeParticipantRoleUserMap(modalParticipantRoleUserMap, normalizedRoles)
+    const mapValue = normalizeParticipantRoleUserMap(modalParticipantRoleUserMapState, normalizedRoles)
     return normalizedRoles.map((roleKey) => ({
       roleKey,
       roleLabel: participantRoleLabelMap.get(roleKey) || roleKey,
-      userId: mapValue[roleKey] || undefined,
+      userIds: Array.isArray(mapValue[roleKey]) ? mapValue[roleKey] : [],
     }))
-  }, [modalParticipantRoles, modalParticipantRoleUserMap, participantRoleLabelMap])
+  }, [modalParticipantRoles, modalParticipantRoleUserMapState, participantRoleLabelMap])
 
   const detailRoleAssignmentRows = useMemo(() => {
     const normalizedRoles = normalizeParticipantRoles(detailParticipantRoles)
@@ -1252,7 +1341,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     return normalizedRoles.map((roleKey) => ({
       roleKey,
       roleLabel: participantRoleLabelMap.get(roleKey) || roleKey,
-      userId: mapValue[roleKey] || undefined,
+      userIds: Array.isArray(mapValue[roleKey]) ? mapValue[roleKey] : [],
     }))
   }, [detailParticipantRoles, detailParticipantRoleUserMap, participantRoleLabelMap])
 
@@ -1554,6 +1643,17 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   )
 
   const selectedWorkflowNodeAssigneeIds = useMemo(() => {
+    const assigneeIdsFromNode = Array.from(
+      new Set(
+        (Array.isArray(selectedWorkflowNode?.assignee_user_ids)
+          ? selectedWorkflowNode.assignee_user_ids
+          : [])
+          .map((item) => Number(item))
+          .filter((item) => Number.isInteger(item) && item > 0),
+      ),
+    )
+    if (assigneeIdsFromNode.length > 0) return assigneeIdsFromNode
+
     const nodeAssigneeUserId = Number(selectedWorkflowNode?.assignee_user_id)
     if (Number.isInteger(nodeAssigneeUserId) && nodeAssigneeUserId > 0) {
       return [nodeAssigneeUserId]
@@ -2052,6 +2152,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       status: 'TODO',
       priority: 'P1',
     })
+    setModalParticipantRoleUserMapState({})
   }
 
   const openEditModal = useCallback((record) => {
@@ -2063,6 +2164,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setModalOpen(true)
     previousCreateOwnerIdRef.current = null
     form.resetFields()
+    const initialRoleUserMap = normalizeParticipantRoleUserMap(
+      record.participant_role_user_map,
+      Array.isArray(record.participant_roles) ? record.participant_roles : DEFAULT_DEMAND_PARTICIPANT_ROLES,
+    )
     form.setFieldsValue({
       name: record.name,
       owner_user_id: record.owner_user_id,
@@ -2071,10 +2176,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         Array.isArray(record.participant_roles) && record.participant_roles.length > 0
           ? record.participant_roles
           : DEFAULT_DEMAND_PARTICIPANT_ROLES,
-      participant_role_user_map: normalizeParticipantRoleUserMap(
-        record.participant_role_user_map,
-        Array.isArray(record.participant_roles) ? record.participant_roles : DEFAULT_DEMAND_PARTICIPANT_ROLES,
-      ),
+      participant_role_user_map: initialRoleUserMap,
       project_manager: record.project_manager ? Number(record.project_manager) : undefined,
       health_status: record.health_status || 'green',
       actual_start_time: toNullableDateTimeValue(record.actual_start_time),
@@ -2094,6 +2196,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       priority: record.priority,
       description: record.description || '',
     })
+    setModalParticipantRoleUserMapState(initialRoleUserMap)
   }, [canEditDemandRecord, defaultProjectTemplateId, form])
 
   const closeModal = () => {
@@ -2101,6 +2204,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setEditingDemand(null)
     previousCreateOwnerIdRef.current = null
     form.resetFields()
+    setModalParticipantRoleUserMapState({})
   }
 
   useEffect(() => {
@@ -2130,11 +2234,11 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   useEffect(() => {
     if (!modalOpen) return
     const normalizedRoles = normalizeParticipantRoles(modalParticipantRoles)
-    const currentMap = normalizeParticipantRoleUserMap(
-      form.getFieldValue('participant_role_user_map'),
-      normalizedRoles,
-    )
-    form.setFieldValue('participant_role_user_map', currentMap)
+    setModalParticipantRoleUserMapState((prev) => {
+      const currentMap = normalizeParticipantRoleUserMap(prev, normalizedRoles)
+      form.setFieldValue('participant_role_user_map', currentMap)
+      return currentMap
+    })
   }, [modalOpen, modalParticipantRoles, form])
 
   useEffect(() => {
@@ -2163,7 +2267,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         template_id: values.template_id,
         participant_roles: normalizeParticipantRoles(values.participant_roles),
         participant_role_user_map: normalizeParticipantRoleUserMap(
-          form.getFieldValue('participant_role_user_map'),
+          modalParticipantRoleUserMapState,
           values.participant_roles,
         ),
         project_manager: values.project_manager ?? null,
@@ -2211,19 +2315,26 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     }
   }
 
-  const handleModalRoleUserChange = useCallback((roleKey, userId) => {
+  const handleModalRoleUserChange = useCallback((roleKey, userIds) => {
     const normalizedRole = String(roleKey || '').trim().toUpperCase()
     if (!normalizedRole) return
-    const currentMap = normalizeParticipantRoleUserMap(
-      form.getFieldValue('participant_role_user_map'),
-      modalParticipantRoles,
+    const normalizedUserIds = Array.from(
+      new Set(
+        (Array.isArray(userIds) ? userIds : [userIds])
+          .map((item) => Number(item))
+          .filter((item) => Number.isInteger(item) && item > 0),
+      ),
     )
-    if (!userId) {
-      delete currentMap[normalizedRole]
-    } else {
-      currentMap[normalizedRole] = Number(userId)
-    }
-    form.setFieldValue('participant_role_user_map', currentMap)
+    setModalParticipantRoleUserMapState((prev) => {
+      const currentMap = normalizeParticipantRoleUserMap(prev, modalParticipantRoles)
+      if (normalizedUserIds.length === 0) {
+        delete currentMap[normalizedRole]
+      } else {
+        currentMap[normalizedRole] = normalizedUserIds
+      }
+      form.setFieldValue('participant_role_user_map', currentMap)
+      return currentMap
+    })
   }, [form, modalParticipantRoles])
 
   const fetchDemandRelatedLogs = useCallback(
@@ -2460,14 +2571,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     const hasManualSchedule = Boolean(manualPlannedStartAt || manualPlannedEndAt)
     const nextStartAt = hasManualSchedule ? manualPlannedStartAt : selectedWorkflowNodeDerivedSchedule.startAt
     const nextEndAt = hasManualSchedule ? manualPlannedEndAt : selectedWorkflowNodeDerivedSchedule.endAt
-    if (selectedWorkflowNode.assignee_user_id) {
-      setWorkflowParticipantUserIds([Number(selectedWorkflowNode.assignee_user_id)])
-    } else {
-      setWorkflowParticipantUserIds([])
-    }
+    setWorkflowParticipantUserIds(selectedWorkflowNodeAssigneeIds)
     setWorkflowDueAt(nextEndAt)
     setWorkflowExpectedStartAt(nextStartAt)
-  }, [selectedWorkflowNode, selectedWorkflowNodeDerivedSchedule])
+  }, [selectedWorkflowNode, selectedWorkflowNodeAssigneeIds, selectedWorkflowNodeDerivedSchedule])
 
   useEffect(() => {
     if (!requestedWorkflowNodeKey) return
@@ -2824,9 +2931,99 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     }
   }, [canEditDemandRecord, refreshListAndDetail])
 
+  const syncRoleAssigneesToWorkflowNodes = useCallback(async ({
+    participantRoles = [],
+    participantRoleUserMap = {},
+  } = {}) => {
+    if (!detailDemand?.id || !canManageWorkflow) {
+      return {
+        targetCount: 0,
+        syncedCount: 0,
+        failedCount: 0,
+        failedNodes: [],
+      }
+    }
+
+    const normalizedRoles = normalizeParticipantRoles(participantRoles)
+    const normalizedRoleUserMap = normalizeParticipantRoleUserMap(participantRoleUserMap, normalizedRoles)
+
+    let workflowSnapshot = workflowData
+    try {
+      const latestWorkflowResult = await getDemandWorkflowApi(detailDemand.id)
+      if (latestWorkflowResult?.success && latestWorkflowResult?.data) {
+        workflowSnapshot = latestWorkflowResult.data
+        setWorkflowData(latestWorkflowResult.data)
+      }
+    } catch {
+      // ignore and fallback to local workflow snapshot
+    }
+
+    const targets = buildRoleSyncAssignTargets({
+      workflow: workflowSnapshot,
+      participantRoleUserMap: normalizedRoleUserMap,
+    })
+
+    if (targets.length === 0) {
+      return {
+        targetCount: 0,
+        syncedCount: 0,
+        failedCount: 0,
+        failedNodes: [],
+      }
+    }
+
+    let syncedCount = 0
+    const failedNodes = []
+    let latestWorkflowData = workflowSnapshot
+
+    for (const item of targets) {
+      const candidateUserIds = Array.from(
+        new Set(
+          (Array.isArray(item?.candidate_user_ids) ? item.candidate_user_ids : [])
+            .map((value) => Number(value))
+            .filter((value) => Number.isInteger(value) && value > 0),
+        ),
+      )
+      if (candidateUserIds.length === 0) continue
+      try {
+        const result = await assignDemandWorkflowNodeApi(detailDemand.id, item.node_key, {
+          assignee_user_id: candidateUserIds[0],
+          assignee_user_ids: candidateUserIds,
+        })
+        if (!result?.success) {
+          failedNodes.push(item.node_name || item.node_key || '-')
+          continue
+        }
+        if (result?.data && typeof result.data === 'object') {
+          latestWorkflowData = result.data
+        }
+        syncedCount += 1
+      } catch {
+        failedNodes.push(item.node_name || item.node_key || '-')
+      }
+    }
+
+    if (latestWorkflowData && typeof latestWorkflowData === 'object') {
+      setWorkflowData(latestWorkflowData)
+    } else {
+      await loadDemandWorkflow(detailDemand.id)
+    }
+
+    return {
+      targetCount: targets.length,
+      syncedCount,
+      failedCount: failedNodes.length,
+      failedNodes,
+    }
+  }, [canManageWorkflow, detailDemand?.id, loadDemandWorkflow, workflowData])
+
   const handleSaveDetailRoles = async () => {
     if (!detailDemand?.id || !canEditDemandRecord(detailDemand)) return
     const normalizedDetailParticipantRoles = normalizeParticipantRoles(detailParticipantRoles)
+    const normalizedDetailRoleUserMap = normalizeParticipantRoleUserMap(
+      detailParticipantRoleUserMap,
+      normalizedDetailParticipantRoles,
+    )
     if (normalizedDetailParticipantRoles.length === 0) {
       message.warning('请选择需求涉及角色')
       return
@@ -2835,17 +3032,32 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setDetailSaving(true)
       const result = await updateWorkDemandApi(detailDemand.id, {
         participant_roles: normalizedDetailParticipantRoles,
-        participant_role_user_map: normalizeParticipantRoleUserMap(
-          detailParticipantRoleUserMap,
-          normalizedDetailParticipantRoles,
-        ),
+        participant_role_user_map: normalizedDetailRoleUserMap,
       })
       if (!result?.success) {
         message.error(result?.message || '保存失败')
         return
       }
-      message.success('涉及角色已更新')
       await refreshListAndDetail(result?.data || null)
+      if (!canManageWorkflow) {
+        message.success('涉及角色已更新')
+        return
+      }
+      const syncResult = await syncRoleAssigneesToWorkflowNodes({
+        participantRoles: normalizedDetailParticipantRoles,
+        participantRoleUserMap: normalizedDetailRoleUserMap,
+      })
+      if (syncResult.targetCount === 0) {
+        message.success('涉及角色已更新，暂无可同步节点')
+        return
+      }
+      if (syncResult.failedCount === 0) {
+        message.success(`涉及角色已更新，已自动同步 ${syncResult.syncedCount} 个节点负责人`)
+        return
+      }
+      message.warning(
+        `涉及角色已更新，已同步 ${syncResult.syncedCount}/${syncResult.targetCount} 个节点，${syncResult.failedCount} 个失败`,
+      )
     } catch (error) {
       message.error(error?.message || '保存失败')
     } finally {
@@ -2876,7 +3088,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           .map((item) => Number(item))
           .filter((userId) => Number.isInteger(userId) && userId > 0),
       ),
-    ).slice(0, 1)
+    )
+    const normalizedSelectedNodeKey = String(selectedWorkflowNode?.node_key || '').trim().toUpperCase()
 
     if (nextAssigneeUserIds.length === 0) {
       if (!options.skipMissingAssigneeWarning) {
@@ -2889,12 +3102,41 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setWorkflowSubmitting(true)
       const result = await assignDemandWorkflowNodeApi(detailDemand.id, selectedWorkflowNode.node_key, {
         assignee_user_id: nextAssigneeUserIds[0],
+        assignee_user_ids: nextAssigneeUserIds,
       })
       if (!result?.success) {
         message.error(result?.message || '节点负责人保存失败')
         return false
       }
-      setWorkflowData(result.data || null)
+      const patchNodeAssignees = (node) => {
+        if (!node || typeof node !== 'object') return node
+        const nodeKey = String(node?.node_key || '').trim().toUpperCase()
+        if (!normalizedSelectedNodeKey || nodeKey !== normalizedSelectedNodeKey) return node
+        const primaryAssigneeUserId = nextAssigneeUserIds[0]
+        const fallbackAssigneeName = roleSyncUserLabelMap.get(primaryAssigneeUserId) || ''
+        return {
+          ...node,
+          assignee_user_id: primaryAssigneeUserId,
+          assignee_user_ids: nextAssigneeUserIds,
+          assignee_name: String(node?.assignee_name || '').trim() || fallbackAssigneeName || node?.assignee_name || '',
+        }
+      }
+      const workflowDataFromApi = result?.data && typeof result.data === 'object' ? result.data : null
+      const patchedWorkflowData = workflowDataFromApi
+        ? {
+            ...workflowDataFromApi,
+            nodes: Array.isArray(workflowDataFromApi.nodes)
+              ? workflowDataFromApi.nodes.map((item) => patchNodeAssignees(item))
+              : workflowDataFromApi.nodes,
+            current_nodes: Array.isArray(workflowDataFromApi.current_nodes)
+              ? workflowDataFromApi.current_nodes.map((item) => patchNodeAssignees(item))
+              : workflowDataFromApi.current_nodes,
+            current_node: patchNodeAssignees(workflowDataFromApi.current_node),
+          }
+        : null
+
+      setWorkflowData(patchedWorkflowData)
+      setWorkflowParticipantUserIds(nextAssigneeUserIds)
       setSelectedWorkflowNodeKey(selectedWorkflowNode.node_key)
       if (!options.silent) {
         message.success(result?.message || '节点负责人已更新')
@@ -2908,15 +3150,22 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     }
   }
 
-  const handleDetailRoleUserChange = useCallback((roleKey, userId) => {
+  const handleDetailRoleUserChange = useCallback((roleKey, userIds) => {
     const normalizedRole = String(roleKey || '').trim().toUpperCase()
     if (!normalizedRole) return
     setDetailParticipantRoleUserMap((prev) => {
       const next = normalizeParticipantRoleUserMap(prev, detailParticipantRoles)
-      if (!userId) {
+      const normalizedUserIds = Array.from(
+        new Set(
+          (Array.isArray(userIds) ? userIds : [userIds])
+            .map((item) => Number(item))
+            .filter((item) => Number.isInteger(item) && item > 0),
+        ),
+      )
+      if (normalizedUserIds.length === 0) {
         delete next[normalizedRole]
       } else {
-        next[normalizedRole] = Number(userId)
+        next[normalizedRole] = normalizedUserIds
       }
       return next
     })
@@ -3526,35 +3775,30 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               </Space>
             )
           ) : (
-            isLaunchPlanPage ? (
-              <div className="work-demand-list__name-cell">
-                <Button
-                  type="link"
-                  className="work-demand-list__name-trigger"
-                  onClick={() => openDetailDrawer(record)}
-                >
-                  <span className="work-demand-list__name-text" title={value || '-'}>
-                    {value || '-'}
-                  </span>
-                </Button>
-                {String(value || '').trim() ? (
-                  <Tooltip title="复制需求名称">
-                    <Button
-                      type="text"
-                      size="small"
-                      className="work-demand-list__name-copy"
-                      icon={<CopyOutlined />}
-                      aria-label="复制需求名称"
-                      onClick={(event) => handleCopyDemandName(event, value)}
-                    />
-                  </Tooltip>
-                ) : null}
-              </div>
-            ) : (
-              <Button type="link" style={{ padding: 0 }} onClick={() => openDetailDrawer(record)}>
-                <Text strong>{value}</Text>
+            <div className="work-demand-list__name-cell">
+              <Button
+                type="link"
+                className={isLaunchPlanPage ? 'work-demand-list__name-trigger' : undefined}
+                style={isLaunchPlanPage ? undefined : { padding: 0 }}
+                onClick={() => openDetailDrawer(record)}
+              >
+                <span className="work-demand-list__name-text" title={value || '-'}>
+                  {value || '-'}
+                </span>
               </Button>
-            )
+              {String(value || '').trim() ? (
+                <Tooltip title="复制需求名称">
+                  <Button
+                    type="text"
+                    size="small"
+                    className="work-demand-list__name-copy"
+                    icon={<CopyOutlined />}
+                    aria-label="复制需求名称"
+                    onClick={(event) => handleCopyDemandName(event, value)}
+                  />
+                </Tooltip>
+              ) : null}
+            </div>
           ),
       },
       {
@@ -4284,12 +4528,13 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                   >
                     <Text>{item.roleLabel}</Text>
                     <Select
+                      mode="multiple"
                       allowClear
                       showSearch
                       optionFilterProp="label"
                       filterOption={pinyinSelectFilter}
                       options={ownerOptions}
-                      value={item.userId}
+                      value={item.userIds}
                       placeholder={`请选择${item.roleLabel}人员（可选）`}
                       onChange={(value) => handleModalRoleUserChange(item.roleKey, value)}
                     />
@@ -4932,11 +5177,12 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                                 >
                                   <Text>{item.roleLabel}</Text>
                                   <Select
+                                    mode="multiple"
                                     allowClear
                                     showSearch
                                     optionFilterProp="label"
                                     filterOption={pinyinSelectFilter}
-                                    value={item.userId}
+                                    value={item.userIds}
                                     options={ownerOptions}
                                     placeholder={`请选择${item.roleLabel}人员（可选）`}
                                     disabled={!canEditDemandRecord(detailDemand)}
@@ -4964,14 +5210,15 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                             <Text type="secondary">当前未配置需求涉及角色</Text>
                           )}
                         </div>
-                        {detailRoleAssignmentRows.some((item) => Number(item.userId) > 0) ? (
+                        {detailRoleAssignmentRows.some((item) => Array.isArray(item.userIds) && item.userIds.length > 0) ? (
                           <div className="work-demand-detail__role-panel" style={{ marginTop: 8 }}>
                             <Space size={[8, 8]} wrap>
                               {detailRoleAssignmentRows
-                                .filter((item) => Number(item.userId) > 0)
+                                .filter((item) => Array.isArray(item.userIds) && item.userIds.length > 0)
                                 .map((item) => {
-                                  const userId = Number(item.userId)
-                                  const userLabel = ownerLabelMap.get(userId) || `用户${userId}`
+                                  const userLabel = item.userIds
+                                    .map((userId) => ownerLabelMap.get(Number(userId)) || `用户${userId}`)
+                                    .join('、')
                                   return (
                                     <Tag key={`role-user-tag-${item.roleKey}`} color="gold">
                                       {item.roleLabel}: {userLabel}
