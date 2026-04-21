@@ -47,10 +47,8 @@ function formatNetEfficiencyValue(value) {
 function getNetEfficiencyTextColor(value) {
   const num = Number(value)
   if (!Number.isFinite(num) || num === 0) return '#344054'
-  if (num > 8) return '#0f766e'
-  if (num > 2) return '#039855'
-  if (num <= -8) return '#d92d20'
-  if (num < -2) return '#f04438'
+  if (num > 0) return '#039855'
+  if (num < 0) return '#d92d20'
   return '#344054'
 }
 
@@ -62,33 +60,6 @@ function formatPercent(value) {
   const num = Number(value)
   if (!Number.isFinite(num)) return '-'
   return `${num.toFixed(2)}%`
-}
-
-function getVarianceTextColor(value, mode = 'owner') {
-  const num = Number(value)
-  if (!Number.isFinite(num) || num === 0) return undefined
-  const palette =
-    mode === 'personal'
-      ? {
-          severePositive: '#e35d6a',
-          mildPositive: '#f38744',
-          neutral: '#344054',
-          mildNegative: '#12a36b',
-          severeNegative: '#17807a',
-        }
-      : {
-          severePositive: '#d92d20',
-          mildPositive: '#f04438',
-          neutral: '#344054',
-          mildNegative: '#039855',
-          severeNegative: '#0f766e',
-        }
-
-  if (num > 4) return palette.severePositive
-  if (num > 1) return palette.mildPositive
-  if (num >= -1) return palette.neutral
-  if (num >= -4) return palette.mildNegative
-  return palette.severeNegative
 }
 
 function getThisWeekRange() {
@@ -561,7 +532,7 @@ function DepartmentEfficiencyRankingPage() {
       sorter: hoursSorter('variance_owner_baseline_hours'),
       sortDirections: ['descend', 'ascend'],
       render: (value) => (
-        <Text style={{ color: getVarianceTextColor(value, 'owner') }}>
+        <Text style={{ color: '#344054' }}>
           {Number(value) > 0 ? '+' : ''}
           {formatHours(value)}
         </Text>
@@ -582,7 +553,7 @@ function DepartmentEfficiencyRankingPage() {
       sorter: hoursSorter('variance_personal_hours'),
       sortDirections: ['descend', 'ascend'],
       render: (value) => (
-        <Text style={{ color: getVarianceTextColor(value, 'personal') }}>
+        <Text style={{ color: '#344054' }}>
           {Number(value) > 0 ? '+' : ''}
           {formatHours(value)}
         </Text>
