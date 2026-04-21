@@ -63,10 +63,8 @@ function formatNetEfficiencyValue(value) {
 function getNetEfficiencyTextColor(value) {
   const num = Number(value)
   if (!Number.isFinite(num) || num === 0) return '#344054'
-  if (num > 8) return '#0f766e'
-  if (num > 2) return '#039855'
-  if (num <= -8) return '#d92d20'
-  if (num < -2) return '#f04438'
+  if (num > 0) return '#039855'
+  if (num < 0) return '#d92d20'
   return '#344054'
 }
 
@@ -81,24 +79,16 @@ function formatPercent(value) {
 }
 
 function getVarianceTextColor(value, mode = 'owner') {
+  if (mode === 'personal') return '#344054'
   const num = Number(value)
   if (!Number.isFinite(num) || num === 0) return '#344054'
-  const palette =
-    mode === 'personal'
-      ? {
-          severePositive: '#e35d6a',
-          mildPositive: '#f38744',
-          neutral: '#344054',
-          mildNegative: '#12a36b',
-          severeNegative: '#17807a',
-        }
-      : {
-          severePositive: '#d92d20',
-          mildPositive: '#f04438',
-          neutral: '#344054',
-          mildNegative: '#039855',
-          severeNegative: '#0f766e',
-        }
+  const palette = {
+    severePositive: '#d92d20',
+    mildPositive: '#f04438',
+    neutral: '#344054',
+    mildNegative: '#039855',
+    severeNegative: '#0f766e',
+  }
   if (num > 4) return palette.severePositive
   if (num > 1) return palette.mildPositive
   if (num >= -1) return palette.neutral
@@ -321,10 +311,6 @@ function MemberEfficiencyDetailPage() {
   )
 
   const summary = data.summary || {}
-  const demandSummaryList = useMemo(
-    () => (Array.isArray(data.demand_summary_list) ? data.demand_summary_list : []),
-    [data.demand_summary_list],
-  )
   const workItemList = useMemo(
     () => (Array.isArray(data.work_item_list) ? data.work_item_list : []),
     [data.work_item_list],
@@ -358,102 +344,6 @@ function MemberEfficiencyDetailPage() {
       .sort((a, b) => Number(b.actual_hours || 0) - Number(a.actual_hours || 0))
   }, [workItemList])
   const totalPhaseHours = phaseDistribution.reduce((sum, item) => sum + toNumber(item.actual_hours, 0), 0)
-
-  const demandPhaseMap = new Map()
-  const demandLatestDescriptionMap = new Map()
-  workItemList.forEach((item) => {
-    const demandKey = String(item.demand_id || '').trim()
-    if (!demandKey) return
-
-    const itemDescription = String(item.description || '').trim()
-    const itemLogDate = String(item.log_date || '').trim()
-    const currentDemandDesc = demandLatestDescriptionMap.get(demandKey)
-    if (itemDescription) {
-      if (
-        !currentDemandDesc
-        || !currentDemandDesc.logDate
-        || (itemLogDate && dayjs(itemLogDate).isAfter(dayjs(currentDemandDesc.logDate)))
-      ) {
-        demandLatestDescriptionMap.set(demandKey, {
-          description: itemDescription,
-          logDate: itemLogDate || null,
-        })
-      }
-    }
-
-    if (!demandPhaseMap.has(demandKey)) {
-      demandPhaseMap.set(demandKey, new Map())
-    }
-
-    const phaseNameText = String(item.phase_name || '').trim()
-    const phaseKeyText = String(item.phase_key || '').trim()
-    const phaseCode = phaseKeyText || phaseNameText || 'NO_PHASE'
-    const phaseMap = demandPhaseMap.get(demandKey)
-    const phaseMapKey = `${phaseCode}|${phaseNameText || '未分阶段'}`
-    const current = phaseMap.get(phaseMapKey)
-
-    if (!current) {
-      phaseMap.set(phaseMapKey, {
-        key: `phase-${demandKey}-${phaseCode}-${phaseMap.size + 1}`,
-        __isPhase: true,
-        demand_id: item.demand_id,
-        business_group_name: item.business_group_name || '-',
-        phase_key: phaseKeyText || null,
-        phase_name: phaseNameText || phaseKeyText || '未分阶段',
-        total_item_count: 1,
-        owner_required_item_count: toNumber(item.owner_estimate_required, 0),
-        owner_estimate_covered_item_count: toNumber(item.owner_estimate_covered, 0),
-        owner_estimate_missing_item_count: toNumber(item.owner_estimate_missing, 0),
-        owner_estimate_non_owner_item_count: toNumber(item.owner_estimate_non_owner, 0),
-        total_raw_owner_estimate_hours: toNumber(item.raw_owner_estimate_hours, 0),
-        total_owner_baseline_hours: toNumber(item.owner_baseline_hours, 0),
-        total_owner_comparable_actual_hours: toNumber(item.owner_comparable_actual_hours, 0),
-        total_owner_estimate_hours: toNumber(item.owner_estimate_hours, 0),
-        total_personal_estimate_hours: toNumber(item.personal_estimate_hours, 0),
-        total_actual_hours: toNumber(item.actual_hours, 0),
-        variance_owner_baseline_hours: toNumber(item.variance_owner_baseline_hours, 0),
-        variance_personal_hours: toNumber(item.actual_hours, 0) - toNumber(item.personal_estimate_hours, 0),
-        last_log_date: itemLogDate || null,
-        description: itemDescription || '',
-      })
-      return
-    }
-
-    current.total_item_count += 1
-    current.owner_required_item_count += toNumber(item.owner_estimate_required, 0)
-    current.owner_estimate_covered_item_count += toNumber(item.owner_estimate_covered, 0)
-    current.owner_estimate_missing_item_count += toNumber(item.owner_estimate_missing, 0)
-    current.owner_estimate_non_owner_item_count += toNumber(item.owner_estimate_non_owner, 0)
-    current.total_raw_owner_estimate_hours += toNumber(item.raw_owner_estimate_hours, 0)
-    current.total_owner_baseline_hours += toNumber(item.owner_baseline_hours, 0)
-    current.total_owner_comparable_actual_hours += toNumber(item.owner_comparable_actual_hours, 0)
-    current.total_owner_estimate_hours += toNumber(item.owner_estimate_hours, 0)
-    current.total_personal_estimate_hours += toNumber(item.personal_estimate_hours, 0)
-    current.total_actual_hours += toNumber(item.actual_hours, 0)
-    current.variance_owner_baseline_hours = current.total_owner_comparable_actual_hours - current.total_owner_baseline_hours
-    current.variance_personal_hours = current.total_actual_hours - current.total_personal_estimate_hours
-
-    if (!current.last_log_date || (itemLogDate && dayjs(itemLogDate).isAfter(dayjs(current.last_log_date)))) {
-      current.last_log_date = itemLogDate || current.last_log_date
-      if (itemDescription) {
-        current.description = itemDescription
-      }
-    } else if (!current.description && itemDescription) {
-      current.description = itemDescription
-    }
-  })
-
-  const demandSummaryTreeData = demandSummaryList.map((item, index) => {
-    const demandKey = String(item.demand_id || '').trim()
-    const children = demandKey && demandPhaseMap.has(demandKey) ? Array.from(demandPhaseMap.get(demandKey).values()) : []
-    return {
-      ...item,
-      description: String(item.description || '').trim() || demandLatestDescriptionMap.get(demandKey)?.description || '',
-      key: `demand-${demandKey || index + 1}`,
-      __isPhase: false,
-      children,
-    }
-  })
 
   const workItemTreeData = useMemo(() => {
     const groupedMap = new Map()
@@ -666,24 +556,34 @@ function MemberEfficiencyDetailPage() {
     }
   }, [closeOwnerEstimateModal, loadData, ownerEstimateForm, ownerEstimateModal?.item?.log_id])
 
-  const renderEditableOwnerEstimateCell = (value, row, totalValue) => {
+  const renderEditableOwnerEstimateCell = (
+    value,
+    row,
+    totalValue,
+    {
+      parentValueClassName = '',
+      childValueClassName = '',
+    } = {},
+  ) => {
     const displayValue = row.__isTypeGroup ? totalValue : value
+    const valueClassName = row.__isTypeGroup ? parentValueClassName : childValueClassName
+    const valueNode = <span className={valueClassName}>{formatHours(displayValue)}</span>
     if (row.__isTypeGroup || !canEditOwnerEstimate) {
       return (
         <span className="efficiency-owner-estimate-cell">
+          {valueNode}
           {!row.__isTypeGroup && toNumber(row.owner_estimate_required, 0) <= 0 ? (
             <Tag color="default" className="efficiency-owner-estimate-cell__tag">无需评估</Tag>
           ) : null}
-          <span>{formatHours(displayValue)}</span>
         </span>
       )
     }
     return (
       <span className="efficiency-owner-estimate-cell">
+        {valueNode}
         {toNumber(row.owner_estimate_required, 0) <= 0 ? (
           <Tag color="default" className="efficiency-owner-estimate-cell__tag">无需评估</Tag>
         ) : null}
-        <span>{formatHours(displayValue)}</span>
         <Button
           type="text"
           size="small"
@@ -698,126 +598,6 @@ function MemberEfficiencyDetailPage() {
       </span>
     )
   }
-
-  const demandColumns = [
-    {
-      title: '需求',
-      dataIndex: 'demand_name',
-      key: 'demand_name',
-      width: 260,
-      render: (value, row) => (
-        row.__isPhase ? (
-          <Space size={6} className="efficiency-demand-phase-cell">
-            <Tag color="geekblue">{row.phase_name || row.phase_key || '未分阶段'}</Tag>
-            {row.phase_key ? <Text type="secondary">{row.phase_key}</Text> : null}
-          </Space>
-        ) : (
-          <div className="efficiency-demand-cell">
-            <Text strong className="efficiency-demand-cell__title">{value || row.demand_id || '-'}</Text>
-            <Text type="secondary" className="efficiency-demand-cell__meta">{row.demand_id || '-'}</Text>
-          </div>
-        )
-      ),
-    },
-    {
-      title: '描述',
-      dataIndex: 'description',
-      key: 'description',
-      width: 220,
-      ellipsis: true,
-      render: (value) => value || '-',
-    },
-    {
-      title: '业务组',
-      dataIndex: 'business_group_name',
-      key: 'business_group_name',
-      width: 140,
-      render: (value, row) => (row.__isPhase ? '-' : value || '-'),
-    },
-    {
-      title: '事项数',
-      dataIndex: 'total_item_count',
-      key: 'total_item_count',
-      width: 100,
-      render: (value, row) => (row.__isPhase ? toNumber(value, 0) : toNumber(value, 0)),
-    },
-    {
-      title: '可比/应评估',
-      key: 'owner_comparable_ratio',
-      width: 150,
-      render: (_, row) => renderComparableCell(row),
-    },
-    {
-      title: (
-        <Space size={4}>
-          <span>Owner评估覆盖率</span>
-          <Tooltip title="只统计应由 Owner 评估的事项；可比事项才进入真实分析口径">
-            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
-          </Tooltip>
-        </Space>
-      ),
-      dataIndex: 'owner_estimate_coverage_rate',
-      key: 'owner_estimate_coverage_rate',
-      width: 150,
-      render: (value) => formatPercent(value),
-    },
-    {
-      title: 'Owner原始评估(h)',
-      dataIndex: 'total_raw_owner_estimate_hours',
-      key: 'total_raw_owner_estimate_hours',
-      width: 130,
-      render: (value) => formatHours(value),
-    },
-    {
-      title: 'Owner真实基线(h)',
-      dataIndex: 'total_owner_baseline_hours',
-      key: 'total_owner_baseline_hours',
-      width: 120,
-      render: (value) => formatHours(value),
-    },
-    {
-      title: 'Owner可比实际(h)',
-      dataIndex: 'total_owner_comparable_actual_hours',
-      key: 'total_owner_comparable_actual_hours',
-      width: 130,
-      render: (value) => <Text strong>{formatHours(value)}</Text>,
-    },
-    {
-      title: 'Owner偏差(h)',
-      dataIndex: 'variance_owner_baseline_hours',
-      key: 'variance_owner_baseline_hours',
-      width: 120,
-      render: (value) => renderVarianceValue(value, 'owner'),
-    },
-    {
-      title: '个人预估(h)',
-      dataIndex: 'total_personal_estimate_hours',
-      key: 'total_personal_estimate_hours',
-      width: 120,
-      render: (value) => formatHours(value),
-    },
-    {
-      title: '实际工时(h)',
-      dataIndex: 'total_actual_hours',
-      key: 'total_actual_hours',
-      width: 120,
-      render: (value) => <Text strong>{formatHours(value)}</Text>,
-    },
-    {
-      title: '个人偏差(h)',
-      dataIndex: 'variance_personal_hours',
-      key: 'variance_personal_hours',
-      width: 120,
-      render: (value) => renderVarianceValue(value, 'personal'),
-    },
-    {
-      title: '最近填报',
-      dataIndex: 'last_log_date',
-      key: 'last_log_date',
-      width: 120,
-      render: (value) => formatBeijingDate(value),
-    },
-  ]
 
   const workItemColumns = [
     {
@@ -883,11 +663,27 @@ function MemberEfficiencyDetailPage() {
             }),
     },
     {
-      title: 'Owner评估(h)',
+      title: (
+        <Space size={4}>
+          <span className="efficiency-highlight-title efficiency-highlight-title--owner">Owner评估/基线(h)</span>
+          <Tooltip title="事项行展示 Owner 原始评估；分组行展示 Owner 真实基线（净效率口径）。">
+            <QuestionCircleOutlined className="efficiency-highlight-title__icon efficiency-highlight-title__icon--owner" />
+          </Tooltip>
+        </Space>
+      ),
       dataIndex: 'raw_owner_estimate_hours',
       key: 'raw_owner_estimate_hours',
-      width: 152,
-      render: (value, row) => renderEditableOwnerEstimateCell(value, row, row.total_raw_owner_estimate_hours),
+      width: 172,
+      render: (value, row) =>
+        renderEditableOwnerEstimateCell(
+          value,
+          row,
+          row.__isTypeGroup ? row.total_owner_baseline_hours : row.total_raw_owner_estimate_hours,
+          {
+            parentValueClassName: 'efficiency-highlight-value efficiency-highlight-value--owner',
+            childValueClassName: 'efficiency-emphasis-value efficiency-emphasis-value--owner',
+          },
+        ),
     },
     {
       title: 'Owner偏差(h)',
@@ -904,13 +700,6 @@ function MemberEfficiencyDetailPage() {
       render: (value, row) => (row.__isTypeGroup ? formatHours(row.personal_estimate_hours) : formatHours(value)),
     },
     {
-      title: '实际工时(h)',
-      dataIndex: 'actual_hours',
-      key: 'actual_hours',
-      width: 120,
-      render: (value, row) => (row.__isTypeGroup ? <Text strong>{formatHours(row.actual_hours)}</Text> : <Text strong>{formatHours(value)}</Text>),
-    },
-    {
       title: '个人偏差(h)',
       dataIndex: 'variance_personal_hours',
       key: 'variance_personal_hours',
@@ -918,14 +707,63 @@ function MemberEfficiencyDetailPage() {
       render: (value, row) => renderVarianceValue(row.__isTypeGroup ? row.variance_personal_hours : value, 'personal'),
     },
     {
-      title: '净效率值',
+      title: (
+        <Space size={4}>
+          <span className="efficiency-highlight-title efficiency-highlight-title--actual">实际/可比实际(h)</span>
+          <Tooltip title="事项行展示实际工时；分组行展示 Owner 可比实际（净效率口径）。">
+            <QuestionCircleOutlined className="efficiency-highlight-title__icon efficiency-highlight-title__icon--actual" />
+          </Tooltip>
+        </Space>
+      ),
+      dataIndex: 'actual_hours',
+      key: 'actual_hours',
+      width: 172,
+      render: (value, row) =>
+        row.__isTypeGroup
+          ? (
+            <Text strong>
+              <span className="efficiency-highlight-value efficiency-highlight-value--actual">
+                {formatHours(row.total_owner_comparable_actual_hours)}
+              </span>
+            </Text>
+            )
+          : (
+            <Text strong>
+              <span className="efficiency-emphasis-value efficiency-emphasis-value--actual">{formatHours(value)}</span>
+            </Text>
+            ),
+    },
+    {
+      title: (
+        <Space size={4}>
+          <span className="efficiency-highlight-title efficiency-highlight-title--net">净效率值</span>
+          <Tooltip title="净效率 = (Owner真实基线 - Owner可比实际) × 任务难度系数 ÷ 职级权重系数。">
+            <QuestionCircleOutlined className="efficiency-highlight-title__icon efficiency-highlight-title__icon--net" />
+          </Tooltip>
+        </Space>
+      ),
       dataIndex: 'net_efficiency_value',
       key: 'net_efficiency_value',
-      width: 110,
-      render: (value) =>
+      width: 146,
+      render: (value, row) =>
         value === null || value === undefined
             ? <Text type="secondary">-</Text>
-            : <Text strong style={{ color: getNetEfficiencyTextColor(value) }}>{formatNetEfficiencyValue(value)}</Text>,
+            : row.__isTypeGroup ? (
+              <Text strong>
+                <span
+                  className="efficiency-highlight-value efficiency-highlight-value--net"
+                  style={{ color: getNetEfficiencyTextColor(value) }}
+                >
+                  {formatNetEfficiencyValue(value)}
+                </span>
+              </Text>
+              ) : (
+                <Text strong>
+                  <span className="efficiency-emphasis-value" style={{ color: getNetEfficiencyTextColor(value) }}>
+                    {formatNetEfficiencyValue(value)}
+                  </span>
+                </Text>
+              ),
     },
     {
       title: '排期',
@@ -1032,7 +870,7 @@ function MemberEfficiencyDetailPage() {
                 navigateWithState(nextRange)
               }}
             />
-            <span className="efficiency-detail-toolbar__hint">切换统计周期后，将同步刷新需求汇总与事项明细，口径对齐个人工作台历史记录的按事项视图。</span>
+            <span className="efficiency-detail-toolbar__hint">切换统计周期后，将同步刷新事项明细与阶段分布，口径对齐个人工作台历史记录的按事项视图。</span>
           </div>
         </Card>
 
@@ -1108,6 +946,7 @@ function MemberEfficiencyDetailPage() {
                 dataSource={workItemTreeData}
                 size="small"
                 className="efficiency-detail-table"
+                rowClassName={(record) => (record?.__isTypeGroup ? 'efficiency-table-parent-row' : '')}
                 scroll={{ x: 1450 }}
                 expandable={{
                   defaultExpandAllRows: true,
@@ -1118,27 +957,6 @@ function MemberEfficiencyDetailPage() {
               />
             </Card>
 
-            <Card
-              title="需求汇总"
-              extra={<span className="efficiency-detail-toolbar__hint">按需求聚合当前成员在筛选范围内的事项口径，展开可查看阶段聚合</span>}
-              variant="borderless"
-              className="efficiency-detail-section"
-            >
-              <Table
-                rowKey="key"
-                loading={loading}
-                columns={demandColumns}
-                dataSource={demandSummaryTreeData}
-                size="small"
-                className="efficiency-detail-table"
-                scroll={{ x: 1680 }}
-                expandable={{
-                  rowExpandable: (record) => Array.isArray(record.children) && record.children.length > 0,
-                }}
-                pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (total) => `共 ${total} 条需求` }}
-                locale={{ emptyText: '当前范围暂无需求汇总数据' }}
-              />
-            </Card>
           </>
         )}
       </div>

@@ -118,7 +118,7 @@ function buildCsvContent(rows = []) {
     'Owner评估覆盖率',
     'Owner真实基线(h)',
     '个人预估总工时(h)',
-    '实际总工时(h)',
+    '实际/可比实际(h)',
     'Owner偏差(h)',
     '个人偏差(h)',
     '净效率值',
@@ -133,7 +133,7 @@ function buildCsvContent(rows = []) {
     formatPercent(row.owner_estimate_coverage_rate),
     formatHours(row.total_owner_baseline_hours),
     formatHours(row.total_personal_estimate_hours),
-    formatHours(row.total_actual_hours),
+    `${formatHours(row.total_actual_hours)}/${formatHours(row.total_owner_comparable_actual_hours)}`,
     formatHours(row.variance_owner_baseline_hours),
     formatHours(row.variance_personal_hours),
     row.net_efficiency_value === null || row.net_efficiency_value === undefined ? '-' : row.net_efficiency_value,
@@ -353,7 +353,7 @@ function DepartmentEfficiencyRankingPage() {
     <Space orientation="vertical" size={2}>
       <span>当前页统计范围：统计当前周期内全部事项</span>
       <span>当前默认按净效率值排序，可切换为从高到低或从低到高</span>
-      <span>实际公式：实际总工时 = SUM(当前周期事项的 actual_hours)</span>
+      <span>展示口径：实际/可比实际 = 实际总工时 / Owner可比实际</span>
       <span>{`净效率值公式：${summary.net_efficiency_formula_text}`}</span>
       <span>当前口径下，正值表示低于 Owner 评估、节省工时；负值表示超出 Owner 评估、存在超时</span>
     </Space>
@@ -496,7 +496,7 @@ function DepartmentEfficiencyRankingPage() {
     {
       title: (
         <Space size={4}>
-          <span>Owner真实基线(h)</span>
+          <span>Owner评估/基线(h)</span>
           <Tooltip title="仅统计有真实 Owner 评估值的事项，不混入非 Owner 事项与兜底口径；与 Owner可比实际一起形成可比分析">
             <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
           </Tooltip>
@@ -531,13 +531,20 @@ function DepartmentEfficiencyRankingPage() {
       render: (value) => formatHours(value),
     },
     {
-      title: '实际工时(h)',
+      title: (
+        <Space size={4}>
+          <span>实际/可比实际(h)</span>
+          <Tooltip title="展示为 实际总工时 / Owner可比实际；其中 Owner可比实际仅统计存在真实 Owner 评估值的事项。">
+            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
       dataIndex: 'total_actual_hours',
       key: 'total_actual_hours',
-      width: 120,
-      sorter: hoursSorter('total_actual_hours'),
+      width: 170,
+      sorter: hoursSorter('total_owner_comparable_actual_hours'),
       sortDirections: ['descend', 'ascend'],
-      render: (value) => <Text strong>{formatHours(value)}</Text>,
+      render: (_, row) => <Text strong>{`${formatHours(row.total_actual_hours)}/${formatHours(row.total_owner_comparable_actual_hours)}`}</Text>,
     },
     {
       title: (
