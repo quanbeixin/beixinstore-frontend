@@ -49,9 +49,8 @@ import {
   updateBugApi,
 } from '../../api/bug'
 import { BugFormModal, BugStatusFlow } from '../../modules/bug'
-import BugRichTextEditor from '../../modules/bug/components/BugRichTextEditor'
 import { precheckDraftAttachment, uploadCommentDraftAttachments } from '../../modules/bug/utils/attachmentUpload'
-import { isProbablyHtml, plainTextToRichTextHtml, sanitizeBugDescriptionHtml, createPendingDescriptionImageToken } from '../../modules/bug/utils/descriptionRichText'
+import { isProbablyHtml, plainTextToRichTextHtml, sanitizeBugDescriptionHtml } from '../../modules/bug/utils/descriptionRichText'
 import { buildWorkflowTransitionMap, normalizeBugWorkflowTransitions } from '../../modules/bug/utils/workflow'
 import { getCurrentUser, hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
@@ -203,7 +202,7 @@ function BugDetailPage() {
   const currentUserId = Number(getCurrentUser()?.id || 0)
   const canUpdate = hasPermission('bug.update')
   const canTransition = hasPermission('bug.transition')
-  const canDelete = true
+  const canDelete = hasPermission('bug.delete')
   const canManageAllFields = hasPermission('bug.manage')
 
   const [loading, setLoading] = useState(false)
@@ -299,6 +298,7 @@ function BugDetailPage() {
     remarkForm.setFieldsValue({
       remark: '',
       fix_solution: detail?.fix_solution || '',
+      verify_result: detail?.verify_result || '',
     })
   }, [detail, remarkForm])
 
@@ -306,69 +306,9 @@ function BugDetailPage() {
     commentDraftFileListRef.current = Array.isArray(commentDraftFileList) ? commentDraftFileList : []
   }, [commentDraftFileList])
 
-  const handleCommentImageUpload = useCallback(async (file) => {
-    const currentFile = file instanceof File ? file : null
-    if (!currentFile) throw new Error('图片文件无效')
-
-    await precheckDraftAttachment(currentFile)
-
-    const token = createPendingDescriptionImageToken()
-    const previewUrl = URL.createObjectURL(currentFile)
-
-    const nextDraftFiles = Array.isArray(commentDraftFileListRef.current) ? commentDraftFileListRef.current.slice() : []
-    const candidate = {
-      uid: token,
-      name: currentFile.name || 'image.png',
-      status: 'done',
-      size: currentFile.size || 0,
-      type: currentFile.type || '',
-      originFileObj: currentFile,
-    }
-    nextDraftFiles.push(candidate)
-    commentDraftFileListRef.current = nextDraftFiles
-    setCommentDraftFileList(nextDraftFiles)
-
-    return {
-      src: previewUrl,
-      token,
-      alt: currentFile.name || '图片',
-      title: currentFile.name || '图片',
-    }
-  }, [])
-
   useEffect(() => {
     replyDraftFileListRef.current = Array.isArray(replyDraftFileList) ? replyDraftFileList : []
   }, [replyDraftFileList])
-
-  const handleReplyImageUpload = useCallback(async (file) => {
-    const currentFile = file instanceof File ? file : null
-    if (!currentFile) throw new Error('图片文件无效')
-
-    await precheckDraftAttachment(currentFile)
-
-    const token = createPendingDescriptionImageToken()
-    const previewUrl = URL.createObjectURL(currentFile)
-
-    const nextDraftFiles = Array.isArray(replyDraftFileListRef.current) ? replyDraftFileListRef.current.slice() : []
-    const candidate = {
-      uid: token,
-      name: currentFile.name || 'image.png',
-      status: 'done',
-      size: currentFile.size || 0,
-      type: currentFile.type || '',
-      originFileObj: currentFile,
-    }
-    nextDraftFiles.push(candidate)
-    replyDraftFileListRef.current = nextDraftFiles
-    setReplyDraftFileList(nextDraftFiles)
-
-    return {
-      src: previewUrl,
-      token,
-      alt: currentFile.name || '图片',
-      title: currentFile.name || '图片',
-    }
-  }, [])
 
   const loadMentionUserOptions = useCallback(async () => {
     setMentionUserLoading(true)
@@ -451,6 +391,7 @@ function BugDetailPage() {
   const transitionRequirementHints = useMemo(() => ({
     requireRemark: transitionButtons.some((item) => Number(item?.transition?.require_remark) === 1),
     requireFixSolution: transitionButtons.some((item) => Number(item?.transition?.require_fix_solution) === 1),
+    requireVerifyResult: transitionButtons.some((item) => Number(item?.transition?.require_verify_result) === 1),
   }), [transitionButtons])
 
   const runTransition = async (button) => {
@@ -464,6 +405,7 @@ function BugDetailPage() {
       const values = await remarkForm.validateFields()
       const remark = String(values.remark || '').trim()
       const fixSolution = String(values.fix_solution || '').trim()
+      const verifyResult = String(values.verify_result || '').trim()
 
       const jumpToField = (name, errorText) => {
         remarkForm.setFields([{ name, errors: [errorText] }])
@@ -476,6 +418,8 @@ function BugDetailPage() {
 
       const requireRemark = Number(transition?.require_remark) === 1
       const requireFixSolution = Number(transition?.require_fix_solution) === 1
+      const requireVerifyResult = Number(transition?.require_verify_result) === 1
+
       if (requireFixSolution && !fixSolution) {
         jumpToField('fix_solution', '修复方案&影响范围不能为空')
         message.warning('请先填写修复方案&影响范围，再执行当前操作')
@@ -488,6 +432,12 @@ function BugDetailPage() {
         return
       }
 
+      if (requireVerifyResult && !verifyResult) {
+        jumpToField('verify_result', '验证结果不能为空')
+        message.warning('请先填写验证结果，再执行当前操作')
+        return
+      }
+
       setActionLoading(buildTransitionActionId(transition))
       const toStatusCode = String(transition?.to_status_code || '').trim().toUpperCase()
       const result = await transitionBugApi(bugId, {
@@ -495,6 +445,7 @@ function BugDetailPage() {
         to_status_code: toStatusCode,
         remark,
         fix_solution: fixSolution,
+        verify_result: verifyResult,
       })
 
       if (!result?.success) {
@@ -1291,15 +1242,6 @@ function BugDetailPage() {
     [normalizedStatusLogs],
   )
 
-  const latestTransitionRemark = useMemo(() => {
-    const matched = operationLogs.find((item) => {
-      const fromStatusCode = String(item?.from_status_code || '').trim().toUpperCase()
-      const toStatusCode = String(item?.to_status_code || '').trim().toUpperCase()
-      return Boolean(item?.remark) && fromStatusCode && toStatusCode && fromStatusCode !== toStatusCode
-    })
-    return String(matched?.remark || '').trim()
-  }, [operationLogs])
-
   if (!bugId) {
     return (
       <div style={{ padding: 12 }}>
@@ -1440,7 +1382,33 @@ function BugDetailPage() {
                                   <Input.TextArea rows={3} maxLength={20000} placeholder="请填写修复方案与影响范围" />
                                 </Form.Item>
                               ) : null}
+                              {canSeeVerifyModule ? (
+                                <Form.Item
+                                  label="验证结果"
+                                  name="verify_result"
+                                  required={transitionRequirementHints.requireVerifyResult}
+                                  extra={
+                                    transitionRequirementHints.requireVerifyResult
+                                      ? '当前可执行动作中存在验证结果必填项'
+                                      : '选填，建议补充验证说明'
+                                  }
+                                >
+                                  <Input.TextArea rows={3} maxLength={20000} placeholder="描述验证结果" />
+                                </Form.Item>
+                              ) : null}
                             </Form>
+                          </div>
+
+                          <div className="bug-detail-page__tab-section">
+                            <div className="bug-detail-page__tab-section-title">修复与验证</div>
+                            <Descriptions column={1} size="small">
+                              <Descriptions.Item label="修复方案&影响范围">
+                                <Paragraph>{detail.fix_solution || '-'}</Paragraph>
+                              </Descriptions.Item>
+                              <Descriptions.Item label="验证结果">
+                                <Paragraph>{detail.verify_result || '-'}</Paragraph>
+                              </Descriptions.Item>
+                            </Descriptions>
                           </div>
 
                           <div className="bug-detail-page__tab-section">
@@ -1562,25 +1530,6 @@ function BugDetailPage() {
                               </div>
                             </div>
                           </div>
-
-                          <div className="bug-detail-page__tab-section">
-                            <div className="bug-detail-page__tab-section-title">修复信息</div>
-                            <Descriptions column={1} size="small">
-                              <Descriptions.Item label="备注">
-                                {latestTransitionRemark ? (
-                                  <div
-                                    className="bug-detail-page__repair-content"
-                                    dangerouslySetInnerHTML={{ __html: sanitizeBugDescriptionHtml(latestTransitionRemark) }}
-                                  />
-                                ) : (
-                                  <Paragraph>-</Paragraph>
-                                )}
-                              </Descriptions.Item>
-                              <Descriptions.Item label="修复方案&影响范围">
-                                <Paragraph className="bug-detail-page__repair-text">{detail.fix_solution || '-'}</Paragraph>
-                              </Descriptions.Item>
-                            </Descriptions>
-                          </div>
                         </div>
                       </div>
                     ),
@@ -1598,10 +1547,13 @@ function BugDetailPage() {
                               name="comment"
                               rules={[{ required: true, message: '请输入评论内容' }]}
                             >
-                              <BugRichTextEditor
+                              <Input.TextArea
+                                autoSize={{ minRows: 3, maxRows: 12 }}
+                                maxLength={20000}
                                 placeholder="输入评论内容，可选择@多人并发送通知"
-                                onUploadImage={handleCommentImageUpload}
-                                onChange={() => { /* Form will receive value via onChange prop from Form.Item */ }}
+                                onPaste={(event) => {
+                                  void handleCommentAttachmentPaste(event)
+                                }}
                               />
                             </Form.Item>
                             <Form.Item label="@某人（可选，可多选）" name="mention_user_ids">
@@ -1706,10 +1658,7 @@ function BugDetailPage() {
                                             </Space>
                                           </div>
                                         ) : item.remark ? (
-                                          <div
-                                            className="bug-detail-page__log-remark"
-                                            dangerouslySetInnerHTML={{ __html: sanitizeBugDescriptionHtml(item.remark || '') }}
-                                          />
+                                          <div className="bug-detail-page__log-remark">{item.remark}</div>
                                         ) : null}
                                       </div>
                                       <div className="bug-detail-page__comment-actions">
@@ -1807,14 +1756,16 @@ function BugDetailPage() {
                                     ) : null}
                                     {isReplyingCurrent ? (
                                       <div className="bug-detail-page__comment-reply-box">
-                                        <div onPaste={(event) => { void handleReplyAttachmentPaste(event) }}>
-                                          <BugRichTextEditor
-                                            value={replyValue}
-                                            onChange={(html) => setReplyValue(html)}
-                                            placeholder={`回复 ${item.operator_name || '该评论'}...`}
-                                            onUploadImage={handleReplyImageUpload}
-                                          />
-                                        </div>
+                                        <Input.TextArea
+                                          autoSize={{ minRows: 2, maxRows: 10 }}
+                                          maxLength={20000}
+                                          value={replyValue}
+                                          onChange={(event) => setReplyValue(event.target.value)}
+                                          placeholder={`回复 ${item.operator_name || '该评论'}...`}
+                                          onPaste={(event) => {
+                                            void handleReplyAttachmentPaste(event)
+                                          }}
+                                        />
                                         <Select
                                           mode="multiple"
                                           showSearch
@@ -1888,11 +1839,12 @@ function BugDetailPage() {
                                                   <div className="bug-detail-page__log-time">{formatBeijingDateTime(reply.created_at)}</div>
                                                   {isEditingReply ? (
                                                     <div className="bug-detail-page__comment-editor">
-                                                      <BugRichTextEditor
+                                                      <Input.TextArea
+                                                        autoSize={{ minRows: 2, maxRows: 10 }}
+                                                        maxLength={20000}
                                                         value={editingCommentValue}
-                                                        onChange={(html) => setEditingCommentValue(html)}
+                                                        onChange={(event) => setEditingCommentValue(event.target.value)}
                                                         placeholder="请输入回复内容"
-                                                        onUploadImage={handleReplyImageUpload}
                                                       />
                                                       <Space size={8} className="bug-detail-page__comment-editor-actions">
                                                         <Button
@@ -1909,10 +1861,7 @@ function BugDetailPage() {
                                                       </Space>
                                                     </div>
                                                   ) : reply.remark ? (
-                                                    <div
-                                                      className="bug-detail-page__log-remark"
-                                                      dangerouslySetInnerHTML={{ __html: sanitizeBugDescriptionHtml(reply.remark || '') }}
-                                                    />
+                                                    <div className="bug-detail-page__log-remark">{reply.remark}</div>
                                                   ) : null}
                                                 </div>
                                                 <div className="bug-detail-page__comment-actions">
@@ -2039,12 +1988,7 @@ function BugDetailPage() {
                                       </Text>
                                     </div>
                                     <div className="bug-detail-page__log-time">{formatBeijingDateTime(item.created_at)}</div>
-                                    {item.remark ? (
-                                      <div
-                                        className="bug-detail-page__log-remark"
-                                        dangerouslySetInnerHTML={{ __html: sanitizeBugDescriptionHtml(item.remark || '') }}
-                                      />
-                                    ) : null}
+                                    {item.remark ? <div className="bug-detail-page__log-remark">{item.remark}</div> : null}
                                   </div>
                                 </div>
                               ))}

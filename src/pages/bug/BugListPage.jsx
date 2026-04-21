@@ -25,7 +25,6 @@ const GROUP_FIELD_OPTIONS = [
   { label: '状态', value: 'status' },
   { label: '提交人', value: 'reporter' },
   { label: 'Bug分类', value: 'bug_type' },
-  { label: '处理人', value: 'assignee' },
 ]
 const GROUP_FIELD_LABEL_MAP = GROUP_FIELD_OPTIONS.reduce((acc, item) => {
   acc[item.value] = item.label
@@ -109,7 +108,6 @@ function normalizeViewConfig(config = {}) {
     keyword: String(source.keyword || '').trim(),
     status_code: String(source.status_code || '').trim().toUpperCase(),
     severity_code: String(source.severity_code || '').trim().toUpperCase(),
-      product_code: String(source.product_code || '').trim().toUpperCase(),
     demand_id: String(source.demand_id || '').trim(),
     assignee_id: Number.isInteger(Number(source.assignee_id)) && Number(source.assignee_id) > 0 ? Number(source.assignee_id) : undefined,
     reporter_id: Number.isInteger(Number(source.reporter_id)) && Number(source.reporter_id) > 0 ? Number(source.reporter_id) : undefined,
@@ -145,12 +143,6 @@ function resolveGroupBucket(field, row) {
     const code = String(row?.bug_type_code || 'UNSET').trim().toUpperCase() || 'UNSET'
     const label = String(row?.bug_type_name || row?.bug_type_code || '未分类').trim() || '未分类'
     return { key: code, value: label }
-  }
-  if (field === 'assignee') {
-    const userId = Number(row?.assignee_id || 0)
-    const label = String(row?.assignee_name || row?.assignee_names || '').trim() || '未分配'
-    const key = userId > 0 ? String(userId) : label
-    return { key, value: label }
   }
   return { key: 'UNKNOWN', value: '未分组' }
 }
@@ -225,7 +217,6 @@ function BugListPage() {
   const [groupFields, setGroupFields] = useState([])
   const [groupLimitExceeded, setGroupLimitExceeded] = useState(false)
   const [demandFilter, setDemandFilter] = useState()
-  const [productFilter, setProductFilter] = useState()
   const [assigneeFilter, setAssigneeFilter] = useState()
   const [reporterFilter, setReporterFilter] = useState()
   const [createdRange, setCreatedRange] = useState(null)
@@ -236,8 +227,6 @@ function BugListPage() {
   const [statusSegmentOptions, setStatusSegmentOptions] = useState([{ label: '全部状态', value: '' }])
   const [statusNameMap, setStatusNameMap] = useState({})
   const [severityOptions, setSeverityOptions] = useState([{ label: '全部', value: '' }])
-  const [productOptions, setProductOptions] = useState([{ label: '全部', value: '' }])
-  const [productOptionsLoading, setProductOptionsLoading] = useState(false)
   const [workflowTransitions, setWorkflowTransitions] = useState([])
   const [attachmentPreviewMap, setAttachmentPreviewMap] = useState({})
   const [attachmentPreviewLoadingMap, setAttachmentPreviewLoadingMap] = useState({})
@@ -302,10 +291,9 @@ function BugListPage() {
 
   const loadDicts = useCallback(async () => {
     try {
-      const [statusRes, severityRes, productRes] = await Promise.all([
+      const [statusRes, severityRes] = await Promise.all([
         getDictItemsApi('bug_status', { enabledOnly: true }),
         getDictItemsApi('bug_severity', { enabledOnly: true }),
-        getDictItemsApi('bug_product', { enabledOnly: true }),
       ])
       const statusRows = statusRes?.data || []
       setStatusSegmentOptions(mapSegmentedOptions(statusRows))
@@ -318,7 +306,6 @@ function BugListPage() {
         }, {}),
       )
       setSeverityOptions(mapDictOptions(severityRes?.data || []))
-      setProductOptions(mapDictOptions(productRes?.data || []))
     } catch (error) {
       message.error(error?.message || '加载Bug筛选项失败')
     }
@@ -382,21 +369,19 @@ function BugListPage() {
   const buildListQueryParams = useCallback(() => ({
     keyword: keyword || undefined,
     status_code: statusFilter || undefined,
-    product_code: productFilter || undefined,
     severity_code: severityFilter || undefined,
     demand_id: demandFilter || undefined,
     assignee_id: assigneeFilter || undefined,
     reporter_id: reporterFilter || undefined,
     start_date: createdRange?.[0]?.format?.('YYYY-MM-DD') || undefined,
     end_date: createdRange?.[1]?.format?.('YYYY-MM-DD') || undefined,
-  }), [assigneeFilter, createdRange, demandFilter, keyword, reporterFilter, severityFilter, statusFilter, productFilter])
+  }), [assigneeFilter, createdRange, demandFilter, keyword, reporterFilter, severityFilter, statusFilter])
 
   const buildCurrentViewConfig = useCallback(
     () => ({
       keyword: String(keyword || '').trim(),
       status_code: String(statusFilter || '').trim().toUpperCase(),
       severity_code: String(severityFilter || '').trim().toUpperCase(),
-      product_code: String(productFilter || '').trim().toUpperCase(),
       demand_id: String(demandFilter || '').trim(),
       assignee_id: Number(assigneeFilter || 0) > 0 ? Number(assigneeFilter) : null,
       reporter_id: Number(reporterFilter || 0) > 0 ? Number(reporterFilter) : null,
@@ -405,7 +390,7 @@ function BugListPage() {
       group_fields: Array.isArray(groupFields) ? groupFields : [],
       page_size: BUG_VIEW_ALLOWED_PAGE_SIZE.has(Number(pageSize)) ? Number(pageSize) : 20,
     }),
-    [assigneeFilter, createdRange, demandFilter, groupFields, keyword, pageSize, reporterFilter, severityFilter, statusFilter, productFilter],
+    [assigneeFilter, createdRange, demandFilter, groupFields, keyword, pageSize, reporterFilter, severityFilter, statusFilter],
   )
   const activeViewConfig = useMemo(() => normalizeViewConfig(activeView?.config || {}), [activeView?.config])
   const currentViewConfig = useMemo(() => normalizeViewConfig(buildCurrentViewConfig()), [buildCurrentViewConfig])
@@ -441,7 +426,6 @@ function BugListPage() {
     setSearchInput(config.keyword || '')
     setStatusFilter(config.status_code || '')
     setSeverityFilter(config.severity_code || '')
-    setProductFilter(config.product_code || undefined)
     setDemandFilter(config.demand_id || undefined)
     setAssigneeFilter(config.assignee_id || undefined)
     setReporterFilter(config.reporter_id || undefined)
@@ -875,6 +859,7 @@ function BugListPage() {
         const requiredLabels = []
         if (Number(item?.require_remark) === 1) requiredLabels.push('备注')
         if (Number(item?.require_fix_solution) === 1) requiredLabels.push('修复方案&影响范围')
+        if (Number(item?.require_verify_result) === 1) requiredLabels.push('验证结果')
         const suffix = requiredLabels.length > 0 ? `（需填写${requiredLabels.join('、')}）` : ''
         options.push({
           label: `${String(item?.action_name || '').trim() || statusName}${suffix}`,
@@ -899,6 +884,7 @@ function BugListPage() {
           to_status_code: toStatusCode,
           remark: extraPayload.remark || undefined,
           fix_solution: extraPayload.fix_solution || undefined,
+          verify_result: extraPayload.verify_result || undefined,
         }
         const result = await transitionBugApi(bugId, payload)
 
@@ -931,7 +917,8 @@ function BugListPage() {
       }
       const requireAnyField =
         Number(transition?.require_remark) === 1 ||
-        Number(transition?.require_fix_solution) === 1
+        Number(transition?.require_fix_solution) === 1 ||
+        Number(transition?.require_verify_result) === 1
       if (requireAnyField) {
         transitionForm.resetFields()
         setStatusDialog({
@@ -955,6 +942,7 @@ function BugListPage() {
       const payload = {
         remark: String(values.remark || '').trim(),
         fix_solution: String(values.fix_solution || '').trim(),
+        verify_result: String(values.verify_result || '').trim(),
       }
       await runQuickTransition(bug, transition, payload)
       setStatusDialog({ open: false, bug: null, transition: null })
@@ -1304,20 +1292,6 @@ function BugListPage() {
             <Select
               size="small"
               showSearch
-              className="bug-list-page__filter-control bug-list-page__filter-control--sm"
-              value={productFilter}
-              options={productOptions}
-              loading={productOptionsLoading}
-              filterOption={pinyinSelectFilter}
-              placeholder="产品模块"
-              onChange={(value) => {
-                setProductFilter(String(value || ''))
-                setPage(1)
-              }}
-            />
-            <Select
-              size="small"
-              showSearch
               allowClear
               className="bug-list-page__filter-control"
               value={demandFilter}
@@ -1618,6 +1592,15 @@ function BugListPage() {
               rules={[{ required: true, message: '请输入修复方案&影响范围' }]}
             >
               <Input.TextArea rows={3} maxLength={2000} placeholder="请输入修复方案与影响范围" />
+            </Form.Item>
+          ) : null}
+          {Number(statusDialog.transition?.require_verify_result) === 1 ? (
+            <Form.Item
+              label="验证结果"
+              name="verify_result"
+              rules={[{ required: true, message: '请输入验证结果' }]}
+            >
+              <Input.TextArea rows={3} maxLength={2000} placeholder="请输入验证结果" />
             </Form.Item>
           ) : null}
         </Form>
