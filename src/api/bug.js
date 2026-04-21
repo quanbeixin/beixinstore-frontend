@@ -1,5 +1,7 @@
 import { request } from './http'
 
+const BUG_ATTACHMENT_REQUEST_TIMEOUT = 45000
+
 export function getBugsApi(params) {
   return request.get('/work/bugs', { params })
 }
@@ -53,11 +55,15 @@ export function updateBugCommentApi(id, commentLogId, payload = {}) {
 }
 
 export function getBugCommentAttachmentPolicyApi(id, commentLogId, payload = {}) {
-  return request.post(`/work/bugs/${id}/comments/${commentLogId}/attachments/policy`, payload)
+  return request.post(`/work/bugs/${id}/comments/${commentLogId}/attachments/policy`, payload, {
+    timeout: BUG_ATTACHMENT_REQUEST_TIMEOUT,
+  })
 }
 
 export function createBugCommentAttachmentApi(id, commentLogId, payload = {}) {
-  return request.post(`/work/bugs/${id}/comments/${commentLogId}/attachments`, payload)
+  return request.post(`/work/bugs/${id}/comments/${commentLogId}/attachments`, payload, {
+    timeout: BUG_ATTACHMENT_REQUEST_TIMEOUT,
+  })
 }
 
 export function deleteBugCommentAttachmentApi(id, commentLogId, attachmentId) {
@@ -105,15 +111,21 @@ export function getDemandBugStatsApi(demandId) {
 }
 
 export function getBugAttachmentPolicyApi(id, payload = {}) {
-  return request.post(`/work/bugs/${id}/attachments/policy`, payload)
+  return request.post(`/work/bugs/${id}/attachments/policy`, payload, {
+    timeout: BUG_ATTACHMENT_REQUEST_TIMEOUT,
+  })
 }
 
 export function precheckBugAttachmentApi(payload = {}) {
-  return request.post('/work/bugs/attachments/precheck', payload)
+  return request.post('/work/bugs/attachments/precheck', payload, {
+    timeout: BUG_ATTACHMENT_REQUEST_TIMEOUT,
+  })
 }
 
 export function createBugAttachmentApi(id, payload) {
-  return request.post(`/work/bugs/${id}/attachments`, payload)
+  return request.post(`/work/bugs/${id}/attachments`, payload, {
+    timeout: BUG_ATTACHMENT_REQUEST_TIMEOUT,
+  })
 }
 
 export function deleteBugAttachmentApi(id, attachmentId) {

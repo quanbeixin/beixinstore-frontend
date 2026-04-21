@@ -324,13 +324,20 @@ function BugFormModal({
     }
 
     try {
-      let previewSrc = file?.url || file?.thumbUrl || file?.preview || ''
       const rawFile = file?.originFileObj
+      let previewSrc = String(file?.url || '').trim()
       if (!previewSrc && rawFile instanceof Blob && isImageFile(file)) {
-        previewSrc = await readFileAsDataUrl(rawFile)
+        const cachedOriginPreview = String(file?.__originPreview || '').trim()
+        previewSrc = cachedOriginPreview || await readFileAsDataUrl(rawFile)
+        if (!cachedOriginPreview) {
+          file.__originPreview = previewSrc
+        }
       }
       if (!previewSrc && rawFile instanceof Blob && isVideoFile(file)) {
         previewSrc = URL.createObjectURL(rawFile)
+      }
+      if (!previewSrc) {
+        previewSrc = String(file?.preview || file?.thumbUrl || '').trim()
       }
       if (!previewSrc) {
         message.warning('当前附件无法生成预览')
@@ -434,6 +441,7 @@ function BugFormModal({
 
   useEffect(() => {
     if (!open) return
+    form.resetFields()
     const nextDemandId = normalizedDemandPreset || String(initialValues?.demand_id || '').trim()
     const initialAssigneeIds = Array.isArray(initialValues?.assignee_ids)
       ? initialValues.assignee_ids
@@ -464,6 +472,11 @@ function BugFormModal({
     loadAssignees(selectedDemandId)
   }, [selectedDemandId, open, loadAssignees])
 
+  useEffect(() => {
+    if (open) return
+    form.resetFields()
+  }, [form, open])
+
   const handleOk = useCallback(async () => {
     try {
       const values = await form.validateFields()
@@ -486,11 +499,16 @@ function BugFormModal({
         new Set((Array.isArray(values.watcher_ids) ? values.watcher_ids : []).map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0)),
       )
       const pendingDescriptionImages = Array.from(pendingDescriptionImageMapRef.current.entries())
-        .filter(([token]) => normalizedDescription.includes(token))
+        .filter(([token, item]) => {
+          const normalizedToken = String(token || '').trim()
+          const objectUrl = String(item?.objectUrl || '').trim()
+          return (normalizedToken && normalizedDescription.includes(normalizedToken)) || (objectUrl && normalizedDescription.includes(objectUrl))
+        })
         .map(([token, item]) => ({
           token,
           signature: item?.signature || '',
           fileName: item?.fileName || '',
+          objectUrl: item?.objectUrl || '',
         }))
       await onSubmit?.(
         {

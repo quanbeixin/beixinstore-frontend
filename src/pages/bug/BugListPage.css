@@ -405,13 +405,26 @@
   padding-inline: 0;
 }
 
-.bug-list-page__attachment-preview-image {
-  display: block;
-  max-width: 100%;
+.bug-list-page__attachment-preview-image.ant-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
   max-height: 72vh;
   margin: 0 auto;
   border-radius: 10px;
   background: #f5f6f8;
+}
+
+.bug-list-page__attachment-preview-image .ant-image-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 72vh;
+  margin: 0 auto;
+  border-radius: 10px;
+  object-fit: contain;
 }
 
 .bug-list-page__image-mask-hint {

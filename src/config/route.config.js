@@ -140,6 +140,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/my-pending-bugs',
+    componentKey: 'myPendingBugs',
+    requiredPermission: 'bug.view',
+    page: {
+      title: '待处理bug',
+      subtitle: '查看处理人为当前登录人的 Bug 列表。',
+    },
+    menu: {
+      section: 'workbench',
+      label: '待处理bug',
+      icon: 'dashboard',
+    },
+  },
+  {
     path: '/work-log-history',
     componentKey: 'workLogHistory',
     requiredPermission: 'worklog.view.self',

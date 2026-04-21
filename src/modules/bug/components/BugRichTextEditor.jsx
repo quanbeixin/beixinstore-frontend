@@ -1,5 +1,5 @@
 import { Button, Space, Tooltip, message } from 'antd'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { EditorContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
@@ -7,10 +7,98 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import './bug-rich-text-editor.css'
 
+const MIN_IMAGE_WIDTH = 120
+const DEFAULT_IMAGE_MAX_WIDTH = 560
+
+function parseImageWidth(value) {
+  const width = Number(value)
+  return Number.isFinite(width) && width > 0 ? Math.round(width) : null
+}
+
+function ResizableImageNodeView(props) {
+  const { node, updateAttributes, editor, selected } = props
+  const [draftWidth, setDraftWidth] = useState(null)
+  const fixedWidth = parseImageWidth(node?.attrs?.width)
+  const effectiveWidth = draftWidth || fixedWidth
+
+  const startResize = useCallback(
+    (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      const editorWidth = Number(editor?.view?.dom?.clientWidth || 0)
+      const maxWidth = Math.max(MIN_IMAGE_WIDTH, editorWidth > 0 ? editorWidth - 36 : DEFAULT_IMAGE_MAX_WIDTH)
+      const initialWidth = effectiveWidth || Number(event.currentTarget?.parentElement?.getBoundingClientRect?.().width || 0) || DEFAULT_IMAGE_MAX_WIDTH
+      const startX = Number(event.clientX || 0)
+      let currentWidth = initialWidth
+      setDraftWidth(initialWidth)
+
+      const handleMouseMove = (moveEvent) => {
+        const deltaX = Number(moveEvent.clientX || 0) - startX
+        const nextWidth = Math.max(MIN_IMAGE_WIDTH, Math.min(maxWidth, Math.round(initialWidth + deltaX)))
+        currentWidth = nextWidth
+        setDraftWidth(nextWidth)
+      }
+
+      const handleMouseUp = () => {
+        const finalizedWidth = parseImageWidth(currentWidth) || parseImageWidth(initialWidth)
+        if (finalizedWidth) {
+          updateAttributes({ width: finalizedWidth })
+        }
+        setDraftWidth(null)
+        window.removeEventListener('mousemove', handleMouseMove)
+        window.removeEventListener('mouseup', handleMouseUp)
+      }
+
+      window.addEventListener('mousemove', handleMouseMove)
+      window.addEventListener('mouseup', handleMouseUp)
+    },
+    [editor?.view?.dom?.clientWidth, effectiveWidth, updateAttributes],
+  )
+
+  return (
+    <NodeViewWrapper
+      as="span"
+      className={`bug-rich-text-editor__image-node${selected ? ' bug-rich-text-editor__image-node--selected' : ''}`}
+      style={{
+        width: effectiveWidth ? `${effectiveWidth}px` : undefined,
+        maxWidth: '100%',
+      }}
+      contentEditable={false}
+      draggable={false}
+    >
+      <img
+        src={node?.attrs?.src || ''}
+        alt={node?.attrs?.alt || ''}
+        title={node?.attrs?.title || ''}
+        data-upload-token={node?.attrs?.['data-upload-token'] || undefined}
+        data-attachment-id={node?.attrs?.['data-attachment-id'] || undefined}
+        width={effectiveWidth || undefined}
+      />
+      <button
+        type="button"
+        className="bug-rich-text-editor__image-resize-handle"
+        onMouseDown={startResize}
+        aria-label="拖拽调整图片宽度"
+        title="拖拽调整图片大小"
+      />
+    </NodeViewWrapper>
+  )
+}
+
 const RichImage = Image.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
+      width: {
+        default: null,
+        parseHTML: (element) => parseImageWidth(element.getAttribute('width')),
+        renderHTML: (attributes) => {
+          const width = parseImageWidth(attributes?.width)
+          if (!width) return {}
+          return { width: String(width) }
+        },
+      },
       'data-upload-token': {
         default: null,
       },
@@ -18,6 +106,9 @@ const RichImage = Image.extend({
         default: null,
       },
     }
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(ResizableImageNodeView)
   },
 })
 
@@ -188,7 +279,7 @@ function BugRichTextEditor({
           ))}
         </Space>
         <div className="bug-rich-text-editor__hint">
-          {uploadingImages ? '图片上传中...' : '支持基础排版，支持直接粘贴截图'}
+          {uploadingImages ? '图片上传中...' : '支持基础排版、粘贴截图，图片可拖拽右下角调整大小'}
         </div>
       </div>
       <EditorContent editor={editor} />

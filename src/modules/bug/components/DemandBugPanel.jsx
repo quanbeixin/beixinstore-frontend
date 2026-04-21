@@ -1114,17 +1114,21 @@ function DemandBugPanel({ demandId }) {
 
             if (bugId > 0 && pendingDescriptionImages.length > 0) {
               const tokenAttachmentMap = new Map()
+              const blobAttachmentMap = new Map()
               const attachmentBySignature = new Map(
                 (Array.isArray(uploadResult.successes) ? uploadResult.successes : []).map((item) => [item.signature, item.attachment]),
               )
               pendingDescriptionImages.forEach((item) => {
                 const token = String(item?.token || '').trim()
                 const signature = String(item?.signature || '').trim()
-                if (!token || !signature) return
+                const objectUrl = String(item?.objectUrl || '').trim()
+                if (!signature) return
                 const attachment = attachmentBySignature.get(signature)
-                if (attachment) tokenAttachmentMap.set(token, attachment)
+                if (!attachment) return
+                if (token) tokenAttachmentMap.set(token, attachment)
+                if (objectUrl) blobAttachmentMap.set(objectUrl, attachment)
               })
-              const finalDescription = replacePendingDescriptionImages(values.description, tokenAttachmentMap)
+              const finalDescription = replacePendingDescriptionImages(values.description, tokenAttachmentMap, blobAttachmentMap)
               if (finalDescription && finalDescription !== baseDescription) {
                 const updateResult = await updateBugApi(bugId, {
                   ...values,

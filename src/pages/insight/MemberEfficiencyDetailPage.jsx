@@ -83,17 +83,17 @@ function getVarianceTextColor(value, mode = 'owner') {
   const num = Number(value)
   if (!Number.isFinite(num) || num === 0) return '#344054'
   const palette = {
-    severePositive: '#d92d20',
-    mildPositive: '#f04438',
+    severeNegative: '#d92d20',
+    mildNegative: '#f04438',
     neutral: '#344054',
-    mildNegative: '#039855',
-    severeNegative: '#0f766e',
+    mildPositive: '#039855',
+    severePositive: '#0f766e',
   }
-  if (num > 4) return palette.severePositive
-  if (num > 1) return palette.mildPositive
-  if (num >= -1) return palette.neutral
-  if (num >= -4) return palette.mildNegative
-  return palette.severeNegative
+  if (num < -4) return palette.severeNegative
+  if (num < -1) return palette.mildNegative
+  if (num <= 1) return palette.neutral
+  if (num <= 4) return palette.mildPositive
+  return palette.severePositive
 }
 
 function getComparableTagColor(covered, required) {
@@ -438,8 +438,8 @@ function MemberEfficiencyDetailPage() {
               jobLevelWeightCoefficient: memberJobLevelWeightCoefficient,
             }),
           ),
-          variance_owner_baseline_hours: totalOwnerComparableActualHours - totalOwnerBaselineHours,
-          variance_personal_hours: totalActualHours - totalPersonalEstimateHours,
+          variance_owner_baseline_hours: totalOwnerBaselineHours - totalOwnerComparableActualHours,
+          variance_personal_hours: totalPersonalEstimateHours - totalActualHours,
           children,
         }
       })
@@ -452,7 +452,7 @@ function MemberEfficiencyDetailPage() {
       return
     }
     const rows = [
-      ['日期', '事项类型', '事项状态', '职级', '关联需求', '阶段', '可比/应评估', 'Owner评估(h)', 'Owner偏差(h)', '个人预估(h)', '实际工时(h)', '个人偏差(h)', '净效率值', '描述'],
+      ['日期', '事项类型', '事项状态', '职级', '关联需求', '阶段', '可比/应评估', 'Owner评估(h)', 'Owner预估偏差(h)', '个人预估(h)', '实际工时(h)', '个人预估偏差(h)', '净效率值', '描述'],
       ...workItemList.map((item) => [
         item.log_date || '-',
         item.item_type_name || '-',
@@ -628,6 +628,14 @@ function MemberEfficiencyDetailPage() {
         ),
     },
     {
+      title: '描述',
+      dataIndex: 'description',
+      key: 'description',
+      width: 220,
+      ellipsis: true,
+      render: (value, row) => (row.__isTypeGroup ? '-' : value || '-'),
+    },
+    {
       title: '状态',
       dataIndex: 'log_status',
       key: 'log_status',
@@ -665,7 +673,7 @@ function MemberEfficiencyDetailPage() {
     {
       title: (
         <Space size={4}>
-          <span className="efficiency-highlight-title efficiency-highlight-title--owner">Owner评估/基线(h)</span>
+          <span className="efficiency-highlight-title efficiency-highlight-title--owner">Owner评估时长（h）</span>
           <Tooltip title="事项行展示 Owner 原始评估；分组行展示 Owner 真实基线（净效率口径）。">
             <QuestionCircleOutlined className="efficiency-highlight-title__icon efficiency-highlight-title__icon--owner" />
           </Tooltip>
@@ -686,7 +694,14 @@ function MemberEfficiencyDetailPage() {
         ),
     },
     {
-      title: 'Owner偏差(h)',
+      title: (
+        <Space size={4}>
+          <span>Owner预估偏差(h)</span>
+          <Tooltip title="Owner预估偏差 = Owner评估时长 - 实际用时（可比口径）">
+            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
       dataIndex: 'variance_owner_baseline_hours',
       key: 'variance_owner_baseline_hours',
       width: 120,
@@ -700,7 +715,14 @@ function MemberEfficiencyDetailPage() {
       render: (value, row) => (row.__isTypeGroup ? formatHours(row.personal_estimate_hours) : formatHours(value)),
     },
     {
-      title: '个人偏差(h)',
+      title: (
+        <Space size={4}>
+          <span>个人预估偏差(h)</span>
+          <Tooltip title="个人预估偏差 = 个人预估时间 - 实际用时">
+            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
       dataIndex: 'variance_personal_hours',
       key: 'variance_personal_hours',
       width: 120,
@@ -772,13 +794,6 @@ function MemberEfficiencyDetailPage() {
       render: (_, row) =>
         row.__isTypeGroup ? '-' : `${row.expected_start_date || '-'} ~ ${row.expected_completion_date || '-'}`,
     },
-    {
-      title: '描述',
-      dataIndex: 'description',
-      key: 'description',
-      ellipsis: true,
-      render: (value, row) => (row.__isTypeGroup ? '-' : value || '-'),
-    },
   ]
 
   const summaryItems = [
@@ -809,9 +824,9 @@ function MemberEfficiencyDetailPage() {
       note: '只累计进入 Owner 可比口径的实际工时',
     },
     {
-      label: 'Owner偏差(h)',
+      label: 'Owner预估偏差(h)',
       valueNode: renderVarianceValue(summary.variance_owner_baseline_hours, 'owner'),
-      note: 'Owner偏差 = Owner可比实际 - Owner真实基线',
+      note: 'Owner预估偏差 = Owner评估时长 - 实际用时（可比口径）',
     },
     {
       label: '个人预估覆盖率',
@@ -820,9 +835,9 @@ function MemberEfficiencyDetailPage() {
     },
     { label: '实际总工时(h)', value: formatHours(summary.total_actual_hours), note: '当前周期事项实际投入汇总' },
     {
-      label: '个人偏差(h)',
+      label: '个人预估偏差(h)',
       valueNode: renderVarianceValue(summary.variance_personal_hours, 'personal'),
-      note: '个人偏差 = 实际工时 - 个人预估工时',
+      note: '个人预估偏差 = 个人预估时间 - 实际用时',
     },
     {
       label: '净效率值',

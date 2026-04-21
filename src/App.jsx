@@ -34,6 +34,7 @@ const NotificationConfig = lazy(() => import('./pages/project/NotificationConfig
 const NotificationRules = lazy(() => import('./pages/notification/NotificationRulesPage'))
 const WorkLogs = lazy(() => import('./pages/workbench/WorkLogsPage'))
 const MyDemands = lazy(() => import('./pages/workbench/MyDemandsPage'))
+const MyPendingBugs = lazy(() => import('./pages/workbench/MyPendingBugsPage'))
 const MyAssignedItems = lazy(() => import('./pages/workbench/MyAssignedItemsPage'))
 const WorkLogHistory = lazy(() => import('./pages/workbench/WorkLogHistoryPage'))
 const MorningStandupBoard = lazy(() => import('./pages/workbench/MorningStandupPage'))
@@ -90,6 +91,7 @@ const PAGE_COMPONENTS = {
   workDemands: WorkDemands,
   workLogs: WorkLogs,
   myDemands: MyDemands,
+  myPendingBugs: MyPendingBugs,
   myAssignedItems: MyAssignedItems,
   workLogHistory: WorkLogHistory,
   userDepartments: UserDepartments,

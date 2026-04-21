@@ -90,8 +90,8 @@ function buildCsvContent(rows = []) {
     'Owner真实基线(h)',
     '个人预估总工时(h)',
     '实际/可比实际(h)',
-    'Owner偏差(h)',
-    '个人偏差(h)',
+    'Owner预估偏差(h)',
+    '个人预估偏差(h)',
     '净效率值',
     '最近填报日期',
   ]
@@ -346,7 +346,7 @@ function DepartmentEfficiencyRankingPage() {
       <span>{`可比事项数：${toNumber(summary.total_owner_estimate_covered_item_count, 0)} 个`}</span>
       <span>{`真实基线：${formatHours(summary.total_owner_baseline_hours)} h`}</span>
       <span>{`Owner可比实际：${formatHours(summary.total_owner_comparable_actual_hours)} h`}</span>
-      <span>{`Owner偏差：${formatHours(summary.variance_owner_baseline_hours)} h`}</span>
+      <span>{`Owner预估偏差：${formatHours(summary.variance_owner_baseline_hours)} h`}</span>
     </Space>
   )
   const personalCoverageTip = (
@@ -467,7 +467,7 @@ function DepartmentEfficiencyRankingPage() {
     {
       title: (
         <Space size={4}>
-          <span>Owner评估/基线(h)</span>
+          <span>Owner评估时长（h）</span>
           <Tooltip title="仅统计有真实 Owner 评估值的事项，不混入非 Owner 事项与兜底口径；与 Owner可比实际一起形成可比分析">
             <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
           </Tooltip>
@@ -484,7 +484,7 @@ function DepartmentEfficiencyRankingPage() {
             <Space orientation="vertical" size={2}>
               <span>{`真实基线：${formatHours(value)} h`}</span>
               <span>{`Owner可比实际：${formatHours(row.total_owner_comparable_actual_hours)} h`}</span>
-              <span>{`Owner偏差：${formatHours(row.variance_owner_baseline_hours)} h`}</span>
+              <span>{`Owner预估偏差：${formatHours(row.variance_owner_baseline_hours)} h`}</span>
             </Space>
           }
         >
@@ -520,8 +520,8 @@ function DepartmentEfficiencyRankingPage() {
     {
       title: (
         <Space size={4}>
-          <span>Owner偏差(h)</span>
-          <Tooltip title="按可比口径计算：Owner偏差 = Owner可比实际 - Owner真实基线，只统计存在真实 Owner 评估值的事项">
+          <span>Owner预估偏差(h)</span>
+          <Tooltip title="按可比口径计算：Owner预估偏差 = Owner评估时长 - 实际用时，只统计存在真实 Owner 评估值的事项">
             <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
           </Tooltip>
         </Space>
@@ -541,8 +541,8 @@ function DepartmentEfficiencyRankingPage() {
     {
       title: (
         <Space size={4}>
-          <span>个人偏差(h)</span>
-          <Tooltip title="按成员个人预估口径计算：个人偏差 = 实际工时 - 个人预估工时">
+          <span>个人预估偏差(h)</span>
+          <Tooltip title="按成员个人预估口径计算：个人预估偏差 = 个人预估时间 - 实际用时">
             <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
           </Tooltip>
         </Space>

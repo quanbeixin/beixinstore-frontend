@@ -6,7 +6,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { getDictItemsApi } from '../../api/configDict'
 import { createBugApi, createBugViewApi, deleteBugViewApi, getBugAssigneesApi, getBugByIdApi, getBugViewByIdApi, getBugViewsApi, getBugWorkflowConfigApi, getBugsApi, transitionBugApi, updateBugApi, updateBugViewApi } from '../../api/bug'
 import { getWorkDemandsApi } from '../../api/work'
-import { hasPermission } from '../../utils/access'
+import { getCurrentUser, hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
 import { pinyinSelectFilter } from '../../utils/selectSearch'
 import { BugFormModal } from '../../modules/bug'
@@ -35,6 +35,13 @@ const BUG_VIEW_VISIBILITY_OPTIONS = [
   { label: '共享给他人', value: 'SHARED' },
 ]
 const BUG_VIEW_ALLOWED_PAGE_SIZE = new Set([20, 50, 100])
+const DEFAULT_PAGE_TITLE = 'Bug管理'
+const DEFAULT_PAGE_SUBTITLE = '一站式查看、筛选、分组与流转处理'
+
+function toPositiveInt(value) {
+  const num = Number(value)
+  return Number.isInteger(num) && num > 0 ? num : null
+}
 
 function getAttachmentUrl(row) {
   return String(row?.download_url || row?.object_url || '').trim()
@@ -88,8 +95,9 @@ function mapDemandOptions(rows) {
       const demandId = String(item?.id || '').trim()
       if (!demandId) return null
       const demandName = String(item?.name || '').trim() || demandId
+      const fullLabel = `${demandId} · ${demandName}`
       return {
-        label: `${demandId} · ${demandName}`,
+        label: <span title={fullLabel}>{fullLabel}</span>,
         value: demandId,
         searchText: `${demandId} ${demandName}`.trim(),
       }
@@ -126,6 +134,115 @@ function buildViewDateRange(config = {}) {
   const endValue = dayjs(end, 'YYYY-MM-DD')
   if (!startValue.isValid() || !endValue.isValid()) return null
   return [startValue, endValue]
+}
+
+function parseGroupFieldsFromQuery(params) {
+  if (!(params instanceof URLSearchParams)) return []
+  const rawValues = params.getAll('group_fields').map((item) => String(item || '').trim()).filter(Boolean)
+  if (rawValues.length === 0) return []
+  if (rawValues.length === 1) {
+    return rawValues[0]
+      .split(',')
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  }
+  return rawValues
+}
+
+function parseBugListQueryState(search, { forcedAssigneeId = null } = {}) {
+  const params = new URLSearchParams(search || '')
+  const config = normalizeViewConfig({
+    keyword: params.get('keyword') || '',
+    status_code: params.get('status_code') || '',
+    severity_code: params.get('severity_code') || '',
+    demand_id: params.get('demand_id') || '',
+    assignee_id: params.get('assignee_id') || '',
+    reporter_id: params.get('reporter_id') || '',
+    start_date: params.get('start_date') || '',
+    end_date: params.get('end_date') || '',
+    group_fields: parseGroupFieldsFromQuery(params),
+    page_size: params.get('page_size') || '',
+  })
+  const rawPage = Number(params.get('page') || 1)
+  return {
+    keyword: config.keyword || '',
+    statusFilter: config.status_code || '',
+    severityFilter: config.severity_code || '',
+    demandFilter: config.demand_id || undefined,
+    assigneeFilter: forcedAssigneeId || config.assignee_id || undefined,
+    reporterFilter: config.reporter_id || undefined,
+    createdRange: buildViewDateRange(config),
+    groupFields: Array.isArray(config.group_fields) ? config.group_fields : [],
+    pageSize: config.page_size || 20,
+    page: Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1,
+  }
+}
+
+function buildBugListQueryString({
+  viewId,
+  keyword,
+  statusFilter,
+  severityFilter,
+  demandFilter,
+  assigneeFilter,
+  reporterFilter,
+  createdRange,
+  groupFields,
+  page,
+  pageSize,
+}) {
+  const params = new URLSearchParams()
+  const normalizedViewId = Number(viewId || 0)
+  if (normalizedViewId > 0) params.set('view_id', String(normalizedViewId))
+
+  const normalizedKeyword = String(keyword || '').trim()
+  if (normalizedKeyword) params.set('keyword', normalizedKeyword)
+
+  const normalizedStatus = String(statusFilter || '').trim().toUpperCase()
+  if (normalizedStatus) params.set('status_code', normalizedStatus)
+
+  const normalizedSeverity = String(severityFilter || '').trim().toUpperCase()
+  if (normalizedSeverity) params.set('severity_code', normalizedSeverity)
+
+  const normalizedDemand = String(demandFilter || '').trim()
+  if (normalizedDemand) params.set('demand_id', normalizedDemand)
+
+  const normalizedAssigneeId = Number(assigneeFilter || 0)
+  if (Number.isInteger(normalizedAssigneeId) && normalizedAssigneeId > 0) {
+    params.set('assignee_id', String(normalizedAssigneeId))
+  }
+
+  const normalizedReporterId = Number(reporterFilter || 0)
+  if (Number.isInteger(normalizedReporterId) && normalizedReporterId > 0) {
+    params.set('reporter_id', String(normalizedReporterId))
+  }
+
+  const startDate = createdRange?.[0]?.format?.('YYYY-MM-DD')
+  const endDate = createdRange?.[1]?.format?.('YYYY-MM-DD')
+  if (startDate && endDate) {
+    params.set('start_date', startDate)
+    params.set('end_date', endDate)
+  }
+
+  const normalizedGroupFields = (Array.isArray(groupFields) ? groupFields : [])
+    .map((item) => String(item || '').trim())
+    .filter((item, index, arr) => GROUP_FIELD_OPTIONS.some((option) => option.value === item) && arr.indexOf(item) === index)
+    .slice(0, 3)
+  if (normalizedGroupFields.length > 0) {
+    params.set('group_fields', normalizedGroupFields.join(','))
+  }
+
+  const normalizedPage = Number(page || 1)
+  if (Number.isInteger(normalizedPage) && normalizedPage > 1) {
+    params.set('page', String(normalizedPage))
+  }
+
+  const normalizedPageSize = Number(pageSize || 20)
+  if (BUG_VIEW_ALLOWED_PAGE_SIZE.has(normalizedPageSize) && normalizedPageSize !== 20) {
+    params.set('page_size', String(normalizedPageSize))
+  }
+
+  return params.toString()
 }
 
 function resolveGroupBucket(field, row) {
@@ -196,30 +313,48 @@ function openDemandDetailInNewTab(demandId) {
   window.open(`/work-demands/${encodeURIComponent(normalizedDemandId)}`, '_blank', 'noopener,noreferrer')
 }
 
-function BugListPage() {
+function BugListPage({
+  pageTitle = DEFAULT_PAGE_TITLE,
+  pageSubtitle = DEFAULT_PAGE_SUBTITLE,
+  forceAssigneeId = null,
+  openBugTitleInNewTab = false,
+  allowCreate = true,
+  detailSource = '',
+} = {}) {
   const navigate = useNavigate()
   const location = useLocation()
-  const canCreate = hasPermission('bug.create')
+  const currentUserId = toPositiveInt(getCurrentUser()?.id)
+  const normalizedForcedAssigneeId = toPositiveInt(forceAssigneeId) || (forceAssigneeId === 'CURRENT_USER' ? currentUserId : null)
+  const isAssigneeForced = Boolean(normalizedForcedAssigneeId)
+  const initialQueryStateRef = useRef(parseBugListQueryState(location.search, { forcedAssigneeId: normalizedForcedAssigneeId }))
+  const initialQueryState = initialQueryStateRef.current
+  const canCreate = allowCreate && hasPermission('bug.create')
   const canTransition = hasPermission('bug.transition')
-  const canUpdate = hasPermission('bug.update')
+  const normalizedDetailSource = String(detailSource || '').trim()
+  const detailQuery = useMemo(() => {
+    if (!normalizedDetailSource) return ''
+    const params = new URLSearchParams()
+    params.set('from', normalizedDetailSource)
+    return params.toString()
+  }, [normalizedDetailSource])
 
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [rows, setRows] = useState([])
   const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
-  const [searchInput, setSearchInput] = useState('')
-  const [keyword, setKeyword] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [severityFilter, setSeverityFilter] = useState('')
-  const [groupFields, setGroupFields] = useState([])
+  const [page, setPage] = useState(initialQueryState.page)
+  const [pageSize, setPageSize] = useState(initialQueryState.pageSize)
+  const [searchInput, setSearchInput] = useState(initialQueryState.keyword)
+  const [keyword, setKeyword] = useState(initialQueryState.keyword)
+  const [statusFilter, setStatusFilter] = useState(initialQueryState.statusFilter)
+  const [severityFilter, setSeverityFilter] = useState(initialQueryState.severityFilter)
+  const [groupFields, setGroupFields] = useState(initialQueryState.groupFields)
   const [groupLimitExceeded, setGroupLimitExceeded] = useState(false)
-  const [demandFilter, setDemandFilter] = useState()
-  const [assigneeFilter, setAssigneeFilter] = useState()
-  const [reporterFilter, setReporterFilter] = useState()
-  const [createdRange, setCreatedRange] = useState(null)
+  const [demandFilter, setDemandFilter] = useState(initialQueryState.demandFilter)
+  const [assigneeFilter, setAssigneeFilter] = useState(initialQueryState.assigneeFilter)
+  const [reporterFilter, setReporterFilter] = useState(initialQueryState.reporterFilter)
+  const [createdRange, setCreatedRange] = useState(initialQueryState.createdRange)
   const [demandOptions, setDemandOptions] = useState([])
   const [demandOptionsLoading, setDemandOptionsLoading] = useState(false)
   const [userOptions, setUserOptions] = useState([])
@@ -427,13 +562,13 @@ function BugListPage() {
     setStatusFilter(config.status_code || '')
     setSeverityFilter(config.severity_code || '')
     setDemandFilter(config.demand_id || undefined)
-    setAssigneeFilter(config.assignee_id || undefined)
+    setAssigneeFilter(normalizedForcedAssigneeId || config.assignee_id || undefined)
     setReporterFilter(config.reporter_id || undefined)
     setCreatedRange(buildViewDateRange(config))
     setGroupFields(Array.isArray(config.group_fields) ? config.group_fields : [])
     setPageSize(config.page_size || 20)
     setPage(1)
-  }, [])
+  }, [normalizedForcedAssigneeId])
 
   const loadBugViews = useCallback(async () => {
     setViewListLoading(true)
@@ -543,6 +678,24 @@ function BugListPage() {
     }
   }, [buildListQueryParams, isGroupingEnabled, page, pageSize])
 
+  const buildBugDetailPath = useCallback((bugId) => {
+    const normalizedBugId = Number(bugId || 0)
+    if (!normalizedBugId) return ''
+    const detailPath = `/bugs/${normalizedBugId}`
+    if (!detailQuery) return detailPath
+    return `${detailPath}?${detailQuery}`
+  }, [detailQuery])
+
+  const openBugDetail = useCallback((bugId) => {
+    const detailPath = buildBugDetailPath(bugId)
+    if (!detailPath) return
+    if (openBugTitleInNewTab) {
+      window.open(detailPath, '_blank', 'noopener,noreferrer')
+      return
+    }
+    navigate(detailPath)
+  }, [buildBugDetailPath, navigate, openBugTitleInNewTab])
+
   useEffect(() => {
     loadDicts()
   }, [loadDicts])
@@ -568,6 +721,86 @@ function BugListPage() {
   }, [loadBugs])
 
   useEffect(() => {
+    if (!normalizedForcedAssigneeId) return
+    setAssigneeFilter(normalizedForcedAssigneeId)
+  }, [normalizedForcedAssigneeId])
+
+  useEffect(() => {
+    const queryState = parseBugListQueryState(location.search, { forcedAssigneeId: normalizedForcedAssigneeId })
+    setSearchInput((prev) => (prev === queryState.keyword ? prev : queryState.keyword))
+    setKeyword((prev) => (prev === queryState.keyword ? prev : queryState.keyword))
+    setStatusFilter((prev) => (prev === queryState.statusFilter ? prev : queryState.statusFilter))
+    setSeverityFilter((prev) => (prev === queryState.severityFilter ? prev : queryState.severityFilter))
+    setDemandFilter((prev) => (prev === queryState.demandFilter ? prev : queryState.demandFilter))
+    setAssigneeFilter((prev) => (prev === queryState.assigneeFilter ? prev : queryState.assigneeFilter))
+    setReporterFilter((prev) => (prev === queryState.reporterFilter ? prev : queryState.reporterFilter))
+    setCreatedRange((prev) => {
+      const prevStart = prev?.[0]?.format?.('YYYY-MM-DD') || ''
+      const prevEnd = prev?.[1]?.format?.('YYYY-MM-DD') || ''
+      const nextStart = queryState.createdRange?.[0]?.format?.('YYYY-MM-DD') || ''
+      const nextEnd = queryState.createdRange?.[1]?.format?.('YYYY-MM-DD') || ''
+      if (prevStart === nextStart && prevEnd === nextEnd) return prev
+      return queryState.createdRange
+    })
+    setGroupFields((prev) => {
+      if (
+        Array.isArray(prev) &&
+        Array.isArray(queryState.groupFields) &&
+        prev.length === queryState.groupFields.length &&
+        prev.every((item, index) => item === queryState.groupFields[index])
+      ) {
+        return prev
+      }
+      return queryState.groupFields
+    })
+    setPage((prev) => (prev === queryState.page ? prev : queryState.page))
+    setPageSize((prev) => (prev === queryState.pageSize ? prev : queryState.pageSize))
+  }, [location.search, normalizedForcedAssigneeId])
+
+  useEffect(() => {
+    const queryViewId = Number(new URLSearchParams(location.search || '').get('view_id') || 0)
+    if (queryViewId > 0 && Number(activeViewId || 0) === 0) return
+    const nextSearch = buildBugListQueryString({
+      viewId: activeViewId,
+      keyword,
+      statusFilter,
+      severityFilter,
+      demandFilter,
+      assigneeFilter,
+      reporterFilter,
+      createdRange,
+      groupFields,
+      page,
+      pageSize,
+    })
+    const currentSearch = new URLSearchParams(location.search || '').toString()
+    if (currentSearch === nextSearch) return
+
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : '',
+      },
+      { replace: true },
+    )
+  }, [
+    activeViewId,
+    assigneeFilter,
+    createdRange,
+    demandFilter,
+    groupFields,
+    keyword,
+    location.pathname,
+    location.search,
+    navigate,
+    page,
+    pageSize,
+    reporterFilter,
+    severityFilter,
+    statusFilter,
+  ])
+
+  useEffect(() => {
     const viewIdFromQuery = Number(new URLSearchParams(location.search || '').get('view_id') || 0)
     if (!viewIdFromQuery) return
     if (Number(activeViewId || 0) === viewIdFromQuery) return
@@ -576,7 +809,7 @@ function BugListPage() {
       message.error(error?.message || '加载分享视图失败')
       setViewQueryParam(0)
     })
-  }, [loadAndApplyBugView, location.search, setViewQueryParam])
+  }, [activeViewId, loadAndApplyBugView, location.search, setViewQueryParam])
 
   const activeFilterCount = useMemo(
     () =>
@@ -598,13 +831,13 @@ function BugListPage() {
     setStatusFilter('')
     setSeverityFilter('')
     setDemandFilter(undefined)
-    setAssigneeFilter(undefined)
+    setAssigneeFilter(normalizedForcedAssigneeId || undefined)
     setReporterFilter(undefined)
     setCreatedRange(null)
     setGroupFields([])
     setPage(1)
     setPageSize(20)
-  }, [])
+  }, [normalizedForcedAssigneeId])
 
   const openSaveViewModal = useCallback(() => {
     const defaultName = activeView?.view_name
@@ -835,7 +1068,7 @@ function BugListPage() {
               type="link"
               size="small"
               className="bug-list-page__attachment-more"
-              onClick={() => navigate(`/bugs/${bugId}`)}
+              onClick={() => openBugDetail(bugId)}
             >
               查看全部 {attachments.length} 个附件
             </Button>
@@ -843,7 +1076,7 @@ function BugListPage() {
         </div>
       )
     },
-    [attachmentPreviewLoadingMap, attachmentPreviewMap, navigate, openAttachmentPreview],
+    [attachmentPreviewLoadingMap, attachmentPreviewMap, openAttachmentPreview, openBugDetail],
   )
 
   const getQuickStatusOptions = useCallback(
@@ -977,7 +1210,7 @@ function BugListPage() {
               type="link"
               size="small"
               className="bug-list-page__title-link"
-              onClick={() => navigate(`/bugs/${row.id}`)}
+              onClick={() => openBugDetail(row.id)}
             >
               {value || '-'}
             </Button>
@@ -1147,7 +1380,7 @@ function BugListPage() {
         },
       },
     ],
-    [activeAttachmentBugId, canTransition, canUpdate, getQuickStatusOptions, handleQuickStatusChange, loadBugAttachments, navigate, renderAttachmentPreviewContent, statusUpdatingMap],
+    [activeAttachmentBugId, canTransition, getQuickStatusOptions, handleQuickStatusChange, loadBugAttachments, openBugDetail, renderAttachmentPreviewContent, statusUpdatingMap],
   )
 
   return (
@@ -1161,10 +1394,10 @@ function BugListPage() {
               <span className="bug-list-page__title-icon" aria-hidden>
                 <BugOutlined />
               </span>
-              <span className="bug-list-page__title">Bug管理</span>
+              <span className="bug-list-page__title">{pageTitle || DEFAULT_PAGE_TITLE}</span>
             </Space>
             <Text type="secondary" className="bug-list-page__subtitle">
-              一站式查看、筛选、分组与流转处理
+              {pageSubtitle || DEFAULT_PAGE_SUBTITLE}
             </Text>
           </div>
         }
@@ -1308,14 +1541,16 @@ function BugListPage() {
             <Select
               size="small"
               showSearch
-              allowClear
+              allowClear={!isAssigneeForced}
               className="bug-list-page__filter-control"
               value={assigneeFilter}
               options={userOptions}
               loading={userOptionsLoading}
               filterOption={pinyinSelectFilter}
-              placeholder="处理人"
+              placeholder={isAssigneeForced ? '处理人（已固定为我）' : '处理人'}
+              disabled={isAssigneeForced}
               onChange={(value) => {
+                if (isAssigneeForced) return
                 setAssigneeFilter(value)
                 setPage(1)
               }}
@@ -1519,17 +1754,21 @@ function BugListPage() {
 
             if (bugId > 0 && pendingDescriptionImages.length > 0) {
               const tokenAttachmentMap = new Map()
+              const blobAttachmentMap = new Map()
               const attachmentBySignature = new Map(
                 (Array.isArray(uploadResult.successes) ? uploadResult.successes : []).map((item) => [item.signature, item.attachment]),
               )
               pendingDescriptionImages.forEach((item) => {
                 const token = String(item?.token || '').trim()
                 const signature = String(item?.signature || '').trim()
-                if (!token || !signature) return
+                const objectUrl = String(item?.objectUrl || '').trim()
+                if (!signature) return
                 const attachment = attachmentBySignature.get(signature)
-                if (attachment) tokenAttachmentMap.set(token, attachment)
+                if (!attachment) return
+                if (token) tokenAttachmentMap.set(token, attachment)
+                if (objectUrl) blobAttachmentMap.set(objectUrl, attachment)
               })
-              const finalDescription = replacePendingDescriptionImages(values.description, tokenAttachmentMap)
+              const finalDescription = replacePendingDescriptionImages(values.description, tokenAttachmentMap, blobAttachmentMap)
               if (finalDescription && finalDescription !== baseDescription) {
                 const updateResult = await updateBugApi(bugId, {
                   ...values,

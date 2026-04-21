@@ -6,6 +6,10 @@ import {
   precheckBugAttachmentApi,
 } from '../../../api/bug'
 
+const OSS_UPLOAD_TIMEOUT_MS = 120000
+const OSS_UPLOAD_MAX_ATTEMPTS = 2
+const OSS_RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504])
+
 function normalizeFile(fileLike) {
   if (!fileLike) return null
   if (fileLike instanceof File) return fileLike
@@ -18,6 +22,79 @@ function getFileExt(fileName = '') {
   const dotIndex = text.lastIndexOf('.')
   if (dotIndex <= 0 || dotIndex >= text.length - 1) return ''
   return text.slice(dotIndex + 1).slice(0, 50)
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
+}
+
+function buildUploadFormData(policy = {}, file = null) {
+  const formData = new FormData()
+  Object.entries(policy.fields || {}).forEach(([key, value]) => {
+    formData.append(key, value)
+  })
+  formData.append('file', file)
+  return formData
+}
+
+function isRetryableUploadError(error) {
+  if (!error) return false
+  const errorName = String(error?.name || '').trim()
+  if (errorName === 'AbortError') return true
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    message.includes('failed to fetch') ||
+    message.includes('network') ||
+    message.includes('load failed') ||
+    message.includes('timeout')
+  )
+}
+
+async function uploadToOssWithRetry({ host, policy, file, fileName = '文件' }) {
+  let lastError = null
+  for (let attempt = 1; attempt <= OSS_UPLOAD_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => {
+      controller.abort()
+    }, OSS_UPLOAD_TIMEOUT_MS)
+    try {
+      const uploadRes = await fetch(host, {
+        method: 'POST',
+        body: buildUploadFormData(policy, file),
+        signal: controller.signal,
+      })
+      if (uploadRes.ok) return
+
+      const uploadText = await uploadRes.text().catch(() => '')
+      const retryable = OSS_RETRYABLE_STATUS.has(Number(uploadRes.status || 0))
+      const uploadError = new Error(uploadText || `上传失败(${uploadRes.status}): ${fileName}`)
+      lastError = uploadError
+      if (retryable && attempt < OSS_UPLOAD_MAX_ATTEMPTS) {
+        await sleep(500 * attempt)
+        continue
+      }
+      throw uploadError
+    } catch (error) {
+      lastError = error
+      if (isRetryableUploadError(error) && attempt < OSS_UPLOAD_MAX_ATTEMPTS) {
+        await sleep(500 * attempt)
+        continue
+      }
+      if (String(error?.name || '').trim() === 'AbortError') {
+        throw new Error(`上传超时: ${fileName}`)
+      }
+      throw error
+    } finally {
+      window.clearTimeout(timeoutId)
+    }
+  }
+
+  if (String(lastError?.name || '').trim() === 'AbortError') {
+    throw new Error(`上传超时: ${fileName}`)
+  }
+  throw lastError || new Error(`上传失败: ${fileName}`)
 }
 
 export function buildAttachmentFileSignature(fileLike) {
@@ -53,19 +130,12 @@ async function uploadSingleAttachment({ getPolicy, register }, file) {
     throw new Error(`${file?.name || '文件'}超过大小限制`)
   }
 
-  const formData = new FormData()
-  Object.entries(policy.fields || {}).forEach(([key, value]) => {
-    formData.append(key, value)
+  await uploadToOssWithRetry({
+    host: policy.host,
+    policy,
+    file,
+    fileName: file?.name || '文件',
   })
-  formData.append('file', file)
-
-  const uploadRes = await fetch(policy.host, {
-    method: 'POST',
-    body: formData,
-  })
-  if (!uploadRes.ok) {
-    throw new Error(`上传失败: ${file?.name || '文件'}`)
-  }
 
   const registerRes = await register(file, policy)
   if (!registerRes?.success) {
@@ -127,19 +197,12 @@ export async function uploadBugAttachmentFile(bugId, fileLike) {
     throw new Error(`${file?.name || '文件'}超过大小限制`)
   }
 
-  const formData = new FormData()
-  Object.entries(policy.fields || {}).forEach(([key, value]) => {
-    formData.append(key, value)
+  await uploadToOssWithRetry({
+    host: policy.host,
+    policy,
+    file,
+    fileName: file?.name || '文件',
   })
-  formData.append('file', file)
-
-  const uploadRes = await fetch(policy.host, {
-    method: 'POST',
-    body: formData,
-  })
-  if (!uploadRes.ok) {
-    throw new Error(`上传失败: ${file?.name || '文件'}`)
-  }
 
   const registerRes = await createBugAttachmentApi(bugId, {
     file_name: file?.name || 'file',

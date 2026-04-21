@@ -104,13 +104,43 @@
 
 .bug-rich-text-editor .tiptap img {
   display: block;
-  max-width: min(100%, 560px);
+  max-width: 100%;
   height: auto;
   margin: 10px 0;
   border-radius: 12px;
   border: 1px solid rgba(197, 207, 223, 0.88);
   background: #f8fafc;
   box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.bug-rich-text-editor .tiptap .bug-rich-text-editor__image-node {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  margin: 10px 0;
+  vertical-align: top;
+  line-height: 0;
+}
+
+.bug-rich-text-editor .tiptap .bug-rich-text-editor__image-node img {
+  margin: 0;
+}
+
+.bug-rich-text-editor .tiptap .bug-rich-text-editor__image-node--selected img {
+  box-shadow: 0 0 0 2px rgba(47, 103, 216, 0.45), 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.bug-rich-text-editor .tiptap .bug-rich-text-editor__image-resize-handle {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 14px;
+  height: 14px;
+  border: 1px solid #2f67d8;
+  border-radius: 50%;
+  background: #fff;
+  cursor: nwse-resize;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
 }
 
 .bug-rich-text-editor .tiptap p.is-editor-empty:first-child::before {

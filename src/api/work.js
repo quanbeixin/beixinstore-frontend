@@ -298,8 +298,8 @@ export function getMyWeeklyReportApi(params) {
   return request.get('/work/workbench/me/weekly-report', { params })
 }
 
-export function getOwnerWorkbenchApi() {
-  return request.get('/work/workbench/owner')
+export function getOwnerWorkbenchApi(params) {
+  return request.get('/work/workbench/owner', { params })
 }
 
 export function getMorningStandupBoardApi(params, options = {}) {

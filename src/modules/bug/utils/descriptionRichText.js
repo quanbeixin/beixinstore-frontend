@@ -32,7 +32,7 @@ const BUG_DESCRIPTION_ALLOWED_TAGS = [
   'hr',
 ]
 
-const BUG_DESCRIPTION_ALLOWED_ATTR = ['href', 'target', 'rel', 'src', 'alt', 'title', 'data-attachment-id']
+const BUG_DESCRIPTION_ALLOWED_ATTR = ['href', 'target', 'rel', 'src', 'alt', 'title', 'width', 'data-attachment-id']
 
 function escapeHtml(value) {
   return String(value || '')
@@ -74,6 +74,20 @@ export function sanitizeBugDescriptionHtml(value, { keepPendingImages = false } 
   })
 }
 
+function buildDefaultBugDescriptionTemplateHtml() {
+  return [
+    '<p>【前置条件】</p>',
+    '<p><br></p>',
+    '<p>【复现步骤】</p>',
+    '<p><br></p>',
+    '<p>【实际结果】</p>',
+    '<p><br></p>',
+    '<p>【预期结果】</p>',
+    '<p><br></p>',
+    '<p>-</p>',
+  ].join('')
+}
+
 export function buildBugDescriptionInitialHtml(initialValues = null) {
   const description = String(initialValues?.description || '').trim()
   if (description) {
@@ -84,7 +98,9 @@ export function buildBugDescriptionInitialHtml(initialValues = null) {
   const actualResult = String(initialValues?.actual_result || '').trim()
   const expectedResult = String(initialValues?.expected_result || '').trim()
   const hasLegacyContent = reproduceSteps || actualResult || expectedResult
-  if (!hasLegacyContent) return plainTextToRichTextHtml(BUG_DESCRIPTION_TEMPLATE_TEXT)
+  if (!hasLegacyContent) {
+    return sanitizeBugDescriptionHtml(buildDefaultBugDescriptionTemplateHtml(), { keepPendingImages: true })
+  }
 
   return plainTextToRichTextHtml(`【前置条件】
 
@@ -121,24 +137,45 @@ export function stripPendingDescriptionImages(html) {
   return sanitizeBugDescriptionHtml(container.innerHTML)
 }
 
-export function replacePendingDescriptionImages(html, tokenAttachmentMap = new Map()) {
+export function replacePendingDescriptionImages(
+  html,
+  tokenAttachmentMap = new Map(),
+  blobAttachmentMap = new Map(),
+) {
   const container = document.createElement('div')
   container.innerHTML = sanitizeBugDescriptionHtml(html, { keepPendingImages: true })
 
-  container.querySelectorAll('img[data-upload-token]').forEach((node) => {
+  container.querySelectorAll('img').forEach((node) => {
     const token = String(node.getAttribute('data-upload-token') || '').trim()
-    const attachment = tokenAttachmentMap instanceof Map ? tokenAttachmentMap.get(token) : null
+    const src = String(node.getAttribute('src') || '').trim()
+    const attachmentByToken = token && tokenAttachmentMap instanceof Map ? tokenAttachmentMap.get(token) : null
+    const attachmentByBlobSrc = src && blobAttachmentMap instanceof Map ? blobAttachmentMap.get(src) : null
+    const attachment = attachmentByToken || attachmentByBlobSrc
     const nextSrc = String(attachment?.download_url || attachment?.object_url || '').trim()
 
-    if (!token || !nextSrc) {
-      node.remove()
+    if (token) {
+      if (!nextSrc) {
+        node.remove()
+        return
+      }
+      node.setAttribute('src', nextSrc)
+      node.removeAttribute('data-upload-token')
+      if (Number(attachment?.id || 0) > 0) {
+        node.setAttribute('data-attachment-id', String(attachment.id))
+      }
       return
     }
 
-    node.setAttribute('src', nextSrc)
-    node.removeAttribute('data-upload-token')
-    if (Number(attachment?.id || 0) > 0) {
-      node.setAttribute('data-attachment-id', String(attachment.id))
+    // Fallback: 防止 blob 地址被写入数据库后在详情页失效导致裂图。
+    if (src.startsWith('blob:')) {
+      if (!nextSrc) {
+        node.remove()
+        return
+      }
+      node.setAttribute('src', nextSrc)
+      if (Number(attachment?.id || 0) > 0) {
+        node.setAttribute('data-attachment-id', String(attachment.id))
+      }
     }
   })
 

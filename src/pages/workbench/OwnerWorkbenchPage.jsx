@@ -1,5 +1,6 @@
 import {
   AlertOutlined,
+  DeleteOutlined,
   EditOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -16,6 +17,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Result,
   Row,
   Select,
@@ -30,6 +32,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getDictItemsApi } from '../../api/configDict'
 import {
+  deleteWorkLogApi,
   createOwnerAssignedLogApi,
   getDemandWorkflowNodeOptionsApi,
   getOwnerWorkbenchApi,
@@ -37,11 +40,13 @@ import {
   getWorkItemTypesApi,
   updateWorkLogOwnerEstimateApi,
 } from '../../api/work'
+import { getAccessSnapshot } from '../../utils/access'
 import {
   formatBeijingDate,
   formatBeijingDateTime,
   getBeijingTodayDateString,
 } from '../../utils/datetime'
+import { pinyinSelectFilter } from '../../utils/selectSearch'
 import { getUnifiedStatusMeta } from '../../utils/workStatus'
 import './OwnerWorkbenchPage.css'
 
@@ -142,6 +147,7 @@ function OwnerWorkbench() {
   const [assignSaving, setAssignSaving] = useState(false)
   const [assignStatusManuallyChanged, setAssignStatusManuallyChanged] = useState(false)
   const [noEstimateLoadingMap, setNoEstimateLoadingMap] = useState({})
+  const [deletingLogId, setDeletingLogId] = useState(null)
 
   const [keyword, setKeyword] = useState('')
   const [memberFilter, setMemberFilter] = useState()
@@ -184,11 +190,14 @@ function OwnerWorkbench() {
   const [taskDifficultyOptions, setTaskDifficultyOptions] = useState([])
   const [demands, setDemands] = useState([])
   const [demandWorkflowNodeOptionsMap, setDemandWorkflowNodeOptionsMap] = useState({})
+  const isSuperAdmin = Boolean(getAccessSnapshot()?.is_super_admin)
 
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await getOwnerWorkbenchApi()
+      const result = await getOwnerWorkbenchApi({
+        member_user_id: memberFilter || undefined,
+      })
       if (!result?.success) {
         message.error(result?.message || '获取 Owner 工作台失败')
         return
@@ -207,7 +216,7 @@ function OwnerWorkbench() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [memberFilter])
 
   const loadAssignBase = useCallback(async () => {
     try {
@@ -310,8 +319,19 @@ function OwnerWorkbench() {
 
   const memberOptions = useMemo(() => {
     const map = new Map()
-    teamMembers.forEach((item) => {
-      const id = Number(item.id)
+    ;(teamMembers || []).forEach((item) => {
+      const id = Number(item?.id || 0)
+      if (!Number.isInteger(id) || id <= 0) return
+      const label = item?.username ? item.username : `User ${id}`
+      if (!map.has(id)) {
+        map.set(id, {
+          value: id,
+          label,
+        })
+      }
+    })
+    ownerEstimateItems.forEach((item) => {
+      const id = Number(item.user_id)
       if (!Number.isInteger(id) || id <= 0) return
       if (!map.has(id)) {
         map.set(id, {
@@ -320,17 +340,27 @@ function OwnerWorkbench() {
         })
       }
     })
-    ownerEstimateItems.forEach((item) => {
-      const id = Number(item.user_id)
-      if (!Number.isInteger(id)) return
-      if (!map.has(id)) {
-        map.set(id, {
-          value: id,
-          label: item.username ? item.username : `User ${id}`,
-        })
-      }
-    })
-    return Array.from(map.values())
+    const options = Array.from(map.values())
+    const labelCountMap = options.reduce((acc, item) => {
+      const label = String(item?.label || '').trim()
+      if (!label) return acc
+      acc[label] = Number(acc[label] || 0) + 1
+      return acc
+    }, {})
+
+    return options
+      .map((item) => {
+        const rawLabel = String(item?.label || '').trim()
+        if (!rawLabel) return item
+        if (Number(labelCountMap[rawLabel] || 0) <= 1) return item
+        return {
+          ...item,
+          label: `${rawLabel} (#${item.value})`,
+        }
+      })
+      .sort((left, right) =>
+        String(left?.label || '').localeCompare(String(right?.label || ''), 'zh-Hans-CN'),
+      )
   }, [ownerEstimateItems, teamMembers])
 
   const phaseOptions = useMemo(() => {
@@ -553,6 +583,26 @@ function OwnerWorkbench() {
         delete next[logId]
         return next
       })
+    }
+  }
+
+  const handleDeleteItem = async (item) => {
+    const logId = Number(item?.id || 0)
+    if (!logId || !isSuperAdmin) return
+
+    try {
+      setDeletingLogId(logId)
+      const result = await deleteWorkLogApi(logId)
+      if (!result?.success) {
+        message.error(result?.message || '删除事项失败')
+        return
+      }
+      message.success('事项已删除')
+      await loadData()
+    } catch (error) {
+      message.error(error?.message || '删除事项失败')
+    } finally {
+      setDeletingLogId(null)
     }
   }
 
@@ -856,7 +906,7 @@ function OwnerWorkbench() {
     {
       title: '操作',
       key: 'action',
-      width: 220,
+      width: 300,
       fixed: 'right',
       render: (_, row) => (
         <Space size={4}>
@@ -872,6 +922,27 @@ function OwnerWorkbench() {
           >
             无需评估
           </Button>
+          {isSuperAdmin ? (
+            <Popconfirm
+              title="确认删除该事项？"
+              description="删除后将清空该事项下所有工作记录（含日投入与日计划），且不可恢复。"
+              okText="确认删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true, loading: deletingLogId === Number(row?.id || 0) }}
+              onConfirm={() => {
+                void handleDeleteItem(row)
+              }}
+            >
+              <Button
+                type="link"
+                danger
+                icon={<DeleteOutlined />}
+                loading={deletingLogId === Number(row?.id || 0)}
+              >
+                删除
+              </Button>
+            </Popconfirm>
+          ) : null}
         </Space>
       ),
     },
@@ -1102,24 +1173,33 @@ function OwnerWorkbench() {
           />
           <Select
             allowClear
+            showSearch
             placeholder="筛选成员"
             options={memberOptions}
+            filterOption={pinyinSelectFilter}
+            optionFilterProp="label"
             value={memberFilter}
             onChange={setMemberFilter}
             className="owner-filter-input owner-filter-input--member"
           />
           <Select
             allowClear
+            showSearch
             placeholder="筛选阶段"
             options={phaseOptions}
+            filterOption={pinyinSelectFilter}
+            optionFilterProp="label"
             value={phaseFilter}
             onChange={setPhaseFilter}
             className="owner-filter-input owner-filter-input--phase"
           />
           <Select
             allowClear
+            showSearch
             placeholder="筛选状态"
             options={OWNER_ITEM_STATUS_OPTIONS}
+            filterOption={pinyinSelectFilter}
+            optionFilterProp="label"
             value={statusFilter}
             onChange={(value) => {
               const nextIsDone = String(value || '').trim().toUpperCase() === 'DONE'

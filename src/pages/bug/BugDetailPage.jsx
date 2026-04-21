@@ -34,7 +34,7 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   createBugAttachmentApi,
   getBugAssigneesApi,
@@ -60,6 +60,9 @@ import './BugDetailPage.css'
 const { Paragraph, Text, Title } = Typography
 const IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)(\?.*)?$/i
 const VIDEO_EXT_PATTERN = /\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i
+const OSS_UPLOAD_TIMEOUT_MS = 120000
+const OSS_UPLOAD_MAX_ATTEMPTS = 2
+const OSS_RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504])
 const ACTION_ICON_MAP = Object.freeze({
   start: <SendOutlined />,
   fix: <CheckCircleOutlined />,
@@ -172,11 +175,99 @@ function mergeUniqueUploadFiles(currentList = [], nextList = []) {
   return Array.from(dedup.values())
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
+}
+
+function buildUploadFormData(policy = {}, file = null) {
+  const formData = new FormData()
+  Object.entries(policy.fields || {}).forEach(([key, value]) => {
+    formData.append(key, value)
+  })
+  formData.append('file', file)
+  return formData
+}
+
+function isRetryableUploadError(error) {
+  if (!error) return false
+  const errorName = String(error?.name || '').trim()
+  if (errorName === 'AbortError') return true
+  const text = String(error?.message || '').toLowerCase()
+  return (
+    text.includes('failed to fetch') ||
+    text.includes('network') ||
+    text.includes('load failed') ||
+    text.includes('timeout')
+  )
+}
+
+async function uploadToOssWithRetry({ host, policy, file, fileName = '文件' }) {
+  let lastError = null
+  for (let attempt = 1; attempt <= OSS_UPLOAD_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => {
+      controller.abort()
+    }, OSS_UPLOAD_TIMEOUT_MS)
+    try {
+      const uploadRes = await fetch(host, {
+        method: 'POST',
+        body: buildUploadFormData(policy, file),
+        signal: controller.signal,
+      })
+      if (uploadRes.ok) return
+
+      const uploadText = await uploadRes.text().catch(() => '')
+      const uploadError = new Error(uploadText || `上传到OSS失败，状态码 ${uploadRes.status}`)
+      lastError = uploadError
+      if (OSS_RETRYABLE_STATUS.has(Number(uploadRes.status || 0)) && attempt < OSS_UPLOAD_MAX_ATTEMPTS) {
+        await sleep(500 * attempt)
+        continue
+      }
+      throw uploadError
+    } catch (error) {
+      lastError = error
+      if (isRetryableUploadError(error) && attempt < OSS_UPLOAD_MAX_ATTEMPTS) {
+        await sleep(500 * attempt)
+        continue
+      }
+      if (String(error?.name || '').trim() === 'AbortError') {
+        throw new Error(`上传超时: ${fileName}`)
+      }
+      throw error
+    } finally {
+      window.clearTimeout(timeoutId)
+    }
+  }
+
+  if (String(lastError?.name || '').trim() === 'AbortError') {
+    throw new Error(`上传超时: ${fileName}`)
+  }
+  throw lastError || new Error(`上传失败: ${fileName}`)
+}
+
 function formatAttachmentSize(fileSize) {
   const size = Number(fileSize || 0)
   if (!size) return '-'
   if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`
   return `${Math.max(1, Math.round(size / 1024))} KB`
+}
+
+function stripHtmlToPlainText(value) {
+  return String(value || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
 }
 
 function prependUniqueAttachment(attachments = [], nextAttachment) {
@@ -197,6 +288,7 @@ function prependUniqueAttachment(attachments = [], nextAttachment) {
 
 function BugDetailPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { id } = useParams()
   const bugId = Number(id)
   const currentUserId = Number(getCurrentUser()?.id || 0)
@@ -298,7 +390,6 @@ function BugDetailPage() {
     remarkForm.setFieldsValue({
       remark: '',
       fix_solution: detail?.fix_solution || '',
-      verify_result: detail?.verify_result || '',
     })
   }, [detail, remarkForm])
 
@@ -357,6 +448,11 @@ function BugDetailPage() {
 
   const canSeeFixModule = canManageAllFields || isCurrentUserAssignee
   const canSeeVerifyModule = canManageAllFields || isCurrentUserReporter
+  const shouldHideBackButton = useMemo(() => {
+    const params = new URLSearchParams(location.search || '')
+    const from = String(params.get('from') || '').trim().toLowerCase()
+    return from === 'workbench_pending_bugs'
+  }, [location.search])
 
   const workflowTransitionMap = useMemo(
     () => buildWorkflowTransitionMap(workflowTransitions),
@@ -389,9 +485,7 @@ function BugDetailPage() {
   }, [canSeeFixModule, canSeeVerifyModule, canTransition, detail?.status_code, workflowTransitionMap])
 
   const transitionRequirementHints = useMemo(() => ({
-    requireRemark: transitionButtons.some((item) => Number(item?.transition?.require_remark) === 1),
     requireFixSolution: transitionButtons.some((item) => Number(item?.transition?.require_fix_solution) === 1),
-    requireVerifyResult: transitionButtons.some((item) => Number(item?.transition?.require_verify_result) === 1),
   }), [transitionButtons])
 
   const runTransition = async (button) => {
@@ -405,7 +499,6 @@ function BugDetailPage() {
       const values = await remarkForm.validateFields()
       const remark = String(values.remark || '').trim()
       const fixSolution = String(values.fix_solution || '').trim()
-      const verifyResult = String(values.verify_result || '').trim()
 
       const jumpToField = (name, errorText) => {
         remarkForm.setFields([{ name, errors: [errorText] }])
@@ -418,34 +511,32 @@ function BugDetailPage() {
 
       const requireRemark = Number(transition?.require_remark) === 1
       const requireFixSolution = Number(transition?.require_fix_solution) === 1
-      const requireVerifyResult = Number(transition?.require_verify_result) === 1
+      const isFixAction = actionKey === 'fix'
+      const isRejectAction = actionKey === 'reject'
+      const mustFillFixSolution = isFixAction || requireFixSolution
+      const mustFillRemark = isRejectAction || requireRemark
 
-      if (requireFixSolution && !fixSolution) {
+      if (mustFillFixSolution && !fixSolution) {
         jumpToField('fix_solution', '修复方案&影响范围不能为空')
-        message.warning('请先填写修复方案&影响范围，再执行当前操作')
+        message.warning('请先补充修复方案&影响范围后再提交')
         return
       }
 
-      if (requireRemark && !remark) {
+      if (mustFillRemark && !remark) {
         jumpToField('remark', '备注不能为空')
-        message.warning('请先填写备注，再执行当前操作')
+        message.warning('请先补充备注后再提交')
         return
       }
 
-      if (requireVerifyResult && !verifyResult) {
-        jumpToField('verify_result', '验证结果不能为空')
-        message.warning('请先填写验证结果，再执行当前操作')
-        return
-      }
+      const payloadRemark = remark || undefined
 
       setActionLoading(buildTransitionActionId(transition))
       const toStatusCode = String(transition?.to_status_code || '').trim().toUpperCase()
       const result = await transitionBugApi(bugId, {
         action_key: actionKey,
         to_status_code: toStatusCode,
-        remark,
+        remark: payloadRemark,
         fix_solution: fixSolution,
-        verify_result: verifyResult,
       })
 
       if (!result?.success) {
@@ -640,21 +731,12 @@ function BugDetailPage() {
       throw new Error(`附件大小不能超过 ${Math.ceil(Number(policy.max_file_size) / 1024 / 1024)}MB`)
     }
 
-    const formData = new FormData()
-    Object.entries(policy.fields || {}).forEach(([key, value]) => {
-      formData.append(key, value)
+    await uploadToOssWithRetry({
+      host: policy.host,
+      policy,
+      file: currentFile,
+      fileName: currentFile?.name || '文件',
     })
-    formData.append('file', currentFile)
-
-    const uploadRes = await fetch(policy.host, {
-      method: 'POST',
-      body: formData,
-    })
-
-    if (!uploadRes.ok) {
-      const uploadText = await uploadRes.text().catch(() => '')
-      throw new Error(uploadText || `上传到OSS失败，状态码 ${uploadRes.status}`)
-    }
 
     const registerRes = await createBugAttachmentApi(bugId, {
       file_name: currentFile?.name || 'file',
@@ -930,13 +1012,20 @@ function BugDetailPage() {
     }
 
     try {
-      let previewSrc = file?.url || file?.thumbUrl || file?.preview || ''
       const rawFile = file?.originFileObj
+      let previewSrc = String(file?.url || '').trim()
       if (!previewSrc && rawFile instanceof Blob && isImageFile(file)) {
-        previewSrc = await readFileAsDataUrl(rawFile)
+        const cachedOriginPreview = String(file?.__originPreview || '').trim()
+        previewSrc = cachedOriginPreview || await readFileAsDataUrl(rawFile)
+        if (!cachedOriginPreview) {
+          file.__originPreview = previewSrc
+        }
       }
       if (!previewSrc && rawFile instanceof Blob && isVideoFile(file)) {
         previewSrc = URL.createObjectURL(rawFile)
+      }
+      if (!previewSrc) {
+        previewSrc = String(file?.preview || file?.thumbUrl || '').trim()
       }
       if (!previewSrc) {
         message.warning('当前附件无法生成预览')
@@ -1241,6 +1330,22 @@ function BugDetailPage() {
     () => normalizedStatusLogs.filter((item) => !item?.__isCommentLog),
     [normalizedStatusLogs],
   )
+  const latestOperationRemark = useMemo(() => {
+    if (!Array.isArray(operationLogs) || operationLogs.length === 0) return ''
+    const sortedLogs = [...operationLogs].sort((left, right) => {
+      const leftTime = Date.parse(left?.created_at || '') || 0
+      const rightTime = Date.parse(right?.created_at || '') || 0
+      if (rightTime !== leftTime) return rightTime - leftTime
+      return Number(right?.id || 0) - Number(left?.id || 0)
+    })
+    const transitionLogs = sortedLogs.filter((item) => {
+      const fromStatusCode = String(item?.from_status_code || '').trim().toUpperCase()
+      const toStatusCode = String(item?.to_status_code || '').trim().toUpperCase()
+      return fromStatusCode && toStatusCode && fromStatusCode !== toStatusCode
+    })
+    const targetLog = transitionLogs.find((item) => String(item?.remark || '').trim())
+    return stripHtmlToPlainText(targetLog?.remark || '')
+  }, [operationLogs])
 
   if (!bugId) {
     return (
@@ -1258,14 +1363,16 @@ function BugDetailPage() {
             <div className="bug-detail-page__head">
               <div className="bug-detail-page__head-left">
                 <Space size={8} align="center" wrap>
-                  <Button
-                    type="text"
-                    className="bug-detail-page__back-btn"
-                    icon={<ArrowLeftOutlined />}
-                    onClick={() => navigate(-1)}
-                  >
-                    返回
-                  </Button>
+                  {shouldHideBackButton ? null : (
+                    <Button
+                      type="text"
+                      className="bug-detail-page__back-btn"
+                      icon={<ArrowLeftOutlined />}
+                      onClick={() => navigate(-1)}
+                    >
+                      返回
+                    </Button>
+                  )}
                   <Tag color="blue" className="bug-detail-page__bug-no">
                     {detail.bug_no || '-'}
                   </Tag>
@@ -1363,52 +1470,24 @@ function BugDetailPage() {
 
                           <div className="bug-detail-page__tab-section">
                             <div className="bug-detail-page__tab-section-title">流转操作</div>
-                            <Form form={remarkForm} layout="vertical" className="bug-detail-page__transition-form">
-                              <Form.Item
-                                label="备注"
-                                name="remark"
-                                required={transitionRequirementHints.requireRemark}
-                                extra={transitionRequirementHints.requireRemark ? '当前可执行动作中存在备注必填项' : '可选，打回/重开可补充原因'}
-                              >
-                                <Input.TextArea rows={3} maxLength={20000} placeholder="打回、重开或处理说明可填写在这里" />
-                              </Form.Item>
+                            <Form form={remarkForm} layout="vertical" requiredMark={false} className="bug-detail-page__transition-form">
                               {canSeeFixModule ? (
                                 <Form.Item
                                   label="修复方案&影响范围"
                                   name="fix_solution"
-                                  required={transitionRequirementHints.requireFixSolution}
                                   extra={transitionRequirementHints.requireFixSolution ? '当前可执行动作中存在修复方案必填项' : '可选，建议记录修复方案'}
                                 >
                                   <Input.TextArea rows={3} maxLength={20000} placeholder="请填写修复方案与影响范围" />
                                 </Form.Item>
                               ) : null}
-                              {canSeeVerifyModule ? (
-                                <Form.Item
-                                  label="验证结果"
-                                  name="verify_result"
-                                  required={transitionRequirementHints.requireVerifyResult}
-                                  extra={
-                                    transitionRequirementHints.requireVerifyResult
-                                      ? '当前可执行动作中存在验证结果必填项'
-                                      : '选填，建议补充验证说明'
-                                  }
-                                >
-                                  <Input.TextArea rows={3} maxLength={20000} placeholder="描述验证结果" />
-                                </Form.Item>
-                              ) : null}
+                              <Form.Item
+                                label="备注"
+                                name="remark"
+                                extra="选填，打回/重开可补充原因"
+                              >
+                                <Input.TextArea rows={3} maxLength={20000} placeholder="打回、重开或处理说明可填写在这里" />
+                              </Form.Item>
                             </Form>
-                          </div>
-
-                          <div className="bug-detail-page__tab-section">
-                            <div className="bug-detail-page__tab-section-title">修复与验证</div>
-                            <Descriptions column={1} size="small">
-                              <Descriptions.Item label="修复方案&影响范围">
-                                <Paragraph>{detail.fix_solution || '-'}</Paragraph>
-                              </Descriptions.Item>
-                              <Descriptions.Item label="验证结果">
-                                <Paragraph>{detail.verify_result || '-'}</Paragraph>
-                              </Descriptions.Item>
-                            </Descriptions>
                           </div>
 
                           <div className="bug-detail-page__tab-section">
@@ -1526,6 +1605,24 @@ function BugDetailPage() {
                                 <div className="bug-detail-page__meta-label">更新时间</div>
                                 <div className="bug-detail-page__meta-value bug-detail-page__meta-value--secondary">
                                   {formatBeijingDateTime(detail.updated_at)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="bug-detail-page__tab-section">
+                            <div className="bug-detail-page__tab-section-title">修复信息</div>
+                            <div className="bug-detail-page__meta-grid">
+                              <div className="bug-detail-page__meta-item">
+                                <div className="bug-detail-page__meta-label">修复方案&影响范围</div>
+                                <div className="bug-detail-page__meta-value bug-detail-page__repair-text">
+                                  {detail.fix_solution || '-'}
+                                </div>
+                              </div>
+                              <div className="bug-detail-page__meta-item">
+                                <div className="bug-detail-page__meta-label">备注信息</div>
+                                <div className="bug-detail-page__meta-value bug-detail-page__repair-text">
+                                  {latestOperationRemark || '-'}
                                 </div>
                               </div>
                             </div>

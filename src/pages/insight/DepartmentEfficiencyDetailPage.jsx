@@ -72,19 +72,26 @@ function getVarianceTextColor(value, mode = 'owner') {
   const palette =
     mode === 'personal'
       ? {
-          severePositive: '#e35d6a',
-          mildPositive: '#f38744',
+          severePositive: '#17807a',
+          mildPositive: '#12a36b',
           neutral: '#344054',
-          mildNegative: '#12a36b',
-          severeNegative: '#17807a',
+          mildNegative: '#f38744',
+          severeNegative: '#e35d6a',
         }
       : {
-          severePositive: '#d92d20',
-          mildPositive: '#f04438',
+          severeNegative: '#d92d20',
+          mildNegative: '#f04438',
           neutral: '#344054',
-          mildNegative: '#039855',
-          severeNegative: '#0f766e',
+          mildPositive: '#039855',
+          severePositive: '#0f766e',
         }
+  if (mode === 'owner') {
+    if (num < -4) return palette.severeNegative
+    if (num < -1) return palette.mildNegative
+    if (num <= 1) return palette.neutral
+    if (num <= 4) return palette.mildPositive
+    return palette.severePositive
+  }
   if (num > 4) return palette.severePositive
   if (num > 1) return palette.mildPositive
   if (num >= -1) return palette.neutral
@@ -304,7 +311,7 @@ function DepartmentEfficiencyDetailPage() {
       return
     }
     const rows = [
-      ['排名', '成员', '职级', '事项数', '可比/应评估', 'Owner评估覆盖率', 'Owner真实基线(h)', 'Owner可比实际(h)', 'Owner偏差(h)', '个人预估(h)', '实际工时(h)', '个人偏差(h)', '净效率值', '趋势', '最近填报'],
+      ['排名', '成员', '职级', '事项数', '可比/应评估', 'Owner评估覆盖率', 'Owner真实基线(h)', 'Owner可比实际(h)', 'Owner预估偏差(h)', '个人预估(h)', '实际工时(h)', '个人预估偏差(h)', '净效率值', '趋势', '最近填报'],
       ...memberRanking.map((item) => [
         item.rank,
         item.username || '-',
@@ -401,7 +408,14 @@ function DepartmentEfficiencyDetailPage() {
       render: (value) => <Text strong>{formatHours(value)}</Text>,
     },
     {
-      title: 'Owner偏差(h)',
+      title: (
+        <Space size={4}>
+          <span>Owner预估偏差(h)</span>
+          <Tooltip title="Owner预估偏差 = Owner评估时长 - 实际用时（可比口径）">
+            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
       dataIndex: 'variance_owner_baseline_hours',
       key: 'variance_owner_baseline_hours',
       width: 120,
@@ -422,7 +436,14 @@ function DepartmentEfficiencyDetailPage() {
       render: (value) => <Text strong>{formatHours(value)}</Text>,
     },
     {
-      title: '个人偏差(h)',
+      title: (
+        <Space size={4}>
+          <span>个人预估偏差(h)</span>
+          <Tooltip title="个人预估偏差 = 个人预估时间 - 实际用时">
+            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
       dataIndex: 'variance_personal_hours',
       key: 'variance_personal_hours',
       width: 120,
@@ -528,7 +549,14 @@ function DepartmentEfficiencyDetailPage() {
       render: (value) => <Text strong>{formatHours(value)}</Text>,
     },
     {
-      title: 'Owner偏差(h)',
+      title: (
+        <Space size={4}>
+          <span>Owner预估偏差(h)</span>
+          <Tooltip title="Owner预估偏差 = Owner评估时长 - 实际用时（可比口径）">
+            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
       dataIndex: 'variance_owner_baseline_hours',
       key: 'variance_owner_baseline_hours',
       width: 120,
@@ -549,7 +577,14 @@ function DepartmentEfficiencyDetailPage() {
       render: (value) => <Text strong>{formatHours(value)}</Text>,
     },
     {
-      title: '个人偏差(h)',
+      title: (
+        <Space size={4}>
+          <span>个人预估偏差(h)</span>
+          <Tooltip title="个人预估偏差 = 个人预估时间 - 实际用时">
+            <QuestionCircleOutlined style={{ color: '#98a2b3', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
       dataIndex: 'variance_personal_hours',
       key: 'variance_personal_hours',
       width: 120,
@@ -571,11 +606,11 @@ function DepartmentEfficiencyDetailPage() {
     { label: 'Owner评估覆盖率', value: formatPercent(summary.owner_estimate_coverage_rate), note: '只统计应由 Owner 评估的事项；非 Owner 事项不计入分母' },
     { label: 'Owner真实基线(h)', value: formatHours(summary.total_owner_baseline_hours), note: '只累计存在真实 Owner 评估值的事项' },
     { label: 'Owner可比实际(h)', value: formatHours(summary.total_owner_comparable_actual_hours), note: '只累计进入 Owner 可比口径的实际工时' },
-    { label: 'Owner偏差(h)', valueNode: renderVarianceValue(summary.variance_owner_baseline_hours, 'owner'), note: 'Owner偏差 = Owner可比实际 - Owner真实基线' },
+    { label: 'Owner预估偏差(h)', valueNode: renderVarianceValue(summary.variance_owner_baseline_hours, 'owner'), note: 'Owner预估偏差 = Owner评估时长 - 实际用时（可比口径）' },
     { label: '个人预估覆盖率', value: formatPercent(summary.personal_estimate_coverage_rate), note: '当前周期事项中，已填写个人预估的覆盖情况' },
     { label: '个人预估总工时(h)', value: formatHours(summary.total_personal_estimate_hours), note: '成员个人预估总和' },
     { label: '实际总工时(h)', value: formatHours(summary.total_actual_hours), note: '当前周期内实际投入汇总' },
-    { label: '个人偏差(h)', valueNode: renderVarianceValue(summary.variance_personal_hours, 'personal'), note: '个人偏差 = 实际工时 - 个人预估工时' },
+    { label: '个人预估偏差(h)', valueNode: renderVarianceValue(summary.variance_personal_hours, 'personal'), note: '个人预估偏差 = 个人预估时间 - 实际用时' },
     { label: '人均实际工时(h)', value: toNumber(summary.avg_actual_hours_per_member, 0).toFixed(1), note: '实际总工时 / 成员人数' },
     {
       label: '净效率值',
