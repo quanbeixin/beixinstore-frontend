@@ -261,6 +261,7 @@ const DETAIL_LOG_FILTER_OPTIONS = [
   { label: '未完成', value: 'PENDING' },
   { label: '已逾期', value: 'OVERDUE' },
 ]
+const DEMAND_DETAIL_TAB_STATE_KEY_PREFIX = 'work_demand_detail_tab_state'
 const DEMAND_GROUP_COLLAPSE_STATE_KEY_PREFIX = 'work_demands_group_collapsed_state'
 const DEMAND_LIST_SCROLL_RESTORE_KEY_PREFIX = 'work_demands_list_scroll_restore'
 const DEMAND_VIEW_VISIBILITY_OPTIONS = [
@@ -334,6 +335,34 @@ function writeListScrollRestore(storageKey, payload = null) {
   } catch {
     // 忽略存储失败，避免影响主流程
   }
+}
+
+function readDemandDetailTabState(storageKey) {
+  if (typeof window === 'undefined' || !storageKey) return 'basic'
+  try {
+    const value = String(window.sessionStorage.getItem(storageKey) || '').trim()
+    return value || 'basic'
+  } catch {
+    return 'basic'
+  }
+}
+
+function writeDemandDetailTabState(storageKey, value = 'basic') {
+  if (typeof window === 'undefined' || !storageKey) return
+  try {
+    const normalized = String(value || '').trim() || 'basic'
+    window.sessionStorage.setItem(storageKey, normalized)
+  } catch {
+    // 忽略存储失败，避免影响主流程
+  }
+}
+
+function readDemandBugPanelRouteState(routeState, demandId) {
+  const normalizedDemandId = String(demandId || '').trim()
+  if (!normalizedDemandId || !routeState || typeof routeState !== 'object') return null
+  const stateMap = routeState.demand_bug_panel_view_states
+  if (!stateMap || typeof stateMap !== 'object') return null
+  return stateMap[normalizedDemandId] || null
 }
 
 function getDemandListScrollContainer() {
@@ -805,6 +834,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const listBasePath = isMyDemandsPage ? '/my-demands' : isLaunchPlanPage ? '/launch-plan' : '/work-demands'
   const groupCollapseStorageKey = `${DEMAND_GROUP_COLLAPSE_STATE_KEY_PREFIX}:${listBasePath}`
   const listScrollRestoreStorageKey = `${DEMAND_LIST_SCROLL_RESTORE_KEY_PREFIX}:${listBasePath}`
+  const detailTabStateStorageKey = routeDemandId ? `${DEMAND_DETAIL_TAB_STATE_KEY_PREFIX}:${routeDemandId}` : ''
   const [myDemandTabKey, setMyDemandTabKey] = useState('owned')
   const access = useMemo(() => getAccessSnapshot(), [])
   const canUseDemandPoolAnalysis = Boolean(access?.is_super_admin)
@@ -922,7 +952,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [workflowQuickTaskSubmitting, setWorkflowQuickTaskSubmitting] = useState(false)
   const [quickEditSavingMap, setQuickEditSavingMap] = useState({})
   const [detailStatus, setDetailStatus] = useState('')
-  const [detailTabKey, setDetailTabKey] = useState('basic')
+  const [detailTabKey, setDetailTabKey] = useState(() => readDemandDetailTabState(detailTabStateStorageKey))
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState(() => readCollapsedGroupKeys(groupCollapseStorageKey))
   const listScrollRestoreRef = useRef(null)
   const hasAppliedListScrollRestoreRef = useRef(false)
@@ -992,6 +1022,19 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     return <Text type="secondary">{detailBasicAutoSaveState.text || '自动保存已开启'}</Text>
   }, [detailBasicAutoSaveState])
 
+  useEffect(() => {
+    if (!routeDemandId) {
+      setDetailTabKey('basic')
+      return
+    }
+    setDetailTabKey(readDemandDetailTabState(detailTabStateStorageKey))
+  }, [detailTabStateStorageKey, routeDemandId])
+
+  useEffect(() => {
+    if (!routeDemandId) return
+    writeDemandDetailTabState(detailTabStateStorageKey, detailTabKey)
+  }, [detailTabKey, detailTabStateStorageKey, routeDemandId])
+
   const detailLogStats = useMemo(() => {
     const total = detailLogs.length
     const pending = detailLogs.filter((item) => String(item?.log_status || '').toUpperCase() !== 'DONE').length
@@ -1048,6 +1091,36 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     const rawValue = new URLSearchParams(location.search).get('node')
     return String(rawValue || '').trim().toUpperCase()
   }, [location.search])
+
+  const detailBugPanelInitialViewState = useMemo(
+    () => readDemandBugPanelRouteState(location.state, routeDemandId),
+    [location.state, routeDemandId],
+  )
+
+  const handleDemandBugPanelViewStateChange = useCallback(
+    (nextState) => {
+      const normalizedDemandId = String(routeDemandId || '').trim()
+      if (!normalizedDemandId || !nextState || typeof nextState !== 'object') return
+      const currentState = location.state && typeof location.state === 'object' ? location.state : {}
+      const previousMap =
+        currentState.demand_bug_panel_view_states && typeof currentState.demand_bug_panel_view_states === 'object'
+          ? currentState.demand_bug_panel_view_states
+          : {}
+      const previousForDemand = previousMap[normalizedDemandId] || null
+      if (JSON.stringify(previousForDemand) === JSON.stringify(nextState)) return
+      navigate(`${listBasePath}/${normalizedDemandId}${location.search}`, {
+        replace: true,
+        state: {
+          ...currentState,
+          demand_bug_panel_view_states: {
+            ...previousMap,
+            [normalizedDemandId]: nextState,
+          },
+        },
+      })
+    },
+    [listBasePath, location.search, location.state, navigate, routeDemandId],
+  )
 
   const workflowGraphNodes = useMemo(
     () => mapDemandWorkflowToGraphNodes(workflowData),
@@ -5246,7 +5319,11 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                   key: 'bugs',
                   label: 'Bug',
                   children: (
-                    <DemandBugPanel demandId={detailDemand?.id || ''} />
+                    <DemandBugPanel
+                      demandId={detailDemand?.id || ''}
+                      initialViewState={detailBugPanelInitialViewState}
+                      onViewStateChange={handleDemandBugPanelViewStateChange}
+                    />
                   ),
                 },
                 {

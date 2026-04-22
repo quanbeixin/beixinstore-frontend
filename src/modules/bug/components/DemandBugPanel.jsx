@@ -26,6 +26,7 @@ import {
   Typography,
   message,
 } from 'antd'
+import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getDictItemsApi } from '../../../api/configDict'
@@ -54,6 +55,7 @@ const IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)(\?.*)?$/i
 const VIDEO_EXT_PATTERN = /\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i
 const GROUP_FETCH_PAGE_SIZE = 100
 const GROUP_FETCH_LIMIT = 1000
+const DEMAND_BUG_PANEL_VIEW_STATE_KEY_PREFIX = 'demand_bug_panel_view_state'
 const GROUP_FIELD_OPTIONS = [
   { label: '状态', value: 'status' },
   { label: '提交人', value: 'reporter' },
@@ -63,6 +65,83 @@ const GROUP_FIELD_LABEL_MAP = GROUP_FIELD_OPTIONS.reduce((acc, item) => {
   acc[item.value] = item.label
   return acc
 }, {})
+
+function readDemandBugPanelViewState(storageKey) {
+  if (typeof window === 'undefined' || !storageKey) return null
+  try {
+    const raw = window.sessionStorage.getItem(storageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    const createdRange = Array.isArray(parsed?.createdRange) ? parsed.createdRange : []
+    const normalizedRange =
+      createdRange.length === 2 && createdRange[0] && createdRange[1]
+        ? [dayjs(createdRange[0]), dayjs(createdRange[1])]
+        : null
+    return {
+      searchInput: String(parsed?.searchInput || ''),
+      keyword: String(parsed?.keyword || ''),
+      statusFilter: String(parsed?.statusFilter || ''),
+      severityFilter: String(parsed?.severityFilter || ''),
+      groupFields: Array.isArray(parsed?.groupFields)
+        ? parsed.groupFields.map((item) => String(item || '').trim()).filter(Boolean)
+        : [],
+      assigneeFilter:
+        Number.isInteger(Number(parsed?.assigneeFilter)) && Number(parsed?.assigneeFilter) > 0
+          ? Number(parsed.assigneeFilter)
+          : undefined,
+      reporterFilter:
+        Number.isInteger(Number(parsed?.reporterFilter)) && Number(parsed?.reporterFilter) > 0
+          ? Number(parsed.reporterFilter)
+          : undefined,
+      createdRange:
+        normalizedRange && normalizedRange.every((item) => item?.isValid?.()) ? normalizedRange : null,
+      page: Number.isInteger(Number(parsed?.page)) && Number(parsed?.page) > 0 ? Number(parsed.page) : 1,
+      pageSize:
+        Number.isInteger(Number(parsed?.pageSize)) && Number(parsed?.pageSize) > 0 ? Number(parsed.pageSize) : 20,
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeDemandBugPanelViewState(storageKey, payload = null) {
+  if (typeof window === 'undefined' || !storageKey) return
+  try {
+    if (!payload) {
+      window.sessionStorage.removeItem(storageKey)
+      return
+    }
+    window.sessionStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        searchInput: String(payload?.searchInput || ''),
+        keyword: String(payload?.keyword || ''),
+        statusFilter: String(payload?.statusFilter || ''),
+        severityFilter: String(payload?.severityFilter || ''),
+        groupFields: Array.isArray(payload?.groupFields)
+          ? payload.groupFields.map((item) => String(item || '').trim()).filter(Boolean)
+          : [],
+        assigneeFilter:
+          Number.isInteger(Number(payload?.assigneeFilter)) && Number(payload?.assigneeFilter) > 0
+            ? Number(payload.assigneeFilter)
+            : null,
+        reporterFilter:
+          Number.isInteger(Number(payload?.reporterFilter)) && Number(payload?.reporterFilter) > 0
+            ? Number(payload.reporterFilter)
+            : null,
+        createdRange:
+          Array.isArray(payload?.createdRange) && payload.createdRange.length === 2
+            ? payload.createdRange.map((item) => (item?.format ? item.format('YYYY-MM-DD') : ''))
+            : [],
+        page: Number.isInteger(Number(payload?.page)) && Number(payload?.page) > 0 ? Number(payload.page) : 1,
+        pageSize:
+          Number.isInteger(Number(payload?.pageSize)) && Number(payload?.pageSize) > 0 ? Number(payload.pageSize) : 20,
+      }),
+    )
+  } catch {
+    // 忽略存储失败，避免影响主流程
+  }
+}
 
 function getAttachmentUrl(row) {
   return String(row?.download_url || row?.object_url || '').trim()
@@ -172,10 +251,11 @@ function buildGroupedTreeRows(sourceRows, groupFields, level = 0, parentKey = 'r
     })
 }
 
-function DemandBugPanel({ demandId }) {
+function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange = null }) {
   const navigate = useNavigate()
   const canCreate = hasPermission('bug.create')
   const canTransition = hasPermission('bug.transition')
+  const viewStateStorageKey = demandId ? `${DEMAND_BUG_PANEL_VIEW_STATE_KEY_PREFIX}:${demandId}` : ''
 
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -215,6 +295,12 @@ function DemandBugPanel({ demandId }) {
   })
   const [transitionForm] = Form.useForm()
   const groupingLimitWarnedRef = useRef(false)
+  const hasHydratedViewStateRef = useRef(false)
+  const initialViewStateRef = useRef(initialViewState)
+
+  useEffect(() => {
+    initialViewStateRef.current = initialViewState
+  }, [initialViewState])
 
   const openAttachmentPreview = useCallback(({ src, type = 'image', title = '附件预览' }) => {
     if (!src) {
@@ -398,16 +484,60 @@ function DemandBugPanel({ demandId }) {
   }, [loadDicts, loadUserOptions, loadWorkflowConfig])
 
   useEffect(() => {
+    if (!demandId) {
+      hasHydratedViewStateRef.current = false
+      return
+    }
+    const routeState = initialViewStateRef.current
+    const cachedState = routeState || readDemandBugPanelViewState(viewStateStorageKey)
+    setSearchInput(String(cachedState?.searchInput || ''))
+    setKeyword(String(cachedState?.keyword || ''))
+    setStatusFilter(String(cachedState?.statusFilter || ''))
+    setSeverityFilter(String(cachedState?.severityFilter || ''))
+    setGroupFields(Array.isArray(cachedState?.groupFields) ? cachedState.groupFields : [])
+    setAssigneeFilter(cachedState?.assigneeFilter)
+    setReporterFilter(cachedState?.reporterFilter)
+    setCreatedRange(cachedState?.createdRange || null)
+    setPage(Number(cachedState?.page || 1))
+    setPageSize(Number(cachedState?.pageSize || 20))
+    hasHydratedViewStateRef.current = true
+  }, [demandId, viewStateStorageKey])
+
+  const serializedViewState = useMemo(
+    () => ({
+      searchInput: String(searchInput || ''),
+      keyword: String(keyword || ''),
+      statusFilter: String(statusFilter || ''),
+      severityFilter: String(severityFilter || ''),
+      groupFields: Array.isArray(groupFields) ? groupFields.map((item) => String(item || '').trim()).filter(Boolean) : [],
+      assigneeFilter:
+        Number.isInteger(Number(assigneeFilter)) && Number(assigneeFilter) > 0 ? Number(assigneeFilter) : null,
+      reporterFilter:
+        Number.isInteger(Number(reporterFilter)) && Number(reporterFilter) > 0 ? Number(reporterFilter) : null,
+      createdRange:
+        Array.isArray(createdRange) && createdRange.length === 2
+          ? createdRange.map((item) => (item?.format ? item.format('YYYY-MM-DD') : ''))
+          : [],
+      page: Number.isInteger(Number(page)) && Number(page) > 0 ? Number(page) : 1,
+      pageSize: Number.isInteger(Number(pageSize)) && Number(pageSize) > 0 ? Number(pageSize) : 20,
+    }),
+    [assigneeFilter, createdRange, groupFields, keyword, page, pageSize, reporterFilter, searchInput, severityFilter, statusFilter],
+  )
+
+  useEffect(() => {
+    if (!demandId || !hasHydratedViewStateRef.current) return
+    writeDemandBugPanelViewState(viewStateStorageKey, serializedViewState)
+    onViewStateChange?.(serializedViewState)
+  }, [demandId, onViewStateChange, serializedViewState, viewStateStorageKey])
+
+  useEffect(() => {
     loadStats()
   }, [loadStats])
 
   useEffect(() => {
+    if (!hasHydratedViewStateRef.current) return
     loadBugs()
   }, [loadBugs])
-
-  useEffect(() => {
-    setPage(1)
-  }, [demandId])
 
   const activeFilterCount = useMemo(
     () =>

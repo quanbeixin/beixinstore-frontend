@@ -563,7 +563,11 @@ function BugFormModal({
             style={{ width: '100%' }}
             rules={[{ required: true, message: '请输入Bug标题' }]}
           >
-            <Input maxLength={200} placeholder="简明描述问题现象" />
+            <Input.TextArea
+              maxLength={200}
+              placeholder="简明描述问题现象"
+              autoSize={{ minRows: 1, maxRows: 6 }}
+            />
           </Form.Item>
 
           <Form.Item

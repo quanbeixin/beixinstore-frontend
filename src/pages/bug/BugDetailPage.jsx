@@ -404,9 +404,10 @@ function BugDetailPage() {
   const loadMentionUserOptions = useCallback(async () => {
     setMentionUserLoading(true)
     try {
-      const result = await getBugAssigneesApi({
-        demand_id: detail?.demand_id || undefined,
-      })
+      const result = await getBugAssigneesApi()
+      if (!result?.success) {
+        return
+      }
       const rows = Array.isArray(result?.data) ? result.data : []
       const options = rows
         .map((item) => {
@@ -428,7 +429,7 @@ function BugDetailPage() {
     } finally {
       setMentionUserLoading(false)
     }
-  }, [detail?.demand_id])
+  }, [])
 
   useEffect(() => {
     loadMentionUserOptions()
