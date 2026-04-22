@@ -102,6 +102,7 @@ function BugFormModal({
   confirmLoading = false,
   showDraftAttachments = true,
   presentation = 'modal',
+  assigneeScope = 'demand',
 }) {
   const [form] = Form.useForm()
   const selectedDemandId = Form.useWatch('demand_id', form)
@@ -169,9 +170,10 @@ function BugFormModal({
   }, [])
 
   const loadAssignees = useCallback(async (demandId) => {
+    const shouldFilterByDemand = String(assigneeScope || '').trim().toLowerCase() !== 'all'
     try {
       const result = await getBugAssigneesApi({
-        demand_id: demandId || undefined,
+        demand_id: shouldFilterByDemand ? demandId || undefined : undefined,
       })
       if (!result?.success) {
         message.error(result?.message || '获取处理人列表失败')
@@ -181,7 +183,7 @@ function BugFormModal({
     } catch (error) {
       message.error(error?.message || '获取处理人列表失败')
     }
-  }, [])
+  }, [assigneeScope])
 
   useEffect(() => {
     if (!open) return

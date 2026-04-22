@@ -1090,6 +1090,7 @@ function DemandBugPanel({ demandId }) {
         submitText="创建"
         presentation="drawer"
         demandIdPreset={demandId}
+        assigneeScope="all"
         confirmLoading={submitting}
         onCancel={() => setCreateOpen(false)}
         onSubmit={async (values, extra) => {
