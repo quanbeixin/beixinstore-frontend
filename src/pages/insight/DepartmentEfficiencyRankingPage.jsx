@@ -69,6 +69,15 @@ function getThisWeekRange() {
   return [start.startOf('day'), today.endOf('day')]
 }
 
+function getLastWeekRange() {
+  const today = dayjs()
+  const day = today.day()
+  const thisWeekStart = today.subtract(day === 0 ? 6 : day - 1, 'day').startOf('day')
+  const lastWeekStart = thisWeekStart.subtract(7, 'day')
+  const lastWeekEnd = thisWeekStart.subtract(1, 'day').endOf('day')
+  return [lastWeekStart, lastWeekEnd]
+}
+
 function getThisMonthRange() {
   const today = dayjs()
   return [today.startOf('month'), today.endOf('day')]
@@ -263,6 +272,10 @@ function DepartmentEfficiencyRankingPage() {
 
   const handlePeriodChange = (value) => {
     setPeriodType(value)
+    if (value === 'last_week') {
+      setDateRange(getLastWeekRange())
+      return
+    }
     if (value === 'week') {
       setDateRange(getThisWeekRange())
       return
@@ -615,6 +628,7 @@ function DepartmentEfficiencyRankingPage() {
             value={periodType}
             onChange={handlePeriodChange}
             options={[
+              { label: '上周', value: 'last_week' },
               { label: '本周', value: 'week' },
               { label: '本月', value: 'month' },
               { label: '自定义', value: 'custom' },
