@@ -126,6 +126,12 @@ function getSuggestedAssignStatusByStartDate(expectedStartDate) {
   return startDate > today ? 'TODO' : 'IN_PROGRESS'
 }
 
+function hasOwnerEstimateDecision(item) {
+  const estimatedAt = String(item?.owner_estimated_at || '').trim()
+  const estimatedBy = toNumber(item?.owner_estimated_by, 0)
+  return Boolean(estimatedAt) || estimatedBy > 0
+}
+
 function openDemandDetailInNewTab(demandId) {
   const normalizedDemandId = String(demandId || '').trim()
   if (!normalizedDemandId) return
@@ -418,7 +424,7 @@ function OwnerWorkbench() {
     const todayValue = getBeijingTodayDateString()
     const effectivePendingOnly = pendingOnly && !isDoneStatusSelected
     const filteredItems = ownerEstimateItems.filter((item) => {
-      if (effectivePendingOnly && toNumber(item?.owner_estimate_hours, 0) > 0) return false
+      if (effectivePendingOnly && hasOwnerEstimateDecision(item)) return false
       if (memberFilter && Number(item.user_id) !== Number(memberFilter)) return false
       if (phaseFilter && String(item.phase_key || '') !== String(phaseFilter)) return false
       if (statusFilter && String(item?.log_status || 'IN_PROGRESS') !== String(statusFilter)) return false
@@ -471,7 +477,7 @@ function OwnerWorkbench() {
 
     ownerEstimateItems.forEach(item => {
       // 待评估工作
-      if (toNumber(item?.owner_estimate_hours, 0) <= 0) {
+      if (!hasOwnerEstimateDecision(item)) {
         pendingEstimateCount++
       }
       // 团队成员工作超期
@@ -554,7 +560,7 @@ function OwnerWorkbench() {
     }
 
     if (ownerEstimateHours <= 0) {
-      message.warning('该事项尚未完成，不支持快捷评估')
+      message.warning('该事项实际工时为 0，无法按实际用时快捷回填')
       return
     }
 
@@ -869,8 +875,8 @@ function OwnerWorkbench() {
       dataIndex: 'owner_estimate_hours',
       key: 'owner_estimate_hours',
       width: 130,
-      render: (value) =>
-        toNumber(value, 0) <= 0 ? <Tag color="orange">待评估</Tag> : toNumber(value, 0).toFixed(1),
+      render: (value, row) =>
+        hasOwnerEstimateDecision(row) ? toNumber(value, 0).toFixed(1) : <Tag color="orange">待评估</Tag>,
     },
     {
       title: 'Owner评估难度',
