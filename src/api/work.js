@@ -10,6 +10,7 @@ function clearDerivedWorkCaches({ includeWorkbench = true } = {}) {
   clearCacheByPrefix('insight-')
   clearCacheByPrefix('morning-standup-')
   clearCacheByPrefix('human-gantt-')
+  clearCacheByPrefix('overtime-records-')
 }
 
 export function getWorkItemTypesApi(params) {
@@ -296,6 +297,39 @@ export function getMyWorkbenchApi(options = {}) {
 
 export function getMyWeeklyReportApi(params) {
   return request.get('/work/workbench/me/weekly-report', { params })
+}
+
+export function getOvertimeRecordsApi(params = {}, options = {}) {
+  const normalizedParams = params || {}
+  const cacheKey = `overtime-records-${JSON.stringify(normalizedParams)}`
+  const requestFn = () => request.get('/work/workbench/overtime-records', { params: normalizedParams })
+
+  if (options?.force) {
+    clearCache(cacheKey)
+    return requestFn()
+  }
+
+  return cachedRequest(cacheKey, requestFn, 2000)
+}
+
+export function createOvertimeRecordApi(payload) {
+  clearDerivedWorkCaches({ includeWorkbench: false })
+  return request.post('/work/workbench/overtime-records', payload)
+}
+
+export function updateOvertimeRecordApi(recordId, payload) {
+  clearDerivedWorkCaches({ includeWorkbench: false })
+  return request.put(`/work/workbench/overtime-records/${recordId}`, payload)
+}
+
+export function deleteOvertimeRecordApi(recordId) {
+  clearDerivedWorkCaches({ includeWorkbench: false })
+  return request.delete(`/work/workbench/overtime-records/${recordId}`)
+}
+
+export function confirmOvertimeRecordApi(recordId) {
+  clearDerivedWorkCaches({ includeWorkbench: false })
+  return request.post(`/work/workbench/overtime-records/${recordId}/confirm`)
 }
 
 export function getOwnerWorkbenchApi(params) {

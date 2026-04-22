@@ -39,6 +39,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getDictItemsApi } from '../../api/configDict'
 import {
+  createOvertimeRecordApi,
   createWorkLogApi,
   createLogDailyEntryApi,
   deleteLogDailyEntryApi,
@@ -54,7 +55,7 @@ import {
   updateLogDailyEntryApi,
   updateWorkLogApi,
 } from '../../api/work'
-import { hasPermission } from '../../utils/access'
+import { getCurrentUser, hasPermission } from '../../utils/access'
 import { formatBeijingDate, getBeijingTodayDateString } from '../../utils/datetime'
 import { getUnifiedStatusMeta } from '../../utils/workStatus'
 
@@ -679,6 +680,7 @@ function WorkLogs({ mode = 'dashboard' }) {
   const canUpdate = hasPermission('worklog.update.self')
 
   const [form] = Form.useForm()
+  const [overtimeForm] = Form.useForm()
   const [actualForm] = Form.useForm()
   const [dailyEntryForm] = Form.useForm()
 
@@ -704,6 +706,8 @@ function WorkLogs({ mode = 'dashboard' }) {
   const [loadingBase, setLoadingBase] = useState(false)
   const [loadingLogs, setLoadingLogs] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [overtimeModalOpen, setOvertimeModalOpen] = useState(false)
+  const [overtimeSubmitting, setOvertimeSubmitting] = useState(false)
   const [actualSubmitting, setActualSubmitting] = useState(false)
   const [statusSubmittingId, setStatusSubmittingId] = useState(null)
   const [deletingLogId, setDeletingLogId] = useState(null)
@@ -746,6 +750,11 @@ function WorkLogs({ mode = 'dashboard' }) {
   )
   const [isQuickCompletionDateTouched, setIsQuickCompletionDateTouched] = useState(false)
   const quickCompletionDateAutoSyncRef = useRef(false)
+  const currentUser = useMemo(() => getCurrentUser() || {}, [])
+  const currentUserName = useMemo(
+    () => String(currentUser?.real_name || currentUser?.username || '').trim() || '-',
+    [currentUser],
+  )
 
   const [page, setPage] = useState(() => (isHistoryPage ? initialHistoryViewState.page : 1))
   const [pageSize, setPageSize] = useState(() => (isHistoryPage ? initialHistoryViewState.pageSize : 10))
@@ -1459,6 +1468,44 @@ function WorkLogs({ mode = 'dashboard' }) {
 
   const handleRefresh = async () => {
     await reloadCurrentPageData()
+  }
+
+  const openOvertimeModal = () => {
+    overtimeForm.setFieldsValue({
+      overtime_date: getTodayDateString(),
+      duration_hours: 1,
+      reason: '',
+    })
+    setOvertimeModalOpen(true)
+  }
+
+  const closeOvertimeModal = () => {
+    setOvertimeModalOpen(false)
+    overtimeForm.resetFields()
+  }
+
+  const handleSubmitOvertime = async () => {
+    try {
+      const values = await overtimeForm.validateFields()
+      setOvertimeSubmitting(true)
+      const result = await createOvertimeRecordApi({
+        overtime_date: values.overtime_date,
+        duration_hours: values.duration_hours,
+        reason: values.reason,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '提交加班申报失败')
+        return
+      }
+      message.success('加班申报已提交')
+      closeOvertimeModal()
+    } catch (error) {
+      if (!error?.errorFields) {
+        message.error(error?.message || '提交加班申报失败')
+      }
+    } finally {
+      setOvertimeSubmitting(false)
+    }
   }
 
   const handleCreateLog = async (values) => {
@@ -2968,15 +3015,22 @@ function WorkLogs({ mode = 'dashboard' }) {
                     />
                   </Form.Item>
 
-                  <Button
-                    type="primary"
-                    htmlType="submit"
-                    icon={<SaveOutlined />}
-                    loading={submitting}
-                    disabled={!canCreate}
-                  >
-                    提交记录
-                  </Button>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Space>
+                      <Button onClick={openOvertimeModal} disabled={!canView}>
+                        加班申报
+                      </Button>
+                      <Button
+                        type="primary"
+                        htmlType="submit"
+                        icon={<SaveOutlined />}
+                        loading={submitting}
+                        disabled={!canCreate}
+                      >
+                        提交记录
+                      </Button>
+                    </Space>
+                  </div>
                 </Form>
               </Card>
             </Col>
@@ -3877,6 +3931,52 @@ function WorkLogs({ mode = 'dashboard' }) {
             </Card>
           </Col>
         </Row>
+        </Modal>
+      ) : null}
+
+      {!isHistoryPage ? (
+        <Modal
+          title="加班申报"
+          open={overtimeModalOpen}
+          onCancel={closeOvertimeModal}
+          onOk={handleSubmitOvertime}
+          confirmLoading={overtimeSubmitting}
+          okText="提交"
+          cancelText="取消"
+          destroyOnHidden
+        >
+          <Form form={overtimeForm} layout="vertical" style={{ marginTop: 8 }}>
+            <Form.Item label="加班人">
+              <Input value={currentUserName} readOnly />
+            </Form.Item>
+            <Form.Item
+              label="加班时间"
+              name="overtime_date"
+              rules={[{ required: true, message: '请选择加班时间' }]}
+            >
+              <Input type="date" />
+            </Form.Item>
+            <Form.Item
+              label="加班时长(h)"
+              name="duration_hours"
+              rules={[
+                { required: true, message: '请输入加班时长' },
+                {
+                  validator: (_, value) =>
+                    Number(value) > 0 ? Promise.resolve() : Promise.reject(new Error('加班时长需大于 0')),
+                },
+              ]}
+            >
+              <InputNumber min={0.5} step={0.5} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item
+              label="加班原因"
+              name="reason"
+              rules={[{ required: true, message: '请填写加班原因' }]}
+            >
+              <Input.TextArea rows={4} maxLength={2000} placeholder="请简要说明本次加班背景" />
+            </Form.Item>
+          </Form>
         </Modal>
       ) : null}
 

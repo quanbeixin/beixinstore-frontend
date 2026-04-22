@@ -154,6 +154,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/my-overtime-records',
+    componentKey: 'myOvertimeRecords',
+    requiredPermission: 'workbench.view.self',
+    page: {
+      title: '加班记录',
+      subtitle: '查看个人加班申报记录，待确认状态支持撤回/删除。',
+    },
+    menu: {
+      section: 'workbench',
+      label: '加班记录',
+      icon: 'dashboard',
+    },
+  },
+  {
     path: '/work-log-history',
     componentKey: 'workLogHistory',
     requiredPermission: 'worklog.view.self',

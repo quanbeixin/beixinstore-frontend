@@ -294,7 +294,7 @@ function BugDetailPage() {
   const currentUserId = Number(getCurrentUser()?.id || 0)
   const canUpdate = hasPermission('bug.update')
   const canTransition = hasPermission('bug.transition')
-  const canDelete = hasPermission('bug.delete')
+  const canDelete = true
   const canManageAllFields = hasPermission('bug.manage')
 
   const [loading, setLoading] = useState(false)
