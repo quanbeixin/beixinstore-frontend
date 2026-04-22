@@ -418,7 +418,7 @@ function OwnerWorkbench() {
     const todayValue = getBeijingTodayDateString()
     const effectivePendingOnly = pendingOnly && !isDoneStatusSelected
     const filteredItems = ownerEstimateItems.filter((item) => {
-      if (effectivePendingOnly && item.owner_estimate_hours !== null && item.owner_estimate_hours !== undefined) return false
+      if (effectivePendingOnly && toNumber(item?.owner_estimate_hours, 0) > 0) return false
       if (memberFilter && Number(item.user_id) !== Number(memberFilter)) return false
       if (phaseFilter && String(item.phase_key || '') !== String(phaseFilter)) return false
       if (statusFilter && String(item?.log_status || 'IN_PROGRESS') !== String(statusFilter)) return false
@@ -471,7 +471,7 @@ function OwnerWorkbench() {
 
     ownerEstimateItems.forEach(item => {
       // 待评估工作
-      if (item.owner_estimate_hours === null || item.owner_estimate_hours === undefined) {
+      if (toNumber(item?.owner_estimate_hours, 0) <= 0) {
         pendingEstimateCount++
       }
       // 团队成员工作超期
@@ -870,7 +870,7 @@ function OwnerWorkbench() {
       key: 'owner_estimate_hours',
       width: 130,
       render: (value) =>
-        value === null || value === undefined ? <Tag color="orange">待评估</Tag> : toNumber(value, 0).toFixed(1),
+        toNumber(value, 0) <= 0 ? <Tag color="orange">待评估</Tag> : toNumber(value, 0).toFixed(1),
     },
     {
       title: 'Owner评估难度',
