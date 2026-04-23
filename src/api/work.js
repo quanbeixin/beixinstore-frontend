@@ -73,6 +73,34 @@ export function updateEfficiencyFactorSettingsApi(payload) {
   return request.put('/work/efficiency-factor-settings', payload)
 }
 
+export function getMyDemandScoreSlotsApi(params) {
+  return request.get('/work/demand-scores/my', { params })
+}
+
+export function getMyDemandScoreSlotApi(slotId) {
+  return request.get(`/work/demand-scores/slots/${slotId}`)
+}
+
+export function submitDemandScoreSlotApi(slotId, payload) {
+  return request.post(`/work/demand-scores/slots/${slotId}`, payload)
+}
+
+export function generateDemandScoreTaskApi(demandId, payload = {}) {
+  return request.post(`/work/demand-scores/demands/${demandId}/generate`, payload)
+}
+
+export function getDemandScoreResultsApi(params) {
+  return request.get('/work/demand-score-results', { params })
+}
+
+export function getDemandScoreResultDetailApi(taskId) {
+  return request.get(`/work/demand-score-results/${taskId}`)
+}
+
+export function getDemandScoreTeamRankingApi(params) {
+  return request.get('/work/demand-score-results/ranking', { params })
+}
+
 export function getWorkDemandsApi(params) {
   const key = `demands-${JSON.stringify(params)}`
   return cachedRequest(key, () => request.get('/work/demands', { params }))

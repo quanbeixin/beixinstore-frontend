@@ -1,0 +1,403 @@
+import { CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Button, Card, Drawer, Empty, Form, Input, InputNumber, Segmented, Space, Table, Tag, Tooltip, Typography, message } from 'antd'
+import { useCallback, useEffect, useState } from 'react'
+import { getMyDemandScoreSlotApi, getMyDemandScoreSlotsApi, submitDemandScoreSlotApi } from '../../api/work'
+import './DemandScoringPage.css'
+
+const { Text } = Typography
+
+const STATUS_OPTIONS = [
+  { label: '全部', value: '' },
+  { label: '待评分', value: 'PENDING' },
+  { label: '已评分', value: 'SUBMITTED' },
+]
+
+const ROLE_COLORS = {
+  需求负责人: 'blue',
+  直属Owner: 'gold',
+  项目管理: 'purple',
+  协作方: 'green',
+}
+const PARTICIPATION_ROLE_COLORS = {
+  产品经理: 'blue',
+  设计: 'magenta',
+  前端开发: 'cyan',
+  后端开发: 'geekblue',
+  测试: 'gold',
+  大数据开发: 'purple',
+  算法开发: 'volcano',
+  项目管理: 'purple',
+}
+
+function renderSlotStatus(status) {
+  if (status === 'SUBMITTED') return <Tag color="success">已评分</Tag>
+  return <Tag color="warning">待评分</Tag>
+}
+
+function renderTaskStatus(status) {
+  if (status === 'COMPLETED') return <Tag color="success">已完成</Tag>
+  if (status === 'SCORING') return <Tag color="processing">评分中</Tag>
+  return <Tag color="warning">待评分</Tag>
+}
+
+function scoreHelpText(values = {}) {
+  const scores = [values.delivery_score, values.collaboration_score, values.responsibility_score].map((item) => Number(item))
+  if (scores.some((item) => Number.isFinite(item) && item <= 6)) {
+    return '任一维度小于等于 6 分时，需要填写评价说明。'
+  }
+  return '评分只对你本人可见，结果页仅展示聚合后的最终结果。'
+}
+
+function formatActualHours(value) {
+  const num = Number(value)
+  if (!Number.isFinite(num) || num <= 0) return '0h'
+  return `${num.toFixed(1).replace(/\.0$/, '')}h`
+}
+
+function formatDate(value) {
+  const text = String(value || '').trim()
+  return text || '-'
+}
+
+function renderSummaryTags(items = [], { colorMap = {}, max = 2, emptyText = '-' } = {}) {
+  const normalizedItems = Array.isArray(items) ? items.filter(Boolean) : []
+  if (normalizedItems.length === 0) return <Text type="secondary">{emptyText}</Text>
+
+  const previewItems = normalizedItems.slice(0, max)
+  const moreCount = normalizedItems.length - previewItems.length
+  return (
+    <Space size={4} wrap>
+      {previewItems.map((item) => (
+        <Tag key={item} color={colorMap[item] || 'default'}>
+          {item}
+        </Tag>
+      ))}
+      {moreCount > 0 ? (
+        <Tooltip title={normalizedItems.join('、')}>
+          <Tag>{`+${moreCount}`}</Tag>
+        </Tooltip>
+      ) : null}
+    </Space>
+  )
+}
+
+function DemandScoringPage() {
+  const [form] = Form.useForm()
+  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [status, setStatus] = useState('')
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
+  const [rows, setRows] = useState([])
+  const [activeSlot, setActiveSlot] = useState(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const watchedValues = Form.useWatch([], form) || {}
+
+  const loadRows = useCallback(async ({ page = 1, pageSize = 20 } = {}) => {
+    setLoading(true)
+    try {
+      const result = await getMyDemandScoreSlotsApi({
+        status,
+        page,
+        pageSize,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '获取评分任务失败')
+        return
+      }
+      const data = result.data || {}
+      setRows(data.list || [])
+      setPagination({
+        current: data.page || page,
+        pageSize: data.pageSize || pageSize,
+        total: data.total || 0,
+      })
+    } catch (err) {
+      message.error(err?.message || '获取评分任务失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [status])
+
+  useEffect(() => {
+    loadRows({ page: 1 })
+  }, [loadRows])
+
+  const openSlot = async (record) => {
+    setDrawerOpen(true)
+    setActiveSlot(record)
+    form.resetFields()
+    if (record?.score_record) {
+      form.setFieldsValue({
+        delivery_score: record.score_record.delivery_score,
+        collaboration_score: record.score_record.collaboration_score,
+        responsibility_score: record.score_record.responsibility_score,
+        comment: record.score_record.comment || '',
+      })
+    }
+    try {
+      const result = await getMyDemandScoreSlotApi(record.id)
+      if (result?.success && result.data) {
+        setActiveSlot(result.data)
+        if (result.data.score_record) {
+          form.setFieldsValue({
+            delivery_score: result.data.score_record.delivery_score,
+            collaboration_score: result.data.score_record.collaboration_score,
+            responsibility_score: result.data.score_record.responsibility_score,
+            comment: result.data.score_record.comment || '',
+          })
+        }
+      }
+    } catch {
+      // 列表数据可作为兜底，不阻断评分。
+    }
+  }
+
+  const handleSubmit = async () => {
+    if (!activeSlot?.id) return
+    try {
+      const values = await form.validateFields()
+      setSubmitting(true)
+      const result = await submitDemandScoreSlotApi(activeSlot.id, values)
+      if (!result?.success) {
+        message.error(result?.message || '提交失败')
+        return
+      }
+      message.success('评分已提交')
+      setDrawerOpen(false)
+      setActiveSlot(null)
+      loadRows({ page: pagination.current, pageSize: pagination.pageSize })
+    } catch (err) {
+      if (!err?.errorFields) {
+        message.error(err?.message || '提交失败')
+      }
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const columns = [
+    {
+      title: '需求',
+      dataIndex: 'demand_name',
+      key: 'demand_name',
+      width: 420,
+      fixed: 'left',
+      onCell: () => ({
+        className: 'demand-scoring-page__cell--demand',
+      }),
+      onHeaderCell: () => ({
+        className: 'demand-scoring-page__cell--demand',
+      }),
+      render: (value, record) => (
+        <div className="demand-scoring-page__demand-cell">
+          <Text strong className="demand-scoring-page__demand-title">
+            {value || '-'}
+          </Text>
+          <Text type="secondary" className="demand-scoring-page__demand-id">
+            {record.demand_id}
+          </Text>
+        </div>
+      ),
+    },
+    {
+      title: '预期上线时间',
+      dataIndex: 'expected_release_date',
+      key: 'expected_release_date',
+      width: 132,
+      render: (value) => <Text>{formatDate(value)}</Text>,
+    },
+    {
+      title: '被评价人',
+      dataIndex: 'evaluatee_name',
+      key: 'evaluatee_name',
+      width: 140,
+    },
+    {
+      title: '我的评分身份',
+      dataIndex: 'role_labels',
+      key: 'role_labels',
+      width: 220,
+      render: (labels = []) => (
+        <Space size={4} wrap>
+          {(labels || []).map((label) => (
+            <Tag key={label} color={ROLE_COLORS[label] || 'default'}>{label}</Tag>
+          ))}
+        </Space>
+      ),
+    },
+    {
+      title: '参与身份',
+      dataIndex: 'participation_role_labels',
+      key: 'participation_role_labels',
+      width: 220,
+      render: (labels = []) =>
+        renderSummaryTags(labels, {
+          colorMap: PARTICIPATION_ROLE_COLORS,
+          max: 2,
+        }),
+    },
+    {
+      title: '参与节点',
+      dataIndex: 'participation_node_names',
+      key: 'participation_node_names',
+      width: 200,
+      render: (nodes = []) => renderSummaryTags(nodes, { max: 2 }),
+    },
+    {
+      title: '实际工时',
+      dataIndex: 'actual_hours_total',
+      key: 'actual_hours_total',
+      width: 110,
+      render: (value) => <Text>{formatActualHours(value)}</Text>,
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 120,
+      render: renderSlotStatus,
+    },
+    {
+      title: '需求评分状态',
+      dataIndex: 'task_status',
+      key: 'task_status',
+      width: 140,
+      render: renderTaskStatus,
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (_, record) => (
+        <Button type={record.status === 'SUBMITTED' ? 'default' : 'primary'} onClick={() => openSlot(record)}>
+          {record.status === 'SUBMITTED' ? '查看/修改' : '去评分'}
+        </Button>
+      ),
+    },
+  ]
+
+  return (
+    <div className="demand-scoring-page">
+      <Card className="demand-scoring-page__toolbar" variant="borderless">
+        <div className="demand-scoring-page__toolbar-row">
+          <Segmented options={STATUS_OPTIONS} value={status} onChange={(value) => setStatus(value)} />
+          <div className="demand-scoring-page__toolbar-meta">
+            <Text type="secondary">{`当前共 ${pagination.total || 0} 条评分任务`}</Text>
+            <Button icon={<ReloadOutlined />} onClick={() => loadRows({ page: 1 })} loading={loading}>
+              刷新
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="demand-scoring-page__table-card" variant="borderless">
+        <Table
+          className="demand-scoring-page__table"
+          rowKey="id"
+          loading={loading}
+          columns={columns}
+          dataSource={rows}
+          tableLayout="fixed"
+          scroll={{ x: 1840 }}
+          locale={{ emptyText: <Empty description="暂无需要你评分的需求" /> }}
+          pagination={pagination}
+          onChange={(nextPagination) => {
+            loadRows({
+              page: nextPagination.current,
+              pageSize: nextPagination.pageSize,
+            })
+          }}
+        />
+      </Card>
+
+      <Drawer
+        className="demand-scoring-page__drawer"
+        title="需求评分"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        size={620}
+        extra={
+          <Space>
+            <Button onClick={() => setDrawerOpen(false)}>取消</Button>
+            <Button type="primary" icon={<CheckCircleOutlined />} loading={submitting} onClick={handleSubmit}>
+              提交评分
+            </Button>
+          </Space>
+        }
+      >
+        {activeSlot ? (
+          <div className="demand-scoring-page__drawer-content">
+            <Card size="small" className="demand-scoring-page__drawer-hero">
+              <Space orientation="vertical" size={8}>
+                <Tag variant="filled" className="demand-scoring-page__drawer-eyebrow">
+                  评分对象
+                </Tag>
+                <Text strong>{activeSlot.demand_name}</Text>
+                <Text type="secondary">被评价人：{activeSlot.evaluatee_name}</Text>
+                <Text type="secondary">评分身份：{(activeSlot.role_labels || []).join(' / ') || '-'}</Text>
+              </Space>
+            </Card>
+            <Card size="small" className="demand-scoring-page__reference-card" title="客观参考信息">
+              <div className="demand-scoring-page__reference-grid">
+                <div className="demand-scoring-page__reference-block">
+                  <Text type="secondary">参与身份</Text>
+                  {renderSummaryTags(activeSlot.participation_role_labels, {
+                    colorMap: PARTICIPATION_ROLE_COLORS,
+                    max: Number.MAX_SAFE_INTEGER,
+                  })}
+                </div>
+                <div className="demand-scoring-page__reference-block">
+                  <Text type="secondary">参与节点</Text>
+                  {renderSummaryTags(activeSlot.participation_node_names, {
+                    max: Number.MAX_SAFE_INTEGER,
+                  })}
+                </div>
+                <div className="demand-scoring-page__reference-block demand-scoring-page__reference-block--metric">
+                  <Text type="secondary">工时摘要</Text>
+                  <Text>{`${formatActualHours(activeSlot.actual_hours_total)} · 共 ${Number(activeSlot.actual_worklog_count || 0)} 条工时`}</Text>
+                </div>
+              </div>
+            </Card>
+            <Card size="small" className="demand-scoring-page__form-card" title="评分填写">
+              <Form form={form} layout="vertical" className="demand-scoring-page__form">
+              <Form.Item label="结果交付" name="delivery_score" rules={[{ required: true, message: '请填写结果交付评分' }]}>
+                <InputNumber min={1} max={10} precision={1} style={{ width: '100%' }} placeholder="1-10 分" />
+              </Form.Item>
+              <Form.Item label="协作配合" name="collaboration_score" rules={[{ required: true, message: '请填写协作配合评分' }]}>
+                <InputNumber min={1} max={10} precision={1} style={{ width: '100%' }} placeholder="1-10 分" />
+              </Form.Item>
+              <Form.Item label="责任心/响应" name="responsibility_score" rules={[{ required: true, message: '请填写责任心/响应评分' }]}>
+                <InputNumber min={1} max={10} precision={1} style={{ width: '100%' }} placeholder="1-10 分" />
+              </Form.Item>
+              <Form.Item
+                label="评价说明"
+                name="comment"
+                tooltip={scoreHelpText(watchedValues)}
+                rules={[
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      const scores = [
+                        getFieldValue('delivery_score'),
+                        getFieldValue('collaboration_score'),
+                        getFieldValue('responsibility_score'),
+                      ].map((item) => Number(item))
+                      if (scores.some((item) => Number.isFinite(item) && item <= 6) && !String(value || '').trim()) {
+                        return Promise.reject(new Error('低分评分需要填写评价说明'))
+                      }
+                      return Promise.resolve()
+                    },
+                  }),
+                ]}
+              >
+                <Input.TextArea rows={4} maxLength={2000} showCount placeholder="可填写具体表现、风险或改进建议" />
+              </Form.Item>
+              </Form>
+            </Card>
+          </div>
+        ) : null}
+      </Drawer>
+    </div>
+  )
+}
+
+export default DemandScoringPage

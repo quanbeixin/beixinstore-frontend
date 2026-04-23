@@ -55,6 +55,7 @@ import {
   deleteWorkDemandApi,
   deleteDemandViewApi,
   getDemandWorkflowApi,
+  getDemandWorkflowNodeOptionsApi,
   getDemandViewByIdApi,
   getDemandViewsApi,
   getProjectTemplateByIdApi,
@@ -236,6 +237,7 @@ function formatDemandNodeSchedule(record) {
 
 const FALLBACK_PARTICIPANT_ROLE_OPTIONS = [
   { value: 'DEMAND_OWNER', label: '需求负责人' },
+  { value: 'PROJECT_MANAGER', label: '项目管理' },
   { value: 'PRODUCT_MANAGER', label: '产品经理' },
   { value: 'DESIGNER', label: '设计' },
   { value: 'FRONTEND_DEV', label: '前端开发' },
@@ -249,12 +251,15 @@ const FALLBACK_PARTICIPANT_ROLE_OPTIONS = [
 ]
 
 const DEFAULT_DEMAND_PARTICIPANT_ROLES = [
+  'PROJECT_MANAGER',
   'PRODUCT_MANAGER',
   'DESIGNER',
   'FRONTEND_DEV',
   'BACKEND_DEV',
   'QA',
 ]
+const PROJECT_MANAGER_ROLE_KEY = 'PROJECT_MANAGER'
+const DEFAULT_PROJECT_MANAGER_USER_ID = 1
 
 const DETAIL_LOG_FILTER_OPTIONS = [
   { label: '全部', value: 'ALL' },
@@ -546,10 +551,9 @@ function areDetailBasicSnapshotsEqual(left, right) {
   return JSON.stringify(left || {}) === JSON.stringify(right || {})
 }
 
-function buildDetailBasicPayload(snapshot = {}) {
-  return {
+function buildDetailBasicPayload(snapshot = {}, lastSavedSnapshot = null) {
+  const payload = {
     name: snapshot.name,
-    status: snapshot.status,
     template_id: snapshot.template_id,
     project_manager: snapshot.project_manager,
     business_group_code: snapshot.business_group_code,
@@ -568,6 +572,14 @@ function buildDetailBasicPayload(snapshot = {}) {
         ? snapshot.group_chat_id || null
         : null,
   }
+
+  const nextStatus = String(snapshot.status || '').trim().toUpperCase()
+  const previousStatus = String(lastSavedSnapshot?.status || '').trim().toUpperCase()
+  if (nextStatus && (!lastSavedSnapshot || nextStatus !== previousStatus)) {
+    payload.status = nextStatus
+  }
+
+  return payload
 }
 
 function deriveNodeScheduleFromTasks(tasks = []) {
@@ -683,9 +695,27 @@ function normalizeParticipantRoleUserMap(value, participantRoles = []) {
       ),
     )
     if (userIds.length === 0) return
-    result[role] = userIds
+    result[role] = role === PROJECT_MANAGER_ROLE_KEY ? userIds.slice(0, 1) : userIds
   })
   return result
+}
+
+function syncProjectManagerRoleMap(participantRoles = [], roleUserMap = {}, projectManagerId) {
+  const roles = normalizeParticipantRoles(participantRoles)
+  if (!roles.includes(PROJECT_MANAGER_ROLE_KEY)) {
+    roles.unshift(PROJECT_MANAGER_ROLE_KEY)
+  }
+  const normalizedMap = normalizeParticipantRoleUserMap(roleUserMap, roles)
+  const managerId = Number(projectManagerId)
+  if (Number.isInteger(managerId) && managerId > 0) {
+    normalizedMap[PROJECT_MANAGER_ROLE_KEY] = [managerId]
+  } else {
+    delete normalizedMap[PROJECT_MANAGER_ROLE_KEY]
+  }
+  return {
+    participantRoles: roles,
+    participantRoleUserMap: normalizedMap,
+  }
 }
 
 function parseWorkflowNodeParticipantRoles(node) {
@@ -707,30 +737,51 @@ function isWorkflowNodeClosedStatus(status) {
   return normalizedStatus === 'DONE' || normalizedStatus === 'CANCELLED' || normalizedStatus === 'CANCELED'
 }
 
+function normalizeWorkflowNodeAssigneeUserIds(node) {
+  const source = Array.isArray(node?.assignee_user_ids) && node.assignee_user_ids.length > 0
+    ? node.assignee_user_ids
+    : [node?.assignee_user_id]
+  return Array.from(
+    new Set(
+      source
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item > 0),
+    ),
+  )
+}
+
+function isSameUserIdList(left = [], right = []) {
+  if (left.length !== right.length) return false
+  return left.every((item, index) => Number(item) === Number(right[index]))
+}
+
 function buildRoleSyncAssignTargets({
   workflow,
   participantRoleUserMap = {},
+  workflowNodeOptions = [],
 } = {}) {
   const nodes = Array.isArray(workflow?.nodes) ? workflow.nodes : []
-  const currentNodeKeySet = new Set(
-    (Array.isArray(workflow?.current_nodes) && workflow.current_nodes.length > 0
-      ? workflow.current_nodes
-      : (workflow?.current_node ? [workflow.current_node] : []))
-      .map((item) => String(item?.node_key || '').trim().toUpperCase())
-      .filter(Boolean),
+  const optionRoleMap = new Map(
+    (Array.isArray(workflowNodeOptions) ? workflowNodeOptions : [])
+      .map((item) => [
+        String(item?.node_key || '').trim().toUpperCase(),
+        normalizeParticipantRoles(item?.participant_roles || item?.participantRoles || []),
+      ])
+      .filter(([nodeKey]) => Boolean(nodeKey)),
   )
   return nodes
     .map((node, index) => {
       const nodeKey = String(node?.node_key || '').trim().toUpperCase()
       if (!nodeKey) return null
-      if (!currentNodeKeySet.has(nodeKey)) return null
 
       const participantRoles = parseWorkflowNodeParticipantRoles(node)
-      if (participantRoles.length === 0) return null
+      const finalParticipantRoles =
+        participantRoles.length > 0 ? participantRoles : normalizeParticipantRoles(optionRoleMap.get(nodeKey))
+      if (finalParticipantRoles.length === 0) return null
 
       const candidateUserIds = Array.from(
         new Set(
-          participantRoles
+          finalParticipantRoles
             .flatMap((role) =>
               Array.isArray(participantRoleUserMap?.[role]) ? participantRoleUserMap[role] : [],
             )
@@ -741,6 +792,7 @@ function buildRoleSyncAssignTargets({
 
       const closedStatus = isWorkflowNodeClosedStatus(node?.status)
       if (closedStatus || candidateUserIds.length === 0) return null
+      if (isSameUserIdList(normalizeWorkflowNodeAssigneeUserIds(node), candidateUserIds)) return null
 
       return {
         node_key: nodeKey,
@@ -1365,11 +1417,24 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
   const participantRoleOptions = useMemo(() => {
     const rows = Array.isArray(participantRoleItems) ? participantRoleItems : []
-    if (rows.length === 0) return FALLBACK_PARTICIPANT_ROLE_OPTIONS
-    return rows.map((item) => ({
-      value: String(item.item_code || '').trim().toUpperCase(),
-      label: item.item_name || item.item_code,
-    }))
+    const mergedMap = new Map(
+      FALLBACK_PARTICIPANT_ROLE_OPTIONS.map((item) => [
+        String(item.value || '').trim().toUpperCase(),
+        {
+          value: String(item.value || '').trim().toUpperCase(),
+          label: item.label || item.value,
+        },
+      ]),
+    )
+    rows.forEach((item) => {
+      const value = String(item.item_code || '').trim().toUpperCase()
+      if (!value) return
+      mergedMap.set(value, {
+        value,
+        label: item.item_name || item.item_code,
+      })
+    })
+    return Array.from(mergedMap.values())
   }, [participantRoleItems])
 
   const participantRoleLabelMap = useMemo(() => {
@@ -2201,13 +2266,19 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setModalOpen(true)
     form.resetFields()
     const defaultOwnerId = currentUser?.id || undefined
+    const defaultProjectManagerId = DEFAULT_PROJECT_MANAGER_USER_ID
+    const defaultRolePayload = syncProjectManagerRoleMap(
+      DEFAULT_DEMAND_PARTICIPANT_ROLES,
+      {},
+      defaultProjectManagerId,
+    )
     previousCreateOwnerIdRef.current = defaultOwnerId ?? null
     form.setFieldsValue({
       owner_user_id: defaultOwnerId,
       template_id: defaultProjectTemplateId,
-      participant_roles: DEFAULT_DEMAND_PARTICIPANT_ROLES,
-      participant_role_user_map: {},
-      project_manager: defaultOwnerId,
+      participant_roles: defaultRolePayload.participantRoles,
+      participant_role_user_map: defaultRolePayload.participantRoleUserMap,
+      project_manager: defaultProjectManagerId,
       health_status: 'green',
       actual_start_time: dayjs(),
       actual_end_time: null,
@@ -2225,51 +2296,68 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       status: 'TODO',
       priority: 'P1',
     })
-    setModalParticipantRoleUserMapState({})
+    setModalParticipantRoleUserMapState(defaultRolePayload.participantRoleUserMap)
   }
 
-  const openEditModal = useCallback((record) => {
+  const openEditModal = useCallback(async (record) => {
     if (!canEditDemandRecord(record)) {
       message.warning('仅需求负责人或管理员可编辑该需求')
       return
     }
-    setEditingDemand(record)
-    setModalOpen(true)
-    previousCreateOwnerIdRef.current = null
-    form.resetFields()
-    const initialRoleUserMap = normalizeParticipantRoleUserMap(
-      record.participant_role_user_map,
-      Array.isArray(record.participant_roles) ? record.participant_roles : DEFAULT_DEMAND_PARTICIPANT_ROLES,
-    )
-    form.setFieldsValue({
-      name: record.name,
-      owner_user_id: record.owner_user_id,
-      template_id: record.template_id ? Number(record.template_id) : defaultProjectTemplateId,
-      participant_roles:
-        Array.isArray(record.participant_roles) && record.participant_roles.length > 0
-          ? record.participant_roles
-          : DEFAULT_DEMAND_PARTICIPANT_ROLES,
-      participant_role_user_map: initialRoleUserMap,
-      project_manager: record.project_manager ? Number(record.project_manager) : undefined,
-      health_status: record.health_status || 'green',
-      actual_start_time: toNullableDateTimeValue(record.actual_start_time),
-      actual_end_time: toNullableDateTimeValue(record.actual_end_time),
-      doc_link: record.doc_link || '',
-      ui_design_link: record.ui_design_link || '',
-      test_case_link: record.test_case_link || '',
-      frontend_tech_solution: record.frontend_tech_solution || '',
-      backend_tech_solution: record.backend_tech_solution || '',
-      code_branch: record.code_branch || '',
-      release_note: record.release_note || '',
-      group_chat_mode: record.group_chat_mode || 'none',
-      group_chat_id: normalizeFeishuChatId(record.group_chat_id) || undefined,
-      business_group_code: record.business_group_code || undefined,
-      expected_release_date: record.expected_release_date ? dayjs(record.expected_release_date) : null,
-      status: record.status,
-      priority: record.priority,
-      description: record.description || '',
-    })
-    setModalParticipantRoleUserMapState(initialRoleUserMap)
+    const loadingKey = `work-demand-edit-${record.id}`
+    try {
+      message.loading({ content: '加载需求详情中...', key: loadingKey, duration: 0 })
+      const result = await getWorkDemandByIdApi(record.id)
+      if (!result?.success || !result?.data) {
+        message.error({ content: result?.message || '需求详情加载失败', key: loadingKey })
+        return
+      }
+
+      const latestRecord = result.data
+      setEditingDemand(latestRecord)
+      setModalOpen(true)
+      previousCreateOwnerIdRef.current = null
+      form.resetFields()
+      const rawInitialRoles =
+        Array.isArray(latestRecord.participant_roles) && latestRecord.participant_roles.length > 0
+          ? latestRecord.participant_roles
+          : DEFAULT_DEMAND_PARTICIPANT_ROLES
+      const initialProjectManager = latestRecord.project_manager ? Number(latestRecord.project_manager) : undefined
+      const initialRolePayload = syncProjectManagerRoleMap(
+        rawInitialRoles,
+        latestRecord.participant_role_user_map,
+        initialProjectManager,
+      )
+      form.setFieldsValue({
+        name: latestRecord.name,
+        owner_user_id: latestRecord.owner_user_id,
+        template_id: latestRecord.template_id ? Number(latestRecord.template_id) : defaultProjectTemplateId,
+        participant_roles: initialRolePayload.participantRoles,
+        participant_role_user_map: initialRolePayload.participantRoleUserMap,
+        project_manager: initialProjectManager,
+        health_status: latestRecord.health_status || 'green',
+        actual_start_time: toNullableDateTimeValue(latestRecord.actual_start_time),
+        actual_end_time: toNullableDateTimeValue(latestRecord.actual_end_time),
+        doc_link: latestRecord.doc_link || '',
+        ui_design_link: latestRecord.ui_design_link || '',
+        test_case_link: latestRecord.test_case_link || '',
+        frontend_tech_solution: latestRecord.frontend_tech_solution || '',
+        backend_tech_solution: latestRecord.backend_tech_solution || '',
+        code_branch: latestRecord.code_branch || '',
+        release_note: latestRecord.release_note || '',
+        group_chat_mode: latestRecord.group_chat_mode || 'none',
+        group_chat_id: normalizeFeishuChatId(latestRecord.group_chat_id) || undefined,
+        business_group_code: latestRecord.business_group_code || undefined,
+        expected_release_date: latestRecord.expected_release_date ? dayjs(latestRecord.expected_release_date) : null,
+        status: latestRecord.status,
+        priority: latestRecord.priority,
+        description: latestRecord.description || '',
+      })
+      setModalParticipantRoleUserMapState(initialRolePayload.participantRoleUserMap)
+      message.destroy(loadingKey)
+    } catch (error) {
+      message.error({ content: error?.message || '需求详情加载失败', key: loadingKey })
+    }
   }, [canEditDemandRecord, defaultProjectTemplateId, form])
 
   const closeModal = () => {
@@ -2293,9 +2381,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
     previousCreateOwnerIdRef.current = hasNextOwner ? nextOwnerId : null
 
-    if (!shouldSyncProjectManager) return
+    if (!shouldSyncProjectManager || hasCurrentProjectManager) return
 
-    form.setFieldValue('project_manager', hasNextOwner ? nextOwnerId : undefined)
+    form.setFieldValue('project_manager', DEFAULT_PROJECT_MANAGER_USER_ID)
   }, [modalOpen, editingDemand, modalOwnerUserId, modalProjectManager, form])
 
   useEffect(() => {
@@ -2307,12 +2395,17 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   useEffect(() => {
     if (!modalOpen) return
     const normalizedRoles = normalizeParticipantRoles(modalParticipantRoles)
+    const nextRoles =
+      !editingDemand && normalizedRoles.length === 0
+        ? DEFAULT_DEMAND_PARTICIPANT_ROLES
+        : normalizedRoles
     setModalParticipantRoleUserMapState((prev) => {
-      const currentMap = normalizeParticipantRoleUserMap(prev, normalizedRoles)
-      form.setFieldValue('participant_role_user_map', currentMap)
-      return currentMap
+      const current = syncProjectManagerRoleMap(nextRoles, prev, modalProjectManager)
+      form.setFieldValue('participant_roles', current.participantRoles)
+      form.setFieldValue('participant_role_user_map', current.participantRoleUserMap)
+      return current.participantRoleUserMap
     })
-  }, [modalOpen, modalParticipantRoles, form])
+  }, [modalOpen, editingDemand, modalParticipantRoles, modalProjectManager, form])
 
   useEffect(() => {
     if (!modalOpen) return
@@ -2333,16 +2426,18 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         return
       }
       setSubmitting(true)
+      const syncedRolePayload = syncProjectManagerRoleMap(
+        values.participant_roles,
+        modalParticipantRoleUserMapState,
+        values.project_manager,
+      )
 
       const payload = {
         name: values.name,
         management_mode: 'advanced',
         template_id: values.template_id,
-        participant_roles: normalizeParticipantRoles(values.participant_roles),
-        participant_role_user_map: normalizeParticipantRoleUserMap(
-          modalParticipantRoleUserMapState,
-          values.participant_roles,
-        ),
+        participant_roles: syncedRolePayload.participantRoles,
+        participant_role_user_map: syncedRolePayload.participantRoleUserMap,
         project_manager: values.project_manager ?? null,
         health_status: values.health_status || 'green',
         actual_start_time: values.actual_start_time ? values.actual_start_time.format('YYYY-MM-DD') : null,
@@ -2359,9 +2454,15 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           values.group_chat_mode === 'bind' ? normalizeFeishuChatId(values.group_chat_id) || null : null,
         business_group_code: values.business_group_code ?? null,
         expected_release_date: values.expected_release_date ? values.expected_release_date.format('YYYY-MM-DD') : null,
-        status: values.status,
         priority: values.priority,
         description: values.description || '',
+      }
+      const nextStatus = String(values.status || '').trim().toUpperCase()
+      const previousStatus = String(editingDemand?.status || '').trim().toUpperCase()
+      if (!editingDemand) {
+        payload.status = nextStatus || 'TODO'
+      } else if (nextStatus && nextStatus !== previousStatus) {
+        payload.status = nextStatus
       }
       if (!editingDemand || canTransferOwner) {
         payload.owner_user_id = values.owner_user_id
@@ -2398,12 +2499,16 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           .filter((item) => Number.isInteger(item) && item > 0),
       ),
     )
+    const nextUserIds = normalizedRole === PROJECT_MANAGER_ROLE_KEY ? normalizedUserIds.slice(0, 1) : normalizedUserIds
+    if (normalizedRole === PROJECT_MANAGER_ROLE_KEY) {
+      form.setFieldValue('project_manager', nextUserIds[0])
+    }
     setModalParticipantRoleUserMapState((prev) => {
       const currentMap = normalizeParticipantRoleUserMap(prev, modalParticipantRoles)
-      if (normalizedUserIds.length === 0) {
+      if (nextUserIds.length === 0) {
         delete currentMap[normalizedRole]
       } else {
-        currentMap[normalizedRole] = normalizedUserIds
+        currentMap[normalizedRole] = nextUserIds
       }
       form.setFieldValue('participant_role_user_map', currentMap)
       return currentMap
@@ -2744,19 +2849,15 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       status: 'idle',
       text: '自动保存已开启',
     })
-    setDetailParticipantRoles(
+    const detailRolePayload = syncProjectManagerRoleMap(
       Array.isArray(detailDemand.participant_roles) && detailDemand.participant_roles.length > 0
         ? detailDemand.participant_roles
         : DEFAULT_DEMAND_PARTICIPANT_ROLES,
+      detailDemand.participant_role_user_map,
+      detailDemand.project_manager ? Number(detailDemand.project_manager) : undefined,
     )
-    setDetailParticipantRoleUserMap(
-      normalizeParticipantRoleUserMap(
-        detailDemand.participant_role_user_map,
-        Array.isArray(detailDemand.participant_roles) && detailDemand.participant_roles.length > 0
-          ? detailDemand.participant_roles
-          : DEFAULT_DEMAND_PARTICIPANT_ROLES,
-      ),
-    )
+    setDetailParticipantRoles(detailRolePayload.participantRoles)
+    setDetailParticipantRoleUserMap(detailRolePayload.participantRoleUserMap)
     if (!canEditDemandRecord(detailDemand)) return
   }, [isDetailPage, detailDemand, canEditDemandRecord, defaultProjectTemplateId])
 
@@ -2767,8 +2868,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
   useEffect(() => {
     const normalizedRoles = normalizeParticipantRoles(detailParticipantRoles)
-    setDetailParticipantRoleUserMap((prev) => normalizeParticipantRoleUserMap(prev, normalizedRoles))
-  }, [detailParticipantRoles])
+    setDetailParticipantRoleUserMap((prev) =>
+      syncProjectManagerRoleMap(normalizedRoles, prev, detailProjectManager).participantRoleUserMap,
+    )
+  }, [detailParticipantRoles, detailProjectManager])
 
   useEffect(() => {
     if (!isDetailPage || !detailDemand) return
@@ -2868,7 +2971,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       })
 
       try {
-        const result = await updateWorkDemandApi(detailDemand.id, buildDetailBasicPayload(snapshot))
+        const result = await updateWorkDemandApi(
+          detailDemand.id,
+          buildDetailBasicPayload(snapshot, lastSavedSnapshot),
+        )
         if (!result?.success) {
           setDetailBasicAutoSaveState({
             status: 'error',
@@ -3021,6 +3127,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     const normalizedRoleUserMap = normalizeParticipantRoleUserMap(participantRoleUserMap, normalizedRoles)
 
     let workflowSnapshot = workflowData
+    let workflowNodeOptions = []
     try {
       const latestWorkflowResult = await getDemandWorkflowApi(detailDemand.id)
       if (latestWorkflowResult?.success && latestWorkflowResult?.data) {
@@ -3030,10 +3137,19 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     } catch {
       // ignore and fallback to local workflow snapshot
     }
+    try {
+      const nodeOptionsResult = await getDemandWorkflowNodeOptionsApi(detailDemand.id)
+      if (nodeOptionsResult?.success && Array.isArray(nodeOptionsResult?.data)) {
+        workflowNodeOptions = nodeOptionsResult.data
+      }
+    } catch {
+      // ignore and use workflow node metadata only
+    }
 
     const targets = buildRoleSyncAssignTargets({
       workflow: workflowSnapshot,
       participantRoleUserMap: normalizedRoleUserMap,
+      workflowNodeOptions,
     })
 
     if (targets.length === 0) {
@@ -3062,6 +3178,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         const result = await assignDemandWorkflowNodeApi(detailDemand.id, item.node_key, {
           assignee_user_id: candidateUserIds[0],
           assignee_user_ids: candidateUserIds,
+          activate_todo: false,
         })
         if (!result?.success) {
           failedNodes.push(item.node_name || item.node_key || '-')
@@ -3092,11 +3209,13 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
   const handleSaveDetailRoles = async () => {
     if (!detailDemand?.id || !canEditDemandRecord(detailDemand)) return
-    const normalizedDetailParticipantRoles = normalizeParticipantRoles(detailParticipantRoles)
-    const normalizedDetailRoleUserMap = normalizeParticipantRoleUserMap(
+    const syncedDetailRolePayload = syncProjectManagerRoleMap(
+      detailParticipantRoles,
       detailParticipantRoleUserMap,
-      normalizedDetailParticipantRoles,
+      detailProjectManager,
     )
+    const normalizedDetailParticipantRoles = syncedDetailRolePayload.participantRoles
+    const normalizedDetailRoleUserMap = syncedDetailRolePayload.participantRoleUserMap
     if (normalizedDetailParticipantRoles.length === 0) {
       message.warning('请选择需求涉及角色')
       return
@@ -3226,6 +3345,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const handleDetailRoleUserChange = useCallback((roleKey, userIds) => {
     const normalizedRole = String(roleKey || '').trim().toUpperCase()
     if (!normalizedRole) return
+    let nextProjectManagerId
     setDetailParticipantRoleUserMap((prev) => {
       const next = normalizeParticipantRoleUserMap(prev, detailParticipantRoles)
       const normalizedUserIds = Array.from(
@@ -3235,14 +3355,22 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
             .filter((item) => Number.isInteger(item) && item > 0),
         ),
       )
-      if (normalizedUserIds.length === 0) {
+      const nextUserIds = normalizedRole === PROJECT_MANAGER_ROLE_KEY ? normalizedUserIds.slice(0, 1) : normalizedUserIds
+      if (normalizedRole === PROJECT_MANAGER_ROLE_KEY) {
+        nextProjectManagerId = nextUserIds[0]
+      }
+      if (nextUserIds.length === 0) {
         delete next[normalizedRole]
       } else {
-        next[normalizedRole] = normalizedUserIds
+        next[normalizedRole] = nextUserIds
       }
       return next
     })
-  }, [detailParticipantRoles])
+    if (normalizedRole === PROJECT_MANAGER_ROLE_KEY) {
+      queueDetailBasicAutoSave('immediate')
+      setDetailProjectManager(nextProjectManagerId)
+    }
+  }, [detailParticipantRoles, queueDetailBasicAutoSave])
 
   const handleSaveWorkflowNodeSchedule = async (payload = {}) => {
     if (!detailDemand?.id || !canManageWorkflow || !selectedWorkflowNode?.node_key) return false
@@ -4601,13 +4729,13 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                   >
                     <Text>{item.roleLabel}</Text>
                     <Select
-                      mode="multiple"
+                      mode={item.roleKey === PROJECT_MANAGER_ROLE_KEY ? undefined : 'multiple'}
                       allowClear
                       showSearch
                       optionFilterProp="label"
                       filterOption={pinyinSelectFilter}
                       options={ownerOptions}
-                      value={item.userIds}
+                      value={item.roleKey === PROJECT_MANAGER_ROLE_KEY ? item.userIds[0] : item.userIds}
                       placeholder={`请选择${item.roleLabel}人员（可选）`}
                       onChange={(value) => handleModalRoleUserChange(item.roleKey, value)}
                     />
@@ -4640,14 +4768,14 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
             </Card>
           ) : null}
 
-          <Form.Item label="项目负责人" name="project_manager">
+          <Form.Item label="项目管理" name="project_manager">
             <Select
               allowClear
               showSearch
               optionFilterProp="label"
               filterOption={pinyinSelectFilter}
               options={ownerOptions}
-              placeholder="选择项目负责人（可选）"
+              placeholder="选择项目管理（可选）"
             />
           </Form.Item>
 
@@ -4952,7 +5080,14 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                             />
                           </div>
                           <div className="work-demand-detail__field">
-                            <Text type="secondary">项目负责人</Text>
+                            <Text type="secondary">需求负责人</Text>
+                            <Input
+                              value={detailDemand.owner_name || (detailDemand.owner_user_id ? `用户${detailDemand.owner_user_id}` : '-')}
+                              readOnly
+                            />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">项目管理</Text>
                             <Select
                               allowClear
                               showSearch
@@ -4960,7 +5095,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               filterOption={pinyinSelectFilter}
                               value={detailProjectManager}
                               options={ownerOptions}
-                              placeholder="选择项目负责人（可选）"
+                              placeholder="选择项目管理（可选）"
                               onChange={(value) => {
                                 queueDetailBasicAutoSave('immediate')
                                 setDetailProjectManager(value)
@@ -5250,12 +5385,12 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                                 >
                                   <Text>{item.roleLabel}</Text>
                                   <Select
-                                    mode="multiple"
+                                    mode={item.roleKey === PROJECT_MANAGER_ROLE_KEY ? undefined : 'multiple'}
                                     allowClear
                                     showSearch
                                     optionFilterProp="label"
                                     filterOption={pinyinSelectFilter}
-                                    value={item.userIds}
+                                    value={item.roleKey === PROJECT_MANAGER_ROLE_KEY ? item.userIds[0] : item.userIds}
                                     options={ownerOptions}
                                     placeholder={`请选择${item.roleLabel}人员（可选）`}
                                     disabled={!canEditDemandRecord(detailDemand)}

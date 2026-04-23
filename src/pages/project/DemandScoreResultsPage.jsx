@@ -1,0 +1,801 @@
+import { DownloadOutlined, EyeOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Button, Card, DatePicker, Empty, Input, Modal, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
+import dayjs from 'dayjs'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { getDemandScoreResultDetailApi, getDemandScoreResultsApi, getDemandScoreTeamRankingApi } from '../../api/work'
+
+const { RangePicker } = DatePicker
+const { Text } = Typography
+
+const MISSING_DIMENSION_TOOLTIP =
+  '缺失维度表示当前仍未补齐的评分身份维度（需求负责人、直属Owner、项目管理、协作方），不是低分提示。'
+const CONTRIBUTION_TOOLTIP =
+  '占比=该评价维度在当前结果中的有效权重占比；贡献=该评价综合分按有效权重换算后，对最终均分的实际加分。'
+const SCORE_WEIGHT_TOOLTIPS = Object.freeze({
+  delivery: '结果交付占综合分的 50%。',
+  collaboration: '协作配合占综合分的 30%。',
+  responsibility: '责任心/响应占综合分的 20%。',
+})
+const RANKING_SORT_FIELDS = Object.freeze([
+  'avg_final_score',
+  'avg_delivery_score',
+  'avg_collaboration_score',
+  'avg_responsibility_score',
+])
+
+function getDefaultRange() {
+  const now = dayjs()
+  return [now.startOf('month'), now.endOf('month')]
+}
+
+function getWeekRange(offset = 0) {
+  const base = dayjs().startOf('day')
+  const weekday = (base.day() + 6) % 7
+  const weekStart = base.subtract(weekday, 'day').add(offset * 7, 'day')
+  const weekEnd = weekStart.add(6, 'day')
+  return [weekStart, weekEnd]
+}
+
+function isSameDayRange(left = [], right = []) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length < 2 || right.length < 2) return false
+  const leftStart = dayjs(left[0])
+  const leftEnd = dayjs(left[1])
+  const rightStart = dayjs(right[0])
+  const rightEnd = dayjs(right[1])
+  if (!leftStart.isValid() || !leftEnd.isValid() || !rightStart.isValid() || !rightEnd.isValid()) return false
+  return leftStart.isSame(rightStart, 'day') && leftEnd.isSame(rightEnd, 'day')
+}
+
+function formatScore(value) {
+  const num = Number(value)
+  return Number.isFinite(num) ? num.toFixed(2) : '-'
+}
+
+function formatPercent(value) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  const rounded = Math.round(num * 100) / 100
+  const display = Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2).replace(/\.?0+$/, '')
+  return `${display}%`
+}
+
+function renderPartialTag(count) {
+  const num = Number(count || 0)
+  if (num > 0) return <Tag color="gold">部分缺失 {num}</Tag>
+  return <Tag color="success">完整</Tag>
+}
+
+function renderScoreStatus(status, rowType = 'subject') {
+  const normalized = String(status || '').trim().toUpperCase()
+  if (rowType === 'slot') {
+    if (normalized === 'SUBMITTED') return <Tag color="success">已提交</Tag>
+    return <Tag color="warning">待提交</Tag>
+  }
+  if (normalized === 'COMPLETED') return <Tag color="success">已完成</Tag>
+  if (normalized === 'PARTIAL') return <Tag color="processing">部分完成</Tag>
+  return <Tag color="warning">待完成</Tag>
+}
+
+function renderWeightedTitle(label, tooltip) {
+  return (
+    <Space size={4}>
+      <span>{label}</span>
+      <Tooltip title={tooltip}>
+        <QuestionCircleOutlined style={{ color: 'rgba(0,0,0,0.45)', cursor: 'help' }} />
+      </Tooltip>
+    </Space>
+  )
+}
+
+function toSortableNumber(value, fallback = Number.NEGATIVE_INFINITY) {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : fallback
+}
+
+function compareByOrder(leftValue, rightValue, order = 'descend') {
+  const left = toSortableNumber(leftValue)
+  const right = toSortableNumber(rightValue)
+  if (left === right) return 0
+  return order === 'ascend' ? left - right : right - left
+}
+
+function csvEscape(value) {
+  const text = String(value ?? '')
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function downloadCsv(filename, rows = []) {
+  const content = rows.map((row) => row.map((cell) => csvEscape(cell)).join(',')).join('\n')
+  const blob = new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.setAttribute('download', filename)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(link.href)
+}
+
+function DemandScoreResultsPage() {
+  const [activeTab, setActiveTab] = useState('demands')
+  const [range, setRange] = useState(getDefaultRange)
+  const [keyword, setKeyword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [rankingLoading, setRankingLoading] = useState(false)
+  const [rows, setRows] = useState([])
+  const [rankingRows, setRankingRows] = useState([])
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detail, setDetail] = useState(null)
+  const [detailExpandedRowKeys, setDetailExpandedRowKeys] = useState([])
+  const [rankingSorter, setRankingSorter] = useState({ field: 'avg_final_score', order: 'descend' })
+  const thisWeekRange = useMemo(() => getWeekRange(0), [])
+  const lastWeekRange = useMemo(() => getWeekRange(-1), [])
+  const quickRangeKey = useMemo(() => {
+    if (isSameDayRange(range, thisWeekRange)) return 'THIS_WEEK'
+    if (isSameDayRange(range, lastWeekRange)) return 'LAST_WEEK'
+    return ''
+  }, [lastWeekRange, range, thisWeekRange])
+
+  const dateParams = useMemo(() => ({
+    start_date: range?.[0]?.format?.('YYYY-MM-DD'),
+    end_date: range?.[1]?.format?.('YYYY-MM-DD'),
+  }), [range])
+
+  const loadDemands = useCallback(async ({ page = 1, pageSize = 20 } = {}) => {
+    setLoading(true)
+    try {
+      const result = await getDemandScoreResultsApi({
+        ...dateParams,
+        keyword,
+        page,
+        pageSize,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '获取评分结果失败')
+        return
+      }
+      const data = result.data || {}
+      setRows(data.list || [])
+      setPagination({
+        current: data.page || page,
+        pageSize: data.pageSize || pageSize,
+        total: data.total || 0,
+      })
+    } catch (err) {
+      message.error(err?.message || '获取评分结果失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [dateParams, keyword])
+
+  const loadRanking = useCallback(async () => {
+    setRankingLoading(true)
+    try {
+      const result = await getDemandScoreTeamRankingApi(dateParams)
+      if (!result?.success) {
+        message.error(result?.message || '获取团队排行失败')
+        return
+      }
+      setRankingRows(result.data || [])
+    } catch (err) {
+      message.error(err?.message || '获取团队排行失败')
+    } finally {
+      setRankingLoading(false)
+    }
+  }, [dateParams])
+
+  const rankingSortConfig = useMemo(() => {
+    const field = RANKING_SORT_FIELDS.includes(rankingSorter?.field) ? rankingSorter.field : 'avg_final_score'
+    const order = rankingSorter?.order === 'ascend' || rankingSorter?.order === 'descend' ? rankingSorter.order : 'descend'
+    return { field, order }
+  }, [rankingSorter])
+
+  useEffect(() => {
+    if (activeTab === 'demands') {
+      loadDemands({ page: 1 })
+    } else {
+      loadRanking()
+    }
+  }, [activeTab, loadDemands, loadRanking])
+
+  const openDetail = async (record) => {
+    setDetailOpen(true)
+    setDetailExpandedRowKeys([])
+    setDetail(null)
+    setDetailLoading(true)
+    try {
+      const result = await getDemandScoreResultDetailApi(record.id)
+      if (!result?.success) {
+        message.error(result?.message || '获取详情失败')
+        return
+      }
+      setDetail(result.data || null)
+    } catch (err) {
+      message.error(err?.message || '获取详情失败')
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  const demandColumns = [
+    {
+      title: '需求',
+      dataIndex: 'demand_name',
+      key: 'demand_name',
+      width: 340,
+      render: (value, record) => (
+        <Space orientation="vertical" size={2}>
+          <Text strong>{value || '-'}</Text>
+          <Text type="secondary">{record.demand_id}</Text>
+        </Space>
+      ),
+    },
+    { title: '被评价人数', dataIndex: 'subject_count', key: 'subject_count', width: 120 },
+    { title: '最终均分', dataIndex: 'avg_final_score', key: 'avg_final_score', width: 120, render: formatScore },
+    {
+      title: renderWeightedTitle('结果交付', SCORE_WEIGHT_TOOLTIPS.delivery),
+      dataIndex: 'avg_delivery_score',
+      key: 'avg_delivery_score',
+      width: 120,
+      render: formatScore,
+    },
+    {
+      title: renderWeightedTitle('协作配合', SCORE_WEIGHT_TOOLTIPS.collaboration),
+      dataIndex: 'avg_collaboration_score',
+      key: 'avg_collaboration_score',
+      width: 120,
+      render: formatScore,
+    },
+    {
+      title: renderWeightedTitle('责任心/响应', SCORE_WEIGHT_TOOLTIPS.responsibility),
+      dataIndex: 'avg_responsibility_score',
+      key: 'avg_responsibility_score',
+      width: 130,
+      render: formatScore,
+    },
+    {
+      title: '完整性',
+      key: 'partial_subject_count',
+      width: 150,
+      render: (_, record) => {
+        const pendingSlotCount = Number(record?.pending_slot_count || 0)
+        const pendingEvaluators = Array.isArray(record?.pending_evaluator_names) ? record.pending_evaluator_names : []
+        if (pendingSlotCount > 0) {
+          const tooltipText = pendingEvaluators.length > 0 ? `待评价：${pendingEvaluators.join('、')}` : '仍有成员待评价'
+          return (
+            <Tooltip title={tooltipText}>
+              <Tag color="processing">评价中</Tag>
+            </Tooltip>
+          )
+        }
+        return renderPartialTag(record?.partial_subject_count)
+      },
+    },
+    { title: '完成时间', dataIndex: 'demand_completed_at', key: 'demand_completed_at', width: 180 },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (_, record) => (
+        <Button icon={<EyeOutlined />} onClick={() => openDetail(record)}>
+          查看
+        </Button>
+      ),
+    },
+  ]
+
+  const rankingColumns = [
+    {
+      title: '排名',
+      dataIndex: 'rank',
+      key: 'rank',
+      width: 80,
+      render: (_, record) => (record.row_type === 'demand' ? '-' : record.rank),
+    },
+    {
+      title: '成员 / 需求',
+      key: 'evaluatee_or_demand',
+      width: 300,
+      render: (_, record) => {
+        if (record.row_type === 'demand') {
+          return (
+            <Space direction="vertical" size={2}>
+              <Text>{record.demand_name || '-'}</Text>
+              <Text type="secondary">{record.demand_id || '-'}</Text>
+            </Space>
+          )
+        }
+        return <Text strong>{record.evaluatee_name || '-'}</Text>
+      },
+    },
+    {
+      title: '预期上线时间',
+      key: 'expected_release_date',
+      width: 130,
+      render: (_, record) => (record.row_type === 'demand' ? (record.expected_release_date || '-') : '-'),
+    },
+    {
+      title: '需求数',
+      dataIndex: 'demand_count',
+      key: 'demand_count',
+      width: 100,
+      render: (_, record) => (record.row_type === 'demand' ? '-' : Number(record.demand_count || 0)),
+    },
+    {
+      title: '最终均分',
+      dataIndex: 'avg_final_score',
+      key: 'avg_final_score',
+      width: 120,
+      sorter: true,
+      sortDirections: ['descend', 'ascend'],
+      sortOrder: rankingSortConfig.field === 'avg_final_score' ? rankingSortConfig.order : null,
+      render: (_, record) => formatScore(record.row_type === 'demand' ? record.final_score : record.avg_final_score),
+    },
+    {
+      title: renderWeightedTitle('结果交付', SCORE_WEIGHT_TOOLTIPS.delivery),
+      dataIndex: 'avg_delivery_score',
+      key: 'avg_delivery_score',
+      width: 120,
+      sorter: true,
+      sortDirections: ['descend', 'ascend'],
+      sortOrder: rankingSortConfig.field === 'avg_delivery_score' ? rankingSortConfig.order : null,
+      render: (_, record) => formatScore(record.row_type === 'demand' ? record.delivery_score : record.avg_delivery_score),
+    },
+    {
+      title: renderWeightedTitle('协作配合', SCORE_WEIGHT_TOOLTIPS.collaboration),
+      dataIndex: 'avg_collaboration_score',
+      key: 'avg_collaboration_score',
+      width: 120,
+      sorter: true,
+      sortDirections: ['descend', 'ascend'],
+      sortOrder: rankingSortConfig.field === 'avg_collaboration_score' ? rankingSortConfig.order : null,
+      render: (_, record) =>
+        formatScore(record.row_type === 'demand' ? record.collaboration_score : record.avg_collaboration_score),
+    },
+    {
+      title: renderWeightedTitle('责任心/响应', SCORE_WEIGHT_TOOLTIPS.responsibility),
+      dataIndex: 'avg_responsibility_score',
+      key: 'avg_responsibility_score',
+      width: 130,
+      sorter: true,
+      sortDirections: ['descend', 'ascend'],
+      sortOrder: rankingSortConfig.field === 'avg_responsibility_score' ? rankingSortConfig.order : null,
+      render: (_, record) =>
+        formatScore(record.row_type === 'demand' ? record.responsibility_score : record.avg_responsibility_score),
+    },
+    {
+      title: '完整性',
+      key: 'partial_count',
+      width: 120,
+      render: (_, record) => {
+        if (record.row_type === 'demand') {
+          return Number(record.partial_flag || 0) > 0 ? <Tag color="gold">有缺失</Tag> : <Tag color="success">完整</Tag>
+        }
+        return Number(record.partial_count || 0) > 0
+          ? <Tag color="gold">部分缺失 {Number(record.partial_count || 0)}</Tag>
+          : <Tag color="success">完整</Tag>
+      },
+    },
+  ]
+
+  const rankingTreeData = useMemo(
+    () => {
+      const childFieldMap = {
+        avg_final_score: 'final_score',
+        avg_delivery_score: 'delivery_score',
+        avg_collaboration_score: 'collaboration_score',
+        avg_responsibility_score: 'responsibility_score',
+      }
+      const sortedMembers = [...(Array.isArray(rankingRows) ? rankingRows : [])].sort((left, right) => {
+        const scoreCompare = compareByOrder(left?.[rankingSortConfig.field], right?.[rankingSortConfig.field], rankingSortConfig.order)
+        if (scoreCompare !== 0) return scoreCompare
+        const demandCountCompare = compareByOrder(left?.demand_count, right?.demand_count, 'descend')
+        if (demandCountCompare !== 0) return demandCountCompare
+        return compareByOrder(left?.evaluatee_user_id, right?.evaluatee_user_id, 'ascend')
+      })
+      return sortedMembers.map((row) => {
+        const childField = childFieldMap[rankingSortConfig.field] || 'final_score'
+        const sortedChildren = [...(Array.isArray(row.demand_records) ? row.demand_records : [])].sort((left, right) => {
+          const scoreCompare = compareByOrder(left?.[childField], right?.[childField], rankingSortConfig.order)
+          if (scoreCompare !== 0) return scoreCompare
+          const dateCompare = compareByOrder(
+            dayjs(left?.expected_release_date || left?.demand_date || '').valueOf(),
+            dayjs(right?.expected_release_date || right?.demand_date || '').valueOf(),
+            'descend',
+          )
+          if (dateCompare !== 0) return dateCompare
+          return compareByOrder(left?.task_id, right?.task_id, 'descend')
+        })
+
+        return {
+          ...row,
+          key: `member-${row.evaluatee_user_id}`,
+          row_type: 'member',
+          children: sortedChildren.map((item) => ({
+            ...item,
+            key: `member-${row.evaluatee_user_id}-task-${item.task_id}`,
+            row_type: 'demand',
+          })),
+        }
+      })
+    },
+    [rankingRows, rankingSortConfig],
+  )
+
+  const handleRankingTableChange = useCallback((_, __, sorter) => {
+    const normalizedSorter = Array.isArray(sorter) ? sorter[0] : sorter
+    const nextField = String(normalizedSorter?.field || normalizedSorter?.columnKey || '')
+    const nextOrder = normalizedSorter?.order
+    if (RANKING_SORT_FIELDS.includes(nextField) && (nextOrder === 'ascend' || nextOrder === 'descend')) {
+      setRankingSorter({ field: nextField, order: nextOrder })
+      return
+    }
+    setRankingSorter({ field: 'avg_final_score', order: 'descend' })
+  }, [])
+
+  const handleExport = useCallback(() => {
+    if (activeTab === 'demands') {
+      if (!Array.isArray(rows) || rows.length === 0) {
+        message.warning('当前没有可导出的需求评分结果')
+        return
+      }
+      const exportRows = [
+        ['需求ID', '需求名称', '被评价人数', '最终均分', '结果交付', '协作配合', '责任心/响应', '完整性', '完成时间'],
+        ...rows.map((item) => [
+          item?.demand_id || '',
+          item?.demand_name || '',
+          Number(item?.subject_count || 0),
+          formatScore(item?.avg_final_score),
+          formatScore(item?.avg_delivery_score),
+          formatScore(item?.avg_collaboration_score),
+          formatScore(item?.avg_responsibility_score),
+          Number(item?.pending_slot_count || 0) > 0
+            ? (() => {
+                const pendingNames = (Array.isArray(item?.pending_evaluator_names) ? item.pending_evaluator_names : []).join('、')
+                return pendingNames ? `评价中（待评价：${pendingNames}）` : '评价中'
+              })()
+            : (Number(item?.partial_subject_count || 0) > 0 ? `部分缺失 ${Number(item.partial_subject_count || 0)}` : '完整'),
+          item?.demand_completed_at || '',
+        ]),
+      ]
+      downloadCsv(
+        `需求评分结果-按需求查看-${dateParams.start_date || ''}-${dateParams.end_date || ''}-${dayjs().format('YYYYMMDD-HHmmss')}.csv`,
+        exportRows,
+      )
+      message.success('导出成功')
+      return
+    }
+
+    if (!Array.isArray(rankingTreeData) || rankingTreeData.length === 0) {
+      message.warning('当前没有可导出的团队排行数据')
+      return
+    }
+
+    const exportRows = [
+      ['层级', '排名', '成员', '需求ID', '需求名称', '预期上线时间', '需求数', '最终得分', '结果交付', '协作配合', '责任心/响应', '完整性'],
+    ]
+    rankingTreeData.forEach((member) => {
+      exportRows.push([
+        '成员汇总',
+        member?.rank ?? '',
+        member?.evaluatee_name || '',
+        '',
+        '',
+        '',
+        Number(member?.demand_count || 0),
+        formatScore(member?.avg_final_score),
+        formatScore(member?.avg_delivery_score),
+        formatScore(member?.avg_collaboration_score),
+        formatScore(member?.avg_responsibility_score),
+        Number(member?.partial_count || 0) > 0 ? `部分缺失 ${Number(member?.partial_count || 0)}` : '完整',
+      ])
+      ;(Array.isArray(member?.children) ? member.children : []).forEach((item) => {
+        exportRows.push([
+          '需求明细',
+          '',
+          member?.evaluatee_name || '',
+          item?.demand_id || '',
+          item?.demand_name || '',
+          item?.expected_release_date || '',
+          '',
+          formatScore(item?.final_score),
+          formatScore(item?.delivery_score),
+          formatScore(item?.collaboration_score),
+          formatScore(item?.responsibility_score),
+          Number(item?.partial_flag || 0) > 0 ? '有缺失' : '完整',
+        ])
+      })
+    })
+
+    downloadCsv(
+      `需求评分结果-团队排行-${dateParams.start_date || ''}-${dateParams.end_date || ''}-${dayjs().format('YYYYMMDD-HHmmss')}.csv`,
+      exportRows,
+    )
+    message.success('导出成功')
+  }, [activeTab, dateParams.end_date, dateParams.start_date, rankingTreeData, rows])
+
+  const subjectMetaMap = useMemo(() => {
+    const map = new Map()
+    const subjects = Array.isArray(detail?.subjects) ? detail.subjects : []
+    subjects.forEach((subject) => {
+      const subjectId = Number(subject?.id || 0)
+      if (!Number.isInteger(subjectId) || subjectId <= 0) return
+      const slotRecords = Array.isArray(subject?.slot_records) ? subject.slot_records : []
+      const submittedCollaboratorCount = slotRecords.filter((slot) => {
+        const slotType = String(slot?.slot_type || '').trim().toUpperCase()
+        const slotStatus = String(slot?.status || '').trim().toUpperCase()
+        const weightedScore = Number(slot?.weighted_score)
+        return slotType === 'COLLABORATOR' && slotStatus === 'SUBMITTED' && Number.isFinite(weightedScore)
+      }).length
+      map.set(subjectId, {
+        effectiveWeight: Number(subject?.effective_weight || 0),
+        submittedCollaboratorCount,
+      })
+    })
+    return map
+  }, [detail])
+
+  const detailColumns = [
+    {
+      title: '被评价人 / 评价人',
+      key: 'name',
+      width: 280,
+      render: (_, record) => {
+        if (record.row_type === 'slot') {
+          return (
+            <Space size={6} wrap>
+              <Text>{record.evaluator_name || `用户${record.evaluator_user_id || '-'}`}</Text>
+              {(Array.isArray(record.role_labels) ? record.role_labels : []).map((label) => (
+                <Tag key={`${record.key}-${label}`} color="blue">
+                  {label}
+                </Tag>
+              ))}
+            </Space>
+          )
+        }
+        return <Text strong>{record.evaluatee_name || '-'}</Text>
+      },
+    },
+    {
+      title: '综合分',
+      key: 'final_score',
+      width: 100,
+      render: (_, record) => formatScore(record.row_type === 'slot' ? record.weighted_score : record.final_score),
+    },
+    {
+      title: renderWeightedTitle('结果交付', SCORE_WEIGHT_TOOLTIPS.delivery),
+      key: 'delivery_score',
+      width: 110,
+      render: (_, record) => formatScore(record.delivery_score),
+    },
+    {
+      title: renderWeightedTitle('协作配合', SCORE_WEIGHT_TOOLTIPS.collaboration),
+      key: 'collaboration_score',
+      width: 110,
+      render: (_, record) => formatScore(record.collaboration_score),
+    },
+    {
+      title: renderWeightedTitle('责任心/响应', SCORE_WEIGHT_TOOLTIPS.responsibility),
+      key: 'responsibility_score',
+      width: 130,
+      render: (_, record) => formatScore(record.responsibility_score),
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 110,
+      render: (_, record) => renderScoreStatus(record.status, record.row_type),
+    },
+    {
+      title: (
+        <Space size={4}>
+          <span>贡献说明</span>
+          <Tooltip title={CONTRIBUTION_TOOLTIP}>
+            <QuestionCircleOutlined style={{ color: 'rgba(0,0,0,0.45)', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
+      key: 'contribution',
+      width: 260,
+      render: (_, record) => {
+        if (record.row_type !== 'slot') return '-'
+
+        const subjectId = Number(record.subject_id || 0)
+        const subjectMeta = subjectMetaMap.get(subjectId) || {}
+        const effectiveWeight = Number(subjectMeta.effectiveWeight || 0)
+        const slotType = String(record.slot_type || '').trim().toUpperCase()
+        const slotStatus = String(record.status || '').trim().toUpperCase()
+        const weightedScore = Number(record.weighted_score)
+        const collaboratorCount = Number(subjectMeta.submittedCollaboratorCount || 0)
+        const isCollaborator = slotType === 'COLLABORATOR'
+        const baseWeight = Number(record.base_weight || 0)
+        const actualWeight = isCollaborator
+          ? (collaboratorCount > 0 ? baseWeight / collaboratorCount : 0)
+          : baseWeight
+        const canCompute =
+          slotStatus === 'SUBMITTED' &&
+          Number.isFinite(weightedScore) &&
+          Number.isFinite(actualWeight) &&
+          actualWeight > 0 &&
+          Number.isFinite(effectiveWeight) &&
+          effectiveWeight > 0
+
+        const shareText =
+          canCompute
+            ? `占比：${formatPercent((actualWeight / effectiveWeight) * 100)}${
+                isCollaborator ? `（协作方池，已提交${collaboratorCount}人）` : ''
+              }`
+            : '占比：待提交后计算'
+        const contributionText = canCompute
+          ? `贡献：+${formatScore((weightedScore * actualWeight) / effectiveWeight)} 分`
+          : '贡献：待提交后计算'
+
+        return (
+          <Space direction="vertical" size={0}>
+            <Text>{shareText}</Text>
+            <Text type="secondary">{contributionText}</Text>
+          </Space>
+        )
+      },
+    },
+    {
+      title: (
+        <Space size={4}>
+          <span>缺失维度</span>
+          <Tooltip title={MISSING_DIMENSION_TOOLTIP}>
+            <QuestionCircleOutlined style={{ color: 'rgba(0,0,0,0.45)', cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+      ),
+      key: 'missing_role_keys',
+      width: 240,
+      render: (_, record) =>
+        record.row_type === 'slot'
+          ? '-'
+          : (Array.isArray(record.missing_role_keys) && record.missing_role_keys.length > 0
+            ? <Text style={{ whiteSpace: 'nowrap' }}>{record.missing_role_keys.join(' / ')}</Text>
+            : '-'),
+    },
+  ]
+
+  const detailTreeData = useMemo(
+    () =>
+      (Array.isArray(detail?.subjects) ? detail.subjects : []).map((subject) => ({
+        ...subject,
+        key: `subject-${subject.id}`,
+        row_type: 'subject',
+        children: (Array.isArray(subject.slot_records) ? subject.slot_records : []).map((slot) => ({
+          ...slot,
+          key: `slot-${slot.id}`,
+          row_type: 'slot',
+        })),
+      })),
+    [detail],
+  )
+
+  const toolbar = (
+    <Card>
+      <Space wrap>
+        <Space.Compact>
+          <Button type={quickRangeKey === 'THIS_WEEK' ? 'primary' : 'default'} onClick={() => setRange(getWeekRange(0))}>
+            本周
+          </Button>
+          <Button type={quickRangeKey === 'LAST_WEEK' ? 'primary' : 'default'} onClick={() => setRange(getWeekRange(-1))}>
+            上周
+          </Button>
+        </Space.Compact>
+        <RangePicker value={range} onChange={(value) => setRange(value || getDefaultRange())} />
+        {activeTab === 'demands' ? (
+          <Input.Search
+            allowClear
+            value={keyword}
+            placeholder="搜索需求 ID / 名称"
+            style={{ width: 260 }}
+            onChange={(event) => setKeyword(event.target.value)}
+            onSearch={() => loadDemands({ page: 1 })}
+          />
+        ) : null}
+        <Button
+          icon={<ReloadOutlined />}
+          loading={activeTab === 'demands' ? loading : rankingLoading}
+          onClick={() => (activeTab === 'demands' ? loadDemands({ page: 1 }) : loadRanking())}
+        >
+          刷新
+        </Button>
+        <Button icon={<DownloadOutlined />} onClick={handleExport}>
+          导出
+        </Button>
+      </Space>
+    </Card>
+  )
+
+  return (
+    <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+      {toolbar}
+      <Card>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={[
+            {
+              key: 'demands',
+              label: '按需求查看',
+              children: (
+                <Table
+                  rowKey="id"
+                  loading={loading}
+                  columns={demandColumns}
+                  dataSource={rows}
+                  locale={{ emptyText: <Empty description="暂无评分结果" /> }}
+                  pagination={pagination}
+                  onChange={(nextPagination) => {
+                    loadDemands({
+                      page: nextPagination.current,
+                      pageSize: nextPagination.pageSize,
+                    })
+                  }}
+                />
+              ),
+            },
+            {
+              key: 'ranking',
+              label: '团队排行',
+              children: (
+                <Table
+                  rowKey="key"
+                  loading={rankingLoading}
+                  columns={rankingColumns}
+                  dataSource={rankingTreeData}
+                  onChange={handleRankingTableChange}
+                  expandable={{
+                    rowExpandable: (record) => record.row_type === 'member' && Array.isArray(record.children) && record.children.length > 0,
+                    defaultExpandAllRows: false,
+                  }}
+                  locale={{ emptyText: <Empty description="暂无团队评分排行" /> }}
+                  pagination={false}
+                />
+              ),
+            },
+          ]}
+        />
+      </Card>
+
+      <Modal
+        title={detail?.task?.demand_name || '评分详情'}
+        open={detailOpen}
+        onCancel={() => {
+          setDetailOpen(false)
+          setDetailExpandedRowKeys([])
+        }}
+        footer={
+          <Button
+            onClick={() => {
+              setDetailOpen(false)
+              setDetailExpandedRowKeys([])
+            }}
+          >
+            关闭
+          </Button>
+        }
+        width={920}
+      >
+        <Table
+          rowKey="key"
+          loading={detailLoading}
+          columns={detailColumns}
+          dataSource={detailTreeData}
+          expandable={{
+            expandedRowKeys: detailExpandedRowKeys,
+            onExpandedRowsChange: (expandedKeys) => setDetailExpandedRowKeys(Array.isArray(expandedKeys) ? expandedKeys : []),
+          }}
+          pagination={false}
+          locale={{ emptyText: <Empty description="暂无成员评分结果" /> }}
+        />
+      </Modal>
+    </Space>
+  )
+}
+
+export default DemandScoreResultsPage

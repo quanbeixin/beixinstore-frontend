@@ -154,6 +154,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/demand-scores',
+    componentKey: 'demandScoring',
+    requiredPermission: 'demand.score.view',
+    page: {
+      title: '需求评分',
+      subtitle: '对已完成需求中的参与人进行独立评分。',
+    },
+    menu: {
+      section: 'workbench',
+      label: '需求评分',
+      icon: 'dashboard',
+    },
+  },
+  {
     path: '/my-overtime-records',
     componentKey: 'myOvertimeRecords',
     requiredPermission: 'workbench.view.self',
@@ -230,6 +244,21 @@ export const PRIVATE_ROUTES = [
       section: 'project',
       label: '上线计划表',
       icon: 'tool',
+    },
+  },
+  {
+    path: '/demand-score-results',
+    componentKey: 'demandScoreResults',
+    requiredPermission: 'demand.score.result.view',
+    requiredRoles: ['SUPER_ADMIN'],
+    page: {
+      title: '评分结果',
+      subtitle: '按需求与周期查看团队评分结果和维度表现。',
+    },
+    menu: {
+      section: 'efficiency',
+      label: '需求评分结果',
+      icon: 'dashboard',
     },
   },
   {

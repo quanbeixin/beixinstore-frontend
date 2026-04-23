@@ -26,6 +26,8 @@ const DepartmentEfficiencyDetail = lazy(() => import('./pages/insight/Department
 const MemberRhythmBoard = lazy(() => import('./pages/insight/MemberRhythmBoardPage'))
 const MemberEfficiencyDetail = lazy(() => import('./pages/insight/MemberEfficiencyDetailPage'))
 const WorkDemands = lazy(() => import('./pages/project/WorkDemandsPage'))
+const DemandScoring = lazy(() => import('./pages/project/DemandScoringPage'))
+const DemandScoreResults = lazy(() => import('./pages/project/DemandScoreResultsPage'))
 const LaunchPlan = lazy(() => import('./pages/project/LaunchPlanPage'))
 const HumanGantt = lazy(() => import('./pages/project/HumanGanttPage'))
 const ProjectTemplates = lazy(() => import('./pages/project/ProjectTemplatesPage'))
@@ -90,6 +92,8 @@ const PAGE_COMPONENTS = {
   register: Register,
   rolePermissions: RolePermissions,
   workDemands: WorkDemands,
+  demandScoring: DemandScoring,
+  demandScoreResults: DemandScoreResults,
   workLogs: WorkLogs,
   myDemands: MyDemands,
   myPendingBugs: MyPendingBugs,
