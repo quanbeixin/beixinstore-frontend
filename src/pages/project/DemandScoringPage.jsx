@@ -1,6 +1,7 @@
 import { CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Button, Card, Drawer, Empty, Form, Input, InputNumber, Segmented, Space, Table, Tag, Tooltip, Typography, message } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { getMyDemandScoreSlotApi, getMyDemandScoreSlotsApi, submitDemandScoreSlotApi } from '../../api/work'
 import './DemandScoringPage.css'
 
@@ -82,6 +83,7 @@ function renderSummaryTags(items = [], { colorMap = {}, max = 2, emptyText = '-'
 }
 
 function DemandScoringPage() {
+  const navigate = useNavigate()
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -190,9 +192,19 @@ function DemandScoringPage() {
       }),
       render: (value, record) => (
         <div className="demand-scoring-page__demand-cell">
-          <Text strong className="demand-scoring-page__demand-title">
-            {value || '-'}
-          </Text>
+          <button
+            type="button"
+            className="demand-scoring-page__demand-link"
+            onClick={() => {
+              const demandId = String(record?.demand_id || '').trim()
+              if (!demandId) return
+              navigate(`/work-demands/${encodeURIComponent(demandId)}?from=demand_scores`)
+            }}
+          >
+            <Text strong className="demand-scoring-page__demand-title">
+              {value || '-'}
+            </Text>
+          </button>
           <Text type="secondary" className="demand-scoring-page__demand-id">
             {record.demand_id}
           </Text>

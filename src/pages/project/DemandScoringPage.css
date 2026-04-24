@@ -133,6 +133,19 @@
   word-break: break-word;
 }
 
+.demand-scoring-page__demand-link {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.demand-scoring-page__demand-link:hover .demand-scoring-page__demand-title {
+  color: #8c5f34;
+}
+
 .demand-scoring-page__demand-id {
   display: block;
   max-width: 100%;

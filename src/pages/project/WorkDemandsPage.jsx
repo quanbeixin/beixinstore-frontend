@@ -258,6 +258,8 @@ const DEFAULT_DEMAND_PARTICIPANT_ROLES = [
   'BACKEND_DEV',
   'QA',
 ]
+const NEW_CAPABILITY_RESEARCH_TEMPLATE_ID = 4
+const RESEARCH_TEMPLATE_DEFAULT_PARTICIPANT_ROLES = ['PROJECT_MANAGER', 'PRODUCT_MANAGER']
 const PROJECT_MANAGER_ROLE_KEY = 'PROJECT_MANAGER'
 const DEFAULT_PROJECT_MANAGER_USER_ID = 1
 
@@ -452,6 +454,10 @@ function getStatusTagColor(status) {
 function getStatusLabel(status) {
   const target = STATUS_OPTIONS.find((item) => item.value === status)
   return target?.label || status || '-'
+}
+
+function isDoneDemandStatus(status) {
+  return String(status || '').trim().toUpperCase() === 'DONE'
 }
 
 function getPriorityColor(priority) {
@@ -700,14 +706,23 @@ function normalizeParticipantRoleUserMap(value, participantRoles = []) {
   return result
 }
 
-function syncProjectManagerRoleMap(participantRoles = [], roleUserMap = {}, projectManagerId) {
+function isResearchTemplate(templateId) {
+  return Number(templateId) === NEW_CAPABILITY_RESEARCH_TEMPLATE_ID
+}
+
+function syncProjectManagerRoleMap(
+  participantRoles = [],
+  roleUserMap = {},
+  projectManagerId,
+  { forceIncludeProjectManagerRole = true } = {},
+) {
   const roles = normalizeParticipantRoles(participantRoles)
-  if (!roles.includes(PROJECT_MANAGER_ROLE_KEY)) {
+  if (forceIncludeProjectManagerRole && !roles.includes(PROJECT_MANAGER_ROLE_KEY)) {
     roles.unshift(PROJECT_MANAGER_ROLE_KEY)
   }
   const normalizedMap = normalizeParticipantRoleUserMap(roleUserMap, roles)
   const managerId = Number(projectManagerId)
-  if (Number.isInteger(managerId) && managerId > 0) {
+  if (roles.includes(PROJECT_MANAGER_ROLE_KEY) && Number.isInteger(managerId) && managerId > 0) {
     normalizedMap[PROJECT_MANAGER_ROLE_KEY] = [managerId]
   } else {
     delete normalizedMap[PROJECT_MANAGER_ROLE_KEY]
@@ -884,6 +899,18 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const isMyDemandsPage = pageMode === 'my'
   const isLaunchPlanPage = pageMode === 'launchPlan'
   const listBasePath = isMyDemandsPage ? '/my-demands' : isLaunchPlanPage ? '/launch-plan' : '/work-demands'
+  const detailRouteSource = useMemo(() => {
+    const query = new URLSearchParams(location.search)
+    return String(query.get('from') || '').trim().toLowerCase()
+  }, [location.search])
+  const isFromDemandScores = detailRouteSource === 'demand_scores'
+  const detailBackPath = isFromDemandScores ? '/demand-scores' : listBasePath
+  const detailBackLabel = useMemo(() => {
+    if (isFromDemandScores) return '返回需求评分'
+    if (isMyDemandsPage) return '返回我的需求'
+    if (isLaunchPlanPage) return '返回上线计划表'
+    return '返回需求池'
+  }, [isFromDemandScores, isLaunchPlanPage, isMyDemandsPage])
   const groupCollapseStorageKey = `${DEMAND_GROUP_COLLAPSE_STATE_KEY_PREFIX}:${listBasePath}`
   const listScrollRestoreStorageKey = `${DEMAND_LIST_SCROLL_RESTORE_KEY_PREFIX}:${listBasePath}`
   const detailTabStateStorageKey = routeDemandId ? `${DEMAND_DETAIL_TAB_STATE_KEY_PREFIX}:${routeDemandId}` : ''
@@ -908,6 +935,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [saveViewForm] = Form.useForm()
   const modalTemplateId = Form.useWatch('template_id', form)
   const modalParticipantRoles = Form.useWatch('participant_roles', form)
+  const modalStatus = Form.useWatch('status', form)
   const modalOwnerUserId = Form.useWatch('owner_user_id', form)
   const modalProjectManager = Form.useWatch('project_manager', form)
   const modalGroupChatMode = Form.useWatch('group_chat_mode', form)
@@ -1015,6 +1043,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const detailBasicAutoSaveQueuedRef = useRef(false)
   const detailBasicAutoSaveInFlightRef = useRef(false)
   const detailBasicNextDelayRef = useRef(DETAIL_BASIC_AUTO_SAVE_DEBOUNCE_MS)
+  const previousCreateTemplateIdRef = useRef(null)
 
   const detailBasicDraft = useMemo(
     () =>
@@ -1731,6 +1760,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     if (!Number.isInteger(id) || id <= 0) return null
     return templateByIdMap.get(id) || null
   }, [modalTemplateId, templateByIdMap])
+  const modalShouldForceProjectManagerRole = useMemo(
+    () => !isResearchTemplate(modalTemplateId),
+    [modalTemplateId],
+  )
 
   const selectedModalTemplateNodes = useMemo(() => {
     const nodes = extractTemplateNodes(selectedModalTemplate)
@@ -2215,8 +2248,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           const name = String(item?.name || '').trim() || chatId
           const avatar = String(item?.avatar || '').trim()
           options.push({
-            label: `${name}（${chatId}）`,
+            label: name,
             value: chatId,
+            searchText: `${name} ${chatId}`.trim(),
             chatName: name,
             chatAvatar: avatar,
           })
@@ -2245,8 +2279,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       if (exists) return prev
       return [
         {
-          label: `已绑定群（${chatId}）`,
+          label: '已绑定群',
           value: chatId,
+          searchText: `已绑定群 ${chatId}`,
           chatName: '已绑定群',
           chatAvatar: '',
         },
@@ -2260,6 +2295,11 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     loadFeishuChatOptions()
   }, [feishuChatOptions.length, loadFeishuChatOptions])
 
+  const handleFeishuChatSelectSearch = useCallback((value) => {
+    if (feishuChatOptions.length > 0) return
+    loadFeishuChatOptions(value)
+  }, [feishuChatOptions.length, loadFeishuChatOptions])
+
   const openCreateModal = () => {
     if (!canCreateInCurrentPage) return
     setEditingDemand(null)
@@ -2267,10 +2307,16 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     form.resetFields()
     const defaultOwnerId = currentUser?.id || undefined
     const defaultProjectManagerId = DEFAULT_PROJECT_MANAGER_USER_ID
+    const defaultParticipantRoles = isResearchTemplate(defaultProjectTemplateId)
+      ? RESEARCH_TEMPLATE_DEFAULT_PARTICIPANT_ROLES
+      : DEFAULT_DEMAND_PARTICIPANT_ROLES
     const defaultRolePayload = syncProjectManagerRoleMap(
-      DEFAULT_DEMAND_PARTICIPANT_ROLES,
+      defaultParticipantRoles,
       {},
       defaultProjectManagerId,
+      {
+        forceIncludeProjectManagerRole: !isResearchTemplate(defaultProjectTemplateId),
+      },
     )
     previousCreateOwnerIdRef.current = defaultOwnerId ?? null
     form.setFieldsValue({
@@ -2323,15 +2369,19 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           ? latestRecord.participant_roles
           : DEFAULT_DEMAND_PARTICIPANT_ROLES
       const initialProjectManager = latestRecord.project_manager ? Number(latestRecord.project_manager) : undefined
+      const initialTemplateId = latestRecord.template_id ? Number(latestRecord.template_id) : defaultProjectTemplateId
       const initialRolePayload = syncProjectManagerRoleMap(
         rawInitialRoles,
         latestRecord.participant_role_user_map,
         initialProjectManager,
+        {
+          forceIncludeProjectManagerRole: !isResearchTemplate(initialTemplateId),
+        },
       )
       form.setFieldsValue({
         name: latestRecord.name,
         owner_user_id: latestRecord.owner_user_id,
-        template_id: latestRecord.template_id ? Number(latestRecord.template_id) : defaultProjectTemplateId,
+        template_id: initialTemplateId,
         participant_roles: initialRolePayload.participantRoles,
         participant_role_user_map: initialRolePayload.participantRoleUserMap,
         project_manager: initialProjectManager,
@@ -2364,6 +2414,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setModalOpen(false)
     setEditingDemand(null)
     previousCreateOwnerIdRef.current = null
+    previousCreateTemplateIdRef.current = null
     form.resetFields()
     setModalParticipantRoleUserMapState({})
   }
@@ -2388,6 +2439,36 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
   useEffect(() => {
     if (!modalOpen) return
+    const currentTemplateId = Number(modalTemplateId)
+    const normalizedTemplateId =
+      Number.isInteger(currentTemplateId) && currentTemplateId > 0 ? currentTemplateId : null
+    if (editingDemand) {
+      previousCreateTemplateIdRef.current = normalizedTemplateId
+      return
+    }
+    const previousTemplateId = previousCreateTemplateIdRef.current
+    if (previousTemplateId === normalizedTemplateId) return
+    previousCreateTemplateIdRef.current = normalizedTemplateId
+    if (!normalizedTemplateId) return
+    {
+      const useResearchDefaults = isResearchTemplate(normalizedTemplateId)
+      const nextDefaultRoles = useResearchDefaults
+        ? RESEARCH_TEMPLATE_DEFAULT_PARTICIPANT_ROLES
+        : DEFAULT_DEMAND_PARTICIPANT_ROLES
+      const nextRolePayload = syncProjectManagerRoleMap(
+        nextDefaultRoles,
+        {},
+        modalProjectManager,
+        { forceIncludeProjectManagerRole: !useResearchDefaults },
+      )
+      form.setFieldValue('participant_roles', nextRolePayload.participantRoles)
+      form.setFieldValue('participant_role_user_map', nextRolePayload.participantRoleUserMap)
+      setModalParticipantRoleUserMapState(nextRolePayload.participantRoleUserMap)
+    }
+  }, [modalOpen, modalTemplateId, modalProjectManager, form, editingDemand])
+
+  useEffect(() => {
+    if (!modalOpen) return
     if (modalGroupChatMode === 'bind') return
     form.setFieldValue('group_chat_id', undefined)
   }, [modalOpen, modalGroupChatMode, form])
@@ -2395,17 +2476,29 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   useEffect(() => {
     if (!modalOpen) return
     const normalizedRoles = normalizeParticipantRoles(modalParticipantRoles)
+    const templateDefaultRoles = modalShouldForceProjectManagerRole
+      ? DEFAULT_DEMAND_PARTICIPANT_ROLES
+      : RESEARCH_TEMPLATE_DEFAULT_PARTICIPANT_ROLES
     const nextRoles =
       !editingDemand && normalizedRoles.length === 0
-        ? DEFAULT_DEMAND_PARTICIPANT_ROLES
+        ? templateDefaultRoles
         : normalizedRoles
     setModalParticipantRoleUserMapState((prev) => {
-      const current = syncProjectManagerRoleMap(nextRoles, prev, modalProjectManager)
-      form.setFieldValue('participant_roles', current.participantRoles)
+      const current = syncProjectManagerRoleMap(nextRoles, prev, modalProjectManager, {
+        forceIncludeProjectManagerRole: modalShouldForceProjectManagerRole,
+      })
       form.setFieldValue('participant_role_user_map', current.participantRoleUserMap)
+      if (!editingDemand && normalizedRoles.length === 0) {
+        form.setFieldValue('participant_roles', current.participantRoles)
+      } else if (
+        modalShouldForceProjectManagerRole &&
+        JSON.stringify(current.participantRoles) !== JSON.stringify(normalizedRoles)
+      ) {
+        form.setFieldValue('participant_roles', current.participantRoles)
+      }
       return current.participantRoleUserMap
     })
-  }, [modalOpen, editingDemand, modalParticipantRoles, modalProjectManager, form])
+  }, [modalOpen, editingDemand, modalParticipantRoles, modalProjectManager, form, modalShouldForceProjectManagerRole])
 
   useEffect(() => {
     if (!modalOpen) return
@@ -2430,6 +2523,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         values.participant_roles,
         modalParticipantRoleUserMapState,
         values.project_manager,
+        {
+          forceIncludeProjectManagerRole: !isResearchTemplate(values.template_id),
+        },
       )
 
       const payload = {
@@ -2458,6 +2554,11 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         description: values.description || '',
       }
       const nextStatus = String(values.status || '').trim().toUpperCase()
+      const normalizedDocLink = String(values.doc_link || '').trim()
+      if (isDoneDemandStatus(nextStatus) && !normalizedDocLink) {
+        message.warning('状态为已完成时，PRD 链接 & 产品方案必填')
+        return
+      }
       const previousStatus = String(editingDemand?.status || '').trim().toUpperCase()
       if (!editingDemand) {
         payload.status = nextStatus || 'TODO'
@@ -2607,15 +2708,17 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   )
 
   const closeDetailDrawer = useCallback(() => {
-    const cachedRestore = readListScrollRestore(listScrollRestoreStorageKey)
-    if (cachedRestore) {
-      const nextRestore = {
-        ...cachedRestore,
-        shouldRestore: true,
+    if (!isFromDemandScores) {
+      const cachedRestore = readListScrollRestore(listScrollRestoreStorageKey)
+      if (cachedRestore) {
+        const nextRestore = {
+          ...cachedRestore,
+          shouldRestore: true,
+        }
+        writeListScrollRestore(listScrollRestoreStorageKey, nextRestore)
+        listScrollRestoreRef.current = nextRestore
+        hasAppliedListScrollRestoreRef.current = false
       }
-      writeListScrollRestore(listScrollRestoreStorageKey, nextRestore)
-      listScrollRestoreRef.current = nextRestore
-      hasAppliedListScrollRestoreRef.current = false
     }
     setDetailDemand(null)
     setDetailLogs([])
@@ -2639,8 +2742,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setWorkflowParticipantUserIds([])
     setWorkflowDueAt(null)
     setWorkflowExpectedStartAt(null)
-    navigate(listBasePath)
-  }, [listBasePath, listScrollRestoreStorageKey, navigate])
+    navigate(detailBackPath)
+  }, [detailBackPath, isFromDemandScores, listScrollRestoreStorageKey, navigate])
 
   useEffect(() => {
     if (!isDetailPage || !routeDemandId) return
@@ -2654,7 +2757,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         if (!active) return
         if (!result?.success || !result?.data) {
           message.error(result?.message || '需求详情加载失败')
-          navigate(listBasePath, { replace: true })
+          navigate(detailBackPath, { replace: true })
           return
         }
 
@@ -2665,7 +2768,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       } catch (error) {
         if (!active) return
         message.error(error?.message || '需求详情加载失败')
-        navigate(listBasePath, { replace: true })
+        navigate(detailBackPath, { replace: true })
       } finally {
         if (active) setDetailPageLoading(false)
       }
@@ -2679,8 +2782,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     isDetailPage,
     routeDemandId,
     canEditDemandRecord,
+    detailBackPath,
     fetchDemandRelatedLogs,
-    listBasePath,
     loadDemandWorkflow,
     navigate,
   ])
@@ -2958,6 +3061,26 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         }
         return false
       }
+      if (isDoneDemandStatus(snapshot?.status) && !String(snapshot?.doc_link || '').trim()) {
+        setDetailBasicAutoSaveState({
+          status: 'error',
+          text: '未保存：状态为已完成时，PRD 链接 & 产品方案必填',
+        })
+        if (showValidationMessage) {
+          message.warning('状态为已完成时，PRD 链接 & 产品方案必填')
+        }
+        return false
+      }
+      if (!String(snapshot?.business_group_code || '').trim()) {
+        setDetailBasicAutoSaveState({
+          status: 'error',
+          text: '未保存：请选择业务组',
+        })
+        if (showValidationMessage) {
+          message.warning('请选择业务组')
+        }
+        return false
+      }
 
       if (detailBasicAutoSaveInFlightRef.current) {
         detailBasicAutoSaveQueuedRef.current = true
@@ -3061,20 +3184,32 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
   const handleQuickStatusUpdate = useCallback(async (record, nextStatus) => {
     if (!record?.id || !canEditDemandRecord(record)) return
+    const normalizedNextStatus = String(nextStatus || '').trim().toUpperCase()
+    const isCurrentDetailRecord = Number(record?.id || 0) === Number(detailDemand?.id || 0)
+    const prdLink = isCurrentDetailRecord
+      ? String(detailDocLink || record?.doc_link || '').trim()
+      : String(record?.doc_link || '').trim()
+    if (isDoneDemandStatus(normalizedNextStatus) && !prdLink) {
+      message.warning('标记完成前请先填写 PRD 链接 & 产品方案')
+      return
+    }
+
     try {
-      const result = await updateWorkDemandApi(record.id, {
-        status: nextStatus,
-      })
+      const payload = { status: normalizedNextStatus || String(nextStatus || '').trim() }
+      if (isDoneDemandStatus(normalizedNextStatus) && prdLink) {
+        payload.doc_link = prdLink
+      }
+      const result = await updateWorkDemandApi(record.id, payload)
       if (!result?.success) {
         message.error(result?.message || '状态更新失败')
         return
       }
-      message.success(nextStatus === 'DONE' ? '需求已完成' : '需求已重开')
+      message.success(isDoneDemandStatus(normalizedNextStatus) ? '需求已完成' : '需求已重开')
       await refreshListAndDetail(result?.data || null)
     } catch (error) {
       message.error(error?.message || '状态更新失败')
     }
-  }, [canEditDemandRecord, refreshListAndDetail])
+  }, [canEditDemandRecord, detailDemand?.id, detailDocLink, refreshListAndDetail])
 
   const isQuickFieldSaving = useCallback((demandId, fieldName) => {
     if (!demandId || !fieldName) return false
@@ -4779,13 +4914,16 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
             />
           </Form.Item>
 
-          <Form.Item label="业务组" name="business_group_code">
+          <Form.Item
+            label="业务组"
+            name="business_group_code"
+            rules={[{ required: true, message: '请选择业务组' }]}
+          >
             <Select
-              allowClear
               showSearch
               optionFilterProp="label"
               options={businessGroupOptions}
-              placeholder="请选择业务组（可选）"
+              placeholder="请选择业务组"
             />
           </Form.Item>
 
@@ -4801,8 +4939,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               <Select
                 allowClear
                 showSearch
-                filterOption={false}
-                onSearch={(value) => loadFeishuChatOptions(value)}
+                filterOption={pinyinSelectFilter}
+                onSearch={handleFeishuChatSelectSearch}
                 onFocus={handleFeishuChatSelectFocus}
                 notFoundContent={feishuChatOptionsLoading ? '加载中...' : '暂无可选飞书群'}
                 options={feishuChatOptions}
@@ -4841,8 +4979,22 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
             </Form.Item>
           </div>
 
-          <Form.Item label="PRD链接" name="doc_link">
-            <Input maxLength={500} placeholder="例如 PRD链接（可选）" />
+          <Form.Item
+            label="PRD 链接 & 产品方案"
+            name="doc_link"
+            dependencies={['status']}
+            rules={[
+              () => ({
+                validator(_, value) {
+                  if (isDoneDemandStatus(modalStatus) && !String(value || '').trim()) {
+                    return Promise.reject(new Error('状态为已完成时，PRD 链接 & 产品方案必填'))
+                  }
+                  return Promise.resolve()
+                },
+              }),
+            ]}
+          >
+            <Input maxLength={500} placeholder={isDoneDemandStatus(modalStatus) ? '状态为已完成时，PRD 链接 & 产品方案必填' : '例如 PRD 链接 & 产品方案（可选）'} />
           </Form.Item>
 
           <Form.Item label="UI设计稿地址" name="ui_design_link">
@@ -4907,7 +5059,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                     </div>
                     <div className="work-demand-detail__hero-actions">
                       <Button icon={<LeftOutlined />} onClick={closeDetailDrawer}>
-                        {isMyDemandsPage ? '返回我的需求' : isLaunchPlanPage ? '返回上线计划表' : '返回需求池'}
+                        {detailBackLabel}
                       </Button>
                       {canEditDemandRecord(detailDemand) ? (
                         <>
@@ -4921,7 +5073,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                     </div>
                   </div>
                   <Text type="secondary" className="work-demand-detail__hero-desc">
-                    {detailDemand.description || '当前需求暂无补充描述，可在下方基本信息中完善背景、目标和PRD链接。'}
+                    {detailDemand.description || '当前需求暂无补充描述，可在下方基本信息中完善背景、目标和 PRD 链接 & 产品方案。'}
                   </Text>
                 </div>
 
@@ -5105,7 +5257,6 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                           <div className="work-demand-detail__field">
                             <Text type="secondary">业务组</Text>
                             <Select
-                              allowClear
                               showSearch
                               optionFilterProp="label"
                               value={detailBusinessGroupCode}
@@ -5145,9 +5296,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               <Select
                                 allowClear
                                 showSearch
-                                filterOption={false}
+                                filterOption={pinyinSelectFilter}
                                 value={detailGroupChatId}
-                                onSearch={(value) => loadFeishuChatOptions(value)}
+                                onSearch={handleFeishuChatSelectSearch}
                                 onFocus={handleFeishuChatSelectFocus}
                                 notFoundContent={feishuChatOptionsLoading ? '加载中...' : '暂无可选飞书群'}
                                 options={feishuChatOptions}
@@ -5201,10 +5352,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                             />
                           </div>
                           <div className="work-demand-detail__field work-demand-detail__field--full">
-                            <Text type="secondary">PRD链接</Text>
+                            <Text type="secondary">PRD 链接 & 产品方案</Text>
                             <Input
                               value={detailDocLink}
-                              placeholder="填写 PRD链接"
+                              placeholder="填写 PRD 链接 & 产品方案"
                               onChange={(event) => setDetailDocLink(event.target.value)}
                               onBlur={flushDetailBasicAutoSave}
                             />
@@ -5214,7 +5365,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                                   <Image
                                     className="work-demand-detail__link-preview-image"
                                     src={normalizePreviewUrl(detailDocLink)}
-                                    alt="PRD附件缩略图"
+                                    alt="PRD/产品方案附件缩略图"
                                     width={96}
                                     height={96}
                                   />
