@@ -82,6 +82,13 @@ function buildTransitionActionId(transition = {}) {
   return `${actionKey}:${fromStatus}:${toStatus}`
 }
 
+function isNoFixTransition(transition = {}, actionKey = '') {
+  const toStatus = String(transition?.to_status_code || '').trim().toUpperCase()
+  const normalizedActionKey = toActionKey(actionKey || transition?.action_key)
+  if (toStatus === 'NO_FIX') return true
+  return normalizedActionKey === 'no_fix' || normalizedActionKey === 'no-fix' || normalizedActionKey === 'nofix'
+}
+
 function getAttachmentUrl(row) {
   return String(row?.download_url || row?.object_url || '').trim()
 }
@@ -486,7 +493,9 @@ function BugDetailPage() {
   }, [canSeeFixModule, canSeeVerifyModule, canTransition, detail?.status_code, workflowTransitionMap])
 
   const transitionRequirementHints = useMemo(() => ({
-    requireFixSolution: transitionButtons.some((item) => Number(item?.transition?.require_fix_solution) === 1),
+    requireFixSolution: transitionButtons.some(
+      (item) => Number(item?.transition?.require_fix_solution) === 1 && !isNoFixTransition(item?.transition, item?.actionKey),
+    ),
   }), [transitionButtons])
 
   const runTransition = async (button) => {
@@ -514,7 +523,7 @@ function BugDetailPage() {
       const requireFixSolution = Number(transition?.require_fix_solution) === 1
       const isFixAction = actionKey === 'fix'
       const isRejectAction = actionKey === 'reject'
-      const mustFillFixSolution = isFixAction || requireFixSolution
+      const mustFillFixSolution = (isFixAction || requireFixSolution) && !isNoFixTransition(transition, actionKey)
       const mustFillRemark = isRejectAction || requireRemark
 
       if (mustFillFixSolution && !fixSolution) {

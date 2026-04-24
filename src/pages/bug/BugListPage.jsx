@@ -25,6 +25,7 @@ const GROUP_FIELD_OPTIONS = [
   { label: '状态', value: 'status' },
   { label: '提交人', value: 'reporter' },
   { label: 'Bug分类', value: 'bug_type' },
+  { label: '优先级', value: 'priority' },
 ]
 const GROUP_FIELD_LABEL_MAP = GROUP_FIELD_OPTIONS.reduce((acc, item) => {
   acc[item.value] = item.label
@@ -116,6 +117,7 @@ function normalizeViewConfig(config = {}) {
     keyword: String(source.keyword || '').trim(),
     status_code: String(source.status_code || '').trim().toUpperCase(),
     severity_code: String(source.severity_code || '').trim().toUpperCase(),
+    issue_stage: String(source.issue_stage || '').trim().toUpperCase(),
     demand_id: String(source.demand_id || '').trim(),
     assignee_id: Number.isInteger(Number(source.assignee_id)) && Number(source.assignee_id) > 0 ? Number(source.assignee_id) : undefined,
     reporter_id: Number.isInteger(Number(source.reporter_id)) && Number(source.reporter_id) > 0 ? Number(source.reporter_id) : undefined,
@@ -155,6 +157,7 @@ function parseBugListQueryState(search, { forcedAssigneeId = null } = {}) {
     keyword: params.get('keyword') || '',
     status_code: params.get('status_code') || '',
     severity_code: params.get('severity_code') || '',
+    issue_stage: params.get('issue_stage') || '',
     demand_id: params.get('demand_id') || '',
     assignee_id: params.get('assignee_id') || '',
     reporter_id: params.get('reporter_id') || '',
@@ -168,6 +171,7 @@ function parseBugListQueryState(search, { forcedAssigneeId = null } = {}) {
     keyword: config.keyword || '',
     statusFilter: config.status_code || '',
     severityFilter: config.severity_code || '',
+    issueStageFilter: config.issue_stage || '',
     demandFilter: config.demand_id || undefined,
     assigneeFilter: forcedAssigneeId || config.assignee_id || undefined,
     reporterFilter: config.reporter_id || undefined,
@@ -183,6 +187,7 @@ function buildBugListQueryString({
   keyword,
   statusFilter,
   severityFilter,
+  issueStageFilter,
   demandFilter,
   assigneeFilter,
   reporterFilter,
@@ -203,6 +208,9 @@ function buildBugListQueryString({
 
   const normalizedSeverity = String(severityFilter || '').trim().toUpperCase()
   if (normalizedSeverity) params.set('severity_code', normalizedSeverity)
+
+  const normalizedIssueStage = String(issueStageFilter || '').trim().toUpperCase()
+  if (normalizedIssueStage) params.set('issue_stage', normalizedIssueStage)
 
   const normalizedDemand = String(demandFilter || '').trim()
   if (normalizedDemand) params.set('demand_id', normalizedDemand)
@@ -259,6 +267,11 @@ function resolveGroupBucket(field, row) {
   if (field === 'bug_type') {
     const code = String(row?.bug_type_code || 'UNSET').trim().toUpperCase() || 'UNSET'
     const label = String(row?.bug_type_name || row?.bug_type_code || '未分类').trim() || '未分类'
+    return { key: code, value: label }
+  }
+  if (field === 'priority') {
+    const code = String(row?.priority_code || 'UNSET').trim().toUpperCase() || 'UNSET'
+    const label = String(row?.priority_name || row?.priority_code || '未设置').trim() || '未设置'
     return { key: code, value: label }
   }
   return { key: 'UNKNOWN', value: '未分组' }
@@ -349,6 +362,7 @@ function BugListPage({
   const [keyword, setKeyword] = useState(initialQueryState.keyword)
   const [statusFilter, setStatusFilter] = useState(initialQueryState.statusFilter)
   const [severityFilter, setSeverityFilter] = useState(initialQueryState.severityFilter)
+  const [issueStageFilter, setIssueStageFilter] = useState(initialQueryState.issueStageFilter)
   const [groupFields, setGroupFields] = useState(initialQueryState.groupFields)
   const [groupLimitExceeded, setGroupLimitExceeded] = useState(false)
   const [demandFilter, setDemandFilter] = useState(initialQueryState.demandFilter)
@@ -362,6 +376,7 @@ function BugListPage({
   const [statusSegmentOptions, setStatusSegmentOptions] = useState([{ label: '全部状态', value: '' }])
   const [statusNameMap, setStatusNameMap] = useState({})
   const [severityOptions, setSeverityOptions] = useState([{ label: '全部', value: '' }])
+  const [issueStageOptions, setIssueStageOptions] = useState([{ label: '全部', value: '' }])
   const [workflowTransitions, setWorkflowTransitions] = useState([])
   const [attachmentPreviewMap, setAttachmentPreviewMap] = useState({})
   const [attachmentPreviewLoadingMap, setAttachmentPreviewLoadingMap] = useState({})
@@ -379,11 +394,12 @@ function BugListPage({
   const [viewListLoading, setViewListLoading] = useState(false)
   const [viewSaveLoading, setViewSaveLoading] = useState(false)
   const [bugViews, setBugViews] = useState([])
-  const [activeViewId, setActiveViewId] = useState(undefined)
+  const [activeViewId, setActiveViewId] = useState(null)
   const [saveViewModalOpen, setSaveViewModalOpen] = useState(false)
   const [transitionForm] = Form.useForm()
   const [saveViewForm] = Form.useForm()
   const groupingLimitWarnedRef = useRef(false)
+  const suppressViewAutoApplyRef = useRef(false)
 
   const openAttachmentPreview = useCallback(({ src, type = 'image', title = '附件预览' }) => {
     if (!src) {
@@ -426,9 +442,10 @@ function BugListPage({
 
   const loadDicts = useCallback(async () => {
     try {
-      const [statusRes, severityRes] = await Promise.all([
+      const [statusRes, severityRes, stageRes] = await Promise.all([
         getDictItemsApi('bug_status', { enabledOnly: true }),
         getDictItemsApi('bug_severity', { enabledOnly: true }),
+        getDictItemsApi('bug_stage', { enabledOnly: true }),
       ])
       const statusRows = statusRes?.data || []
       setStatusSegmentOptions(mapSegmentedOptions(statusRows))
@@ -441,6 +458,7 @@ function BugListPage({
         }, {}),
       )
       setSeverityOptions(mapDictOptions(severityRes?.data || []))
+      setIssueStageOptions(mapDictOptions(stageRes?.data || []))
     } catch (error) {
       message.error(error?.message || '加载Bug筛选项失败')
     }
@@ -505,18 +523,20 @@ function BugListPage({
     keyword: keyword || undefined,
     status_code: statusFilter || undefined,
     severity_code: severityFilter || undefined,
+    issue_stage: issueStageFilter || undefined,
     demand_id: demandFilter || undefined,
     assignee_id: assigneeFilter || undefined,
     reporter_id: reporterFilter || undefined,
     start_date: createdRange?.[0]?.format?.('YYYY-MM-DD') || undefined,
     end_date: createdRange?.[1]?.format?.('YYYY-MM-DD') || undefined,
-  }), [assigneeFilter, createdRange, demandFilter, keyword, reporterFilter, severityFilter, statusFilter])
+  }), [assigneeFilter, createdRange, demandFilter, issueStageFilter, keyword, reporterFilter, severityFilter, statusFilter])
 
   const buildCurrentViewConfig = useCallback(
     () => ({
       keyword: String(keyword || '').trim(),
       status_code: String(statusFilter || '').trim().toUpperCase(),
       severity_code: String(severityFilter || '').trim().toUpperCase(),
+      issue_stage: String(issueStageFilter || '').trim().toUpperCase(),
       demand_id: String(demandFilter || '').trim(),
       assignee_id: Number(assigneeFilter || 0) > 0 ? Number(assigneeFilter) : null,
       reporter_id: Number(reporterFilter || 0) > 0 ? Number(reporterFilter) : null,
@@ -525,7 +545,18 @@ function BugListPage({
       group_fields: Array.isArray(groupFields) ? groupFields : [],
       page_size: BUG_VIEW_ALLOWED_PAGE_SIZE.has(Number(pageSize)) ? Number(pageSize) : 20,
     }),
-    [assigneeFilter, createdRange, demandFilter, groupFields, keyword, pageSize, reporterFilter, severityFilter, statusFilter],
+    [
+      assigneeFilter,
+      createdRange,
+      demandFilter,
+      groupFields,
+      issueStageFilter,
+      keyword,
+      pageSize,
+      reporterFilter,
+      severityFilter,
+      statusFilter,
+    ],
   )
   const activeViewConfig = useMemo(() => normalizeViewConfig(activeView?.config || {}), [activeView?.config])
   const currentViewConfig = useMemo(() => normalizeViewConfig(buildCurrentViewConfig()), [buildCurrentViewConfig])
@@ -561,6 +592,7 @@ function BugListPage({
     setSearchInput(config.keyword || '')
     setStatusFilter(config.status_code || '')
     setSeverityFilter(config.severity_code || '')
+    setIssueStageFilter(config.issue_stage || '')
     setDemandFilter(config.demand_id || undefined)
     setAssigneeFilter(normalizedForcedAssigneeId || config.assignee_id || undefined)
     setReporterFilter(config.reporter_id || undefined)
@@ -731,6 +763,7 @@ function BugListPage({
     setKeyword((prev) => (prev === queryState.keyword ? prev : queryState.keyword))
     setStatusFilter((prev) => (prev === queryState.statusFilter ? prev : queryState.statusFilter))
     setSeverityFilter((prev) => (prev === queryState.severityFilter ? prev : queryState.severityFilter))
+    setIssueStageFilter((prev) => (prev === queryState.issueStageFilter ? prev : queryState.issueStageFilter))
     setDemandFilter((prev) => (prev === queryState.demandFilter ? prev : queryState.demandFilter))
     setAssigneeFilter((prev) => (prev === queryState.assigneeFilter ? prev : queryState.assigneeFilter))
     setReporterFilter((prev) => (prev === queryState.reporterFilter ? prev : queryState.reporterFilter))
@@ -765,6 +798,7 @@ function BugListPage({
       keyword,
       statusFilter,
       severityFilter,
+      issueStageFilter,
       demandFilter,
       assigneeFilter,
       reporterFilter,
@@ -789,6 +823,7 @@ function BugListPage({
     createdRange,
     demandFilter,
     groupFields,
+    issueStageFilter,
     keyword,
     location.pathname,
     location.search,
@@ -802,7 +837,11 @@ function BugListPage({
 
   useEffect(() => {
     const viewIdFromQuery = Number(new URLSearchParams(location.search || '').get('view_id') || 0)
-    if (!viewIdFromQuery) return
+    if (!viewIdFromQuery) {
+      suppressViewAutoApplyRef.current = false
+      return
+    }
+    if (suppressViewAutoApplyRef.current) return
     if (Number(activeViewId || 0) === viewIdFromQuery) return
 
     loadAndApplyBugView(viewIdFromQuery, { syncUrl: false, silent: true }).catch((error) => {
@@ -817,12 +856,13 @@ function BugListPage({
         keyword,
         statusFilter,
         severityFilter,
+        issueStageFilter,
         demandFilter,
         assigneeFilter,
         reporterFilter,
         Array.isArray(createdRange) && createdRange.length === 2 ? 'created_range' : '',
       ].filter(Boolean).length,
-    [keyword, statusFilter, severityFilter, demandFilter, assigneeFilter, reporterFilter, createdRange],
+    [assigneeFilter, createdRange, demandFilter, issueStageFilter, keyword, reporterFilter, severityFilter, statusFilter],
   )
 
   const resetFilters = useCallback(() => {
@@ -830,6 +870,7 @@ function BugListPage({
     setKeyword('')
     setStatusFilter('')
     setSeverityFilter('')
+    setIssueStageFilter('')
     setDemandFilter(undefined)
     setAssigneeFilter(normalizedForcedAssigneeId || undefined)
     setReporterFilter(undefined)
@@ -838,6 +879,19 @@ function BugListPage({
     setPage(1)
     setPageSize(20)
   }, [normalizedForcedAssigneeId])
+
+  const clearActiveViewSelection = useCallback(() => {
+    suppressViewAutoApplyRef.current = true
+    resetFilters()
+    setActiveViewId(null)
+    navigate(
+      {
+        pathname: location.pathname,
+        search: '',
+      },
+      { replace: true },
+    )
+  }, [location.pathname, navigate, resetFilters])
 
   const openSaveViewModal = useCallback(() => {
     const defaultName = activeView?.view_name
@@ -909,7 +963,7 @@ function BugListPage({
       if (!result?.success) {
         throw new Error(result?.message || '删除视图失败')
       }
-      setActiveViewId(undefined)
+      setActiveViewId(null)
       setViewQueryParam(0)
       await loadBugViews()
       message.success(result?.message || '视图已删除')
@@ -1429,14 +1483,14 @@ function BugListPage({
               loading={viewListLoading}
               filterOption={pinyinSelectFilter}
               placeholder="选择已保存视图"
+              onClear={clearActiveViewSelection}
               onChange={(value) => {
                 const nextViewId = Number(value || 0)
                 if (!nextViewId) {
-                  resetFilters()
-                  setActiveViewId(undefined)
-                  setViewQueryParam(0)
+                  clearActiveViewSelection()
                   return
                 }
+                suppressViewAutoApplyRef.current = false
                 loadAndApplyBugView(nextViewId, { syncUrl: true, silent: false }).catch((error) => {
                   message.error(error?.message || '应用视图失败')
                 })
@@ -1509,19 +1563,42 @@ function BugListPage({
           </div>
 
           <div className="bug-list-page__filter-row">
-            <Select
-              size="small"
-              showSearch
-              className="bug-list-page__filter-control bug-list-page__filter-control--sm"
-              value={severityFilter}
-              options={severityOptions}
-              filterOption={pinyinSelectFilter}
-              placeholder="严重程度"
-              onChange={(value) => {
-                setSeverityFilter(String(value || ''))
-                setPage(1)
-              }}
-            />
+            <div className="bug-list-page__filter-item">
+              <Text type="secondary" className="bug-list-page__filter-inline-label">
+                优先级
+              </Text>
+              <Select
+                size="small"
+                showSearch
+                className="bug-list-page__filter-control bug-list-page__filter-control--sm"
+                value={severityFilter}
+                options={severityOptions}
+                filterOption={pinyinSelectFilter}
+                placeholder="严重程度"
+                onChange={(value) => {
+                  setSeverityFilter(String(value || ''))
+                  setPage(1)
+                }}
+              />
+            </div>
+            <div className="bug-list-page__filter-item">
+              <Text type="secondary" className="bug-list-page__filter-inline-label">
+                阶段
+              </Text>
+              <Select
+                size="small"
+                showSearch
+                className="bug-list-page__filter-control bug-list-page__filter-control--sm"
+                value={issueStageFilter}
+                options={issueStageOptions}
+                filterOption={pinyinSelectFilter}
+                placeholder="Bug阶段"
+                onChange={(value) => {
+                  setIssueStageFilter(String(value || ''))
+                  setPage(1)
+                }}
+              />
+            </div>
             <Select
               size="small"
               showSearch
@@ -1589,7 +1666,7 @@ function BugListPage({
               className="bug-list-page__filter-control bug-list-page__group-select"
               value={groupFields}
               options={GROUP_FIELD_OPTIONS}
-              placeholder="分组展示（状态/提交人/Bug分类）"
+              placeholder="分组展示（状态/提交人/Bug分类/优先级）"
               onChange={(values) => {
                 setGroupFields(Array.isArray(values) ? values : [])
                 setPage(1)
@@ -1631,7 +1708,7 @@ function BugListPage({
               icon={<FilterOutlined />}
               onClick={() => {
                 resetFilters()
-                setActiveViewId(undefined)
+                setActiveViewId(null)
                 setViewQueryParam(0)
               }}
             >

@@ -60,11 +60,23 @@ const GROUP_FIELD_OPTIONS = [
   { label: '状态', value: 'status' },
   { label: '提交人', value: 'reporter' },
   { label: 'Bug分类', value: 'bug_type' },
+  { label: '优先级', value: 'priority' },
 ]
 const GROUP_FIELD_LABEL_MAP = GROUP_FIELD_OPTIONS.reduce((acc, item) => {
   acc[item.value] = item.label
   return acc
 }, {})
+
+function normalizeActionKey(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function isNoFixTransition(transition = {}) {
+  const toStatus = String(transition?.to_status_code || '').trim().toUpperCase()
+  const actionKey = normalizeActionKey(transition?.action_key || transition?.action)
+  if (toStatus === 'NO_FIX') return true
+  return actionKey === 'no_fix' || actionKey === 'no-fix' || actionKey === 'nofix'
+}
 
 function readDemandBugPanelViewState(storageKey) {
   if (typeof window === 'undefined' || !storageKey) return null
@@ -82,6 +94,7 @@ function readDemandBugPanelViewState(storageKey) {
       keyword: String(parsed?.keyword || ''),
       statusFilter: String(parsed?.statusFilter || ''),
       severityFilter: String(parsed?.severityFilter || ''),
+      issueStageFilter: String(parsed?.issueStageFilter || ''),
       groupFields: Array.isArray(parsed?.groupFields)
         ? parsed.groupFields.map((item) => String(item || '').trim()).filter(Boolean)
         : [],
@@ -118,6 +131,7 @@ function writeDemandBugPanelViewState(storageKey, payload = null) {
         keyword: String(payload?.keyword || ''),
         statusFilter: String(payload?.statusFilter || ''),
         severityFilter: String(payload?.severityFilter || ''),
+        issueStageFilter: String(payload?.issueStageFilter || ''),
         groupFields: Array.isArray(payload?.groupFields)
           ? payload.groupFields.map((item) => String(item || '').trim()).filter(Boolean)
           : [],
@@ -205,6 +219,11 @@ function resolveGroupBucket(field, row) {
     const label = String(row?.bug_type_name || row?.bug_type_code || '未分类').trim() || '未分类'
     return { key: code, value: label }
   }
+  if (field === 'priority') {
+    const code = String(row?.priority_code || 'UNSET').trim().toUpperCase() || 'UNSET'
+    const label = String(row?.priority_name || row?.priority_code || '未设置').trim() || '未设置'
+    return { key: code, value: label }
+  }
   return { key: 'UNKNOWN', value: '未分组' }
 }
 
@@ -269,6 +288,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
   const [keyword, setKeyword] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [severityFilter, setSeverityFilter] = useState('')
+  const [issueStageFilter, setIssueStageFilter] = useState('')
   const [groupFields, setGroupFields] = useState([])
   const [groupLimitExceeded, setGroupLimitExceeded] = useState(false)
   const [assigneeFilter, setAssigneeFilter] = useState()
@@ -279,6 +299,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
   const [statusSegmentOptions, setStatusSegmentOptions] = useState([{ label: '全部状态', value: '' }])
   const [statusNameMap, setStatusNameMap] = useState({})
   const [severityOptions, setSeverityOptions] = useState([{ label: '全部', value: '' }])
+  const [issueStageOptions, setIssueStageOptions] = useState([{ label: '全部', value: '' }])
   const [workflowTransitions, setWorkflowTransitions] = useState([])
   const [attachmentPreviewMap, setAttachmentPreviewMap] = useState({})
   const [attachmentPreviewLoadingMap, setAttachmentPreviewLoadingMap] = useState({})
@@ -321,9 +342,10 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
 
   const loadDicts = useCallback(async () => {
     try {
-      const [statusRes, severityRes] = await Promise.all([
+      const [statusRes, severityRes, stageRes] = await Promise.all([
         getDictItemsApi('bug_status', { enabledOnly: true }),
         getDictItemsApi('bug_severity', { enabledOnly: true }),
+        getDictItemsApi('bug_stage', { enabledOnly: true }),
       ])
       const statusRows = statusRes?.data || []
       setStatusSegmentOptions(mapSegmentedOptions(statusRows))
@@ -336,6 +358,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
         }, {}),
       )
       setSeverityOptions(mapDictOptions(severityRes?.data || []))
+      setIssueStageOptions(mapDictOptions(stageRes?.data || []))
     } catch (error) {
       message.error(error?.message || '加载Bug筛选项失败')
     }
@@ -387,12 +410,13 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
       keyword: keyword || undefined,
       status_code: statusFilter || undefined,
       severity_code: severityFilter || undefined,
+      issue_stage: issueStageFilter || undefined,
       assignee_id: assigneeFilter || undefined,
       reporter_id: reporterFilter || undefined,
       start_date: createdRange?.[0]?.format?.('YYYY-MM-DD') || undefined,
       end_date: createdRange?.[1]?.format?.('YYYY-MM-DD') || undefined,
     }),
-    [assigneeFilter, createdRange, keyword, reporterFilter, severityFilter, statusFilter],
+    [assigneeFilter, createdRange, issueStageFilter, keyword, reporterFilter, severityFilter, statusFilter],
   )
 
   const loadStats = useCallback(async () => {
@@ -494,6 +518,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
     setKeyword(String(cachedState?.keyword || ''))
     setStatusFilter(String(cachedState?.statusFilter || ''))
     setSeverityFilter(String(cachedState?.severityFilter || ''))
+    setIssueStageFilter(String(cachedState?.issueStageFilter || ''))
     setGroupFields(Array.isArray(cachedState?.groupFields) ? cachedState.groupFields : [])
     setAssigneeFilter(cachedState?.assigneeFilter)
     setReporterFilter(cachedState?.reporterFilter)
@@ -509,6 +534,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
       keyword: String(keyword || ''),
       statusFilter: String(statusFilter || ''),
       severityFilter: String(severityFilter || ''),
+      issueStageFilter: String(issueStageFilter || ''),
       groupFields: Array.isArray(groupFields) ? groupFields.map((item) => String(item || '').trim()).filter(Boolean) : [],
       assigneeFilter:
         Number.isInteger(Number(assigneeFilter)) && Number(assigneeFilter) > 0 ? Number(assigneeFilter) : null,
@@ -521,7 +547,19 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
       page: Number.isInteger(Number(page)) && Number(page) > 0 ? Number(page) : 1,
       pageSize: Number.isInteger(Number(pageSize)) && Number(pageSize) > 0 ? Number(pageSize) : 20,
     }),
-    [assigneeFilter, createdRange, groupFields, keyword, page, pageSize, reporterFilter, searchInput, severityFilter, statusFilter],
+    [
+      assigneeFilter,
+      createdRange,
+      groupFields,
+      issueStageFilter,
+      keyword,
+      page,
+      pageSize,
+      reporterFilter,
+      searchInput,
+      severityFilter,
+      statusFilter,
+    ],
   )
 
   useEffect(() => {
@@ -545,11 +583,12 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
         keyword,
         statusFilter,
         severityFilter,
+        issueStageFilter,
         assigneeFilter,
         reporterFilter,
         Array.isArray(createdRange) && createdRange.length === 2 ? 'created_range' : '',
       ].filter(Boolean).length,
-    [keyword, statusFilter, severityFilter, assigneeFilter, reporterFilter, createdRange],
+    [assigneeFilter, createdRange, issueStageFilter, keyword, reporterFilter, severityFilter, statusFilter],
   )
 
   const resetFilters = useCallback(() => {
@@ -557,6 +596,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
     setKeyword('')
     setStatusFilter('')
     setSeverityFilter('')
+    setIssueStageFilter('')
     setAssigneeFilter(undefined)
     setReporterFilter(undefined)
     setCreatedRange(null)
@@ -717,7 +757,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
         const statusName = statusNameMap[statusCode] || statusCode
         const requiredLabels = []
         if (Number(item?.require_remark) === 1) requiredLabels.push('备注')
-        if (Number(item?.require_fix_solution) === 1) requiredLabels.push('修复方案&影响范围')
+        if (Number(item?.require_fix_solution) === 1 && !isNoFixTransition(item)) requiredLabels.push('修复方案&影响范围')
         const suffix = requiredLabels.length > 0 ? `（需填写${requiredLabels.join('、')}）` : ''
         options.push({
           label: `${String(item?.action_name || '').trim() || statusName}${suffix}`,
@@ -773,7 +813,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
       }
       const requireAnyField =
         Number(transition?.require_remark) === 1 ||
-        Number(transition?.require_fix_solution) === 1
+        (Number(transition?.require_fix_solution) === 1 && !isNoFixTransition(transition))
       if (requireAnyField) {
         transitionForm.resetFields()
         setStatusDialog({ open: true, bug: row, transition })
@@ -1053,19 +1093,42 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
           </div>
 
           <div className="demand-bug-panel__filter-row">
-            <Select
-              size="small"
-              showSearch
-              className="demand-bug-panel__filter-control demand-bug-panel__filter-control--sm"
-              value={severityFilter}
-              options={severityOptions}
-              filterOption={pinyinSelectFilter}
-              placeholder="严重程度"
-              onChange={(value) => {
-                setSeverityFilter(String(value || ''))
-                setPage(1)
-              }}
-            />
+            <div className="demand-bug-panel__filter-item">
+              <Text type="secondary" className="demand-bug-panel__filter-inline-label">
+                优先级
+              </Text>
+              <Select
+                size="small"
+                showSearch
+                className="demand-bug-panel__filter-control demand-bug-panel__filter-control--sm"
+                value={severityFilter}
+                options={severityOptions}
+                filterOption={pinyinSelectFilter}
+                placeholder="严重程度"
+                onChange={(value) => {
+                  setSeverityFilter(String(value || ''))
+                  setPage(1)
+                }}
+              />
+            </div>
+            <div className="demand-bug-panel__filter-item">
+              <Text type="secondary" className="demand-bug-panel__filter-inline-label">
+                阶段
+              </Text>
+              <Select
+                size="small"
+                showSearch
+                className="demand-bug-panel__filter-control demand-bug-panel__filter-control--sm"
+                value={issueStageFilter}
+                options={issueStageOptions}
+                filterOption={pinyinSelectFilter}
+                placeholder="Bug阶段"
+                onChange={(value) => {
+                  setIssueStageFilter(String(value || ''))
+                  setPage(1)
+                }}
+              />
+            </div>
             <Select
               size="small"
               showSearch
@@ -1115,7 +1178,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
               className="demand-bug-panel__filter-control demand-bug-panel__group-select"
               value={groupFields}
               options={GROUP_FIELD_OPTIONS}
-              placeholder="分组展示（状态/提交人/Bug分类）"
+              placeholder="分组展示（状态/提交人/Bug分类/优先级）"
               onChange={(values) => {
                 setGroupFields(Array.isArray(values) ? values : [])
                 setPage(1)
@@ -1312,7 +1375,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
               <Input.TextArea rows={3} maxLength={2000} placeholder="请输入备注信息" />
             </Form.Item>
           ) : null}
-          {Number(statusDialog.transition?.require_fix_solution) === 1 ? (
+          {Number(statusDialog.transition?.require_fix_solution) === 1 && !isNoFixTransition(statusDialog.transition) ? (
             <Form.Item
               label="修复方案&影响范围"
               name="fix_solution"
