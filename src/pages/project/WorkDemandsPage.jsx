@@ -2555,8 +2555,13 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       }
       const nextStatus = String(values.status || '').trim().toUpperCase()
       const normalizedDocLink = String(values.doc_link || '').trim()
+      const expectedReleaseDateValue = values.expected_release_date ? values.expected_release_date.format('YYYY-MM-DD') : ''
       if (isDoneDemandStatus(nextStatus) && !normalizedDocLink) {
         message.warning('状态为已完成时，PRD 链接 & 产品方案必填')
+        return
+      }
+      if (isDoneDemandStatus(nextStatus) && !expectedReleaseDateValue) {
+        message.warning('状态为已完成时，预期上线日期必填')
         return
       }
       const previousStatus = String(editingDemand?.status || '').trim().toUpperCase()
@@ -3071,6 +3076,16 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         }
         return false
       }
+      if (isDoneDemandStatus(snapshot?.status) && !snapshot?.expected_release_date) {
+        setDetailBasicAutoSaveState({
+          status: 'error',
+          text: '未保存：状态为已完成时，预期上线日期必填',
+        })
+        if (showValidationMessage) {
+          message.warning('状态为已完成时，预期上线日期必填')
+        }
+        return false
+      }
       if (!String(snapshot?.business_group_code || '').trim()) {
         setDetailBasicAutoSaveState({
           status: 'error',
@@ -3189,8 +3204,15 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     const prdLink = isCurrentDetailRecord
       ? String(detailDocLink || record?.doc_link || '').trim()
       : String(record?.doc_link || '').trim()
+    const expectedReleaseDate = isCurrentDetailRecord
+      ? String(detailExpectedReleaseDate?.format?.('YYYY-MM-DD') || record?.expected_release_date || '').trim()
+      : String(record?.expected_release_date || '').trim()
     if (isDoneDemandStatus(normalizedNextStatus) && !prdLink) {
       message.warning('标记完成前请先填写 PRD 链接 & 产品方案')
+      return
+    }
+    if (isDoneDemandStatus(normalizedNextStatus) && !expectedReleaseDate) {
+      message.warning('标记完成前请先填写预期上线日期')
       return
     }
 
@@ -3198,6 +3220,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       const payload = { status: normalizedNextStatus || String(nextStatus || '').trim() }
       if (isDoneDemandStatus(normalizedNextStatus) && prdLink) {
         payload.doc_link = prdLink
+      }
+      if (isDoneDemandStatus(normalizedNextStatus) && expectedReleaseDate) {
+        payload.expected_release_date = expectedReleaseDate
       }
       const result = await updateWorkDemandApi(record.id, payload)
       if (!result?.success) {
@@ -3209,7 +3234,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     } catch (error) {
       message.error(error?.message || '状态更新失败')
     }
-  }, [canEditDemandRecord, detailDemand?.id, detailDocLink, refreshListAndDetail])
+  }, [canEditDemandRecord, detailDemand?.id, detailDocLink, detailExpectedReleaseDate, refreshListAndDetail])
 
   const isQuickFieldSaving = useCallback((demandId, fieldName) => {
     if (!demandId || !fieldName) return false
@@ -5021,11 +5046,25 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
             <Input.TextArea rows={3} maxLength={2000} placeholder="补充上线说明、注意事项、回滚提示等（可选）" />
           </Form.Item>
 
-          <Form.Item label="预期上线日期" name="expected_release_date">
+          <Form.Item
+            label="预期上线日期"
+            name="expected_release_date"
+            dependencies={['status']}
+            rules={[
+              () => ({
+                validator(_, value) {
+                  if (isDoneDemandStatus(modalStatus) && !value) {
+                    return Promise.reject(new Error('状态为已完成时，预期上线日期必填'))
+                  }
+                  return Promise.resolve()
+                },
+              }),
+            ]}
+          >
             <DatePicker
               style={{ width: '100%' }}
               format="YYYY-MM-DD"
-              placeholder="请选择预期上线日期（可选）"
+              placeholder={isDoneDemandStatus(modalStatus) ? '状态为已完成时，预期上线日期必填' : '请选择预期上线日期（可选）'}
             />
           </Form.Item>
 

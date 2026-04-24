@@ -7,20 +7,24 @@ import { getDemandScoreResultDetailApi, getDemandScoreResultsApi, getDemandScore
 const { RangePicker } = DatePicker
 const { Text } = Typography
 
-const MISSING_DIMENSION_TOOLTIP =
-  '缺失维度表示当前仍未补齐的评分身份维度（需求负责人、直属Owner、项目管理、协作方），不是低分提示。'
-const CONTRIBUTION_TOOLTIP =
-  '占比=该评价维度在当前结果中的有效权重占比；贡献=该评价综合分按有效权重换算后，对最终均分的实际加分。'
-const SCORE_WEIGHT_TOOLTIPS = Object.freeze({
-  delivery: '结果交付占综合分的 50%。',
-  collaboration: '协作配合占综合分的 30%。',
-  responsibility: '责任心/响应占综合分的 20%。',
+const ROLE_SCORE_TOOLTIPS = Object.freeze({
+  avg_demand_owner_score: '需求负责人只评价“完成质量&完成时间”。标准权重 60%。',
+  avg_direct_owner_score: '直属Owner只评价“结合职级、任务难度的表现分”。标准权重 15%。',
+  avg_collaborator_score: '协作方只评价“协作表现分”。多人时先取平均分。标准权重 15%。',
+  avg_project_manager_score: '项目管理只评价“项目流程表现分”。标准权重 10%。',
 })
+
+const MISSING_ROLE_TOOLTIP =
+  '缺失评分身份表示该成员在当前需求下还有哪些应评身份尚未提交，不代表低分预警。'
+const CONTRIBUTION_TOOLTIP =
+  '占比=该评价人在当前被评价人最终结果中的实际权重占比；贡献=该评分按实际权重折算后，对最终得分的实际加分。'
+
 const RANKING_SORT_FIELDS = Object.freeze([
   'avg_final_score',
-  'avg_delivery_score',
-  'avg_collaboration_score',
-  'avg_responsibility_score',
+  'avg_demand_owner_score',
+  'avg_direct_owner_score',
+  'avg_collaborator_score',
+  'avg_project_manager_score',
 ])
 
 function getDefaultRange() {
@@ -57,23 +61,6 @@ function formatPercent(value) {
   const rounded = Math.round(num * 100) / 100
   const display = Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2).replace(/\.?0+$/, '')
   return `${display}%`
-}
-
-function renderPartialTag(count) {
-  const num = Number(count || 0)
-  if (num > 0) return <Tag color="gold">部分缺失 {num}</Tag>
-  return <Tag color="success">完整</Tag>
-}
-
-function renderScoreStatus(status, rowType = 'subject') {
-  const normalized = String(status || '').trim().toUpperCase()
-  if (rowType === 'slot') {
-    if (normalized === 'SUBMITTED') return <Tag color="success">已提交</Tag>
-    return <Tag color="warning">待提交</Tag>
-  }
-  if (normalized === 'COMPLETED') return <Tag color="success">已完成</Tag>
-  if (normalized === 'PARTIAL') return <Tag color="processing">部分完成</Tag>
-  return <Tag color="warning">待完成</Tag>
 }
 
 function renderWeightedTitle(label, tooltip) {
@@ -114,6 +101,38 @@ function downloadCsv(filename, rows = []) {
   link.click()
   document.body.removeChild(link)
   URL.revokeObjectURL(link.href)
+}
+
+function renderCompletenessTag(record = {}) {
+  const pendingSlotCount = Number(record?.pending_slot_count || 0)
+  const pendingEvaluators = Array.isArray(record?.pending_evaluator_names) ? record.pending_evaluator_names : []
+  if (pendingSlotCount > 0) {
+    const tooltipText = pendingEvaluators.length > 0 ? `待评价：${pendingEvaluators.join('、')}` : '仍有成员待评价'
+    return (
+      <Tooltip title={tooltipText}>
+        <Tag color="processing">评价中</Tag>
+      </Tooltip>
+    )
+  }
+  return <Tag color="success">完整</Tag>
+}
+
+function renderSubjectStatus(status, rowType = 'subject') {
+  const normalized = String(status || '').trim().toUpperCase()
+  if (rowType === 'slot') {
+    if (normalized === 'SUBMITTED') return <Tag color="success">已提交</Tag>
+    return <Tag color="warning">待提交</Tag>
+  }
+  if (normalized === 'COMPLETED') return <Tag color="success">已完成</Tag>
+  if (normalized === 'PARTIAL') return <Tag color="processing">评价中</Tag>
+  return <Tag color="warning">待评价</Tag>
+}
+
+function renderRoleScoreValue(record, fieldKey, roleKey) {
+  if (record.row_type === 'slot') {
+    return record.primary_role_key === roleKey ? formatScore(record.score) : '-'
+  }
+  return formatScore(record[fieldKey])
 }
 
 function DemandScoreResultsPage() {
@@ -224,7 +243,7 @@ function DemandScoreResultsPage() {
       title: '需求',
       dataIndex: 'demand_name',
       key: 'demand_name',
-      width: 340,
+      width: 360,
       render: (value, record) => (
         <Space orientation="vertical" size={2}>
           <Text strong>{value || '-'}</Text>
@@ -232,48 +251,59 @@ function DemandScoreResultsPage() {
         </Space>
       ),
     },
-    { title: '被评价人数', dataIndex: 'subject_count', key: 'subject_count', width: 120 },
-    { title: '最终均分', dataIndex: 'avg_final_score', key: 'avg_final_score', width: 120, render: formatScore },
     {
-      title: renderWeightedTitle('结果交付', SCORE_WEIGHT_TOOLTIPS.delivery),
-      dataIndex: 'avg_delivery_score',
-      key: 'avg_delivery_score',
-      width: 120,
+      title: '被评价人数',
+      dataIndex: 'subject_count',
+      key: 'subject_count',
+      width: 110,
+    },
+    {
+      title: '综合得分',
+      dataIndex: 'avg_final_score',
+      key: 'avg_final_score',
+      width: 110,
       render: formatScore,
     },
     {
-      title: renderWeightedTitle('协作配合', SCORE_WEIGHT_TOOLTIPS.collaboration),
-      dataIndex: 'avg_collaboration_score',
-      key: 'avg_collaboration_score',
-      width: 120,
+      title: renderWeightedTitle('需求负责人评分', ROLE_SCORE_TOOLTIPS.avg_demand_owner_score),
+      dataIndex: 'avg_demand_owner_score',
+      key: 'avg_demand_owner_score',
+      width: 150,
       render: formatScore,
     },
     {
-      title: renderWeightedTitle('责任心/响应', SCORE_WEIGHT_TOOLTIPS.responsibility),
-      dataIndex: 'avg_responsibility_score',
-      key: 'avg_responsibility_score',
-      width: 130,
+      title: renderWeightedTitle('直属Owner评分', ROLE_SCORE_TOOLTIPS.avg_direct_owner_score),
+      dataIndex: 'avg_direct_owner_score',
+      key: 'avg_direct_owner_score',
+      width: 150,
+      render: formatScore,
+    },
+    {
+      title: renderWeightedTitle('协作方评分', ROLE_SCORE_TOOLTIPS.avg_collaborator_score),
+      dataIndex: 'avg_collaborator_score',
+      key: 'avg_collaborator_score',
+      width: 140,
+      render: formatScore,
+    },
+    {
+      title: renderWeightedTitle('项目管理评分', ROLE_SCORE_TOOLTIPS.avg_project_manager_score),
+      dataIndex: 'avg_project_manager_score',
+      key: 'avg_project_manager_score',
+      width: 150,
       render: formatScore,
     },
     {
       title: '完整性',
-      key: 'partial_subject_count',
-      width: 150,
-      render: (_, record) => {
-        const pendingSlotCount = Number(record?.pending_slot_count || 0)
-        const pendingEvaluators = Array.isArray(record?.pending_evaluator_names) ? record.pending_evaluator_names : []
-        if (pendingSlotCount > 0) {
-          const tooltipText = pendingEvaluators.length > 0 ? `待评价：${pendingEvaluators.join('、')}` : '仍有成员待评价'
-          return (
-            <Tooltip title={tooltipText}>
-              <Tag color="processing">评价中</Tag>
-            </Tooltip>
-          )
-        }
-        return renderPartialTag(record?.partial_subject_count)
-      },
+      key: 'completeness',
+      width: 120,
+      render: (_, record) => renderCompletenessTag(record),
     },
-    { title: '完成时间', dataIndex: 'demand_completed_at', key: 'demand_completed_at', width: 180 },
+    {
+      title: '完成时间',
+      dataIndex: 'demand_completed_at',
+      key: 'demand_completed_at',
+      width: 180,
+    },
     {
       title: '操作',
       key: 'action',
@@ -297,11 +327,11 @@ function DemandScoreResultsPage() {
     {
       title: '成员 / 需求',
       key: 'evaluatee_or_demand',
-      width: 300,
+      width: 320,
       render: (_, record) => {
         if (record.row_type === 'demand') {
           return (
-            <Space direction="vertical" size={2}>
+            <Space orientation="vertical" size={2}>
               <Text>{record.demand_name || '-'}</Text>
               <Text type="secondary">{record.demand_id || '-'}</Text>
             </Space>
@@ -320,109 +350,102 @@ function DemandScoreResultsPage() {
       title: '需求数',
       dataIndex: 'demand_count',
       key: 'demand_count',
-      width: 100,
+      width: 90,
       render: (_, record) => (record.row_type === 'demand' ? '-' : Number(record.demand_count || 0)),
     },
     {
-      title: '最终均分',
+      title: '综合得分',
       dataIndex: 'avg_final_score',
       key: 'avg_final_score',
-      width: 120,
+      width: 110,
       sorter: true,
       sortDirections: ['descend', 'ascend'],
       sortOrder: rankingSortConfig.field === 'avg_final_score' ? rankingSortConfig.order : null,
       render: (_, record) => formatScore(record.row_type === 'demand' ? record.final_score : record.avg_final_score),
     },
     {
-      title: renderWeightedTitle('结果交付', SCORE_WEIGHT_TOOLTIPS.delivery),
-      dataIndex: 'avg_delivery_score',
-      key: 'avg_delivery_score',
-      width: 120,
+      title: renderWeightedTitle('需求负责人评分', ROLE_SCORE_TOOLTIPS.avg_demand_owner_score),
+      dataIndex: 'avg_demand_owner_score',
+      key: 'avg_demand_owner_score',
+      width: 150,
       sorter: true,
       sortDirections: ['descend', 'ascend'],
-      sortOrder: rankingSortConfig.field === 'avg_delivery_score' ? rankingSortConfig.order : null,
-      render: (_, record) => formatScore(record.row_type === 'demand' ? record.delivery_score : record.avg_delivery_score),
+      sortOrder: rankingSortConfig.field === 'avg_demand_owner_score' ? rankingSortConfig.order : null,
+      render: (_, record) => formatScore(record.row_type === 'demand' ? record.demand_owner_score : record.avg_demand_owner_score),
     },
     {
-      title: renderWeightedTitle('协作配合', SCORE_WEIGHT_TOOLTIPS.collaboration),
-      dataIndex: 'avg_collaboration_score',
-      key: 'avg_collaboration_score',
-      width: 120,
+      title: renderWeightedTitle('直属Owner评分', ROLE_SCORE_TOOLTIPS.avg_direct_owner_score),
+      dataIndex: 'avg_direct_owner_score',
+      key: 'avg_direct_owner_score',
+      width: 150,
       sorter: true,
       sortDirections: ['descend', 'ascend'],
-      sortOrder: rankingSortConfig.field === 'avg_collaboration_score' ? rankingSortConfig.order : null,
-      render: (_, record) =>
-        formatScore(record.row_type === 'demand' ? record.collaboration_score : record.avg_collaboration_score),
+      sortOrder: rankingSortConfig.field === 'avg_direct_owner_score' ? rankingSortConfig.order : null,
+      render: (_, record) => formatScore(record.row_type === 'demand' ? record.direct_owner_score : record.avg_direct_owner_score),
     },
     {
-      title: renderWeightedTitle('责任心/响应', SCORE_WEIGHT_TOOLTIPS.responsibility),
-      dataIndex: 'avg_responsibility_score',
-      key: 'avg_responsibility_score',
-      width: 130,
+      title: renderWeightedTitle('协作方评分', ROLE_SCORE_TOOLTIPS.avg_collaborator_score),
+      dataIndex: 'avg_collaborator_score',
+      key: 'avg_collaborator_score',
+      width: 140,
       sorter: true,
       sortDirections: ['descend', 'ascend'],
-      sortOrder: rankingSortConfig.field === 'avg_responsibility_score' ? rankingSortConfig.order : null,
-      render: (_, record) =>
-        formatScore(record.row_type === 'demand' ? record.responsibility_score : record.avg_responsibility_score),
+      sortOrder: rankingSortConfig.field === 'avg_collaborator_score' ? rankingSortConfig.order : null,
+      render: (_, record) => formatScore(record.row_type === 'demand' ? record.collaborator_score : record.avg_collaborator_score),
     },
     {
-      title: '完整性',
-      key: 'partial_count',
-      width: 120,
-      render: (_, record) => {
-        if (record.row_type === 'demand') {
-          return Number(record.partial_flag || 0) > 0 ? <Tag color="gold">有缺失</Tag> : <Tag color="success">完整</Tag>
-        }
-        return Number(record.partial_count || 0) > 0
-          ? <Tag color="gold">部分缺失 {Number(record.partial_count || 0)}</Tag>
-          : <Tag color="success">完整</Tag>
-      },
+      title: renderWeightedTitle('项目管理评分', ROLE_SCORE_TOOLTIPS.avg_project_manager_score),
+      dataIndex: 'avg_project_manager_score',
+      key: 'avg_project_manager_score',
+      width: 150,
+      sorter: true,
+      sortDirections: ['descend', 'ascend'],
+      sortOrder: rankingSortConfig.field === 'avg_project_manager_score' ? rankingSortConfig.order : null,
+      render: (_, record) => formatScore(record.row_type === 'demand' ? record.project_manager_score : record.avg_project_manager_score),
     },
   ]
 
-  const rankingTreeData = useMemo(
-    () => {
-      const childFieldMap = {
-        avg_final_score: 'final_score',
-        avg_delivery_score: 'delivery_score',
-        avg_collaboration_score: 'collaboration_score',
-        avg_responsibility_score: 'responsibility_score',
-      }
-      const sortedMembers = [...(Array.isArray(rankingRows) ? rankingRows : [])].sort((left, right) => {
-        const scoreCompare = compareByOrder(left?.[rankingSortConfig.field], right?.[rankingSortConfig.field], rankingSortConfig.order)
+  const rankingTreeData = useMemo(() => {
+    const childFieldMap = {
+      avg_final_score: 'final_score',
+      avg_demand_owner_score: 'demand_owner_score',
+      avg_direct_owner_score: 'direct_owner_score',
+      avg_collaborator_score: 'collaborator_score',
+      avg_project_manager_score: 'project_manager_score',
+    }
+    const sortedMembers = [...(Array.isArray(rankingRows) ? rankingRows : [])].sort((left, right) => {
+      const scoreCompare = compareByOrder(left?.[rankingSortConfig.field], right?.[rankingSortConfig.field], rankingSortConfig.order)
+      if (scoreCompare !== 0) return scoreCompare
+      const demandCountCompare = compareByOrder(left?.demand_count, right?.demand_count, 'descend')
+      if (demandCountCompare !== 0) return demandCountCompare
+      return compareByOrder(left?.evaluatee_user_id, right?.evaluatee_user_id, 'ascend')
+    })
+    return sortedMembers.map((row) => {
+      const childField = childFieldMap[rankingSortConfig.field] || 'final_score'
+      const sortedChildren = [...(Array.isArray(row.demand_records) ? row.demand_records : [])].sort((left, right) => {
+        const scoreCompare = compareByOrder(left?.[childField], right?.[childField], rankingSortConfig.order)
         if (scoreCompare !== 0) return scoreCompare
-        const demandCountCompare = compareByOrder(left?.demand_count, right?.demand_count, 'descend')
-        if (demandCountCompare !== 0) return demandCountCompare
-        return compareByOrder(left?.evaluatee_user_id, right?.evaluatee_user_id, 'ascend')
+        const dateCompare = compareByOrder(
+          dayjs(left?.expected_release_date || left?.demand_date || '').valueOf(),
+          dayjs(right?.expected_release_date || right?.demand_date || '').valueOf(),
+          'descend',
+        )
+        if (dateCompare !== 0) return dateCompare
+        return compareByOrder(left?.task_id, right?.task_id, 'descend')
       })
-      return sortedMembers.map((row) => {
-        const childField = childFieldMap[rankingSortConfig.field] || 'final_score'
-        const sortedChildren = [...(Array.isArray(row.demand_records) ? row.demand_records : [])].sort((left, right) => {
-          const scoreCompare = compareByOrder(left?.[childField], right?.[childField], rankingSortConfig.order)
-          if (scoreCompare !== 0) return scoreCompare
-          const dateCompare = compareByOrder(
-            dayjs(left?.expected_release_date || left?.demand_date || '').valueOf(),
-            dayjs(right?.expected_release_date || right?.demand_date || '').valueOf(),
-            'descend',
-          )
-          if (dateCompare !== 0) return dateCompare
-          return compareByOrder(left?.task_id, right?.task_id, 'descend')
-        })
 
-        return {
-          ...row,
-          key: `member-${row.evaluatee_user_id}`,
-          row_type: 'member',
-          children: sortedChildren.map((item) => ({
-            ...item,
-            key: `member-${row.evaluatee_user_id}-task-${item.task_id}`,
-            row_type: 'demand',
-          })),
-        }
-      })
-    },
-    [rankingRows, rankingSortConfig],
-  )
+      return {
+        ...row,
+        key: `member-${row.evaluatee_user_id}`,
+        row_type: 'member',
+        children: sortedChildren.map((item) => ({
+          ...item,
+          key: `member-${row.evaluatee_user_id}-task-${item.task_id}`,
+          row_type: 'demand',
+        })),
+      }
+    })
+  }, [rankingRows, rankingSortConfig])
 
   const handleRankingTableChange = useCallback((_, __, sorter) => {
     const normalizedSorter = Array.isArray(sorter) ? sorter[0] : sorter
@@ -442,21 +465,22 @@ function DemandScoreResultsPage() {
         return
       }
       const exportRows = [
-        ['需求ID', '需求名称', '被评价人数', '最终均分', '结果交付', '协作配合', '责任心/响应', '完整性', '完成时间'],
+        ['需求ID', '需求名称', '被评价人数', '综合得分', '需求负责人评分', '直属Owner评分', '协作方评分', '项目管理评分', '完整性', '完成时间'],
         ...rows.map((item) => [
           item?.demand_id || '',
           item?.demand_name || '',
           Number(item?.subject_count || 0),
           formatScore(item?.avg_final_score),
-          formatScore(item?.avg_delivery_score),
-          formatScore(item?.avg_collaboration_score),
-          formatScore(item?.avg_responsibility_score),
+          formatScore(item?.avg_demand_owner_score),
+          formatScore(item?.avg_direct_owner_score),
+          formatScore(item?.avg_collaborator_score),
+          formatScore(item?.avg_project_manager_score),
           Number(item?.pending_slot_count || 0) > 0
             ? (() => {
                 const pendingNames = (Array.isArray(item?.pending_evaluator_names) ? item.pending_evaluator_names : []).join('、')
                 return pendingNames ? `评价中（待评价：${pendingNames}）` : '评价中'
               })()
-            : (Number(item?.partial_subject_count || 0) > 0 ? `部分缺失 ${Number(item.partial_subject_count || 0)}` : '完整'),
+            : '完整',
           item?.demand_completed_at || '',
         ]),
       ]
@@ -474,7 +498,7 @@ function DemandScoreResultsPage() {
     }
 
     const exportRows = [
-      ['层级', '排名', '成员', '需求ID', '需求名称', '预期上线时间', '需求数', '最终得分', '结果交付', '协作配合', '责任心/响应', '完整性'],
+      ['层级', '排名', '成员', '需求ID', '需求名称', '预期上线时间', '需求数', '综合得分', '需求负责人评分', '直属Owner评分', '协作方评分', '项目管理评分'],
     ]
     rankingTreeData.forEach((member) => {
       exportRows.push([
@@ -486,10 +510,10 @@ function DemandScoreResultsPage() {
         '',
         Number(member?.demand_count || 0),
         formatScore(member?.avg_final_score),
-        formatScore(member?.avg_delivery_score),
-        formatScore(member?.avg_collaboration_score),
-        formatScore(member?.avg_responsibility_score),
-        Number(member?.partial_count || 0) > 0 ? `部分缺失 ${Number(member?.partial_count || 0)}` : '完整',
+        formatScore(member?.avg_demand_owner_score),
+        formatScore(member?.avg_direct_owner_score),
+        formatScore(member?.avg_collaborator_score),
+        formatScore(member?.avg_project_manager_score),
       ])
       ;(Array.isArray(member?.children) ? member.children : []).forEach((item) => {
         exportRows.push([
@@ -501,10 +525,10 @@ function DemandScoreResultsPage() {
           item?.expected_release_date || '',
           '',
           formatScore(item?.final_score),
-          formatScore(item?.delivery_score),
-          formatScore(item?.collaboration_score),
-          formatScore(item?.responsibility_score),
-          Number(item?.partial_flag || 0) > 0 ? '有缺失' : '完整',
+          formatScore(item?.demand_owner_score),
+          formatScore(item?.direct_owner_score),
+          formatScore(item?.collaborator_score),
+          formatScore(item?.project_manager_score),
         ])
       })
     })
@@ -523,14 +547,11 @@ function DemandScoreResultsPage() {
       const subjectId = Number(subject?.id || 0)
       if (!Number.isInteger(subjectId) || subjectId <= 0) return
       const slotRecords = Array.isArray(subject?.slot_records) ? subject.slot_records : []
-      const submittedCollaboratorCount = slotRecords.filter((slot) => {
-        const slotType = String(slot?.slot_type || '').trim().toUpperCase()
-        const slotStatus = String(slot?.status || '').trim().toUpperCase()
-        const weightedScore = Number(slot?.weighted_score)
-        return slotType === 'COLLABORATOR' && slotStatus === 'SUBMITTED' && Number.isFinite(weightedScore)
-      }).length
+      const collaboratorSlots = slotRecords.filter((slot) => String(slot?.primary_role_key || '').trim().toUpperCase() === 'COLLABORATOR')
+      const submittedCollaboratorCount = collaboratorSlots.filter((slot) => String(slot?.status || '').trim().toUpperCase() === 'SUBMITTED').length
       map.set(subjectId, {
         effectiveWeight: Number(subject?.effective_weight || 0),
+        collaboratorSlotCount: collaboratorSlots.length,
         submittedCollaboratorCount,
       })
     })
@@ -559,34 +580,40 @@ function DemandScoreResultsPage() {
       },
     },
     {
-      title: '综合分',
+      title: '综合得分',
       key: 'final_score',
       width: 100,
-      render: (_, record) => formatScore(record.row_type === 'slot' ? record.weighted_score : record.final_score),
+      render: (_, record) => (record.row_type === 'slot' ? '-' : formatScore(record.final_score)),
     },
     {
-      title: renderWeightedTitle('结果交付', SCORE_WEIGHT_TOOLTIPS.delivery),
-      key: 'delivery_score',
-      width: 110,
-      render: (_, record) => formatScore(record.delivery_score),
+      title: renderWeightedTitle('需求负责人评分', ROLE_SCORE_TOOLTIPS.avg_demand_owner_score),
+      key: 'demand_owner_score',
+      width: 140,
+      render: (_, record) => renderRoleScoreValue(record, 'demand_owner_score', 'DEMAND_OWNER'),
     },
     {
-      title: renderWeightedTitle('协作配合', SCORE_WEIGHT_TOOLTIPS.collaboration),
-      key: 'collaboration_score',
-      width: 110,
-      render: (_, record) => formatScore(record.collaboration_score),
+      title: renderWeightedTitle('直属Owner评分', ROLE_SCORE_TOOLTIPS.avg_direct_owner_score),
+      key: 'direct_owner_score',
+      width: 140,
+      render: (_, record) => renderRoleScoreValue(record, 'direct_owner_score', 'DIRECT_OWNER'),
     },
     {
-      title: renderWeightedTitle('责任心/响应', SCORE_WEIGHT_TOOLTIPS.responsibility),
-      key: 'responsibility_score',
+      title: renderWeightedTitle('协作方评分', ROLE_SCORE_TOOLTIPS.avg_collaborator_score),
+      key: 'collaborator_score',
       width: 130,
-      render: (_, record) => formatScore(record.responsibility_score),
+      render: (_, record) => renderRoleScoreValue(record, 'collaborator_score', 'COLLABORATOR'),
+    },
+    {
+      title: renderWeightedTitle('项目管理评分', ROLE_SCORE_TOOLTIPS.avg_project_manager_score),
+      key: 'project_manager_score',
+      width: 140,
+      render: (_, record) => renderRoleScoreValue(record, 'project_manager_score', 'PROJECT_MANAGER'),
     },
     {
       title: '状态',
       key: 'status',
       width: 110,
-      render: (_, record) => renderScoreStatus(record.status, record.row_type),
+      render: (_, record) => renderSubjectStatus(record.status, record.row_type),
     },
     {
       title: (
@@ -598,42 +625,33 @@ function DemandScoreResultsPage() {
         </Space>
       ),
       key: 'contribution',
-      width: 260,
+      width: 250,
       render: (_, record) => {
         if (record.row_type !== 'slot') return '-'
 
         const subjectId = Number(record.subject_id || 0)
         const subjectMeta = subjectMetaMap.get(subjectId) || {}
         const effectiveWeight = Number(subjectMeta.effectiveWeight || 0)
-        const slotType = String(record.slot_type || '').trim().toUpperCase()
-        const slotStatus = String(record.status || '').trim().toUpperCase()
-        const weightedScore = Number(record.weighted_score)
-        const collaboratorCount = Number(subjectMeta.submittedCollaboratorCount || 0)
-        const isCollaborator = slotType === 'COLLABORATOR'
+        const score = Number(record.score)
+        const collaboratorSlotCount = Number(subjectMeta.collaboratorSlotCount || 0)
+        const isCollaborator = String(record.primary_role_key || '').trim().toUpperCase() === 'COLLABORATOR'
         const baseWeight = Number(record.base_weight || 0)
         const actualWeight = isCollaborator
-          ? (collaboratorCount > 0 ? baseWeight / collaboratorCount : 0)
+          ? (collaboratorSlotCount > 0 ? baseWeight / collaboratorSlotCount : 0)
           : baseWeight
         const canCompute =
-          slotStatus === 'SUBMITTED' &&
-          Number.isFinite(weightedScore) &&
-          Number.isFinite(actualWeight) &&
+          String(record.status || '').trim().toUpperCase() === 'SUBMITTED' &&
+          Number.isFinite(score) &&
           actualWeight > 0 &&
-          Number.isFinite(effectiveWeight) &&
           effectiveWeight > 0
 
-        const shareText =
-          canCompute
-            ? `占比：${formatPercent((actualWeight / effectiveWeight) * 100)}${
-                isCollaborator ? `（协作方池，已提交${collaboratorCount}人）` : ''
-              }`
-            : '占比：待提交后计算'
+        const shareText = canCompute ? `占比：${formatPercent((actualWeight / effectiveWeight) * 100)}` : '占比：待提交后计算'
         const contributionText = canCompute
-          ? `贡献：+${formatScore((weightedScore * actualWeight) / effectiveWeight)} 分`
+          ? `贡献：+${formatScore((score * actualWeight) / effectiveWeight)} 分`
           : '贡献：待提交后计算'
 
         return (
-          <Space direction="vertical" size={0}>
+          <Space orientation="vertical" size={0}>
             <Text>{shareText}</Text>
             <Text type="secondary">{contributionText}</Text>
           </Space>
@@ -643,19 +661,19 @@ function DemandScoreResultsPage() {
     {
       title: (
         <Space size={4}>
-          <span>缺失维度</span>
-          <Tooltip title={MISSING_DIMENSION_TOOLTIP}>
+          <span>缺失评分身份</span>
+          <Tooltip title={MISSING_ROLE_TOOLTIP}>
             <QuestionCircleOutlined style={{ color: 'rgba(0,0,0,0.45)', cursor: 'help' }} />
           </Tooltip>
         </Space>
       ),
-      key: 'missing_role_keys',
-      width: 240,
+      key: 'missing_role_labels',
+      width: 220,
       render: (_, record) =>
         record.row_type === 'slot'
           ? '-'
-          : (Array.isArray(record.missing_role_keys) && record.missing_role_keys.length > 0
-            ? <Text style={{ whiteSpace: 'nowrap' }}>{record.missing_role_keys.join(' / ')}</Text>
+          : (Array.isArray(record.missing_role_labels) && record.missing_role_labels.length > 0
+            ? <Text style={{ whiteSpace: 'nowrap' }}>{record.missing_role_labels.join(' / ')}</Text>
             : '-'),
     },
   ]
@@ -779,7 +797,7 @@ function DemandScoreResultsPage() {
             关闭
           </Button>
         }
-        width={920}
+        width={1080}
       >
         <Table
           rowKey="key"

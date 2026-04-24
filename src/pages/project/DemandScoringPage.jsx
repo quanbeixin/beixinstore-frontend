@@ -19,6 +19,7 @@ const ROLE_COLORS = {
   项目管理: 'purple',
   协作方: 'green',
 }
+
 const PARTICIPATION_ROLE_COLORS = {
   产品经理: 'blue',
   设计: 'magenta',
@@ -41,12 +42,12 @@ function renderTaskStatus(status) {
   return <Tag color="warning">待评分</Tag>
 }
 
-function scoreHelpText(values = {}) {
-  const scores = [values.delivery_score, values.collaboration_score, values.responsibility_score].map((item) => Number(item))
-  if (scores.some((item) => Number.isFinite(item) && item <= 6)) {
-    return '任一维度小于等于 6 分时，需要填写评价说明。'
+function scoreHelpText(scoreValue) {
+  const normalizedScore = Number(scoreValue)
+  if (Number.isFinite(normalizedScore) && normalizedScore < 80) {
+    return '评分低于 80 分时，需要填写评价说明。'
   }
-  return '评分只对你本人可见，结果页仅展示聚合后的最终结果。'
+  return '评分只对你本人可见，结果页仅展示按身份聚合后的结果。'
 }
 
 function formatActualHours(value) {
@@ -130,9 +131,7 @@ function DemandScoringPage() {
     form.resetFields()
     if (record?.score_record) {
       form.setFieldsValue({
-        delivery_score: record.score_record.delivery_score,
-        collaboration_score: record.score_record.collaboration_score,
-        responsibility_score: record.score_record.responsibility_score,
+        score: record.score_record.score,
         comment: record.score_record.comment || '',
       })
     }
@@ -142,15 +141,13 @@ function DemandScoringPage() {
         setActiveSlot(result.data)
         if (result.data.score_record) {
           form.setFieldsValue({
-            delivery_score: result.data.score_record.delivery_score,
-            collaboration_score: result.data.score_record.collaboration_score,
-            responsibility_score: result.data.score_record.responsibility_score,
+            score: result.data.score_record.score,
             comment: result.data.score_record.comment || '',
           })
         }
       }
     } catch {
-      // 列表数据可作为兜底，不阻断评分。
+      // Keep list data as fallback.
     }
   }
 
@@ -228,7 +225,7 @@ function DemandScoringPage() {
       title: '我的评分身份',
       dataIndex: 'role_labels',
       key: 'role_labels',
-      width: 220,
+      width: 180,
       render: (labels = []) => (
         <Space size={4} wrap>
           {(labels || []).map((label) => (
@@ -236,6 +233,13 @@ function DemandScoringPage() {
           ))}
         </Space>
       ),
+    },
+    {
+      title: '评分项',
+      dataIndex: 'score_item_label',
+      key: 'score_item_label',
+      width: 220,
+      render: (value) => value || '-',
     },
     {
       title: '参与身份',
@@ -252,7 +256,7 @@ function DemandScoringPage() {
       title: '参与节点',
       dataIndex: 'participation_node_names',
       key: 'participation_node_names',
-      width: 200,
+      width: 180,
       render: (nodes = []) => renderSummaryTags(nodes, { max: 2 }),
     },
     {
@@ -310,7 +314,7 @@ function DemandScoringPage() {
           columns={columns}
           dataSource={rows}
           tableLayout="fixed"
-          scroll={{ x: 1840 }}
+          scroll={{ x: 1960 }}
           locale={{ emptyText: <Empty description="暂无需要你评分的需求" /> }}
           pagination={pagination}
           onChange={(nextPagination) => {
@@ -340,13 +344,14 @@ function DemandScoringPage() {
         {activeSlot ? (
           <div className="demand-scoring-page__drawer-content">
             <Card size="small" className="demand-scoring-page__drawer-hero">
-              <Space orientation="vertical" size={8}>
+              <Space direction="vertical" size={8}>
                 <Tag variant="filled" className="demand-scoring-page__drawer-eyebrow">
                   评分对象
                 </Tag>
                 <Text strong>{activeSlot.demand_name}</Text>
                 <Text type="secondary">被评价人：{activeSlot.evaluatee_name}</Text>
                 <Text type="secondary">评分身份：{(activeSlot.role_labels || []).join(' / ') || '-'}</Text>
+                <Text type="secondary">评分项：{activeSlot.score_item_label || '-'}</Text>
               </Space>
             </Card>
             <Card size="small" className="demand-scoring-page__reference-card" title="客观参考信息">
@@ -372,37 +377,32 @@ function DemandScoringPage() {
             </Card>
             <Card size="small" className="demand-scoring-page__form-card" title="评分填写">
               <Form form={form} layout="vertical" className="demand-scoring-page__form">
-              <Form.Item label="结果交付" name="delivery_score" rules={[{ required: true, message: '请填写结果交付评分' }]}>
-                <InputNumber min={1} max={10} precision={1} style={{ width: '100%' }} placeholder="1-10 分" />
-              </Form.Item>
-              <Form.Item label="协作配合" name="collaboration_score" rules={[{ required: true, message: '请填写协作配合评分' }]}>
-                <InputNumber min={1} max={10} precision={1} style={{ width: '100%' }} placeholder="1-10 分" />
-              </Form.Item>
-              <Form.Item label="责任心/响应" name="responsibility_score" rules={[{ required: true, message: '请填写责任心/响应评分' }]}>
-                <InputNumber min={1} max={10} precision={1} style={{ width: '100%' }} placeholder="1-10 分" />
-              </Form.Item>
-              <Form.Item
-                label="评价说明"
-                name="comment"
-                tooltip={scoreHelpText(watchedValues)}
-                rules={[
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      const scores = [
-                        getFieldValue('delivery_score'),
-                        getFieldValue('collaboration_score'),
-                        getFieldValue('responsibility_score'),
-                      ].map((item) => Number(item))
-                      if (scores.some((item) => Number.isFinite(item) && item <= 6) && !String(value || '').trim()) {
-                        return Promise.reject(new Error('低分评分需要填写评价说明'))
-                      }
-                      return Promise.resolve()
-                    },
-                  }),
-                ]}
-              >
-                <Input.TextArea rows={4} maxLength={2000} showCount placeholder="可填写具体表现、风险或改进建议" />
-              </Form.Item>
+                <Form.Item
+                  label={activeSlot.score_item_label || '评分'}
+                  name="score"
+                  rules={[{ required: true, message: '请填写评分' }]}
+                  extra="统一按 100 分制评价。"
+                >
+                  <InputNumber min={0} max={100} precision={0} style={{ width: '100%' }} placeholder="0-100 分" />
+                </Form.Item>
+                <Form.Item
+                  label="评价说明"
+                  name="comment"
+                  tooltip={scoreHelpText(watchedValues.score)}
+                  rules={[
+                    ({ getFieldValue }) => ({
+                      validator(_, value) {
+                        const score = Number(getFieldValue('score'))
+                        if (Number.isFinite(score) && score < 80 && !String(value || '').trim()) {
+                          return Promise.reject(new Error('低于 80 分时需要填写评价说明'))
+                        }
+                        return Promise.resolve()
+                      },
+                    }),
+                  ]}
+                >
+                  <Input.TextArea rows={4} maxLength={2000} showCount placeholder="可填写具体表现、风险或改进建议" />
+                </Form.Item>
               </Form>
             </Card>
           </div>
