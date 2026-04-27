@@ -61,14 +61,22 @@
 
 .demand-scoring-page__table-card {
   overflow: hidden;
+  background: #fffaf4 !important;
+  backdrop-filter: none;
 }
 
 .demand-scoring-page__table .ant-table {
-  background: transparent;
+  background: #fffaf4;
+}
+
+.demand-scoring-page__table .ant-table-container,
+.demand-scoring-page__table .ant-table-content,
+.demand-scoring-page__table .ant-table-body {
+  background: #fffaf4;
 }
 
 .demand-scoring-page__table .ant-table-thead > tr > th {
-  background: rgba(245, 240, 232, 0.72);
+  background: #f3ece2;
   color: #6d5842;
   font-weight: 600;
   border-bottom: 1px solid rgba(140, 95, 52, 0.12);
@@ -82,24 +90,44 @@
 .demand-scoring-page__table .ant-table-tbody > tr > td {
   border-bottom: 1px solid rgba(140, 95, 52, 0.08);
   vertical-align: top;
-  background: transparent;
+  background: #fffaf4;
 }
 
 .demand-scoring-page__table .ant-table-tbody > tr:hover > td {
-  background: rgba(255, 251, 246, 0.9) !important;
+  background: #fff8ee !important;
 }
 
 .demand-scoring-page__table .demand-scoring-page__cell--demand {
   width: 420px;
   min-width: 420px;
   max-width: 420px;
+  position: relative;
+  z-index: 3;
+  isolation: isolate;
   white-space: normal !important;
   overflow: hidden;
+  background-clip: padding-box;
+}
+
+.demand-scoring-page__table .ant-table-thead > tr > th.demand-scoring-page__cell--demand.ant-table-cell-fix-left,
+.demand-scoring-page__table .ant-table-thead > tr > th.demand-scoring-page__cell--demand.ant-table-cell-fix-left-last {
+  background: #f3ece2;
+}
+
+.demand-scoring-page__table .ant-table-tbody > tr > td.demand-scoring-page__cell--demand.ant-table-cell-fix-left,
+.demand-scoring-page__table .ant-table-tbody > tr > td.demand-scoring-page__cell--demand.ant-table-cell-fix-left-last {
+  background: #fffaf4;
+}
+
+.demand-scoring-page__table .ant-table-tbody > tr:hover > td.demand-scoring-page__cell--demand.ant-table-cell-fix-left,
+.demand-scoring-page__table .ant-table-tbody > tr:hover > td.demand-scoring-page__cell--demand.ant-table-cell-fix-left-last {
+  background: #fff8ee !important;
 }
 
 .demand-scoring-page__table .ant-table-tbody > tr > td.ant-table-cell-fix-left,
 .demand-scoring-page__table .ant-table-tbody > tr > td.ant-table-cell-fix-left-last {
   background: #fffaf4;
+  z-index: 4;
 }
 
 .demand-scoring-page__table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
@@ -128,18 +156,20 @@
   color: #2d2418;
   font-size: 14px;
   line-height: 1.5;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .demand-scoring-page__demand-link {
+  display: block;
   width: 100%;
   padding: 0;
   border: 0;
   background: transparent;
   text-align: left;
   cursor: pointer;
+  overflow: hidden;
 }
 
 .demand-scoring-page__demand-link:hover .demand-scoring-page__demand-title {
@@ -149,6 +179,9 @@
 .demand-scoring-page__demand-id {
   display: block;
   max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .demand-scoring-page__table .ant-tag {
