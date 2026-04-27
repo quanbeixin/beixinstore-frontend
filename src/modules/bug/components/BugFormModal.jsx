@@ -10,6 +10,7 @@ import {
   buildBugDescriptionInitialHtml,
   createPendingDescriptionImageToken,
   hasMeaningfulBugDescription,
+  hydrateBugDescriptionAttachmentUrls,
   sanitizeBugDescriptionHtml,
 } from '../utils/descriptionRichText'
 import BugRichTextEditor from './BugRichTextEditor'
@@ -434,7 +435,7 @@ function BugFormModal({
     const uploaded = await uploadBugAttachmentFile(bugId, currentFile)
     message.success('图片已插入描述，并同步到附件列表')
     return {
-      src: uploaded?.download_url || uploaded?.object_url || '',
+      src: uploaded?.object_url || uploaded?.download_url || '',
       attachmentId: uploaded?.id || null,
       alt: currentFile.name || '图片',
       title: currentFile.name || '图片',
@@ -483,14 +484,19 @@ function BugFormModal({
     try {
       const values = await form.validateFields()
       const normalizedDescription = sanitizeBugDescriptionHtml(values.description, { keepPendingImages: true })
+      const persistedDescription = hydrateBugDescriptionAttachmentUrls(
+        normalizedDescription,
+        initialValues?.attachments || [],
+        { preferSignedUrl: false },
+      )
       const currentDraftAttachments = (Array.isArray(draftFileListRef.current) ? draftFileListRef.current : [])
         .map((item) => item?.originFileObj || item)
         .filter(Boolean)
-      if (!hasMeaningfulBugDescription(normalizedDescription)) {
+      if (!hasMeaningfulBugDescription(persistedDescription)) {
         form.setFields([{ name: 'description', errors: ['请输入Bug描述'] }])
         return
       }
-      if (normalizedDescription.length > 20000) {
+      if (persistedDescription.length > 20000) {
         form.setFields([{ name: 'description', errors: ['描述内容过长，请精简后再保存'] }])
         return
       }
@@ -515,7 +521,7 @@ function BugFormModal({
       await onSubmit?.(
         {
           ...values,
-          description: normalizedDescription,
+          description: persistedDescription,
           assignee_ids: normalizedAssigneeIds,
           assignee_id: normalizedAssigneeIds[0] || null,
           watcher_ids: normalizedWatcherIds,
@@ -533,7 +539,7 @@ function BugFormModal({
       if (error?.errorFields) return
       message.error(error?.message || '保存Bug失败')
     }
-  }, [form, onSubmit])
+  }, [form, initialValues?.attachments, onSubmit])
 
   const isDrawer = presentation === 'drawer'
   const actionButtons = useMemo(

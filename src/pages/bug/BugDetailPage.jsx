@@ -50,7 +50,12 @@ import {
 } from '../../api/bug'
 import { BugFormModal, BugStatusFlow } from '../../modules/bug'
 import { precheckDraftAttachment, uploadCommentDraftAttachments } from '../../modules/bug/utils/attachmentUpload'
-import { isProbablyHtml, plainTextToRichTextHtml, sanitizeBugDescriptionHtml } from '../../modules/bug/utils/descriptionRichText'
+import {
+  hydrateBugDescriptionAttachmentUrls,
+  isProbablyHtml,
+  plainTextToRichTextHtml,
+  sanitizeBugDescriptionHtml,
+} from '../../modules/bug/utils/descriptionRichText'
 import { buildWorkflowTransitionMap, normalizeBugWorkflowTransitions } from '../../modules/bug/utils/workflow'
 import { getCurrentUser, hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
@@ -327,8 +332,12 @@ function BugDetailPage() {
   const descriptionContentHtml = useMemo(() => {
     const rawDescription = String(detail?.description || '').trim()
     if (!rawDescription) return plainTextToRichTextHtml('-')
-    return isProbablyHtml(rawDescription) ? sanitizeBugDescriptionHtml(rawDescription) : plainTextToRichTextHtml(rawDescription)
-  }, [detail?.description])
+    if (!isProbablyHtml(rawDescription)) return plainTextToRichTextHtml(rawDescription)
+    return hydrateBugDescriptionAttachmentUrls(
+      sanitizeBugDescriptionHtml(rawDescription),
+      detail?.attachments || [],
+    )
+  }, [detail?.attachments, detail?.description])
   const [editingCommentId, setEditingCommentId] = useState(0)
   const [editingCommentValue, setEditingCommentValue] = useState('')
   const [editingCommentSubmitting, setEditingCommentSubmitting] = useState(false)
@@ -2115,6 +2124,7 @@ function BugDetailPage() {
               submitText="保存"
               presentation="drawer"
               initialValues={detail}
+              assigneeScope="all"
               showDraftAttachments={false}
               onCancel={() => setEditOpen(false)}
               onSubmit={async (values) => {

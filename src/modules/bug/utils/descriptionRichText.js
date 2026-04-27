@@ -74,6 +74,20 @@ export function sanitizeBugDescriptionHtml(value, { keepPendingImages = false } 
   })
 }
 
+function buildAttachmentUrlMap(attachments = [], { preferSignedUrl = true } = {}) {
+  const attachmentMap = new Map()
+  ;(Array.isArray(attachments) ? attachments : []).forEach((attachment) => {
+    const attachmentId = Number(attachment?.id || 0)
+    if (!attachmentId) return
+    const signedUrl = String(attachment?.download_url || '').trim()
+    const objectUrl = String(attachment?.object_url || '').trim()
+    const nextSrc = preferSignedUrl ? signedUrl || objectUrl : objectUrl || signedUrl
+    if (!nextSrc) return
+    attachmentMap.set(attachmentId, nextSrc)
+  })
+  return attachmentMap
+}
+
 function buildDefaultBugDescriptionTemplateHtml() {
   return [
     '<p>【前置条件】</p>',
@@ -91,7 +105,13 @@ function buildDefaultBugDescriptionTemplateHtml() {
 export function buildBugDescriptionInitialHtml(initialValues = null) {
   const description = String(initialValues?.description || '').trim()
   if (description) {
-    return isProbablyHtml(description) ? sanitizeBugDescriptionHtml(description, { keepPendingImages: true }) : plainTextToRichTextHtml(description)
+    if (!isProbablyHtml(description)) {
+      return plainTextToRichTextHtml(description)
+    }
+    return hydrateBugDescriptionAttachmentUrls(
+      sanitizeBugDescriptionHtml(description, { keepPendingImages: true }),
+      initialValues?.attachments || [],
+    )
   }
 
   const reproduceSteps = String(initialValues?.reproduce_steps || '').trim()
@@ -151,7 +171,7 @@ export function replacePendingDescriptionImages(
     const attachmentByToken = token && tokenAttachmentMap instanceof Map ? tokenAttachmentMap.get(token) : null
     const attachmentByBlobSrc = src && blobAttachmentMap instanceof Map ? blobAttachmentMap.get(src) : null
     const attachment = attachmentByToken || attachmentByBlobSrc
-    const nextSrc = String(attachment?.download_url || attachment?.object_url || '').trim()
+    const nextSrc = String(attachment?.object_url || attachment?.download_url || '').trim()
 
     if (token) {
       if (!nextSrc) {
@@ -180,4 +200,24 @@ export function replacePendingDescriptionImages(
   })
 
   return sanitizeBugDescriptionHtml(container.innerHTML)
+}
+
+export function hydrateBugDescriptionAttachmentUrls(
+  html,
+  attachments = [],
+  { preferSignedUrl = true } = {},
+) {
+  const container = document.createElement('div')
+  container.innerHTML = sanitizeBugDescriptionHtml(html, { keepPendingImages: true })
+  const attachmentUrlMap = buildAttachmentUrlMap(attachments, { preferSignedUrl })
+
+  container.querySelectorAll('img[data-attachment-id]').forEach((node) => {
+    const attachmentId = Number(node.getAttribute('data-attachment-id') || 0)
+    if (!attachmentId) return
+    const nextSrc = attachmentUrlMap.get(attachmentId)
+    if (!nextSrc) return
+    node.setAttribute('src', nextSrc)
+  })
+
+  return sanitizeBugDescriptionHtml(container.innerHTML, { keepPendingImages: true })
 }
