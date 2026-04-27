@@ -91,6 +91,16 @@ function getTodayDateRange() {
   return [today, today]
 }
 
+function getLastWeekDateRange() {
+  const today = dayjs()
+  const weekday = today.day()
+  const daysFromMonday = weekday === 0 ? 6 : weekday - 1
+  const thisWeekMonday = today.subtract(daysFromMonday, 'day')
+  const lastWeekMonday = thisWeekMonday.subtract(7, 'day')
+  const lastWeekSunday = thisWeekMonday.subtract(1, 'day')
+  return [lastWeekMonday, lastWeekSunday]
+}
+
 function getThisWeekToTodayDateRange() {
   const today = dayjs()
   const weekday = today.day()
@@ -274,6 +284,11 @@ function MemberRhythmBoard() {
     const startText = dateRange?.[0]?.format('YYYY-MM-DD') || ''
     const endText = dateRange?.[1]?.format('YYYY-MM-DD') || ''
     if (!startText || !endText) return ''
+
+    const [lastWeekStart, lastWeekEnd] = getLastWeekDateRange()
+    if (startText === lastWeekStart.format('YYYY-MM-DD') && endText === lastWeekEnd.format('YYYY-MM-DD')) {
+      return 'last_week'
+    }
 
     const [todayStart, todayEnd] = getTodayDateRange()
     if (startText === todayStart.format('YYYY-MM-DD') && endText === todayEnd.format('YYYY-MM-DD')) {
@@ -921,6 +936,12 @@ function MemberRhythmBoard() {
       >
         <Space wrap size={12}>
           <Space.Compact>
+            <Button
+              type={activeDateShortcut === 'last_week' ? 'primary' : 'default'}
+              onClick={() => setDateRange(getLastWeekDateRange())}
+            >
+              上周
+            </Button>
             <Button
               type={activeDateShortcut === 'today' ? 'primary' : 'default'}
               onClick={() => setDateRange(getTodayDateRange())}
