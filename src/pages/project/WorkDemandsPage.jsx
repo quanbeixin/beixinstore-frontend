@@ -2469,7 +2469,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
   useEffect(() => {
     if (!modalOpen) return
-    if (modalGroupChatMode === 'bind') return
+    if (modalGroupChatMode === 'bind' || modalGroupChatMode === 'auto') return
     form.setFieldValue('group_chat_id', undefined)
   }, [modalOpen, modalGroupChatMode, form])
 
@@ -2547,7 +2547,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         release_note: values.release_note || null,
         group_chat_mode: values.group_chat_mode || 'none',
         group_chat_id:
-          values.group_chat_mode === 'bind' ? normalizeFeishuChatId(values.group_chat_id) || null : null,
+          values.group_chat_mode === 'bind' || values.group_chat_mode === 'auto'
+            ? normalizeFeishuChatId(values.group_chat_id) || null
+            : null,
         business_group_code: values.business_group_code ?? null,
         expected_release_date: values.expected_release_date ? values.expected_release_date.format('YYYY-MM-DD') : null,
         priority: values.priority,

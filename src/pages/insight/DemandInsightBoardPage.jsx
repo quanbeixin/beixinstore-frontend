@@ -57,6 +57,22 @@ function varianceColor(value) {
   return '#262626'
 }
 
+function varianceColorEstimateMinusActual(value) {
+  const num = Number(value || 0)
+  if (num < 0) return '#d4380d'
+  if (num > 0) return '#389e0d'
+  return '#262626'
+}
+
+function renderEstimateMinusActualVariance(value) {
+  const displayValue = toNumber(value, 0) * -1
+  return (
+    <span style={{ color: varianceColorEstimateMinusActual(displayValue) }}>
+      {displayValue.toFixed(1)}
+    </span>
+  )
+}
+
 function getDefaultDateRange() {
   const now = dayjs()
   return [now.startOf('month'), now.endOf('month')]
@@ -722,13 +738,11 @@ function DemandInsightBoard() {
             render: (value) => toNumber(value, 0).toFixed(1),
           },
           {
-            title: '偏差(实际-负责人)',
+            title: '偏差(负责人-实际)',
             dataIndex: 'variance_owner_hours',
             key: 'variance_owner_hours',
             width: 150,
-            render: (value) => (
-              <span style={{ color: varianceColor(value) }}>{toNumber(value, 0).toFixed(1)}</span>
-            ),
+            render: (value) => renderEstimateMinusActualVariance(value),
           },
           {
             title: '参与人',
@@ -998,13 +1012,11 @@ function DemandInsightBoard() {
               render: (value) => toNumber(value, 0).toFixed(1),
             },
             {
-              title: '偏差(实际-负责人)',
+              title: '偏差(负责人-实际)',
               dataIndex: 'variance_owner_hours',
               key: 'variance_owner_hours',
               width: 150,
-              render: (value) => (
-                <span style={{ color: varianceColor(value) }}>{toNumber(value, 0).toFixed(1)}</span>
-              ),
+              render: (value) => renderEstimateMinusActualVariance(value),
             },
             {
               title: '最后记录',
