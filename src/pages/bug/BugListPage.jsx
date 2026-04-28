@@ -1283,9 +1283,9 @@ function BugListPage({
         title: '标题',
         dataIndex: 'title',
         key: 'title',
-        width: 300,
+        width: 550,
         ellipsis: true,
-        onCell: () => ({ style: { minWidth: 300 } }),
+        onCell: () => ({ style: { minWidth: 550 } }),
         render: (value, row) => {
           if (row?.__isGroup) {
             return (
