@@ -129,7 +129,13 @@ function getSuggestedAssignStatusByStartDate(expectedStartDate) {
 function hasOwnerEstimateDecision(item) {
   const estimatedAt = String(item?.owner_estimated_at || '').trim()
   const estimatedBy = toNumber(item?.owner_estimated_by, 0)
-  return Boolean(estimatedAt) || estimatedBy > 0
+  const ownerEstimateHours = item?.owner_estimate_hours
+  const hasOwnerEstimateHours =
+    ownerEstimateHours !== null &&
+    ownerEstimateHours !== undefined &&
+    String(ownerEstimateHours).trim() !== ''
+  const taskDifficultyCode = String(item?.task_difficulty_code || '').trim()
+  return Boolean(estimatedAt) || estimatedBy > 0 || hasOwnerEstimateHours || Boolean(taskDifficultyCode)
 }
 
 function openDemandDetailInNewTab(demandId) {
@@ -321,7 +327,10 @@ function OwnerWorkbench() {
     () => (Array.isArray(data.owner_estimate_items) ? data.owner_estimate_items : EMPTY_ARRAY),
     [data.owner_estimate_items],
   )
-  const pendingOwnerEstimateCount = toNumber(data.owner_estimate_pending_count, 0)
+  const pendingOwnerEstimateCount = useMemo(
+    () => ownerEstimateItems.filter((item) => !hasOwnerEstimateDecision(item)).length,
+    [ownerEstimateItems],
+  )
 
   const memberOptions = useMemo(() => {
     const map = new Map()
@@ -422,12 +431,12 @@ function OwnerWorkbench() {
   const filteredOwnerEstimateItems = useMemo(() => {
     const q = keyword.trim().toLowerCase()
     const todayValue = getBeijingTodayDateString()
-    const effectivePendingOnly = pendingOnly && !isDoneStatusSelected
     const filteredItems = ownerEstimateItems.filter((item) => {
-      if (effectivePendingOnly && hasOwnerEstimateDecision(item)) return false
+      const itemStatus = String(item?.log_status || 'IN_PROGRESS').trim().toUpperCase()
+      if (pendingOnly && hasOwnerEstimateDecision(item)) return false
       if (memberFilter && Number(item.user_id) !== Number(memberFilter)) return false
       if (phaseFilter && String(item.phase_key || '') !== String(phaseFilter)) return false
-      if (statusFilter && String(item?.log_status || 'IN_PROGRESS') !== String(statusFilter)) return false
+      if (normalizedStatusFilter && itemStatus !== normalizedStatusFilter) return false
       if (
         isDoneStatusSelected &&
         doneRecentOnly &&
@@ -460,7 +469,7 @@ function OwnerWorkbench() {
     keyword,
     memberFilter,
     phaseFilter,
-    statusFilter,
+    normalizedStatusFilter,
     pendingOnly,
     isDoneStatusSelected,
     doneRecentOnly,
@@ -1212,7 +1221,6 @@ function OwnerWorkbench() {
               const prevIsDone = isDoneStatusSelected
               setStatusFilter(value)
               if (nextIsDone) {
-                setPendingOnly(false)
                 setDoneRecentOnly(true)
                 return
               }
@@ -1229,7 +1237,6 @@ function OwnerWorkbench() {
             <Text type="secondary">仅看待评估</Text>
             <Switch
               checked={pendingOnly}
-              disabled={isDoneStatusSelected}
               onChange={(checked) => {
                 setPendingOnlyTouched(true)
                 setPendingOnly(checked)
