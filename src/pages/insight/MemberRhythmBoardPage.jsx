@@ -23,6 +23,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getInsightFilterOptionsApi, getMemberInsightApi } from '../../api/work'
 import { getAccessSnapshot } from '../../utils/access'
 import { formatBeijingDate } from '../../utils/datetime'
+import { pinyinSelectFilter } from '../../utils/selectSearch'
 
 const { RangePicker } = DatePicker
 const { Text } = Typography
@@ -154,7 +155,6 @@ function MemberRhythmBoard() {
 
   const [keyword, setKeyword] = useState('')
   const [departmentId, setDepartmentId] = useState()
-  const [ownerUserId, setOwnerUserId] = useState()
   const [memberUserId, setMemberUserId] = useState()
   const [businessGroupCode, setBusinessGroupCode] = useState()
   const [dateRange, setDateRange] = useState(getDefaultDateRange)
@@ -200,7 +200,6 @@ function MemberRhythmBoard() {
     }
 
     setDepartmentId(toPositiveInt(searchParams.get('department_id')) || undefined)
-    setOwnerUserId(toPositiveInt(searchParams.get('owner_user_id')) || undefined)
     setMemberUserId(toPositiveInt(searchParams.get('member_user_id')) || undefined)
 
     const businessGroup = String(searchParams.get('business_group_code') || '').trim()
@@ -235,7 +234,6 @@ function MemberRhythmBoard() {
         start_date: dateRange?.[0]?.format('YYYY-MM-DD'),
         end_date: dateRange?.[1]?.format('YYYY-MM-DD'),
         department_id: departmentId,
-        owner_user_id: ownerUserId,
         member_user_id: memberUserId,
         business_group_code: businessGroupCode,
         keyword: keyword?.trim() || undefined,
@@ -251,7 +249,7 @@ function MemberRhythmBoard() {
     } finally {
       setLoading(false)
     }
-  }, [businessGroupCode, dateRange, departmentId, keyword, memberUserId, ownerUserId])
+  }, [businessGroupCode, dateRange, departmentId, keyword, memberUserId])
 
   useEffect(() => {
     loadFilterOptions()
@@ -274,7 +272,6 @@ function MemberRhythmBoard() {
   const handleResetFilters = () => {
     setKeyword('')
     setDepartmentId(undefined)
-    setOwnerUserId(undefined)
     setMemberUserId(undefined)
     setBusinessGroupCode(undefined)
     setDateRange(getDefaultDateRange())
@@ -308,7 +305,6 @@ function MemberRhythmBoard() {
     if (dateRange?.[0]) params.set('start_date', dateRange[0].format('YYYY-MM-DD'))
     if (dateRange?.[1]) params.set('end_date', dateRange[1].format('YYYY-MM-DD'))
     if (departmentId) params.set('department_id', String(departmentId))
-    if (ownerUserId) params.set('owner_user_id', String(ownerUserId))
     if (businessGroupCode) params.set('business_group_code', String(businessGroupCode))
     if (targetMemberUserId) params.set('member_user_id', String(targetMemberUserId))
     navigate(`/efficiency/demand?${params.toString()}`)
@@ -452,7 +448,6 @@ function MemberRhythmBoard() {
     const startDateText = dateRange?.[0]?.format('YYYY-MM-DD') || '-'
     const endDateText = dateRange?.[1]?.format('YYYY-MM-DD') || '-'
     const departmentLabel = departmentId ? departmentLabelById.get(Number(departmentId)) || `部门#${departmentId}` : '全部'
-    const ownerLabel = ownerUserId ? ownerLabelById.get(Number(ownerUserId)) || `用户#${ownerUserId}` : '全部'
     const memberLabel = memberUserId ? ownerLabelById.get(Number(memberUserId)) || `用户#${memberUserId}` : '全部'
     const businessGroupLabel = businessGroupCode
       ? businessGroupLabelByCode.get(String(businessGroupCode)) || String(businessGroupCode)
@@ -496,7 +491,6 @@ function MemberRhythmBoard() {
       '',
       '【筛选范围】',
       `- 部门：${departmentLabel}`,
-      `- 需求负责人：${ownerLabel}`,
       `- 成员：${memberLabel}`,
       `- 业务组：${businessGroupLabel}`,
       `- 关键词：${keywordText}`,
@@ -545,7 +539,6 @@ function MemberRhythmBoard() {
     memberUserId,
     overloadTop10,
     ownerLabelById,
-    ownerUserId,
     summary,
   ])
 
@@ -604,14 +597,6 @@ function MemberRhythmBoard() {
       })
     }
 
-    if (ownerUserId) {
-      tags.push({
-        key: 'owner',
-        label: `需求负责人：${ownerLabelById.get(Number(ownerUserId)) || `用户#${ownerUserId}`}`,
-        onClose: () => setOwnerUserId(undefined),
-      })
-    }
-
     if (memberUserId) {
       tags.push({
         key: 'member',
@@ -646,7 +631,6 @@ function MemberRhythmBoard() {
     keyword,
     memberUserId,
     ownerLabelById,
-    ownerUserId,
   ])
 
   const memberColumns = [
@@ -962,6 +946,9 @@ function MemberRhythmBoard() {
           />
           <Select
             allowClear
+            showSearch
+            optionFilterProp="label"
+            filterOption={pinyinSelectFilter}
             loading={filterLoading}
             style={{ width: 180 }}
             placeholder="部门"
@@ -973,17 +960,7 @@ function MemberRhythmBoard() {
             allowClear
             showSearch
             optionFilterProp="label"
-            loading={filterLoading}
-            style={{ width: 220 }}
-            placeholder="需求负责人"
-            options={ownerOptions}
-            value={ownerUserId}
-            onChange={setOwnerUserId}
-          />
-          <Select
-            allowClear
-            showSearch
-            optionFilterProp="label"
+            filterOption={pinyinSelectFilter}
             loading={filterLoading}
             style={{ width: 220 }}
             placeholder="成员"
@@ -995,6 +972,7 @@ function MemberRhythmBoard() {
             allowClear
             showSearch
             optionFilterProp="label"
+            filterOption={pinyinSelectFilter}
             loading={filterLoading}
             style={{ width: 220 }}
             placeholder="业务组"
