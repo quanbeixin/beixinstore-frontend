@@ -143,13 +143,14 @@
 }
 
 .bug-list-page__filter-control--sm {
-  width: 144px;
+  width: 152px;
 }
 
 .bug-list-page__filter-item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 30px;
   padding: 0;
   border: none;
   background: transparent;
@@ -172,22 +173,6 @@
 
 .bug-list-page__keyword {
   width: 280px;
-}
-
-.bug-list-page__keyword.ant-input-affix-wrapper {
-  height: 30px;
-  min-height: 30px;
-  padding-inline: 10px;
-}
-
-.bug-list-page__keyword.ant-input-affix-wrapper .ant-input {
-  height: 22px;
-  line-height: 22px;
-}
-
-.bug-list-page__keyword.ant-input-affix-wrapper .ant-input-prefix {
-  margin-inline-end: 6px;
-  color: #7c90b3;
 }
 
 .bug-list-page__filter-row--status .ant-segmented {
@@ -258,9 +243,29 @@
   padding-inline: 10px !important;
 }
 
+.bug-list-page__filter-row .ant-select-single .ant-select-arrow,
+.bug-list-page__filter-row .ant-picker .ant-picker-suffix,
+.bug-list-page__filter-row .ant-input-affix-wrapper .ant-input-prefix,
+.bug-list-page__filter-row .ant-input-affix-wrapper .ant-input-suffix {
+  color: #7c90b3;
+}
+
 .bug-list-page__filter-row .ant-select-single .ant-select-selection-item,
 .bug-list-page__filter-row .ant-select-single .ant-select-selection-placeholder {
   line-height: 28px !important;
+}
+
+.bug-list-page__filter-row .ant-select-selection-search-input,
+.bug-list-page__filter-row .ant-input-affix-wrapper .ant-input,
+.bug-list-page__filter-row .ant-picker input {
+  font-size: 12px;
+  color: #243857;
+}
+
+.bug-list-page__filter-row .ant-select-single .ant-select-selection-placeholder,
+.bug-list-page__filter-row .ant-input::placeholder,
+.bug-list-page__filter-row .ant-picker-input input::placeholder {
+  color: #8a9ab8;
 }
 
 .bug-list-page__filter-row .ant-input-affix-wrapper {
@@ -273,7 +278,16 @@
 
 .bug-list-page__filter-row .ant-input-affix-wrapper .ant-input-prefix {
   margin-inline-end: 6px;
-  color: #7c90b3;
+}
+
+.bug-list-page__filter-row .ant-picker {
+  padding-inline: 10px;
+}
+
+.bug-list-page__filter-row .ant-picker .ant-picker-input > input,
+.bug-list-page__filter-row .ant-picker-range .ant-picker-input > input {
+  height: 22px;
+  line-height: 22px;
 }
 
 .bug-list-page__filter-row .ant-select:hover .ant-select-selector,

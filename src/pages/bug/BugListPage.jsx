@@ -967,7 +967,16 @@ function BugListPage({
       if (!result?.success) {
         throw new Error(result?.message || '更新视图失败')
       }
-      await loadBugViews()
+      if (result?.data && Number(result.data?.id || 0) === viewId) {
+        setBugViews((prev) => {
+          const nextRow = result.data
+          const found = prev.some((item) => Number(item?.id || 0) === viewId)
+          if (!found) return [nextRow].concat(prev)
+          return prev.map((item) => (Number(item?.id || 0) === viewId ? nextRow : item))
+        })
+      } else {
+        await loadBugViews()
+      }
       message.success(result?.message || '视图已更新')
     } catch (error) {
       message.error(error?.message || '更新视图失败')
@@ -1699,7 +1708,7 @@ function BugListPage({
               allowClear
               prefix={<SearchOutlined />}
               placeholder="搜索编号、标题、描述"
-              className="bug-list-page__keyword"
+              className="bug-list-page__filter-control bug-list-page__keyword"
               value={searchInput}
               onChange={(event) => {
                 const nextValue = event.target.value
