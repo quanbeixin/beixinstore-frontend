@@ -26,6 +26,7 @@ const GROUP_FIELD_OPTIONS = [
   { label: '提交人', value: 'reporter' },
   { label: 'Bug分类', value: 'bug_type' },
   { label: '优先级', value: 'priority' },
+  { label: '严重程度', value: 'severity' },
 ]
 const GROUP_FIELD_LABEL_MAP = GROUP_FIELD_OPTIONS.reduce((acc, item) => {
   acc[item.value] = item.label
@@ -272,6 +273,11 @@ function resolveGroupBucket(field, row) {
   if (field === 'priority') {
     const code = String(row?.priority_code || 'UNSET').trim().toUpperCase() || 'UNSET'
     const label = String(row?.priority_name || row?.priority_code || '未设置').trim() || '未设置'
+    return { key: code, value: label }
+  }
+  if (field === 'severity') {
+    const code = String(row?.severity_code || 'UNSET').trim().toUpperCase() || 'UNSET'
+    const label = String(row?.severity_name || row?.severity_code || '未设置').trim() || '未设置'
     return { key: code, value: label }
   }
   return { key: 'UNKNOWN', value: '未分组' }
