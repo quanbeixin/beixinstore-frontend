@@ -277,7 +277,20 @@ function resolveGroupBucket(field, row) {
   return { key: 'UNKNOWN', value: '未分组' }
 }
 
-function buildGroupedTreeRows(sourceRows, groupFields, level = 0, parentKey = 'root') {
+function sortGroupedBuckets(field, groups, statusGroupOrderMap = {}) {
+  return [...groups].sort((a, b) => {
+    if (field === 'status') {
+      const leftRank = Number(statusGroupOrderMap?.[String(a?.key || '').trim().toUpperCase()])
+      const rightRank = Number(statusGroupOrderMap?.[String(b?.key || '').trim().toUpperCase()])
+      const normalizedLeftRank = Number.isFinite(leftRank) ? leftRank : Number.MAX_SAFE_INTEGER
+      const normalizedRightRank = Number.isFinite(rightRank) ? rightRank : Number.MAX_SAFE_INTEGER
+      if (normalizedLeftRank !== normalizedRightRank) return normalizedLeftRank - normalizedRightRank
+    }
+    return String(a?.value || '').localeCompare(String(b?.value || ''), 'zh-Hans-CN')
+  })
+}
+
+function buildGroupedTreeRows(sourceRows, groupFields, level = 0, parentKey = 'root', statusGroupOrderMap = {}) {
   if (!Array.isArray(sourceRows) || sourceRows.length === 0) return []
   if (!Array.isArray(groupFields) || level >= groupFields.length) {
     return sourceRows.map((row) => ({
@@ -304,8 +317,7 @@ function buildGroupedTreeRows(sourceRows, groupFields, level = 0, parentKey = 'r
     })
   })
 
-  return Array.from(groupMap.values())
-    .sort((a, b) => String(a.value || '').localeCompare(String(b.value || ''), 'zh-Hans-CN'))
+  return sortGroupedBuckets(field, Array.from(groupMap.values()), statusGroupOrderMap)
     .map((group, index) => {
       const groupKey = `group-${parentKey}-${field}-${group.key}-${index}`
       return {
@@ -315,7 +327,7 @@ function buildGroupedTreeRows(sourceRows, groupFields, level = 0, parentKey = 'r
         __groupFieldLabel: GROUP_FIELD_LABEL_MAP[field] || '分组',
         __groupValue: group.value,
         __groupCount: group.rows.length,
-        children: buildGroupedTreeRows(group.rows, groupFields, level + 1, groupKey),
+        children: buildGroupedTreeRows(group.rows, groupFields, level + 1, groupKey, statusGroupOrderMap),
       }
     })
 }
@@ -375,6 +387,7 @@ function BugListPage({
   const [userOptionsLoading, setUserOptionsLoading] = useState(false)
   const [statusSegmentOptions, setStatusSegmentOptions] = useState([{ label: '全部状态', value: '' }])
   const [statusNameMap, setStatusNameMap] = useState({})
+  const [statusGroupOrderMap, setStatusGroupOrderMap] = useState({})
   const [severityOptions, setSeverityOptions] = useState([{ label: '全部', value: '' }])
   const [issueStageOptions, setIssueStageOptions] = useState([{ label: '全部', value: '' }])
   const [workflowTransitions, setWorkflowTransitions] = useState([])
@@ -454,6 +467,15 @@ function BugListPage({
           const code = String(item?.item_code || '').trim().toUpperCase()
           if (!code) return acc
           acc[code] = item?.item_name || item?.item_code || code
+          return acc
+        }, {}),
+      )
+      setStatusGroupOrderMap(
+        (statusRows || []).reduce((acc, item, index) => {
+          const code = String(item?.item_code || '').trim().toUpperCase()
+          if (!code) return acc
+          const sortOrder = Number(item?.sort_order)
+          acc[code] = Number.isFinite(sortOrder) ? sortOrder : index
           return acc
         }, {}),
       )
@@ -1003,8 +1025,8 @@ function BugListPage({
 
   const tableDataSource = useMemo(() => {
     if (!isGroupingEnabled) return rows
-    return buildGroupedTreeRows(rows, groupFields)
-  }, [groupFields, isGroupingEnabled, rows])
+    return buildGroupedTreeRows(rows, groupFields, 0, 'root', statusGroupOrderMap)
+  }, [groupFields, isGroupingEnabled, rows, statusGroupOrderMap])
 
   const loadBugAttachments = useCallback(
     async (bugId, { force = false } = {}) => {
