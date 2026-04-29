@@ -129,6 +129,13 @@ const CONDITION_FIELD_OPTIONS_BY_EVENT = {
     { label: '新状态', value: 'to_status' },
     { label: '业务线ID', value: 'business_line_id' },
   ],
+  demand_score_assign: [
+    { label: '需求ID', value: 'demand_id' },
+    { label: '评价人ID', value: 'evaluator_user_id' },
+    { label: '待评分条数', value: 'pending_slot_count' },
+    { label: '被评价人名单', value: 'evaluatee_names' },
+    { label: '业务线ID', value: 'business_line_id' },
+  ],
   worklog_create: [
     { label: '事项ID', value: 'worklog_id' },
     { label: '事项状态', value: 'status' },
@@ -280,6 +287,7 @@ const EVENT_TYPE_GROUPED_OPTIONS = [
       { label: '需求创建', value: 'demand_create' },
       { label: '需求指派', value: 'demand_assign' },
       { label: '需求状态变更', value: 'demand_status_change' },
+      { label: '需求评分提醒', value: 'demand_score_assign' },
       { label: '节点指派', value: 'node_assign' },
       { label: '节点驳回', value: 'node_reject' },
       { label: '节点完成', value: 'node_complete' },
@@ -354,6 +362,7 @@ const RECEIVER_FIELD_LABEL_MAP = {
   to_owner_user_id: '新负责人',
   from_owner_user_id: '原负责人',
   project_manager_id: '项目经理',
+  evaluator_user_id: '评价人',
   to_assignee_id: '新接收人',
   from_assignee_id: '原接收人',
 }
@@ -370,6 +379,7 @@ const DEFAULT_RECEIVER_FIELD_BY_EVENT = {
   demand_create: 'owner_user_id',
   demand_assign: 'to_owner_user_id',
   demand_status_change: 'owner_user_id',
+  demand_score_assign: 'evaluator_user_id',
   worklog_create: 'user_id',
   worklog_assign: 'to_assignee_id',
   worklog_status_change: 'user_id',
@@ -487,6 +497,15 @@ const EVENT_VARIABLE_OPTIONS_BY_EVENT = {
     { label: '新状态', value: 'to_status' },
     { label: '负责人姓名', value: 'owner_name' },
     { label: '操作人姓名', value: 'operator_name' },
+    { label: '业务线名称', value: 'business_line_name' },
+  ],
+  demand_score_assign: [
+    { label: '需求ID', value: 'demand_id' },
+    { label: '需求名称', value: 'demand_name' },
+    { label: '评价人ID', value: 'evaluator_user_id' },
+    { label: '评价人姓名', value: 'evaluator_name' },
+    { label: '待评分条数', value: 'pending_slot_count' },
+    { label: '被评价人名单', value: 'evaluatee_names' },
     { label: '业务线名称', value: 'business_line_name' },
   ],
   worklog_create: [
@@ -883,6 +902,20 @@ function buildMockEventData(sceneCode, businessLineId, now, currentUser = null) 
       to_status: 'IN_PROGRESS',
       owner_name: '权贝鑫',
       operator_name: '管理员',
+      business_line_name: '零售业务线',
+    }
+  }
+
+  if (sceneCode === 'demand_score_assign') {
+    return {
+      ...base,
+      demand_id: 'REQ20260403004',
+      demand_name: '需求评分任务通知',
+      evaluator_user_id: 96,
+      evaluator_name: 'bpf',
+      pending_slot_count: 2,
+      evaluatee_names: '张三、李四',
+      evaluatee_names_display: '，涉及：张三、李四',
       business_line_name: '零售业务线',
     }
   }

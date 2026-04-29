@@ -1,7 +1,7 @@
 import { CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Button, Card, Drawer, Empty, Form, Input, InputNumber, Segmented, Space, Table, Tag, Tooltip, Typography, message } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { getMyDemandScoreSlotApi, getMyDemandScoreSlotsApi, submitDemandScoreSlotApi } from '../../api/work'
 import './DemandScoringPage.css'
 
@@ -84,22 +84,29 @@ function renderSummaryTags(items = [], { colorMap = {}, max = 2, emptyText = '-'
 }
 
 function DemandScoringPage() {
+  const location = useLocation()
   const navigate = useNavigate()
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [status, setStatus] = useState('')
+  const [status, setStatus] = useState(() => {
+    const params = new URLSearchParams(location.search || '')
+    const nextStatus = String(params.get('status') || '').trim().toUpperCase()
+    return ['PENDING', 'SUBMITTED'].includes(nextStatus) ? nextStatus : ''
+  })
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
   const [rows, setRows] = useState([])
   const [activeSlot, setActiveSlot] = useState(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const watchedValues = Form.useWatch([], form) || {}
+  const demandIdFilter = String(new URLSearchParams(location.search || '').get('demand_id') || '').trim().toUpperCase()
 
   const loadRows = useCallback(async ({ page = 1, pageSize = 20 } = {}) => {
     setLoading(true)
     try {
       const result = await getMyDemandScoreSlotsApi({
         status,
+        demand_id: demandIdFilter,
         page,
         pageSize,
       })
@@ -119,7 +126,13 @@ function DemandScoringPage() {
     } finally {
       setLoading(false)
     }
-  }, [status])
+  }, [demandIdFilter, status])
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || '')
+    const nextStatus = String(params.get('status') || '').trim().toUpperCase()
+    setStatus(['PENDING', 'SUBMITTED'].includes(nextStatus) ? nextStatus : '')
+  }, [location.search])
 
   useEffect(() => {
     loadRows({ page: 1 })
@@ -296,7 +309,20 @@ function DemandScoringPage() {
     <div className="demand-scoring-page">
       <Card className="demand-scoring-page__toolbar" variant="borderless">
         <div className="demand-scoring-page__toolbar-row">
-          <Segmented options={STATUS_OPTIONS} value={status} onChange={(value) => setStatus(value)} />
+          <Space size={8} wrap>
+            <Segmented options={STATUS_OPTIONS} value={status} onChange={(value) => setStatus(value)} />
+            {demandIdFilter ? <Tag color="blue">{`需求 ${demandIdFilter}`}</Tag> : null}
+            {demandIdFilter ? (
+              <Button
+                size="small"
+                onClick={() => {
+                  navigate('/demand-scores')
+                }}
+              >
+                查看全部
+              </Button>
+            ) : null}
+          </Space>
           <div className="demand-scoring-page__toolbar-meta">
             <Text type="secondary">{`当前共 ${pagination.total || 0} 条评分任务`}</Text>
             <Button icon={<ReloadOutlined />} onClick={() => loadRows({ page: 1 })} loading={loading}>
