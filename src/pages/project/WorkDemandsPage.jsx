@@ -58,6 +58,7 @@ import {
   getDemandWorkflowNodeOptionsApi,
   getDemandViewByIdApi,
   getDemandViewsApi,
+  generateDemandScoreTaskApi,
   getProjectTemplateByIdApi,
   getProjectTemplatesApi,
   getWorkflowAssigneesApi,
@@ -1022,6 +1023,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [workflowLoading, setWorkflowLoading] = useState(false)
   const [workflowSubmitting, setWorkflowSubmitting] = useState(false)
   const [workflowReplacing, setWorkflowReplacing] = useState(false)
+  const [workflowScoreRebuilding, setWorkflowScoreRebuilding] = useState(false)
   const [workflowTaskUpdatingId, setWorkflowTaskUpdatingId] = useState(null)
   const [workflowData, setWorkflowData] = useState(null)
   const [workflowWarning, setWorkflowWarning] = useState('')
@@ -1246,7 +1248,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     return String(selectedWorkflowNode?.status || '').trim().toUpperCase() === 'DONE'
   }, [access?.is_super_admin, canManageWorkflow, selectedWorkflowNode])
 
-  const workflowActionBusy = workflowSubmitting || workflowReplacing
+  const workflowActionBusy = workflowSubmitting || workflowReplacing || workflowScoreRebuilding
 
   const canEditDemandRecord = useCallback(
     (record) => {
@@ -3816,6 +3818,42 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     })
   }
 
+  const handleRebuildDemandScoreTask = async () => {
+    if (!detailDemand?.id || !canForceReplaceWorkflow) return
+
+    try {
+      setWorkflowScoreRebuilding(true)
+      const result = await generateDemandScoreTaskApi(detailDemand.id, { force_rebuild: true })
+      if (!result?.success) {
+        message.error(result?.message || '重建需求评分任务失败')
+        return
+      }
+      const rebuilt = Boolean(result?.data?.rebuilt)
+      message.success(rebuilt ? '需求评分任务已重建' : result?.message || '需求评分任务已生成')
+    } catch (error) {
+      message.error(error?.message || '重建需求评分任务失败')
+    } finally {
+      setWorkflowScoreRebuilding(false)
+    }
+  }
+
+  const handleConfirmRebuildDemandScoreTask = () => {
+    if (!detailDemand?.id || !canForceReplaceWorkflow) return
+
+    Modal.confirm({
+      title: '确认重建需求评分任务？',
+      content:
+        '系统会按当前需求参与角色重新生成评分任务。若该需求评分任务已有已提交评分，系统会阻止重建，避免覆盖已有评分数据。',
+      okText: '确认重建',
+      cancelText: '取消',
+      okButtonProps: {
+        danger: true,
+        loading: workflowScoreRebuilding,
+      },
+      onOk: handleRebuildDemandScoreTask,
+    })
+  }
+
   const handleDeleteDemand = useCallback(async (record) => {
     if (!record?.id || !canTransferOwner) return
     try {
@@ -5155,16 +5193,26 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                         </div>
                       </div>
                       {canForceReplaceWorkflow ? (
-                        <Button
-                          danger
-                          size="small"
-                          className="work-demand-detail__workflow-upgrade-btn"
-                          loading={workflowReplacing}
-                          disabled={workflowActionBusy}
-                          onClick={handleConfirmReplaceWorkflowLatest}
-                        >
-                          强制替换为最新流程
-                        </Button>
+                        <Space wrap size={8}>
+                          <Button
+                            danger
+                            size="small"
+                            className="work-demand-detail__workflow-upgrade-btn"
+                            loading={workflowReplacing}
+                            disabled={workflowActionBusy}
+                            onClick={handleConfirmReplaceWorkflowLatest}
+                          >
+                            强制替换为最新流程
+                          </Button>
+                          <Button
+                            size="small"
+                            loading={workflowScoreRebuilding}
+                            disabled={workflowActionBusy}
+                            onClick={handleConfirmRebuildDemandScoreTask}
+                          >
+                            重建需求评分任务
+                          </Button>
+                        </Space>
                       ) : null}
                     </div>
 
