@@ -3292,6 +3292,36 @@ function WorkLogs({ mode = 'dashboard' }) {
                                     <Tag color={remainingWorkload > 0 ? 'processing' : 'success'}>
                                       {`剩余 ${remainingWorkload.toFixed(1)}h`}
                                     </Tag>
+                                    {canUpdate ? (
+                                      <Popconfirm
+                                        title="确认删除该事项？"
+                                        description="删除后将清空该事项下所有工作记录（含日投入与日计划），且不可恢复。"
+                                        okText="确认删除"
+                                        cancelText="取消"
+                                        okButtonProps={{ danger: true, loading: deletingLogId === item.id }}
+                                        onConfirm={() => handleDeleteLog(item)}
+                                      >
+                                        <Button
+                                          type="default"
+                                          size="small"
+                                          icon={<DeleteOutlined style={{ color: '#be123c' }} />}
+                                          loading={deletingLogId === item.id}
+                                          style={{
+                                            borderRadius: 999,
+                                            height: 24,
+                                            paddingInline: 10,
+                                            fontSize: 12,
+                                            fontWeight: 600,
+                                            color: '#be123c',
+                                            border: '1px solid #fda4af',
+                                            background: '#ffe4e6',
+                                            boxShadow: 'none',
+                                          }}
+                                        >
+                                          删除
+                                        </Button>
+                                      </Popconfirm>
+                                    ) : null}
                                   </Space>
                                 </div>
 

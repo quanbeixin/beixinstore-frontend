@@ -55,6 +55,7 @@ const BugWorkflowConfig = lazy(() => import('./pages/bug/BugWorkflowConfigPage')
 const FeedbackList = lazy(() => import('./pages/feedback/FeedbackListPage'))
 const FeedbackDashboard = lazy(() => import('./pages/feedback/FeedbackDashboardPage'))
 const FeedbackAIPromptConfig = lazy(() => import('./pages/feedback/AIPromptConfigPage'))
+const ImportantEmailConfig = lazy(() => import('./pages/feedback/ImportantEmailConfigPage'))
 const Login = lazy(() => import('./pages/auth/LoginPage'))
 const Register = lazy(() => import('./pages/auth/RegisterPage'))
 
@@ -73,6 +74,7 @@ const PAGE_COMPONENTS = {
   feedbackList: FeedbackList,
   feedbackDashboard: FeedbackDashboard,
   feedbackAIPromptConfig: FeedbackAIPromptConfig,
+  importantEmailConfig: ImportantEmailConfig,
   morningStandupBoard: MorningStandupBoard,
   options: Options,
   ownerWorkbench: OwnerWorkbench,

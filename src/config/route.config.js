@@ -378,6 +378,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/feedback/important-emails',
+    componentKey: 'importantEmailConfig',
+    requiredPermission: 'feedback.manage',
+    page: {
+      title: '重点邮箱配置',
+      subtitle: '维护用户反馈中的重点邮箱规则，用于重要邮件识别与高亮展示。',
+    },
+    menu: {
+      section: 'feedback',
+      label: '重点邮箱配置',
+      icon: 'setting',
+    },
+  },
+  {
     path: '/notification/rules',
     componentKey: 'notificationRules',
     requiredPermission: 'notification.rule.manage',

@@ -41,7 +41,12 @@ import {
   updateFeedbackApi,
   updateFeedbackStatusApi,
 } from '../../api/feedback'
+import { getImportantEmailConfigApi } from '../../api/aiConfig'
 import { getDictItemsApi } from '../../api/configDict'
+import {
+  readImportantEmailConfigCache,
+  writeImportantEmailConfigCache,
+} from '../../utils/importantEmailConfig'
 
 const { TextArea, Search } = Input
 
@@ -69,6 +74,7 @@ const DEFAULT_CHANNEL_OPTIONS = ['邮件', '表单', '商店评论', '其他']
 const DUPLICATE_TIME_WINDOW_MINUTES = 5
 const DUPLICATE_TIME_WINDOW_MS = DUPLICATE_TIME_WINDOW_MINUTES * 60 * 1000
 const AI_CATEGORY_PREVIEW_CHARS = 10
+const IMPORTANT_EMAIL_TAB_KEY = '__important__'
 const STATUS_META = {
   pending: { label: '待处理', color: 'orange' },
   processed: { label: '已处理', color: 'green' },
@@ -169,6 +175,24 @@ function normalizeEmail(value) {
   return email
 }
 
+function buildImportantEmailMap(value) {
+  const list = Array.isArray(value) ? value : []
+  const map = new Map()
+
+  list.forEach((item) => {
+    const email = normalizeEmail(item?.email)
+    if (!email || item?.enabled === false) return
+    map.set(email, {
+      email,
+      style: String(item?.style || 'STAR').trim().toUpperCase(),
+      note: String(item?.note || '').trim(),
+      enabled: true,
+    })
+  })
+
+  return map
+}
+
 function toTimestamp(value) {
   const dateValue = dayjs(value)
   if (!dateValue.isValid()) return null
@@ -238,6 +262,7 @@ function FeedbackListPage() {
   const [rows, setRows] = useState([])
   const [dictProductNames, setDictProductNames] = useState(DEFAULT_PRODUCT_OPTIONS)
   const [dictChannelNames, setDictChannelNames] = useState(DEFAULT_CHANNEL_OPTIONS)
+  const [importantEmailRules, setImportantEmailRules] = useState(() => readImportantEmailConfigCache())
   const [aiAnalyzeLoading, setAiAnalyzeLoading] = useState(false)
   const [analyzingIds, setAnalyzingIds] = useState(new Set())
   const [mockInsertLoading, setMockInsertLoading] = useState(false)
@@ -276,9 +301,10 @@ function FeedbackListPage() {
 
     const loadDictOptions = async () => {
       try {
-        const [productResult, channelResult] = await Promise.all([
+        const [productResult, channelResult, importantEmailResult] = await Promise.all([
           getDictItemsApi('feedback_product', { enabledOnly: true }).catch(() => null),
           getDictItemsApi('feedback_channel', { enabledOnly: true }).catch(() => null),
+          getImportantEmailConfigApi().catch(() => null),
         ])
 
         if (!active) return
@@ -296,8 +322,11 @@ function FeedbackListPage() {
         if (channelNames.length > 0) {
           setDictChannelNames(channelNames)
         }
+        const nextImportantEmailRules = Array.isArray(importantEmailResult?.data) ? importantEmailResult.data : []
+        setImportantEmailRules(nextImportantEmailRules)
+        writeImportantEmailConfigCache(nextImportantEmailRules)
       } catch {
-        // keep fallback options
+        setImportantEmailRules(readImportantEmailConfigCache())
       }
     }
 
@@ -306,6 +335,11 @@ function FeedbackListPage() {
       active = false
     }
   }, [])
+
+  const importantEmailMap = useMemo(
+    () => buildImportantEmailMap(importantEmailRules),
+    [importantEmailRules],
+  )
 
   const fetchRows = useCallback(async (overrides = {}) => {
     const requestSeq = fetchSeqRef.current + 1
@@ -318,7 +352,8 @@ function FeedbackListPage() {
         page: current,
         pageSize,
         searchText: filters.searchText || undefined,
-        product: activeTab !== 'all' ? activeTab : undefined,
+        product: activeTab !== 'all' && activeTab !== IMPORTANT_EMAIL_TAB_KEY ? activeTab : undefined,
+        onlyImportantEmail: activeTab === IMPORTANT_EMAIL_TAB_KEY ? true : undefined,
         status: filters.status || undefined,
         isNewRequest: filters.isNewRequest,
         aiCategory: filters.aiCategory || undefined,
@@ -387,9 +422,11 @@ function FeedbackListPage() {
 
   const productTabs = useMemo(() => {
     const products = [...new Set([...(dictProductNames || []), ...PINNED_PRODUCT_OPTIONS].filter(Boolean))]
-    return [{ key: 'all', label: '全部' }].concat(
-      products.map((product) => ({ key: product, label: product })),
-    )
+    return [
+      { key: 'all', label: '全部' },
+      { key: IMPORTANT_EMAIL_TAB_KEY, label: '✨重点邮件' },
+      ...products.map((product) => ({ key: product, label: product })),
+    ]
   }, [dictProductNames])
 
   const groupedRows = useMemo(() => {
@@ -436,8 +473,9 @@ function FeedbackListPage() {
       ...item,
       _groupKey: groupKeys[index] || '',
       _groupCount: groupCounts[index] || 0,
+      _importantEmailMeta: importantEmailMap.get(normalizeEmail(item?.user_email)) || null,
     }))
-  }, [rows])
+  }, [importantEmailMap, rows])
 
   const productOptions = useMemo(
     () => [...new Set([...(dictProductNames || []), ...PINNED_PRODUCT_OPTIONS].filter(Boolean))],
@@ -827,11 +865,31 @@ function FeedbackListPage() {
       title: '用户邮箱',
       dataIndex: 'user_email',
       key: 'user_email',
-      width: 220,
+      width: 390,
       ellipsis: true,
-      render: (value) => (
-        <Space size={4}>
-          <span>{value || '-'}</span>
+      render: (value, record) => {
+        const importantMeta = record?._importantEmailMeta || null
+        const style = String(importantMeta?.style || '').trim().toUpperCase()
+        const isRed = style === 'RED' || style === 'RED_STAR'
+        const hasStar = style === 'STAR' || style === 'RED_STAR'
+
+        return (
+          <Space size={4} wrap>
+            <Tooltip title={importantMeta?.note || undefined}>
+              <span
+                style={{
+                  color: isRed ? '#be123c' : undefined,
+                  fontWeight: isRed ? 600 : 400,
+                }}
+              >
+                {value || '-'}
+              </span>
+            </Tooltip>
+            {hasStar ? (
+              <Tag color="gold" style={{ marginInlineEnd: 0 }}>
+                ✨重点
+              </Tag>
+            ) : null}
           {value ? (
             <Button
               type="text"
@@ -840,8 +898,9 @@ function FeedbackListPage() {
               onClick={() => handleCopy(value, '用户邮箱')}
             />
           ) : null}
-        </Space>
-      ),
+          </Space>
+        )
+      },
     },
     {
       title: '状态',
@@ -971,6 +1030,18 @@ function FeedbackListPage() {
         }
         .feedback-list-highlight-row:hover > td {
           background-color: #ffe7ba !important;
+        }
+        .feedback-list-important-row > td {
+          background-color: #fff1f0 !important;
+        }
+        .feedback-list-important-row:hover > td {
+          background-color: #ffe4e6 !important;
+        }
+        .feedback-list-highlight-row.feedback-list-important-row > td {
+          background: linear-gradient(90deg, #fff1f0 0%, #fff7e6 100%) !important;
+        }
+        .feedback-list-highlight-row.feedback-list-important-row:hover > td {
+          background: linear-gradient(90deg, #ffe4e6 0%, #ffe7ba 100%) !important;
         }
       `}</style>
 
@@ -1106,7 +1177,12 @@ function FeedbackListPage() {
               dataSource={groupedRows}
               columns={columns}
               scroll={{ x: 1500 }}
-              rowClassName={(record) => (record._groupCount >= 2 ? 'feedback-list-highlight-row' : '')}
+              rowClassName={(record) => {
+                const classNames = []
+                if (record?._groupCount >= 2) classNames.push('feedback-list-highlight-row')
+                if (record?._importantEmailMeta) classNames.push('feedback-list-important-row')
+                return classNames.join(' ')
+              }}
               pagination={{
                 current: pagination.current,
                 pageSize: pagination.pageSize,
@@ -1313,10 +1389,54 @@ function FeedbackListPage() {
             <div style={{ marginBottom: 12 }}>
               <h3>基本信息</h3>
               <p><strong>提交日期：</strong>{toDateTimeString(viewingRow.date) || '-'}</p>
-              <p><strong>用户邮箱：</strong>{viewingRow.user_email || '-'}</p>
+              <p>
+                <strong>用户邮箱：</strong>
+                <span
+                  style={{
+                    color:
+                      viewingRow?._importantEmailMeta?.style === 'RED' ||
+                      viewingRow?._importantEmailMeta?.style === 'RED_STAR'
+                        ? '#be123c'
+                        : undefined,
+                    fontWeight:
+                      viewingRow?._importantEmailMeta?.style === 'RED' ||
+                      viewingRow?._importantEmailMeta?.style === 'RED_STAR'
+                        ? 600
+                        : 400,
+                  }}
+                >
+                  {viewingRow.user_email || '-'}
+                </span>
+                {viewingRow?._importantEmailMeta?.style === 'STAR' ||
+                viewingRow?._importantEmailMeta?.style === 'RED_STAR' ? (
+                  <Tag color="gold" style={{ marginInlineStart: 8, marginInlineEnd: 0 }}>
+                    ✨重点
+                  </Tag>
+                ) : null}
+                {viewingRow?._importantEmailMeta?.note ? (
+                  <span style={{ marginInlineStart: 8, color: '#667085' }}>
+                    {viewingRow._importantEmailMeta.note}
+                  </span>
+                ) : null}
+              </p>
               <p><strong>邮件标题：</strong>{viewingRow.email_subject || '-'}</p>
               <p><strong>产品：</strong>{viewingRow.product || '-'}</p>
               <p><strong>反馈渠道：</strong>{viewingRow.channel || '-'}</p>
+              {viewingRow?._importantEmailMeta ? (
+                <p>
+                  <strong>重点标记：</strong>
+                  <Tag color="red" style={{ marginInlineStart: 0 }}>
+                    重点邮箱
+                  </Tag>
+                  <span style={{ color: '#667085' }}>
+                    {viewingRow._importantEmailMeta.style === 'RED'
+                      ? '标红'
+                      : viewingRow._importantEmailMeta.style === 'RED_STAR'
+                        ? '标红 + ✨展示'
+                        : '✨展示'}
+                  </span>
+                </p>
+              ) : null}
               <p>
                 <strong>状态：</strong>
                 <Tag color={viewingRow.status === 'processed' ? 'green' : 'orange'}>
