@@ -3828,8 +3828,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         message.error(result?.message || '重建需求评分任务失败')
         return
       }
-      const rebuilt = Boolean(result?.data?.rebuilt)
-      message.success(rebuilt ? '需求评分任务已重建' : result?.message || '需求评分任务已生成')
+      message.success(result?.message || '需求评分任务已生成')
     } catch (error) {
       message.error(error?.message || '重建需求评分任务失败')
     } finally {
@@ -3843,7 +3842,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     Modal.confirm({
       title: '确认重建需求评分任务？',
       content:
-        '系统会按当前需求参与角色重新生成评分任务。若该需求评分任务已有已提交评分，系统会阻止重建，避免覆盖已有评分数据。',
+        '系统会按当前需求参与角色重建评分任务。若该需求已存在已提交评分，系统会切换为安全补齐模式：只新增缺失的评分任务，不覆盖已提交数据。',
       okText: '确认重建',
       cancelText: '取消',
       okButtonProps: {
