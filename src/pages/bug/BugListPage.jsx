@@ -1844,6 +1844,7 @@ function BugListPage({
         title="新建Bug"
         submitText="创建"
         presentation="drawer"
+        assigneeScope="all"
         confirmLoading={submitting}
         onCancel={() => setCreateOpen(false)}
         onSubmit={async (values, extra) => {
