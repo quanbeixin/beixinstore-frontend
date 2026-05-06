@@ -1046,6 +1046,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const detailBasicAutoSaveInFlightRef = useRef(false)
   const detailBasicNextDelayRef = useRef(DETAIL_BASIC_AUTO_SAVE_DEBOUNCE_MS)
   const previousCreateTemplateIdRef = useRef(null)
+  const detailParticipantRolesRef = useRef(DEFAULT_DEMAND_PARTICIPANT_ROLES)
+  const detailParticipantRoleUserMapRef = useRef({})
+  const detailProjectManagerRef = useRef(undefined)
 
   const detailBasicDraft = useMemo(
     () =>
@@ -3029,6 +3032,18 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     detailBasicDraftRef.current = detailBasicDraft
   }, [detailBasicDraft])
 
+  useEffect(() => {
+    detailParticipantRolesRef.current = detailParticipantRoles
+  }, [detailParticipantRoles])
+
+  useEffect(() => {
+    detailParticipantRoleUserMapRef.current = detailParticipantRoleUserMap
+  }, [detailParticipantRoleUserMap])
+
+  useEffect(() => {
+    detailProjectManagerRef.current = detailProjectManager
+  }, [detailProjectManager])
+
   const saveDetailBasicDraft = useCallback(
     async ({ showValidationMessage = false, showSaveErrorToast = false } = {}) => {
       if (!detailDemand?.id || !canEditDemandRecord(detailDemand)) return false
@@ -3374,9 +3389,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const handleSaveDetailRoles = async () => {
     if (!detailDemand?.id || !canEditDemandRecord(detailDemand)) return
     const syncedDetailRolePayload = syncProjectManagerRoleMap(
-      detailParticipantRoles,
-      detailParticipantRoleUserMap,
-      detailProjectManager,
+      detailParticipantRolesRef.current,
+      detailParticipantRoleUserMapRef.current,
+      detailProjectManagerRef.current,
     )
     const normalizedDetailParticipantRoles = syncedDetailRolePayload.participantRoles
     const normalizedDetailRoleUserMap = syncedDetailRolePayload.participantRoleUserMap
@@ -3510,8 +3525,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     const normalizedRole = String(roleKey || '').trim().toUpperCase()
     if (!normalizedRole) return
     let nextProjectManagerId
+    let nextRoleUserMap = null
     setDetailParticipantRoleUserMap((prev) => {
-      const next = normalizeParticipantRoleUserMap(prev, detailParticipantRoles)
+      const next = normalizeParticipantRoleUserMap(prev, detailParticipantRolesRef.current)
       const normalizedUserIds = Array.from(
         new Set(
           (Array.isArray(userIds) ? userIds : [userIds])
@@ -3528,13 +3544,19 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       } else {
         next[normalizedRole] = nextUserIds
       }
+      nextRoleUserMap = next
+      detailParticipantRoleUserMapRef.current = next
       return next
     })
     if (normalizedRole === PROJECT_MANAGER_ROLE_KEY) {
       queueDetailBasicAutoSave('immediate')
+      detailProjectManagerRef.current = nextProjectManagerId
       setDetailProjectManager(nextProjectManagerId)
     }
-  }, [detailParticipantRoles, queueDetailBasicAutoSave])
+    if (nextRoleUserMap) {
+      detailParticipantRoleUserMapRef.current = nextRoleUserMap
+    }
+  }, [queueDetailBasicAutoSave])
 
   const handleSaveWorkflowNodeSchedule = async (payload = {}) => {
     if (!detailDemand?.id || !canManageWorkflow || !selectedWorkflowNode?.node_key) return false
