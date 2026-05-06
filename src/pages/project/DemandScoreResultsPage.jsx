@@ -148,6 +148,7 @@ function DemandScoreResultsPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detail, setDetail] = useState(null)
   const [detailExpandedRowKeys, setDetailExpandedRowKeys] = useState([])
+  const [demandSorter, setDemandSorter] = useState({ field: 'avg_final_score', order: null })
   const [rankingSorter, setRankingSorter] = useState({ field: 'avg_final_score', order: 'descend' })
   const thisWeekRange = useMemo(() => getWeekRange(0), [])
   const lastWeekRange = useMemo(() => getWeekRange(-1), [])
@@ -211,6 +212,12 @@ function DemandScoreResultsPage() {
     return { field, order }
   }, [rankingSorter])
 
+  const demandSortConfig = useMemo(() => {
+    const field = demandSorter?.field === 'avg_final_score' ? 'avg_final_score' : 'avg_final_score'
+    const order = demandSorter?.order === 'ascend' || demandSorter?.order === 'descend' ? demandSorter.order : null
+    return { field, order }
+  }, [demandSorter])
+
   useEffect(() => {
     if (activeTab === 'demands') {
       loadDemands({ page: 1 })
@@ -262,6 +269,9 @@ function DemandScoreResultsPage() {
       dataIndex: 'avg_final_score',
       key: 'avg_final_score',
       width: 110,
+      sorter: true,
+      sortDirections: ['descend', 'ascend'],
+      sortOrder: demandSortConfig.field === 'avg_final_score' ? demandSortConfig.order : null,
       render: formatScore,
     },
     {
@@ -457,6 +467,38 @@ function DemandScoreResultsPage() {
     }
     setRankingSorter({ field: 'avg_final_score', order: 'descend' })
   }, [])
+
+  const sortedDemandRows = useMemo(() => {
+    const sourceRows = Array.isArray(rows) ? rows : []
+    if (!demandSortConfig.order) return sourceRows
+    return [...sourceRows].sort((left, right) => {
+      const scoreCompare = compareByOrder(left?.avg_final_score, right?.avg_final_score, demandSortConfig.order)
+      if (scoreCompare !== 0) return scoreCompare
+      const completedAtCompare = compareByOrder(
+        dayjs(left?.demand_completed_at || '').valueOf(),
+        dayjs(right?.demand_completed_at || '').valueOf(),
+        'descend',
+      )
+      if (completedAtCompare !== 0) return completedAtCompare
+      return String(left?.demand_id || '').localeCompare(String(right?.demand_id || ''), 'zh-CN')
+    })
+  }, [demandSortConfig.order, rows])
+
+  const handleDemandTableChange = useCallback((nextPagination, _, sorter) => {
+    const normalizedSorter = Array.isArray(sorter) ? sorter[0] : sorter
+    const nextField = String(normalizedSorter?.field || normalizedSorter?.columnKey || '')
+    const nextOrder = normalizedSorter?.order
+    if (nextField === 'avg_final_score' && (nextOrder === 'ascend' || nextOrder === 'descend')) {
+      setDemandSorter({ field: 'avg_final_score', order: nextOrder })
+    } else if (nextField === 'avg_final_score') {
+      setDemandSorter({ field: 'avg_final_score', order: null })
+    }
+
+    loadDemands({
+      page: nextPagination.current,
+      pageSize: nextPagination.pageSize,
+    })
+  }, [loadDemands])
 
   const handleExport = useCallback(() => {
     if (activeTab === 'demands') {
@@ -745,15 +787,10 @@ function DemandScoreResultsPage() {
                   rowKey="id"
                   loading={loading}
                   columns={demandColumns}
-                  dataSource={rows}
+                  dataSource={sortedDemandRows}
                   locale={{ emptyText: <Empty description="暂无评分结果" /> }}
                   pagination={pagination}
-                  onChange={(nextPagination) => {
-                    loadDemands({
-                      page: nextPagination.current,
-                      pageSize: nextPagination.pageSize,
-                    })
-                  }}
+                  onChange={handleDemandTableChange}
                 />
               ),
             },

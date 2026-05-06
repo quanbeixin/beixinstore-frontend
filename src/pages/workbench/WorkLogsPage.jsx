@@ -143,8 +143,24 @@ const HISTORY_DATE_PRESET_OPTIONS = [
   { label: '自定义', value: 'CUSTOM' },
 ]
 const HISTORY_DIMENSION_OPTIONS = [
-  { label: '按时间', value: 'DATE' },
-  { label: '按事项', value: 'ITEM' },
+  {
+    label: (
+      <Space size={6} align="center">
+        <ClockCircleOutlined />
+        <span>按时间</span>
+      </Space>
+    ),
+    value: 'DATE',
+  },
+  {
+    label: (
+      <Space size={6} align="center">
+        <UnorderedListOutlined />
+        <span>按事项</span>
+      </Space>
+    ),
+    value: 'ITEM',
+  },
 ]
 const LOG_STATUS_FILTER_OPTIONS = [
   { label: '全部状态', value: 'ALL' },
@@ -2649,13 +2665,21 @@ function WorkLogs({ mode = 'dashboard' }) {
       render: (_, record) =>
         canUpdate ? (
           <Button
-            type="link"
+            type="default"
             size="small"
+            icon={toNumber(record?.entry_count, 0) > 0 ? <EditOutlined /> : <ClockCircleOutlined />}
             onClick={() => openDetailDayEntryModal(record)}
             disabled={String(record?.date || '').trim() > getTodayDateString()}
             style={{
               ...DETAIL_TIMELINE_ACTION_BUTTON_STYLE,
-              color: toNumber(record?.entry_count, 0) > 0 ? '#98a2b3' : '#b54708',
+              height: 28,
+              paddingInline: 10,
+              borderRadius: 999,
+              fontWeight: 600,
+              color: toNumber(record?.entry_count, 0) > 0 ? '#475467' : '#b54708',
+              border: toNumber(record?.entry_count, 0) > 0 ? '1px solid #d0d5dd' : '1px solid #f7b27a',
+              background: toNumber(record?.entry_count, 0) > 0 ? '#f8fafc' : '#fff7ed',
+              boxShadow: '0 1px 2px rgba(16, 24, 40, 0.06)',
             }}
           >
             {toNumber(record?.entry_count, 0) > 0 ? '调整日期/工时' : '补填投入'}
@@ -3562,11 +3586,21 @@ function WorkLogs({ mode = 'dashboard' }) {
                   }}
                 >
                   <Space wrap size={10}>
-                    <Text type="secondary">展示方式</Text>
+                    <Text strong style={{ color: '#24324a' }}>
+                      展示方式
+                    </Text>
                     <Segmented
+                      size="large"
                       value={historyDimension}
                       options={HISTORY_DIMENSION_OPTIONS}
                       onChange={handleHistoryDimensionChange}
+                      style={{
+                        background: 'linear-gradient(180deg, #f4f8ff 0%, #eaf1ff 100%)',
+                        border: '1px solid #cddcff',
+                        borderRadius: 14,
+                        padding: 4,
+                        boxShadow: '0 6px 18px rgba(45, 88, 186, 0.08), inset 0 1px 0 rgba(255,255,255,0.95)',
+                      }}
                     />
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       按时间视图可改当日投入；按事项视图可改事项信息，实际用时请在按日明细里维护
