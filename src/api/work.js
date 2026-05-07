@@ -452,7 +452,11 @@ export function getDepartmentEfficiencyDetailApi(params) {
 
 export function getDemandInsightApi(params) {
   const key = `insight-demand-${JSON.stringify(params || {})}`
-  return cachedRequest(key, () => request.get('/work/insight/demand', { params }), 1000)
+  return cachedRequest(
+    key,
+    () => request.get('/work/insight/demand', { params, timeout: 20000 }),
+    1000,
+  )
 }
 
 export function getMemberInsightApi(params) {

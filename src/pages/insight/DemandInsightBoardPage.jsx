@@ -601,6 +601,7 @@ function DemandInsightBoard() {
       dataIndex: 'total_actual_hours',
       key: 'total_actual_hours',
       width: 120,
+      sorter: (left, right) => toNumber(left?.total_actual_hours, 0) - toNumber(right?.total_actual_hours, 0),
       render: (value) => toNumber(value, 0).toFixed(1),
     },
     {
@@ -608,6 +609,7 @@ function DemandInsightBoard() {
       dataIndex: 'variance_owner_hours',
       key: 'variance_owner_hours',
       width: 150,
+      sorter: (left, right) => toNumber(left?.variance_owner_hours, 0) - toNumber(right?.variance_owner_hours, 0),
       render: (value) => (
         <span style={{ color: varianceColor(value) }}>{toNumber(value, 0).toFixed(1)}</span>
       ),
@@ -620,6 +622,7 @@ function DemandInsightBoard() {
       dataIndex: 'variance_owner_rate',
       key: 'variance_owner_rate',
       width: 110,
+      sorter: (left, right) => toNumber(left?.variance_owner_rate, -999999) - toNumber(right?.variance_owner_rate, -999999),
       render: (value) => {
         const rate = Number(value || 0)
         return <span style={{ color: varianceColor(rate) }}>{formatRate(value)}</span>
