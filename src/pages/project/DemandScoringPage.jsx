@@ -44,8 +44,8 @@ function renderTaskStatus(status) {
 
 function scoreHelpText(scoreValue) {
   const normalizedScore = Number(scoreValue)
-  if (Number.isFinite(normalizedScore) && normalizedScore < 80) {
-    return '评分低于 80 分时，需要填写评价说明。'
+  if (Number.isFinite(normalizedScore) && (normalizedScore < 70 || normalizedScore > 90)) {
+    return '评分低于 70 分、或高于 90 分时，需要填写评价说明。'
   }
   return '评分只对你本人可见，结果页仅展示按身份聚合后的结果。'
 }
@@ -419,8 +419,12 @@ function DemandScoringPage() {
                     ({ getFieldValue }) => ({
                       validator(_, value) {
                         const score = Number(getFieldValue('score'))
-                        if (Number.isFinite(score) && score < 80 && !String(value || '').trim()) {
-                          return Promise.reject(new Error('低于 80 分时需要填写评价说明'))
+                        if (
+                          Number.isFinite(score) &&
+                          (score < 70 || score > 90) &&
+                          !String(value || '').trim()
+                        ) {
+                          return Promise.reject(new Error('低于 70 分、或高于 90 分时需要填写评价说明'))
                         }
                         return Promise.resolve()
                       },

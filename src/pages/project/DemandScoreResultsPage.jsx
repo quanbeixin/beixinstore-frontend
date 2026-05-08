@@ -1,8 +1,10 @@
 import { DownloadOutlined, EyeOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, DatePicker, Empty, Input, Modal, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
+import { Button, Card, DatePicker, Empty, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { getDepartmentsApi } from '../../api/org'
 import { getDemandScoreResultDetailApi, getDemandScoreResultsApi, getDemandScoreTeamRankingApi } from '../../api/work'
+import { pinyinSelectFilter } from '../../utils/selectSearch'
 
 const { RangePicker } = DatePicker
 const { Text } = Typography
@@ -141,13 +143,18 @@ function DemandScoreResultsPage() {
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [rankingLoading, setRankingLoading] = useState(false)
+  const [departmentLoading, setDepartmentLoading] = useState(false)
   const [rows, setRows] = useState([])
   const [rankingRows, setRankingRows] = useState([])
+  const [departmentId, setDepartmentId] = useState()
+  const [departmentOptions, setDepartmentOptions] = useState([])
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detail, setDetail] = useState(null)
   const [detailExpandedRowKeys, setDetailExpandedRowKeys] = useState([])
+  const [detailFocus, setDetailFocus] = useState({ evaluateeUserId: null, evaluateeName: '' })
+  const [commentModal, setCommentModal] = useState({ open: false, record: null })
   const [demandSorter, setDemandSorter] = useState({ field: 'avg_final_score', order: null })
   const [rankingSorter, setRankingSorter] = useState({ field: 'avg_final_score', order: 'descend' })
   const thisWeekRange = useMemo(() => getWeekRange(0), [])
@@ -193,7 +200,10 @@ function DemandScoreResultsPage() {
   const loadRanking = useCallback(async () => {
     setRankingLoading(true)
     try {
-      const result = await getDemandScoreTeamRankingApi(dateParams)
+      const result = await getDemandScoreTeamRankingApi({
+        ...dateParams,
+        department_id: departmentId,
+      })
       if (!result?.success) {
         message.error(result?.message || '获取团队排行失败')
         return
@@ -204,7 +214,31 @@ function DemandScoreResultsPage() {
     } finally {
       setRankingLoading(false)
     }
-  }, [dateParams])
+  }, [dateParams, departmentId])
+
+  const loadDepartmentOptions = useCallback(async () => {
+    setDepartmentLoading(true)
+    try {
+      const result = await getDepartmentsApi({ mode: 'flat' })
+      if (!result?.success) {
+        message.error(result?.message || '获取部门列表失败')
+        return
+      }
+      const items = Array.isArray(result.data) ? result.data : []
+      setDepartmentOptions(
+        items
+          .map((item) => ({
+            value: Number(item?.id || 0),
+            label: String(item?.name || '').trim(),
+          }))
+          .filter((item) => item.value > 0 && item.label),
+      )
+    } catch (err) {
+      message.error(err?.message || '获取部门列表失败')
+    } finally {
+      setDepartmentLoading(false)
+    }
+  }, [])
 
   const rankingSortConfig = useMemo(() => {
     const field = RANKING_SORT_FIELDS.includes(rankingSorter?.field) ? rankingSorter.field : 'avg_final_score'
@@ -219,6 +253,10 @@ function DemandScoreResultsPage() {
   }, [demandSorter])
 
   useEffect(() => {
+    loadDepartmentOptions()
+  }, [loadDepartmentOptions])
+
+  useEffect(() => {
     if (activeTab === 'demands') {
       loadDemands({ page: 1 })
     } else {
@@ -226,10 +264,14 @@ function DemandScoreResultsPage() {
     }
   }, [activeTab, loadDemands, loadRanking])
 
-  const openDetail = async (record) => {
+  const openDetail = async (record, options = {}) => {
     setDetailOpen(true)
     setDetailExpandedRowKeys([])
     setDetail(null)
+    setDetailFocus({
+      evaluateeUserId: Number(options?.evaluateeUserId || 0) || null,
+      evaluateeName: String(options?.evaluateeName || '').trim(),
+    })
     setDetailLoading(true)
     try {
       const result = await getDemandScoreResultDetailApi(record.id)
@@ -244,6 +286,13 @@ function DemandScoreResultsPage() {
       setDetailLoading(false)
     }
   }
+
+  const openCommentModal = useCallback((record) => {
+    setCommentModal({
+      open: true,
+      record: record || null,
+    })
+  }, [])
 
   const demandColumns = [
     {
@@ -347,7 +396,12 @@ function DemandScoreResultsPage() {
             </Space>
           )
         }
-        return <Text strong>{record.evaluatee_name || '-'}</Text>
+        return (
+          <Space direction="vertical" size={2}>
+            <Text strong>{record.evaluatee_name || '-'}</Text>
+            <Text type="secondary">{record.department_name || '-'}</Text>
+          </Space>
+        )
       },
     },
     {
@@ -413,6 +467,28 @@ function DemandScoreResultsPage() {
       sortOrder: rankingSortConfig.field === 'avg_project_manager_score' ? rankingSortConfig.order : null,
       render: (_, record) => formatScore(record.row_type === 'demand' ? record.project_manager_score : record.avg_project_manager_score),
     },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (_, record) =>
+        record.row_type === 'demand' ? (
+          <Button
+            icon={<EyeOutlined />}
+            onClick={() =>
+              openDetail(
+                { id: record.task_id },
+                {
+                  evaluateeUserId: record.parent_evaluatee_user_id,
+                  evaluateeName: record.parent_evaluatee_name,
+                },
+              )
+            }
+          >
+            查看评价
+          </Button>
+        ) : '-',
+    },
   ]
 
   const rankingTreeData = useMemo(() => {
@@ -451,6 +527,8 @@ function DemandScoreResultsPage() {
         children: sortedChildren.map((item) => ({
           ...item,
           key: `member-${row.evaluatee_user_id}-task-${item.task_id}`,
+          parent_evaluatee_user_id: row.evaluatee_user_id,
+          parent_evaluatee_name: row.evaluatee_name,
           row_type: 'demand',
         })),
       }
@@ -540,12 +618,13 @@ function DemandScoreResultsPage() {
     }
 
     const exportRows = [
-      ['层级', '排名', '成员', '需求ID', '需求名称', '预期上线时间', '需求数', '综合得分', '需求负责人评分', '直属Owner评分', '协作方评分', '项目管理评分'],
+      ['层级', '排名', '部门', '成员', '需求ID', '需求名称', '预期上线时间', '需求数', '综合得分', '需求负责人评分', '直属Owner评分', '协作方评分', '项目管理评分'],
     ]
     rankingTreeData.forEach((member) => {
       exportRows.push([
         '成员汇总',
         member?.rank ?? '',
+        member?.department_name || '',
         member?.evaluatee_name || '',
         '',
         '',
@@ -561,6 +640,7 @@ function DemandScoreResultsPage() {
         exportRows.push([
           '需求明细',
           '',
+          member?.department_name || '',
           member?.evaluatee_name || '',
           item?.demand_id || '',
           item?.demand_name || '',
@@ -701,6 +781,23 @@ function DemandScoreResultsPage() {
       },
     },
     {
+      title: '评价说明',
+      key: 'comment_action',
+      width: 100,
+      render: (_, record) => {
+        if (record.row_type !== 'slot') return '-'
+        const comment = String(record.comment || '').trim()
+        if (!comment) return '-'
+        return (
+          <Button
+            type="text"
+            icon={<EyeOutlined />}
+            onClick={() => openCommentModal(record)}
+          />
+        )
+      },
+    },
+    {
       title: (
         <Space size={4}>
           <span>缺失评分身份</span>
@@ -720,20 +817,31 @@ function DemandScoreResultsPage() {
     },
   ]
 
-  const detailTreeData = useMemo(
-    () =>
-      (Array.isArray(detail?.subjects) ? detail.subjects : []).map((subject) => ({
-        ...subject,
-        key: `subject-${subject.id}`,
-        row_type: 'subject',
-        children: (Array.isArray(subject.slot_records) ? subject.slot_records : []).map((slot) => ({
-          ...slot,
-          key: `slot-${slot.id}`,
-          row_type: 'slot',
-        })),
+  const detailTreeData = useMemo(() => {
+    const subjects = Array.isArray(detail?.subjects) ? detail.subjects : []
+    const filteredSubjects = detailFocus.evaluateeUserId
+      ? subjects.filter((subject) => Number(subject?.evaluatee_user_id || 0) === Number(detailFocus.evaluateeUserId))
+      : subjects
+
+    return filteredSubjects.map((subject) => ({
+      ...subject,
+      key: `subject-${subject.id}`,
+      row_type: 'subject',
+      children: (Array.isArray(subject.slot_records) ? subject.slot_records : []).map((slot) => ({
+        ...slot,
+        key: `slot-${slot.id}`,
+        row_type: 'slot',
       })),
-    [detail],
-  )
+    }))
+  }, [detail, detailFocus.evaluateeUserId])
+
+  useEffect(() => {
+    if (!detailFocus.evaluateeUserId) return
+    const firstRow = Array.isArray(detailTreeData) ? detailTreeData[0] : null
+    if (firstRow?.key) {
+      setDetailExpandedRowKeys([firstRow.key])
+    }
+  }, [detailFocus.evaluateeUserId, detailTreeData])
 
   const toolbar = (
     <Card>
@@ -755,6 +863,20 @@ function DemandScoreResultsPage() {
             style={{ width: 260 }}
             onChange={(event) => setKeyword(event.target.value)}
             onSearch={() => loadDemands({ page: 1 })}
+          />
+        ) : null}
+        {activeTab === 'ranking' ? (
+          <Select
+            allowClear
+            showSearch
+            loading={departmentLoading}
+            value={departmentId}
+            placeholder="部门"
+            style={{ width: 220 }}
+            options={departmentOptions}
+            optionFilterProp="label"
+            filterOption={pinyinSelectFilter}
+            onChange={setDepartmentId}
           />
         ) : null}
         <Button
@@ -823,12 +945,14 @@ function DemandScoreResultsPage() {
         onCancel={() => {
           setDetailOpen(false)
           setDetailExpandedRowKeys([])
+          setDetailFocus({ evaluateeUserId: null, evaluateeName: '' })
         }}
         footer={
           <Button
             onClick={() => {
               setDetailOpen(false)
               setDetailExpandedRowKeys([])
+              setDetailFocus({ evaluateeUserId: null, evaluateeName: '' })
             }}
           >
             关闭
@@ -836,6 +960,11 @@ function DemandScoreResultsPage() {
         }
         width={1080}
       >
+        {detailFocus.evaluateeUserId ? (
+          <Card size="small" style={{ marginBottom: 12 }}>
+            <Text>{`当前仅展示 ${detailFocus.evaluateeName || '该成员'} 在这个需求下的各侧评分`}</Text>
+          </Card>
+        ) : null}
         <Table
           rowKey="key"
           loading={detailLoading}
@@ -848,6 +977,35 @@ function DemandScoreResultsPage() {
           pagination={false}
           locale={{ emptyText: <Empty description="暂无成员评分结果" /> }}
         />
+      </Modal>
+
+      <Modal
+        title="评价说明"
+        open={commentModal.open}
+        onCancel={() => setCommentModal({ open: false, record: null })}
+        footer={
+          <Button onClick={() => setCommentModal({ open: false, record: null })}>
+            关闭
+          </Button>
+        }
+        width={640}
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Text>{`评分人：${commentModal.record?.evaluator_name || '-'}`}</Text>
+          <Text>{`评分身份：${
+            Array.isArray(commentModal.record?.role_labels) && commentModal.record.role_labels.length > 0
+              ? commentModal.record.role_labels.join(' / ')
+              : '-'
+          }`}</Text>
+          <Text>{`评分项：${commentModal.record?.score_item_label || '-'}`}</Text>
+          <Text>{`分数：${formatScore(commentModal.record?.score)}`}</Text>
+          <Text>{`提交时间：${commentModal.record?.submitted_at || '-'}`}</Text>
+          <Card size="small" title="说明内容">
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
+              {commentModal.record?.comment || '-'}
+            </div>
+          </Card>
+        </Space>
       </Modal>
     </Space>
   )
