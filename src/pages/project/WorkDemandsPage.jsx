@@ -4277,7 +4277,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       {
         title: '节点排期',
         key: 'current_node_schedule',
-        width: 190,
+        width: 240,
         ellipsis: true,
         render: (_, record) => (record?.__group ? null : formatDemandNodeSchedule(record)),
       },
