@@ -2481,6 +2481,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   useEffect(() => {
     if (!modalOpen) return
     const normalizedRoles = normalizeParticipantRoles(modalParticipantRoles)
+    if (editingDemand && normalizedRoles.length === 0) return
     const templateDefaultRoles = modalShouldForceProjectManagerRole
       ? DEFAULT_DEMAND_PARTICIPANT_ROLES
       : RESEARCH_TEMPLATE_DEFAULT_PARTICIPANT_ROLES
