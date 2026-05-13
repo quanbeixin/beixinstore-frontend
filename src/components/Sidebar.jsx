@@ -88,6 +88,9 @@ function Sidebar({ collapsed = false }) {
   if (location.pathname.startsWith('/bugs/') && location.pathname !== '/bugs') {
     selectedKey = '/bugs'
   }
+  if (location.pathname.startsWith('/demand-value-reviews/') && location.pathname !== '/demand-value-reviews') {
+    selectedKey = '/demand-value-reviews'
+  }
 
   return (
     <Menu

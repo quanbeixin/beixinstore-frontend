@@ -1168,6 +1168,7 @@ function WorkLogs({ mode = 'dashboard' }) {
       if (!isHistoryPage) {
         setWorkbench(benchResult?.data || {})
       }
+
     } catch (error) {
       message.error(error?.message || '加载基础数据失败')
     } finally {

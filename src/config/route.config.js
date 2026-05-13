@@ -107,7 +107,7 @@ export const PRIVATE_ROUTES = [
     },
     menu: {
       section: 'workbench',
-      label: '我的工作台',
+      label: '今日工作台',
       icon: 'dashboard',
     },
   },
@@ -121,7 +121,7 @@ export const PRIVATE_ROUTES = [
     },
     menu: {
       section: 'workbench',
-      label: '我的指派事项',
+      label: '我指派任务',
       icon: 'dashboard',
     },
   },
@@ -135,7 +135,7 @@ export const PRIVATE_ROUTES = [
     },
     menu: {
       section: 'workbench',
-      label: '我的需求',
+      label: '我参与需求',
       icon: 'dashboard',
     },
   },
@@ -149,7 +149,7 @@ export const PRIVATE_ROUTES = [
     },
     menu: {
       section: 'workbench',
-      label: '待处理bug',
+      label: '待处理缺陷',
       icon: 'dashboard',
     },
   },
@@ -163,7 +163,21 @@ export const PRIVATE_ROUTES = [
     },
     menu: {
       section: 'workbench',
-      label: '需求评分',
+      label: '需求互评分',
+      icon: 'dashboard',
+    },
+  },
+  {
+    path: '/my-demand-value-reviews',
+    componentKey: 'myDemandValueReviews',
+    requiredPermission: 'workbench.view.self',
+    page: {
+      title: '待我复盘评价',
+      subtitle: '查看并提交我参与的需求价值复盘评价。',
+    },
+    menu: {
+      section: 'workbench',
+      label: '待复盘评价',
       icon: 'dashboard',
     },
   },
@@ -177,7 +191,7 @@ export const PRIVATE_ROUTES = [
     },
     menu: {
       section: 'workbench',
-      label: '加班记录',
+      label: '加班申请单',
       icon: 'dashboard',
     },
   },
@@ -228,7 +242,7 @@ export const PRIVATE_ROUTES = [
     },
     menu: {
       section: 'project',
-      label: '需求池',
+      label: '需求看板',
       icon: 'tool',
     },
   },
@@ -242,7 +256,7 @@ export const PRIVATE_ROUTES = [
     },
     menu: {
       section: 'project',
-      label: '上线计划表',
+      label: '上线排期',
       icon: 'tool',
     },
   },
@@ -262,6 +276,31 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/demand-value-reviews',
+    componentKey: 'demandValueReviews',
+    requiredPermission: 'demand.score.result.view',
+    requiredRoles: ['ADMIN', 'SUPER_ADMIN'],
+    page: {
+      title: '需求价值复盘',
+      subtitle: '管理员手动发起并维护已上线需求的价值复盘记录。',
+    },
+    menu: {
+      section: 'project',
+      label: '价值复盘',
+      icon: 'tool',
+    },
+  },
+  {
+    path: '/demand-value-reviews/:id',
+    componentKey: 'demandValueReviews',
+    requiredPermission: 'demand.score.result.view',
+    requiredRoles: ['ADMIN', 'SUPER_ADMIN'],
+    page: {
+      title: '需求价值复盘详情',
+      subtitle: '查看并维护单个需求的价值复盘详情。',
+    },
+  },
+  {
     path: '/human-gantt',
     componentKey: 'humanGantt',
     requiredPermission: null,
@@ -271,7 +310,7 @@ export const PRIVATE_ROUTES = [
     },
     menu: {
       section: 'project',
-      label: '人力甘特图',
+      label: '人力排期',
       icon: 'tool',
     },
   },
@@ -285,7 +324,7 @@ export const PRIVATE_ROUTES = [
     },
     menu: {
       section: 'project',
-      label: '项目模板',
+      label: '流程模板',
       icon: 'tool',
     },
   },
@@ -308,7 +347,7 @@ export const PRIVATE_ROUTES = [
     },
     menu: {
       section: 'project',
-      label: 'Bug管理',
+      label: '缺陷管理',
       icon: 'tool',
     },
   },
@@ -322,7 +361,7 @@ export const PRIVATE_ROUTES = [
     },
     menu: {
       section: 'project',
-      label: 'Bug流程配置中心',
+      label: '缺陷流程',
       icon: 'tool',
     },
   },

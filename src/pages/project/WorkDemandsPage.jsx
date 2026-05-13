@@ -74,6 +74,9 @@ import {
   updateDemandWorkflowTaskHoursApi,
   updateWorkDemandApi,
   updateWorkLogApi,
+  getDemandValueReviewMapApi,
+  initDemandValueReviewApi,
+  updateDemandValueReviewParticipantsApi,
 } from '../../api/work'
 import {
   DemandNodeInspector,
@@ -272,6 +275,7 @@ const DETAIL_LOG_FILTER_OPTIONS = [
 const DEMAND_DETAIL_TAB_STATE_KEY_PREFIX = 'work_demand_detail_tab_state'
 const DEMAND_GROUP_COLLAPSE_STATE_KEY_PREFIX = 'work_demands_group_collapsed_state'
 const DEMAND_LIST_SCROLL_RESTORE_KEY_PREFIX = 'work_demands_list_scroll_restore'
+const VALUE_REVIEW_LAUNCH_CUTOFF_DATE = '2026-05-01'
 const DEMAND_VIEW_VISIBILITY_OPTIONS = [
   { label: '仅自己可见', value: 'PRIVATE' },
   { label: '共享给他人', value: 'SHARED' },
@@ -549,6 +553,7 @@ function buildDetailBasicSnapshot(source = {}) {
     backend_tech_solution: String(source.backend_tech_solution || ''),
     code_branch: String(source.code_branch || ''),
     release_note: String(source.release_note || ''),
+    business_value_expectation: String(source.business_value_expectation || ''),
     group_chat_mode: normalizedGroupChatMode,
     group_chat_id: normalizedGroupChatId,
   }
@@ -573,6 +578,7 @@ function buildDetailBasicPayload(snapshot = {}, lastSavedSnapshot = null) {
     backend_tech_solution: snapshot.backend_tech_solution || null,
     code_branch: snapshot.code_branch || null,
     release_note: snapshot.release_note || null,
+    business_value_expectation: snapshot.business_value_expectation || null,
     group_chat_mode: snapshot.group_chat_mode || 'none',
     group_chat_id:
       snapshot.group_chat_mode === 'bind' || snapshot.group_chat_mode === 'auto'
@@ -880,6 +886,14 @@ function isDemandReleased(record) {
   return status === 'DONE'
 }
 
+function canShowValueReviewAction(record) {
+  if (!record || record.__group) return false
+  if (!isDemandReleased(record)) return false
+  const releaseDate = formatBeijingDate(record?.expected_release_date, '')
+  if (!releaseDate) return false
+  return releaseDate >= VALUE_REVIEW_LAUNCH_CUTOFF_DATE
+}
+
 function isLaunchPlanGroupBeforeToday(record) {
   if (!record?.__group) return false
   const releaseDate = formatBeijingDate(record?.expected_release_date, '')
@@ -924,6 +938,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const canUseProjectTemplates =
     canCreate || hasPermission('project.template.view') || hasPermission('project.template.manage')
   const canTransferOwner = hasPermission('demand.transfer_owner') || hasRole('ADMIN')
+  const canManageDemandValueReview = hasPermission('demand.score.result.view') && (hasRole('ADMIN') || hasRole('SUPER_ADMIN'))
   const canViewSelfLogs = hasPermission('worklog.view.self')
   const canViewTeamLogs = hasPermission('worklog.view.team')
   const canViewWorkflow = hasPermission('demand.workflow.view') || hasPermission('demand.view')
@@ -991,6 +1006,12 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [saveViewModalOpen, setSaveViewModalOpen] = useState(false)
   const [feishuChatOptionsLoading, setFeishuChatOptionsLoading] = useState(false)
   const [feishuChatOptions, setFeishuChatOptions] = useState([])
+  const [valueReviewMap, setValueReviewMap] = useState({})
+  const [valueReviewActionLoading, setValueReviewActionLoading] = useState({})
+  const [valueReviewParticipantModalOpen, setValueReviewParticipantModalOpen] = useState(false)
+  const [valueReviewParticipantModalSubmitting, setValueReviewParticipantModalSubmitting] = useState(false)
+  const [valueReviewTargetDemand, setValueReviewTargetDemand] = useState(null)
+  const [valueReviewParticipantUserIds, setValueReviewParticipantUserIds] = useState([])
 
   const [detailPageLoading, setDetailPageLoading] = useState(false)
   const [detailDemand, setDetailDemand] = useState(null)
@@ -1018,6 +1039,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [detailBackendTechSolution, setDetailBackendTechSolution] = useState('')
   const [detailCodeBranch, setDetailCodeBranch] = useState('')
   const [detailReleaseNote, setDetailReleaseNote] = useState('')
+  const [detailBusinessValueExpectation, setDetailBusinessValueExpectation] = useState('')
   const [detailGroupChatMode, setDetailGroupChatMode] = useState('none')
   const [detailGroupChatId, setDetailGroupChatId] = useState(undefined)
   const [workflowLoading, setWorkflowLoading] = useState(false)
@@ -1067,6 +1089,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         backend_tech_solution: detailBackendTechSolution,
         code_branch: detailCodeBranch,
         release_note: detailReleaseNote,
+        business_value_expectation: detailBusinessValueExpectation,
         group_chat_mode: detailGroupChatMode,
         group_chat_id: detailGroupChatId,
       }),
@@ -1084,6 +1107,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       detailName,
       detailProjectManager,
       detailReleaseNote,
+      detailBusinessValueExpectation,
       detailStatus,
       detailTemplateId,
       detailTestCaseLink,
@@ -1294,6 +1318,8 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
     return Array.from(map.values()).sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-CN'))
   }, [users, demands, currentUser])
+
+  const valueReviewParticipantOptions = useMemo(() => ownerOptions, [ownerOptions])
 
   const workflowAssigneeOptions = useMemo(() => {
     const map = new Map()
@@ -2020,6 +2046,39 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     scopeFilter,
   ])
 
+  const loadDemandValueReviewMap = useCallback(
+    async (demandList = []) => {
+      if (!isLaunchPlanPage || !canManageDemandValueReview) {
+        setValueReviewMap({})
+        return
+      }
+      const demandIds = Array.from(
+        new Set(
+          (Array.isArray(demandList) ? demandList : [])
+            .map((item) => String(item?.id || '').trim().toUpperCase())
+            .filter(Boolean),
+        ),
+      )
+      if (demandIds.length === 0) {
+        setValueReviewMap({})
+        return
+      }
+      try {
+        const result = await getDemandValueReviewMapApi({
+          demand_ids: demandIds.join(','),
+        })
+        if (!result?.success) {
+          setValueReviewMap({})
+          return
+        }
+        setValueReviewMap(result?.data || {})
+      } catch {
+        setValueReviewMap({})
+      }
+    },
+    [canManageDemandValueReview, isLaunchPlanPage],
+  )
+
   const setViewQueryParam = useCallback(
     (viewId, { replace = true } = {}) => {
       const params = new URLSearchParams(location.search || '')
@@ -2167,6 +2226,84 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     if (isDetailPage) return
     loadDemands()
   }, [isDetailPage, loadDemands])
+
+  useEffect(() => {
+    loadDemandValueReviewMap(demands)
+  }, [demands, loadDemandValueReviewMap])
+
+  const isValueReviewActionLoading = useCallback(
+    (demandId) => Boolean(valueReviewActionLoading[String(demandId || '').trim().toUpperCase()]),
+    [valueReviewActionLoading],
+  )
+
+  const handleOpenStartDemandValueReview = useCallback((record) => {
+    const demandId = String(record?.id || '').trim().toUpperCase()
+    if (!demandId) return
+    setValueReviewTargetDemand(record)
+    const review = valueReviewMap[demandId]
+    if (Array.isArray(review?.participants) && review.participants.length > 0) {
+      setValueReviewParticipantUserIds(
+        review.participants
+          .map((item) => Number(item?.user_id))
+          .filter((item) => Number.isInteger(item) && item > 0),
+      )
+    } else {
+      const fallbackOwnerId = Number(record?.owner_user_id)
+      setValueReviewParticipantUserIds(
+        Number.isInteger(fallbackOwnerId) && fallbackOwnerId > 0 ? [fallbackOwnerId] : [],
+      )
+    }
+    setValueReviewParticipantModalOpen(true)
+  }, [valueReviewMap])
+
+  const handleSubmitDemandValueReviewParticipants = useCallback(async () => {
+    const demandId = String(valueReviewTargetDemand?.id || '').trim().toUpperCase()
+    if (!demandId) return
+    const participantUserIds = Array.from(
+      new Set(
+        (Array.isArray(valueReviewParticipantUserIds) ? valueReviewParticipantUserIds : [])
+          .map((item) => Number(item))
+          .filter((item) => Number.isInteger(item) && item > 0),
+      ),
+    )
+    if (participantUserIds.length === 0) {
+      message.warning('请至少选择一位复盘参与人')
+      return
+    }
+    setValueReviewParticipantModalSubmitting(true)
+    setValueReviewActionLoading((prev) => ({ ...prev, [demandId]: true }))
+    try {
+      const existingReview = valueReviewMap[demandId]
+      let result = null
+      if (existingReview?.id) {
+        result = await updateDemandValueReviewParticipantsApi(existingReview.id, {
+          participant_user_ids: participantUserIds,
+        })
+      } else {
+        result = await initDemandValueReviewApi(demandId, {
+          participant_user_ids: participantUserIds,
+        })
+      }
+      if (!result?.success) {
+        message.error(result?.message || '发起复盘失败')
+        return
+      }
+      message.success(existingReview?.id ? '复盘参与人已更新' : '已加入待复盘列表')
+      setValueReviewParticipantModalOpen(false)
+      setValueReviewTargetDemand(null)
+      setValueReviewParticipantUserIds([])
+      await loadDemandValueReviewMap(demands)
+    } catch (error) {
+      message.error(error?.message || '发起复盘失败')
+    } finally {
+      setValueReviewParticipantModalSubmitting(false)
+      setValueReviewActionLoading((prev) => {
+        const next = { ...prev }
+        delete next[demandId]
+        return next
+      })
+    }
+  }, [demands, loadDemandValueReviewMap, valueReviewMap, valueReviewParticipantUserIds, valueReviewTargetDemand])
 
   const loadDemandAgentOptions = useCallback(async () => {
     if (isDetailPage || isMyDemandsPage || !canUseDemandPoolAnalysis) {
@@ -2340,6 +2477,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       backend_tech_solution: '',
       code_branch: '',
       release_note: '',
+      business_value_expectation: '',
       group_chat_mode: 'none',
       group_chat_id: undefined,
       business_group_code: undefined,
@@ -2400,6 +2538,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         backend_tech_solution: latestRecord.backend_tech_solution || '',
         code_branch: latestRecord.code_branch || '',
         release_note: latestRecord.release_note || '',
+        business_value_expectation: latestRecord.business_value_expectation || '',
         group_chat_mode: latestRecord.group_chat_mode || 'none',
         group_chat_id: normalizeFeishuChatId(latestRecord.group_chat_id) || undefined,
         business_group_code: latestRecord.business_group_code || undefined,
@@ -2551,6 +2690,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         backend_tech_solution: values.backend_tech_solution || null,
         code_branch: values.code_branch || null,
         release_note: values.release_note || null,
+        business_value_expectation: values.business_value_expectation || null,
         group_chat_mode: values.group_chat_mode || 'none',
         group_chat_id:
           values.group_chat_mode === 'bind' || values.group_chat_mode === 'auto'
@@ -2595,7 +2735,17 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       closeModal()
       loadDemands()
     } catch (error) {
-      if (!error?.errorFields) {
+      if (Array.isArray(error?.errorFields) && error.errorFields.length > 0) {
+        const firstError = error.errorFields[0]
+        const firstMessage =
+          Array.isArray(firstError?.errors) && firstError.errors.length > 0
+            ? firstError.errors[0]
+            : '请完善必填信息后再保存'
+        message.warning(firstMessage)
+        if (firstError?.name) {
+          form.scrollToField(firstError.name)
+        }
+      } else {
         message.error(error?.message || '提交失败')
       }
     } finally {
@@ -2748,6 +2898,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setDetailTestCaseLink('')
     setDetailFrontendTechSolution('')
     setDetailBackendTechSolution('')
+    setDetailBusinessValueExpectation('')
     setDetailTabKey('basic')
     setWorkflowData(null)
     setWorkflowWarning('')
@@ -2821,6 +2972,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setDetailTestCaseLink('')
     setDetailFrontendTechSolution('')
     setDetailBackendTechSolution('')
+    setDetailBusinessValueExpectation('')
     setDetailTabKey('basic')
     setWorkflowData(null)
     setWorkflowWarning('')
@@ -2913,6 +3065,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setDetailBackendTechSolution('')
       setDetailCodeBranch('')
       setDetailReleaseNote('')
+      setDetailBusinessValueExpectation('')
       setDetailGroupChatMode('none')
       setDetailGroupChatId(undefined)
       return
@@ -2933,6 +3086,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       backend_tech_solution: detailDemand.backend_tech_solution || '',
       code_branch: detailDemand.code_branch || '',
       release_note: detailDemand.release_note || '',
+      business_value_expectation: detailDemand.business_value_expectation || '',
       group_chat_mode: detailDemand.group_chat_mode || 'none',
       group_chat_id: normalizeFeishuChatId(detailDemand.group_chat_id) || undefined,
     })
@@ -2953,6 +3107,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setDetailBackendTechSolution(detailDemand.backend_tech_solution || '')
       setDetailCodeBranch(detailDemand.code_branch || '')
       setDetailReleaseNote(detailDemand.release_note || '')
+      setDetailBusinessValueExpectation(detailDemand.business_value_expectation || '')
       setDetailGroupChatMode(detailDemand.group_chat_mode || 'none')
       setDetailGroupChatId(normalizeFeishuChatId(detailDemand.group_chat_id) || undefined)
       if (!canEditDemandRecord(detailDemand)) {
@@ -3113,6 +3268,16 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         })
         if (showValidationMessage) {
           message.warning('请选择业务组')
+        }
+        return false
+      }
+      if (!String(snapshot?.business_value_expectation || '').trim()) {
+        setDetailBasicAutoSaveState({
+          status: 'error',
+          text: '未保存：请填写需求业务价值预期',
+        })
+        if (showValidationMessage) {
+          message.warning('请填写需求业务价值预期')
         }
         return false
       }
@@ -4406,7 +4571,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     columns.push({
       title: '操作',
       key: 'action',
-      width: canTransferOwner ? 280 : 180,
+      width: canTransferOwner ? 420 : 320,
       fixed: 'right',
       render: (_, record) => (record?.__group ? null : (
         <Space size={2}>
@@ -4452,6 +4617,21 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               </Button>
             </Popconfirm>
           ) : null}
+          {isLaunchPlanPage && canManageDemandValueReview && canShowValueReviewAction(record) ? (
+            (() => {
+              const demandId = String(record?.id || '').trim().toUpperCase()
+              const review = valueReviewMap[demandId] || null
+              return (
+                <Button
+                  type="link"
+                  loading={isValueReviewActionLoading(demandId)}
+                  onClick={() => handleOpenStartDemandValueReview(record)}
+                >
+                  {review?.id ? '维护复盘' : '发起复盘'}
+                </Button>
+              )
+            })()
+          ) : null}
         </Space>
       )),
     })
@@ -4470,6 +4650,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     handleQuickFieldSave,
     handleQuickStatusUpdate,
     handleDeleteDemand,
+    canManageDemandValueReview,
+    handleOpenStartDemandValueReview,
+    isValueReviewActionLoading,
+    valueReviewMap,
   ])
 
   const handleExportDemands = useCallback(() => {
@@ -4901,6 +5085,13 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           <Form.Item label="需求名称" name="name" rules={[{ required: true, message: '请输入需求名称' }]}>
             <Input maxLength={200} placeholder="请输入需求名称" />
           </Form.Item>
+          <Form.Item
+            label="需求业务价值预期"
+            name="business_value_expectation"
+            rules={editingDemand ? [] : [{ required: true, message: '请输入需求业务价值预期' }]}
+          >
+            <Input.TextArea rows={3} maxLength={2000} placeholder="请填写该需求预期带来的业务价值" />
+          </Form.Item>
 
           <Form.Item
             label="需求负责人"
@@ -5316,6 +5507,17 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               onBlur={flushDetailBasicAutoSave}
                             />
                           </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">需求业务价值预期</Text>
+                            <Input.TextArea
+                              value={detailBusinessValueExpectation}
+                              rows={3}
+                              maxLength={2000}
+                              placeholder="请填写该需求预期带来的业务价值"
+                              onChange={(event) => setDetailBusinessValueExpectation(event.target.value)}
+                              onBlur={flushDetailBasicAutoSave}
+                            />
+                          </div>
                           <div className="work-demand-detail__field">
                             <Text type="secondary">状态</Text>
                             <Select
@@ -5608,7 +5810,77 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                             />
                           </div>
                         </div>
-                      ) : null}
+                      ) : (
+                        <div className="work-demand-detail__form-grid">
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">需求名称</Text>
+                            <Input value={detailDemand.name || '-'} readOnly />
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">需求业务价值预期</Text>
+                            <Input.TextArea value={detailDemand.business_value_expectation || '-'} readOnly rows={3} />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">状态</Text>
+                            <Input value={getStatusLabel(detailDemand.status) || '-'} readOnly />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">需求模板</Text>
+                            <Input value={detailDemand.template_name || '-'} readOnly />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">需求负责人</Text>
+                            <Input
+                              value={detailDemand.owner_name || (detailDemand.owner_user_id ? `用户${detailDemand.owner_user_id}` : '-')}
+                              readOnly
+                            />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">项目管理</Text>
+                            <Input value={detailDemand.project_manager_name || '-'} readOnly />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">业务组</Text>
+                            <Input value={detailDemand.business_group_name || detailDemand.business_group_code || '-'} readOnly />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">健康度</Text>
+                            <Input value={getHealthLabel(detailDemand.health_status) || '-'} readOnly />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">预期上线</Text>
+                            <Input value={detailDemand.expected_release_date || '-'} readOnly />
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">PRD 链接 & 产品方案</Text>
+                            <Input value={detailDemand.doc_link || '-'} readOnly />
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">UI设计稿地址</Text>
+                            <Input value={detailDemand.ui_design_link || '-'} readOnly />
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">测试用例CASE地址</Text>
+                            <Input value={detailDemand.test_case_link || '-'} readOnly />
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">前端技术方案</Text>
+                            <Input.TextArea value={detailDemand.frontend_tech_solution || '-'} readOnly rows={4} />
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">后端技术方案</Text>
+                            <Input.TextArea value={detailDemand.backend_tech_solution || '-'} readOnly rows={4} />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">代码分支（选填）</Text>
+                            <Input value={detailDemand.code_branch || '-'} readOnly />
+                          </div>
+                          <div className="work-demand-detail__field work-demand-detail__field--full">
+                            <Text type="secondary">备注信息（上线表）</Text>
+                            <Input.TextArea value={detailDemand.release_note || '-'} readOnly rows={3} />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ),
                 },
@@ -5830,6 +6102,41 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           )}
         </Card>
       ) : null}
+
+      <Modal
+        title={valueReviewMap[String(valueReviewTargetDemand?.id || '').trim().toUpperCase()]?.id ? '维护复盘参与人' : '发起复盘'}
+        open={valueReviewParticipantModalOpen}
+        onCancel={() => {
+          if (valueReviewParticipantModalSubmitting) return
+          setValueReviewParticipantModalOpen(false)
+          setValueReviewTargetDemand(null)
+          setValueReviewParticipantUserIds([])
+        }}
+        onOk={handleSubmitDemandValueReviewParticipants}
+        okText="确认"
+        confirmLoading={valueReviewParticipantModalSubmitting}
+        destroyOnHidden
+      >
+        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+          <Text type="secondary">
+            {valueReviewTargetDemand?.name
+              ? `需求：${valueReviewTargetDemand.name}`
+              : '请选择复盘参与人，参与人将收到待我复盘评价任务'}
+          </Text>
+          <Select
+            mode="multiple"
+            allowClear
+            showSearch
+            value={valueReviewParticipantUserIds}
+            onChange={(next) => setValueReviewParticipantUserIds(Array.isArray(next) ? next : [])}
+            options={valueReviewParticipantOptions}
+            filterOption={pinyinSelectFilter}
+            optionFilterProp="label"
+            placeholder="请选择复盘参与人"
+            style={{ width: '100%' }}
+          />
+        </Space>
+      </Modal>
 
       <Modal
         title="保存需求池视图"

@@ -28,6 +28,7 @@ const MemberEfficiencyDetail = lazy(() => import('./pages/insight/MemberEfficien
 const WorkDemands = lazy(() => import('./pages/project/WorkDemandsPage'))
 const DemandScoring = lazy(() => import('./pages/project/DemandScoringPage'))
 const DemandScoreResults = lazy(() => import('./pages/project/DemandScoreResultsPage'))
+const DemandValueReviews = lazy(() => import('./pages/project/DemandValueReviewsPage'))
 const LaunchPlan = lazy(() => import('./pages/project/LaunchPlanPage'))
 const HumanGantt = lazy(() => import('./pages/project/HumanGanttPage'))
 const ProjectTemplates = lazy(() => import('./pages/project/ProjectTemplatesPage'))
@@ -35,6 +36,7 @@ const ProjectTemplateDetail = lazy(() => import('./pages/project/ProjectTemplate
 const NotificationConfig = lazy(() => import('./pages/project/NotificationConfigPage'))
 const NotificationRules = lazy(() => import('./pages/notification/NotificationRulesPage'))
 const WorkLogs = lazy(() => import('./pages/workbench/WorkLogsPage'))
+const MyDemandValueReviews = lazy(() => import('./pages/workbench/MyDemandValueReviewsPage'))
 const MyDemands = lazy(() => import('./pages/workbench/MyDemandsPage'))
 const MyPendingBugs = lazy(() => import('./pages/workbench/MyPendingBugsPage'))
 const MyOvertimeRecords = lazy(() => import('./pages/workbench/MyOvertimeRecordsPage'))
@@ -96,7 +98,9 @@ const PAGE_COMPONENTS = {
   workDemands: WorkDemands,
   demandScoring: DemandScoring,
   demandScoreResults: DemandScoreResults,
+  demandValueReviews: DemandValueReviews,
   workLogs: WorkLogs,
+  myDemandValueReviews: MyDemandValueReviews,
   myDemands: MyDemands,
   myPendingBugs: MyPendingBugs,
   myOvertimeRecords: MyOvertimeRecords,

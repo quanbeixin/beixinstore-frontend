@@ -101,6 +101,58 @@ export function getDemandScoreTeamRankingApi(params) {
   return request.get('/work/demand-score-results/ranking', { params })
 }
 
+export function initDemandValueReviewApi(demandId, payload = {}) {
+  return request.post(`/work/demand-value-reviews/demands/${encodeURIComponent(demandId)}/init`, payload)
+}
+
+export function updateDemandValueReviewParticipantsApi(reviewId, payload = {}) {
+  return request.put(`/work/demand-value-reviews/${reviewId}/participants`, payload)
+}
+
+export function getDemandValueReviewByDemandIdApi(demandId) {
+  return request.get(`/work/demand-value-reviews/by-demand/${encodeURIComponent(demandId)}`)
+}
+
+export function getDemandValueReviewMapApi(params) {
+  return request.get('/work/demand-value-reviews/map', { params })
+}
+
+export function getDemandValueReviewsApi(params) {
+  return request.get('/work/demand-value-reviews', { params })
+}
+
+export function getDemandValueReviewDetailApi(reviewId) {
+  return request.get(`/work/demand-value-reviews/${reviewId}`)
+}
+
+export function updateDemandValueReviewApi(reviewId, payload) {
+  return request.put(`/work/demand-value-reviews/${reviewId}`, payload)
+}
+
+export function submitDemandValueReviewApi(reviewId, payload) {
+  return request.post(`/work/demand-value-reviews/${reviewId}/submit`, payload)
+}
+
+export function skipDemandValueReviewApi(reviewId, payload) {
+  return request.post(`/work/demand-value-reviews/${reviewId}/skip`, payload)
+}
+
+export function unskipDemandValueReviewApi(reviewId) {
+  return request.post(`/work/demand-value-reviews/${reviewId}/unskip`)
+}
+
+export function getMyPendingDemandValueReviewsApi(params) {
+  return request.get('/work/demand-value-reviews/my/pending', { params })
+}
+
+export function getMyDemandValueReviewDetailApi(reviewId) {
+  return request.get(`/work/demand-value-reviews/my/${reviewId}`)
+}
+
+export function submitMyDemandValueReviewApi(reviewId, payload) {
+  return request.post(`/work/demand-value-reviews/my/${reviewId}/submit`, payload)
+}
+
 export function getWorkDemandsApi(params) {
   const key = `demands-${JSON.stringify(params)}`
   return cachedRequest(key, () => request.get('/work/demands', { params }))
