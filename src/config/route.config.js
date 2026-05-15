@@ -278,8 +278,7 @@ export const PRIVATE_ROUTES = [
   {
     path: '/demand-value-reviews',
     componentKey: 'demandValueReviews',
-    requiredPermission: 'demand.score.result.view',
-    requiredRoles: ['ADMIN', 'SUPER_ADMIN'],
+    requiredPermission: 'workbench.view.self',
     page: {
       title: '需求价值复盘',
       subtitle: '管理员手动发起并维护已上线需求的价值复盘记录。',
@@ -293,8 +292,7 @@ export const PRIVATE_ROUTES = [
   {
     path: '/demand-value-reviews/:id',
     componentKey: 'demandValueReviews',
-    requiredPermission: 'demand.score.result.view',
-    requiredRoles: ['ADMIN', 'SUPER_ADMIN'],
+    requiredPermission: 'workbench.view.self',
     page: {
       title: '需求价值复盘详情',
       subtitle: '查看并维护单个需求的价值复盘详情。',

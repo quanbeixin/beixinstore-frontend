@@ -388,19 +388,6 @@ export function canAccessRoute(route) {
   if (menuKey === '/owner-workbench') {
     if (access?.is_department_manager) return true
   }
-  if (menuKey === '/demand-value-reviews') {
-    const roleKeys = Array.isArray(access?.role_keys) ? access.role_keys : []
-    if (access?.is_super_admin || roleKeys.includes('ADMIN')) return true
-  }
-  if (menuKey === '/my-demand-value-reviews') {
-    const roleKeys = Array.isArray(access?.role_keys) ? access.role_keys : []
-    const accessMap = getMenuVisibilityAccessMap()
-    if (Object.prototype.hasOwnProperty.call(accessMap, menuKey)) {
-      return Boolean(accessMap[menuKey])
-    }
-    return Boolean(access?.is_super_admin || roleKeys.includes('ADMIN'))
-  }
-
   const accessMap = getMenuVisibilityAccessMap()
   if (Object.prototype.hasOwnProperty.call(accessMap, menuKey)) {
     return Boolean(accessMap[menuKey])

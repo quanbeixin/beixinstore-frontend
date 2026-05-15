@@ -28,6 +28,7 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
+  deleteDemandValueReviewApi,
   getDemandValueReviewDetailApi,
   getDemandValueReviewsApi,
   skipDemandValueReviewApi,
@@ -37,6 +38,7 @@ import {
   updateDemandValueReviewApi,
 } from '../../api/work'
 import { getUsersApi } from '../../api/users'
+import { getAccessSnapshot } from '../../utils/access'
 import { formatBeijingDate, formatBeijingDateTime } from '../../utils/datetime'
 
 const { Search } = Input
@@ -74,6 +76,12 @@ function DemandValueReviewsPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const params = useParams()
+  const isAdmin = useMemo(() => {
+    const access = getAccessSnapshot() || {}
+    if (access?.is_super_admin) return true
+    const roleKeys = Array.isArray(access?.role_keys) ? access.role_keys : []
+    return roleKeys.includes('ADMIN')
+  }, [])
   const [form] = Form.useForm()
   const [skipForm] = Form.useForm()
   const [loading, setLoading] = useState(false)
@@ -89,6 +97,7 @@ function DemandValueReviewsPage() {
   const [skipModalOpen, setSkipModalOpen] = useState(false)
   const [participantOptions, setParticipantOptions] = useState([])
   const [participantUserIds, setParticipantUserIds] = useState([])
+  const [deletingReviewId, setDeletingReviewId] = useState(0)
 
   const reviewIdFromRoute = useMemo(() => {
     const reviewId = Number(params?.id || 0)
@@ -132,8 +141,16 @@ function DemandValueReviewsPage() {
   )
 
   useEffect(() => {
+    if (isAdmin) return
+    if (location.pathname.startsWith('/my-demand-value-reviews')) return
+    message.info('当前账号进入“待我复盘评价”')
+    navigate('/my-demand-value-reviews', { replace: true })
+  }, [isAdmin, location.pathname, navigate])
+
+  useEffect(() => {
+    if (!isAdmin) return
     loadRows({ page: 1, pageSize: pagination.pageSize })
-  }, [loadRows, pagination.pageSize])
+  }, [isAdmin, loadRows, pagination.pageSize])
 
   useEffect(() => {
     let cancelled = false
@@ -190,13 +207,14 @@ function DemandValueReviewsPage() {
   }, [form])
 
   useEffect(() => {
+    if (!isAdmin) return
     if (!reviewIdFromRoute) {
       setActiveDetail(null)
       setActiveReviewId(null)
       return
     }
     loadDetail(reviewIdFromRoute)
-  }, [loadDetail, reviewIdFromRoute])
+  }, [isAdmin, loadDetail, reviewIdFromRoute])
 
   const handleSaveDraft = useCallback(async () => {
     if (!activeReviewId) return
@@ -318,6 +336,33 @@ function DemandValueReviewsPage() {
     }
   }, [activeReviewId, loadDetail, loadRows, pagination.current, pagination.pageSize, participantUserIds])
 
+  const handleDeleteReview = useCallback(
+    async (reviewId) => {
+      const normalizedReviewId = Number(reviewId || 0)
+      if (!Number.isInteger(normalizedReviewId) || normalizedReviewId <= 0) return
+      setDeletingReviewId(normalizedReviewId)
+      try {
+        const result = await deleteDemandValueReviewApi(normalizedReviewId)
+        if (!result?.success) {
+          message.error(result?.message || '删除复盘失败')
+          return
+        }
+        message.success(result?.message || '复盘任务已删除')
+        if (reviewIdFromRoute === normalizedReviewId || activeReviewId === normalizedReviewId) {
+          setActiveDetail(null)
+          setActiveReviewId(null)
+          navigate('/demand-value-reviews', { replace: true })
+        }
+        await loadRows({ page: pagination.current, pageSize: pagination.pageSize })
+      } catch (error) {
+        message.error(error?.message || '删除复盘失败')
+      } finally {
+        setDeletingReviewId(0)
+      }
+    },
+    [activeReviewId, loadRows, navigate, pagination.current, pagination.pageSize, reviewIdFromRoute],
+  )
+
   const activeStatus = String(activeDetail?.status || '').toUpperCase()
   const canEdit = activeStatus === 'PENDING' || activeStatus === 'IN_REVIEW'
   const canSkip = activeStatus === 'PENDING' || activeStatus === 'IN_REVIEW'
@@ -381,7 +426,7 @@ function DemandValueReviewsPage() {
       {
         title: '操作',
         key: 'action',
-        width: 180,
+        width: 260,
         fixed: 'right',
         render: (_, record) => (
           <Space size={4}>
@@ -392,11 +437,27 @@ function DemandValueReviewsPage() {
             >
               {record?.status === 'COMPLETED' ? '查看复盘' : '继续复盘'}
             </Button>
+            <Popconfirm
+              title="确认删除该复盘任务？"
+              description="删除后会清空该需求的复盘记录、参与人及待评价任务，且不可恢复。"
+              okText="确认删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => handleDeleteReview(record?.id)}
+            >
+              <Button
+                type="link"
+                danger
+                loading={deletingReviewId === Number(record?.id || 0)}
+              >
+                删除
+              </Button>
+            </Popconfirm>
           </Space>
         ),
       },
     ],
-    [navigate],
+    [deletingReviewId, handleDeleteReview, navigate],
   )
 
   return (
@@ -486,6 +547,18 @@ function DemandValueReviewsPage() {
           extra={(
             <Space>
               <Button onClick={() => navigate('/demand-value-reviews')}>返回列表</Button>
+              {activeReviewId ? (
+                <Popconfirm
+                  title="确认删除该复盘任务？"
+                  description="删除后会清空该需求的复盘记录、参与人及待评价任务，且不可恢复。"
+                  okText="确认删除"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => handleDeleteReview(activeReviewId)}
+                >
+                  <Button danger loading={deletingReviewId === activeReviewId}>删除复盘</Button>
+                </Popconfirm>
+              ) : null}
               {canSkip ? (
                 <Button
                   icon={<CloseCircleOutlined />}

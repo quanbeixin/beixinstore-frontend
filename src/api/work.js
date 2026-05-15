@@ -141,6 +141,10 @@ export function unskipDemandValueReviewApi(reviewId) {
   return request.post(`/work/demand-value-reviews/${reviewId}/unskip`)
 }
 
+export function deleteDemandValueReviewApi(reviewId) {
+  return request.delete(`/work/demand-value-reviews/${reviewId}`)
+}
+
 export function getMyPendingDemandValueReviewsApi(params) {
   return request.get('/work/demand-value-reviews/my/pending', { params })
 }

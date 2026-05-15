@@ -1488,28 +1488,6 @@ function BugDetailPage() {
                           </div>
 
                           <div className="bug-detail-page__tab-section">
-                            <div className="bug-detail-page__tab-section-title">流转操作</div>
-                            <Form form={remarkForm} layout="vertical" requiredMark={false} className="bug-detail-page__transition-form">
-                              {canSeeFixModule ? (
-                                <Form.Item
-                                  label="修复方案&影响范围"
-                                  name="fix_solution"
-                                  extra={transitionRequirementHints.requireFixSolution ? '当前可执行动作中存在修复方案必填项' : '可选，建议记录修复方案'}
-                                >
-                                  <Input.TextArea rows={3} maxLength={20000} placeholder="请填写修复方案与影响范围" />
-                                </Form.Item>
-                              ) : null}
-                              <Form.Item
-                                label="备注"
-                                name="remark"
-                                extra="选填，打回/重开可补充原因"
-                              >
-                                <Input.TextArea rows={3} maxLength={20000} placeholder="打回、重开或处理说明可填写在这里" />
-                              </Form.Item>
-                            </Form>
-                          </div>
-
-                          <div className="bug-detail-page__tab-section">
                             <div className="bug-detail-page__tab-section-head">
                               <div className="bug-detail-page__tab-section-title">附件</div>
                               {canUpdate ? (
@@ -1548,6 +1526,28 @@ function BugDetailPage() {
                                 emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前暂无附件" />,
                               }}
                             />
+                          </div>
+
+                          <div className="bug-detail-page__tab-section">
+                            <div className="bug-detail-page__tab-section-title">流转操作</div>
+                            <Form form={remarkForm} layout="vertical" requiredMark={false} className="bug-detail-page__transition-form">
+                              {canSeeFixModule ? (
+                                <Form.Item
+                                  label="修复方案&影响范围"
+                                  name="fix_solution"
+                                  extra={transitionRequirementHints.requireFixSolution ? '当前可执行动作中存在修复方案必填项' : '可选，建议记录修复方案'}
+                                >
+                                  <Input.TextArea rows={3} maxLength={20000} placeholder="请填写修复方案与影响范围" />
+                                </Form.Item>
+                              ) : null}
+                              <Form.Item
+                                label="备注"
+                                name="remark"
+                                extra="选填，打回/重开可补充原因"
+                              >
+                                <Input.TextArea rows={3} maxLength={20000} placeholder="打回、重开或处理说明可填写在这里" />
+                              </Form.Item>
+                            </Form>
                           </div>
                         </div>
 

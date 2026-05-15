@@ -1,8 +1,9 @@
 import { ReloadOutlined } from '@ant-design/icons'
 import { Alert, Button, Card, Empty, Input, Select, Space, Spin, Tag, Tooltip, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { getProfileApi } from '../../api/auth'
 import { getHumanGanttApi } from '../../api/work'
-import { getAccessSnapshot, getCurrentUser } from '../../utils/access'
+import { getCurrentUser } from '../../utils/access'
 import { formatBeijingDate } from '../../utils/datetime'
 import './HumanGanttPage.css'
 
@@ -148,11 +149,7 @@ function toPositiveInt(value) {
 
 function HumanGanttPage() {
   const defaultRange = useMemo(() => getDefaultWeekRange(), [])
-  const isSuperAdmin = useMemo(() => getAccessSnapshot()?.is_super_admin === true, [])
-  const defaultDepartmentId = useMemo(() => {
-    if (isSuperAdmin) return null
-    return toPositiveInt(getCurrentUser()?.department_id)
-  }, [isSuperAdmin])
+  const defaultDepartmentId = useMemo(() => toPositiveInt(getCurrentUser()?.department_id), [])
   const [filters, setFilters] = useState({
     startDate: defaultRange.startDate,
     endDate: defaultRange.endDate,
@@ -165,6 +162,7 @@ function HumanGanttPage() {
     departmentId: defaultDepartmentId,
     userIds: [],
   })
+  const [profileInitDone, setProfileInitDone] = useState(Boolean(defaultDepartmentId))
   const [data, setData] = useState(EMPTY_DATA)
   const [loading, setLoading] = useState(false)
   const [errorText, setErrorText] = useState('')
@@ -201,8 +199,39 @@ function HumanGanttPage() {
   }, [])
 
   useEffect(() => {
+    if (profileInitDone) return
+    let active = true
+
+    const bootstrapDefaultDepartment = async () => {
+      try {
+        const result = await getProfileApi()
+        if (!active || !result?.success) return
+        const profileDepartmentId = toPositiveInt(result?.data?.department_id)
+        if (!profileDepartmentId) return
+
+        setFilters((prev) =>
+          toPositiveInt(prev?.departmentId) ? prev : { ...prev, departmentId: profileDepartmentId },
+        )
+        setQuery((prev) =>
+          toPositiveInt(prev?.departmentId) ? prev : { ...prev, departmentId: profileDepartmentId },
+        )
+      } catch {
+        // 忽略默认部门补齐失败，继续按当前筛选加载页面
+      } finally {
+        if (active) setProfileInitDone(true)
+      }
+    }
+
+    bootstrapDefaultDepartment()
+    return () => {
+      active = false
+    }
+  }, [profileInitDone])
+
+  useEffect(() => {
+    if (!profileInitDone) return
     loadData(query)
-  }, [loadData, query])
+  }, [loadData, profileInitDone, query])
 
   const dayList = useMemo(() => {
     const startDate = data?.range?.start_date || query.startDate
@@ -246,6 +275,28 @@ function HumanGanttPage() {
       }))
       .filter((item) => item.value && item.label)
   }, [data?.department_options])
+
+  useEffect(() => {
+    const currentDepartmentId = toPositiveInt(query.departmentId)
+    if (!currentDepartmentId) return
+    if (loading) return
+    if (!Array.isArray(departmentOptions) || departmentOptions.length === 0) return
+
+    const exists = departmentOptions.some((item) => Number(item.value) === Number(currentDepartmentId))
+    if (exists) return
+
+    setFilters((prev) => ({
+      ...prev,
+      departmentId: null,
+      userIds: [],
+    }))
+    setQuery((prev) => ({
+      ...prev,
+      departmentId: null,
+      userIds: [],
+    }))
+    message.info(`所属部门（ID: ${currentDepartmentId}）当前无可展示成员，已切换为全部部门`)
+  }, [departmentOptions, loading, query.departmentId])
 
   const timelineWidth = Math.max(dayList.length * DAY_WIDTH, 420)
   const gridColumns = `repeat(${Math.max(dayList.length, 1)}, ${DAY_WIDTH}px)`
@@ -310,7 +361,7 @@ function HumanGanttPage() {
 
   return (
     <div className="human-gantt-page">
-      <Card className="human-gantt-filter-card" bodyStyle={{ padding: 14 }}>
+      <Card className="human-gantt-filter-card" styles={{ body: { padding: 14 } }}>
         <div className="human-gantt-filter-row">
           <Space size={10} wrap>
             <Select
@@ -397,7 +448,7 @@ function HumanGanttPage() {
         />
       ) : null}
 
-      <Card className="human-gantt-board-card" bodyStyle={{ padding: 0 }}>
+      <Card className="human-gantt-board-card" styles={{ body: { padding: 0 } }}>
         <Spin spinning={loading}>
           {userRows.length === 0 ? (
             <div className="human-gantt-empty-wrap">
@@ -445,11 +496,11 @@ function HumanGanttPage() {
                         <div className="human-gantt-user-name">{user.user_name || `成员#${user.user_id}`}</div>
                         <div className="human-gantt-user-dept">{user.department_name || '未分配部门'}</div>
                         <div className="human-gantt-user-metas">
-                          <Tag bordered={false} className="human-gantt-meta-tag">
+                          <Tag variant="filled" className="human-gantt-meta-tag">
                             {Number(user.item_count || 0)} 项
                           </Tag>
                           {conflictDaySet.size > 0 ? (
-                            <Tag bordered={false} color="warning" className="human-gantt-meta-tag">
+                            <Tag variant="filled" color="warning" className="human-gantt-meta-tag">
                               冲突 {conflictDaySet.size} 天
                             </Tag>
                           ) : null}
