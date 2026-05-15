@@ -141,6 +141,10 @@ export function unskipDemandValueReviewApi(reviewId) {
   return request.post(`/work/demand-value-reviews/${reviewId}/unskip`)
 }
 
+export function reopenDemandValueReviewApi(reviewId) {
+  return request.post(`/work/demand-value-reviews/${reviewId}/reopen`)
+}
+
 export function deleteDemandValueReviewApi(reviewId) {
   return request.delete(`/work/demand-value-reviews/${reviewId}`)
 }

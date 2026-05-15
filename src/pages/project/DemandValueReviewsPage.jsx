@@ -26,11 +26,12 @@ import {
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   deleteDemandValueReviewApi,
   getDemandValueReviewDetailApi,
   getDemandValueReviewsApi,
+  reopenDemandValueReviewApi,
   skipDemandValueReviewApi,
   submitDemandValueReviewApi,
   unskipDemandValueReviewApi,
@@ -74,7 +75,6 @@ function renderStatusTag(status) {
 
 function DemandValueReviewsPage() {
   const navigate = useNavigate()
-  const location = useLocation()
   const params = useParams()
   const isAdmin = useMemo(() => {
     const access = getAccessSnapshot() || {}
@@ -141,16 +141,8 @@ function DemandValueReviewsPage() {
   )
 
   useEffect(() => {
-    if (isAdmin) return
-    if (location.pathname.startsWith('/my-demand-value-reviews')) return
-    message.info('当前账号进入“待我复盘评价”')
-    navigate('/my-demand-value-reviews', { replace: true })
-  }, [isAdmin, location.pathname, navigate])
-
-  useEffect(() => {
-    if (!isAdmin) return
     loadRows({ page: 1, pageSize: pagination.pageSize })
-  }, [isAdmin, loadRows, pagination.pageSize])
+  }, [loadRows, pagination.pageSize])
 
   useEffect(() => {
     let cancelled = false
@@ -207,14 +199,13 @@ function DemandValueReviewsPage() {
   }, [form])
 
   useEffect(() => {
-    if (!isAdmin) return
     if (!reviewIdFromRoute) {
       setActiveDetail(null)
       setActiveReviewId(null)
       return
     }
     loadDetail(reviewIdFromRoute)
-  }, [isAdmin, loadDetail, reviewIdFromRoute])
+  }, [loadDetail, reviewIdFromRoute])
 
   const handleSaveDraft = useCallback(async () => {
     if (!activeReviewId) return
@@ -365,8 +356,28 @@ function DemandValueReviewsPage() {
 
   const activeStatus = String(activeDetail?.status || '').toUpperCase()
   const canEdit = activeStatus === 'PENDING' || activeStatus === 'IN_REVIEW'
-  const canSkip = activeStatus === 'PENDING' || activeStatus === 'IN_REVIEW'
-  const canUnskip = activeStatus === 'SKIPPED'
+  const canReopen = activeStatus === 'COMPLETED'
+  const canSkip = isAdmin && (activeStatus === 'PENDING' || activeStatus === 'IN_REVIEW')
+  const canUnskip = isAdmin && activeStatus === 'SKIPPED'
+
+  const handleReopenForEdit = useCallback(async () => {
+    if (!activeReviewId) return
+    setSubmitting(true)
+    try {
+      const result = await reopenDemandValueReviewApi(activeReviewId)
+      if (!result?.success) {
+        message.error(result?.message || '调整状态失败')
+        return
+      }
+      message.success(result?.message || '已调整为复盘中')
+      await loadDetail(activeReviewId)
+      await loadRows({ page: pagination.current, pageSize: pagination.pageSize })
+    } catch (error) {
+      message.error(error?.message || '调整状态失败')
+    } finally {
+      setSubmitting(false)
+    }
+  }, [activeReviewId, loadDetail, loadRows, pagination.current, pagination.pageSize])
 
   const columns = useMemo(
     () => [
@@ -437,27 +448,29 @@ function DemandValueReviewsPage() {
             >
               {record?.status === 'COMPLETED' ? '查看复盘' : '继续复盘'}
             </Button>
-            <Popconfirm
-              title="确认删除该复盘任务？"
-              description="删除后会清空该需求的复盘记录、参与人及待评价任务，且不可恢复。"
-              okText="确认删除"
-              cancelText="取消"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => handleDeleteReview(record?.id)}
-            >
-              <Button
-                type="link"
-                danger
-                loading={deletingReviewId === Number(record?.id || 0)}
+            {isAdmin ? (
+              <Popconfirm
+                title="确认删除该复盘任务？"
+                description="删除后会清空该需求的复盘记录、参与人及待评价任务，且不可恢复。"
+                okText="确认删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => handleDeleteReview(record?.id)}
               >
-                删除
-              </Button>
-            </Popconfirm>
+                <Button
+                  type="link"
+                  danger
+                  loading={deletingReviewId === Number(record?.id || 0)}
+                >
+                  删除
+                </Button>
+              </Popconfirm>
+            ) : null}
           </Space>
         ),
       },
     ],
-    [deletingReviewId, handleDeleteReview, navigate],
+    [deletingReviewId, handleDeleteReview, isAdmin, navigate],
   )
 
   return (
@@ -547,7 +560,7 @@ function DemandValueReviewsPage() {
           extra={(
             <Space>
               <Button onClick={() => navigate('/demand-value-reviews')}>返回列表</Button>
-              {activeReviewId ? (
+              {isAdmin && activeReviewId ? (
                 <Popconfirm
                   title="确认删除该复盘任务？"
                   description="删除后会清空该需求的复盘记录、参与人及待评价任务，且不可恢复。"
@@ -574,6 +587,15 @@ function DemandValueReviewsPage() {
               {canUnskip ? (
                 <Popconfirm title="确认撤销“无需复盘”？" onConfirm={handleUnskip}>
                   <Button loading={submitting}>撤销无需复盘</Button>
+                </Popconfirm>
+              ) : null}
+              {canReopen ? (
+                <Popconfirm
+                  title="确认调整为复盘中？"
+                  description="调整后可重新编辑复盘信息并再次提交。"
+                  onConfirm={handleReopenForEdit}
+                >
+                  <Button icon={<ReloadOutlined />} loading={submitting}>调整为复盘中</Button>
                 </Popconfirm>
               ) : null}
               {canEdit ? (
