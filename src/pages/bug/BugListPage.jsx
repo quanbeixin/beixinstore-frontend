@@ -1974,7 +1974,7 @@ function BugListPage({
             className="bug-list-page__attachment-preview-video"
             src={attachmentModalSrc}
             controls
-            preload="metadata"
+            preload="none"
           />
         ) : (
           <Image

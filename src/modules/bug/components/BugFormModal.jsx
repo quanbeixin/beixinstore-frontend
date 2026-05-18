@@ -737,7 +737,7 @@ function BugFormModal({
           className="bug-form-modal__preview-video"
           src={previewImage}
           controls
-          preload="metadata"
+          preload="none"
         />
       ) : (
           <Image

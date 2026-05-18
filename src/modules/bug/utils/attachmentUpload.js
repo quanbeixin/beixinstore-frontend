@@ -1,3 +1,4 @@
+import JSZip from 'jszip'
 import {
   createBugAttachmentApi,
   createBugCommentAttachmentApi,
@@ -9,6 +10,8 @@ import {
 const OSS_UPLOAD_TIMEOUT_MS = 120000
 const OSS_UPLOAD_MAX_ATTEMPTS = 2
 const OSS_RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504])
+const DEFAULT_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
+const ZIP_MIME_TYPE = 'application/zip'
 
 function normalizeFile(fileLike) {
   if (!fileLike) return null
@@ -22,6 +25,73 @@ function getFileExt(fileName = '') {
   const dotIndex = text.lastIndexOf('.')
   if (dotIndex <= 0 || dotIndex >= text.length - 1) return ''
   return text.slice(dotIndex + 1).slice(0, 50)
+}
+
+function splitFileName(fileName = '') {
+  const text = String(fileName || '').trim()
+  if (!text) return { baseName: 'file', extName: '' }
+  const dotIndex = text.lastIndexOf('.')
+  if (dotIndex <= 0 || dotIndex >= text.length - 1) {
+    return { baseName: text || 'file', extName: '' }
+  }
+  return {
+    baseName: text.slice(0, dotIndex) || 'file',
+    extName: text.slice(dotIndex + 1),
+  }
+}
+
+function formatLimitMb(maxBytes = DEFAULT_MAX_FILE_SIZE_BYTES) {
+  const normalized = Number(maxBytes || 0)
+  if (!Number.isFinite(normalized) || normalized <= 0) return 5
+  return Math.max(1, Math.ceil(normalized / 1024 / 1024))
+}
+
+function buildFileTooLargeMessage(fileName, maxBytes) {
+  return `${fileName || '文件'}超过大小限制（${formatLimitMb(maxBytes)}MB），请压缩后再上传`
+}
+
+async function compressFileToZip(file) {
+  const normalizedFile = normalizeFile(file)
+  if (!normalizedFile) throw new Error('附件文件无效')
+
+  const zip = new JSZip()
+  zip.file(normalizedFile.name || 'file', normalizedFile)
+  const zippedBlob = await zip.generateAsync({
+    type: 'blob',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 9 },
+  })
+  const { baseName } = splitFileName(normalizedFile.name || 'file')
+  const zipFileName = `${baseName || 'file'}.zip`
+  return new File([zippedBlob], zipFileName, {
+    type: ZIP_MIME_TYPE,
+    lastModified: Date.now(),
+  })
+}
+
+export async function prepareFileForUpload(fileLike, maxFileSize = DEFAULT_MAX_FILE_SIZE_BYTES) {
+  const file = normalizeFile(fileLike)
+  if (!file) throw new Error('附件文件无效')
+
+  const normalizedLimit = Number(maxFileSize || 0)
+  if (!Number.isFinite(normalizedLimit) || normalizedLimit <= 0 || Number(file.size || 0) <= normalizedLimit) {
+    return {
+      uploadFile: file,
+      transformed: false,
+      sourceFile: file,
+    }
+  }
+
+  const zippedFile = await compressFileToZip(file)
+  if (Number(zippedFile.size || 0) > normalizedLimit) {
+    throw new Error(buildFileTooLargeMessage(file.name, normalizedLimit))
+  }
+
+  return {
+    uploadFile: zippedFile,
+    transformed: true,
+    sourceFile: file,
+  }
 }
 
 function sleep(ms) {
@@ -108,38 +178,63 @@ export async function precheckDraftAttachment(fileLike) {
     throw new Error('附件文件无效')
   }
 
+  const prepared = await prepareFileForUpload(file, DEFAULT_MAX_FILE_SIZE_BYTES)
+  const uploadFile = prepared.uploadFile
+
   const result = await precheckBugAttachmentApi({
-    file_name: file?.name || 'file',
-    mime_type: file?.type || '',
-    file_size: file?.size || 0,
+    file_name: uploadFile?.name || 'file',
+    mime_type: uploadFile?.type || '',
+    file_size: uploadFile?.size || 0,
   })
   if (!result?.success) {
-    throw new Error(result?.message || `${file?.name || '文件'}预检失败`)
+    throw new Error(result?.message || `${uploadFile?.name || file?.name || '文件'}预检失败`)
   }
-  return result.data || {}
+  return {
+    ...(result.data || {}),
+    upload_file: uploadFile,
+    transformed: Boolean(prepared?.transformed),
+    source_file: file,
+  }
 }
 
 async function uploadSingleAttachment({ getPolicy, register }, file) {
-  const policyRes = await getPolicy(file)
-  if (!policyRes?.success) {
-    throw new Error(policyRes?.message || `获取上传策略失败: ${file?.name || 'file'}`)
+  const sourceFile = normalizeFile(file)
+  if (!sourceFile) {
+    throw new Error('附件文件无效')
   }
 
-  const policy = policyRes.data || {}
-  if (Number(policy.max_file_size || 0) > 0 && Number(file?.size || 0) > Number(policy.max_file_size)) {
-    throw new Error(`${file?.name || '文件'}超过大小限制`)
+  const policyRes = await getPolicy(sourceFile)
+  if (!policyRes?.success) {
+    throw new Error(policyRes?.message || `获取上传策略失败: ${sourceFile?.name || 'file'}`)
+  }
+
+  let policy = policyRes.data || {}
+  const maxFileSize = Number(policy.max_file_size || DEFAULT_MAX_FILE_SIZE_BYTES)
+  const prepared = await prepareFileForUpload(sourceFile, maxFileSize)
+  let uploadFile = prepared.uploadFile
+
+  if (prepared.transformed) {
+    const zippedPolicyRes = await getPolicy(uploadFile)
+    if (!zippedPolicyRes?.success) {
+      throw new Error(zippedPolicyRes?.message || `获取上传策略失败: ${uploadFile?.name || 'file'}`)
+    }
+    policy = zippedPolicyRes.data || {}
+  }
+
+  if (Number(policy.max_file_size || 0) > 0 && Number(uploadFile?.size || 0) > Number(policy.max_file_size)) {
+    throw new Error(buildFileTooLargeMessage(uploadFile?.name || sourceFile?.name, Number(policy.max_file_size || 0)))
   }
 
   await uploadToOssWithRetry({
     host: policy.host,
     policy,
-    file,
-    fileName: file?.name || '文件',
+    file: uploadFile,
+    fileName: uploadFile?.name || sourceFile?.name || '文件',
   })
 
-  const registerRes = await register(file, policy)
+  const registerRes = await register(uploadFile, policy)
   if (!registerRes?.success) {
-    throw new Error(registerRes?.message || `附件登记失败: ${file?.name || '文件'}`)
+    throw new Error(registerRes?.message || `附件登记失败: ${uploadFile?.name || sourceFile?.name || '文件'}`)
   }
   return registerRes?.data || null
 }
@@ -178,44 +273,60 @@ async function uploadAttachmentBatch({ files = [], getPolicy, register }) {
 }
 
 export async function uploadBugAttachmentFile(bugId, fileLike) {
-  const file = normalizeFile(fileLike)
-  if (!file) {
+  const sourceFile = normalizeFile(fileLike)
+  if (!sourceFile) {
     throw new Error('附件文件无效')
   }
 
   const policyRes = await getBugAttachmentPolicyApi(bugId, {
-    file_name: file?.name || 'file',
-    mime_type: file?.type || '',
-    file_size: file?.size || 0,
+    file_name: sourceFile?.name || 'file',
+    mime_type: sourceFile?.type || '',
+    file_size: sourceFile?.size || 0,
   })
   if (!policyRes?.success) {
-    throw new Error(policyRes?.message || `获取上传策略失败: ${file?.name || 'file'}`)
+    throw new Error(policyRes?.message || `获取上传策略失败: ${sourceFile?.name || 'file'}`)
   }
 
-  const policy = policyRes.data || {}
-  if (Number(policy.max_file_size || 0) > 0 && Number(file?.size || 0) > Number(policy.max_file_size)) {
-    throw new Error(`${file?.name || '文件'}超过大小限制`)
+  let policy = policyRes.data || {}
+  const maxFileSize = Number(policy.max_file_size || DEFAULT_MAX_FILE_SIZE_BYTES)
+  const prepared = await prepareFileForUpload(sourceFile, maxFileSize)
+  let uploadFile = prepared.uploadFile
+
+  if (prepared.transformed) {
+    const zippedPolicyRes = await getBugAttachmentPolicyApi(bugId, {
+      file_name: uploadFile?.name || 'file',
+      mime_type: uploadFile?.type || '',
+      file_size: uploadFile?.size || 0,
+    })
+    if (!zippedPolicyRes?.success) {
+      throw new Error(zippedPolicyRes?.message || `获取上传策略失败: ${uploadFile?.name || 'file'}`)
+    }
+    policy = zippedPolicyRes.data || {}
+  }
+
+  if (Number(policy.max_file_size || 0) > 0 && Number(uploadFile?.size || 0) > Number(policy.max_file_size)) {
+    throw new Error(buildFileTooLargeMessage(uploadFile?.name || sourceFile?.name, Number(policy.max_file_size || 0)))
   }
 
   await uploadToOssWithRetry({
     host: policy.host,
     policy,
-    file,
-    fileName: file?.name || '文件',
+    file: uploadFile,
+    fileName: uploadFile?.name || sourceFile?.name || '文件',
   })
 
   const registerRes = await createBugAttachmentApi(bugId, {
-    file_name: file?.name || 'file',
-    file_ext: getFileExt(file?.name || ''),
-    file_size: file?.size || 0,
-    mime_type: file?.type || '',
+    file_name: uploadFile?.name || 'file',
+    file_ext: getFileExt(uploadFile?.name || ''),
+    file_size: uploadFile?.size || 0,
+    mime_type: uploadFile?.type || '',
     storage_provider: 'ALIYUN_OSS',
     bucket_name: policy.bucket_name,
     object_key: policy.object_key,
     object_url: policy.object_url || '',
   })
   if (!registerRes?.success) {
-    throw new Error(registerRes?.message || `附件登记失败: ${file?.name || '文件'}`)
+    throw new Error(registerRes?.message || `附件登记失败: ${uploadFile?.name || sourceFile?.name || '文件'}`)
   }
   return registerRes.data || null
 }

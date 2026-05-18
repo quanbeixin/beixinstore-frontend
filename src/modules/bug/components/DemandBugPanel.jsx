@@ -1425,7 +1425,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
         destroyOnHidden
       >
         {attachmentModalType === 'video' ? (
-          <video className="demand-bug-panel__attachment-preview-video" src={attachmentModalSrc} controls preload="metadata" />
+          <video className="demand-bug-panel__attachment-preview-video" src={attachmentModalSrc} controls preload="none" />
         ) : (
           <Image
             className="demand-bug-panel__attachment-preview-image"

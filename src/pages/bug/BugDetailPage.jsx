@@ -36,12 +36,10 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
-  createBugAttachmentApi,
   getBugAssigneesApi,
   createBugCommentApi,
   deleteBugAttachmentApi,
   deleteBugApi,
-  getBugAttachmentPolicyApi,
   getBugByIdApi,
   getBugWorkflowConfigApi,
   transitionBugApi,
@@ -49,7 +47,7 @@ import {
   updateBugApi,
 } from '../../api/bug'
 import { BugFormModal, BugStatusFlow } from '../../modules/bug'
-import { precheckDraftAttachment, uploadCommentDraftAttachments } from '../../modules/bug/utils/attachmentUpload'
+import { precheckDraftAttachment, uploadBugAttachmentFile, uploadCommentDraftAttachments } from '../../modules/bug/utils/attachmentUpload'
 import {
   hydrateBugDescriptionAttachmentUrls,
   isProbablyHtml,
@@ -65,9 +63,6 @@ import './BugDetailPage.css'
 const { Paragraph, Text, Title } = Typography
 const IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)(\?.*)?$/i
 const VIDEO_EXT_PATTERN = /\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i
-const OSS_UPLOAD_TIMEOUT_MS = 120000
-const OSS_UPLOAD_MAX_ATTEMPTS = 2
-const OSS_RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504])
 const ACTION_ICON_MAP = Object.freeze({
   start: <SendOutlined />,
   fix: <CheckCircleOutlined />,
@@ -185,78 +180,6 @@ function mergeUniqueUploadFiles(currentList = [], nextList = []) {
     if (!dedup.has(key)) dedup.set(key, item)
   })
   return Array.from(dedup.values())
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms)
-  })
-}
-
-function buildUploadFormData(policy = {}, file = null) {
-  const formData = new FormData()
-  Object.entries(policy.fields || {}).forEach(([key, value]) => {
-    formData.append(key, value)
-  })
-  formData.append('file', file)
-  return formData
-}
-
-function isRetryableUploadError(error) {
-  if (!error) return false
-  const errorName = String(error?.name || '').trim()
-  if (errorName === 'AbortError') return true
-  const text = String(error?.message || '').toLowerCase()
-  return (
-    text.includes('failed to fetch') ||
-    text.includes('network') ||
-    text.includes('load failed') ||
-    text.includes('timeout')
-  )
-}
-
-async function uploadToOssWithRetry({ host, policy, file, fileName = '文件' }) {
-  let lastError = null
-  for (let attempt = 1; attempt <= OSS_UPLOAD_MAX_ATTEMPTS; attempt += 1) {
-    const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => {
-      controller.abort()
-    }, OSS_UPLOAD_TIMEOUT_MS)
-    try {
-      const uploadRes = await fetch(host, {
-        method: 'POST',
-        body: buildUploadFormData(policy, file),
-        signal: controller.signal,
-      })
-      if (uploadRes.ok) return
-
-      const uploadText = await uploadRes.text().catch(() => '')
-      const uploadError = new Error(uploadText || `上传到OSS失败，状态码 ${uploadRes.status}`)
-      lastError = uploadError
-      if (OSS_RETRYABLE_STATUS.has(Number(uploadRes.status || 0)) && attempt < OSS_UPLOAD_MAX_ATTEMPTS) {
-        await sleep(500 * attempt)
-        continue
-      }
-      throw uploadError
-    } catch (error) {
-      lastError = error
-      if (isRetryableUploadError(error) && attempt < OSS_UPLOAD_MAX_ATTEMPTS) {
-        await sleep(500 * attempt)
-        continue
-      }
-      if (String(error?.name || '').trim() === 'AbortError') {
-        throw new Error(`上传超时: ${fileName}`)
-      }
-      throw error
-    } finally {
-      window.clearTimeout(timeoutId)
-    }
-  }
-
-  if (String(lastError?.name || '').trim() === 'AbortError') {
-    throw new Error(`上传超时: ${fileName}`)
-  }
-  throw lastError || new Error(`上传失败: ${fileName}`)
 }
 
 function formatAttachmentSize(fileSize) {
@@ -736,43 +659,7 @@ function BugDetailPage() {
     if (!currentFile) {
       throw new Error('附件文件无效')
     }
-    const policyRes = await getBugAttachmentPolicyApi(bugId, {
-      file_name: currentFile?.name || 'file',
-      mime_type: currentFile?.type || '',
-      file_size: currentFile?.size || 0,
-    })
-    if (!policyRes?.success) {
-      throw new Error(policyRes?.message || '获取OSS上传策略失败')
-    }
-
-    const policy = policyRes.data || {}
-    if (Number(policy.max_file_size || 0) > 0 && Number(currentFile?.size || 0) > Number(policy.max_file_size)) {
-      throw new Error(`附件大小不能超过 ${Math.ceil(Number(policy.max_file_size) / 1024 / 1024)}MB`)
-    }
-
-    await uploadToOssWithRetry({
-      host: policy.host,
-      policy,
-      file: currentFile,
-      fileName: currentFile?.name || '文件',
-    })
-
-    const registerRes = await createBugAttachmentApi(bugId, {
-      file_name: currentFile?.name || 'file',
-      file_ext: currentFile?.name?.includes('.') ? String(currentFile.name).split('.').pop() : '',
-      file_size: currentFile?.size || 0,
-      mime_type: currentFile?.type || '',
-      storage_provider: 'ALIYUN_OSS',
-      bucket_name: policy.bucket_name,
-      object_key: policy.object_key,
-      object_url: policy.object_url || '',
-    })
-
-    if (!registerRes?.success) {
-      throw new Error(registerRes?.message || '附件登记失败')
-    }
-
-    return registerRes.data
+    return uploadBugAttachmentFile(bugId, currentFile)
   }, [bugId])
 
   const handleUpload = async ({ file, onSuccess, onError }) => {
@@ -917,8 +804,9 @@ function BugDetailPage() {
     const rejectedMessages = []
     for (const file of files) {
       try {
-        await precheckDraftAttachment(file)
-        acceptedFiles.push(file)
+        const precheckResult = await precheckDraftAttachment(file)
+        const uploadFile = precheckResult?.upload_file || file
+        acceptedFiles.push(uploadFile)
       } catch (error) {
         rejectedMessages.push(error?.message || `${file?.name || '文件'}预检失败`)
       }
@@ -992,8 +880,9 @@ function BugDetailPage() {
     const rejectedMessages = []
     for (const file of files) {
       try {
-        await precheckDraftAttachment(file)
-        acceptedFiles.push(file)
+        const precheckResult = await precheckDraftAttachment(file)
+        const uploadFile = precheckResult?.upload_file || file
+        acceptedFiles.push(uploadFile)
       } catch (error) {
         rejectedMessages.push(error?.message || `${file?.name || '文件'}预检失败`)
       }
@@ -2151,7 +2040,7 @@ function BugDetailPage() {
                   className="bug-detail-page__comment-preview-video"
                   src={commentPreviewImage}
                   controls
-                  preload="metadata"
+                  preload="none"
                 />
               ) : (
                 <Image
