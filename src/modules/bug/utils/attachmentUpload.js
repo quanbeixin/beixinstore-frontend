@@ -10,7 +10,7 @@ import {
 const OSS_UPLOAD_TIMEOUT_MS = 120000
 const OSS_UPLOAD_MAX_ATTEMPTS = 2
 const OSS_RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504])
-const DEFAULT_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
+const DEFAULT_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 const ZIP_MIME_TYPE = 'application/zip'
 
 function normalizeFile(fileLike) {
