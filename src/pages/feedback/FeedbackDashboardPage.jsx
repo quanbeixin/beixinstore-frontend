@@ -26,10 +26,17 @@ const CATEGORY_COLORS = [
   '#27ae60',
   '#9b51e0',
 ]
+const PRODUCT_AXIS_LABEL_MAX = 8
 
 function formatPercent(value) {
   if (!Number.isFinite(Number(value))) return '0.0%'
   return `${Number(value).toFixed(1)}%`
+}
+
+function formatAxisLabel(value, max = PRODUCT_AXIS_LABEL_MAX) {
+  const text = String(value || '')
+  if (text.length <= max) return text
+  return `${text.slice(0, max)}...`
 }
 
 function getPrimaryCategory(record) {
@@ -212,14 +219,20 @@ function FeedbackDashboardPage() {
   const productBarOption = useMemo(
     () => ({
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      xAxis: {
+      yAxis: {
         type: 'category',
         data: productData.map((item) => item.name),
-        axisLabel: { interval: 0, rotate: 0, color: '#8a94a6', fontSize: 12 },
+        inverse: true,
+        axisLabel: {
+          interval: 0,
+          color: '#8a94a6',
+          fontSize: 12,
+          formatter: (value) => formatAxisLabel(value),
+        },
         axisTick: { show: false },
         axisLine: { lineStyle: { color: '#e7ecf4' } },
       },
-      yAxis: {
+      xAxis: {
         type: 'value',
         axisLabel: { color: '#9aa4b3' },
         splitLine: { lineStyle: { color: '#edf1f7' } },
@@ -230,18 +243,18 @@ function FeedbackDashboardPage() {
           data: productData.map((item) => item.value),
           itemStyle: {
             color: '#2f80ed',
-            borderRadius: [6, 6, 0, 0],
+            borderRadius: [0, 6, 6, 0],
           },
           label: {
             show: true,
-            position: 'insideTop',
+            position: 'right',
             color: '#1f4f93',
             fontSize: 11,
           },
           barMaxWidth: 36,
         },
       ],
-      grid: { left: 28, right: 16, bottom: 22, top: 24, containLabel: true },
+      grid: { left: 110, right: 24, bottom: 24, top: 24, containLabel: true },
     }),
     [productData],
   )
@@ -254,6 +267,7 @@ function FeedbackDashboardPage() {
   const hasCategoryData = categoryRows.length > 0
   const hasChannelData = channelData.length > 0
   const hasProductData = productData.length > 0
+  const productChartHeight = useMemo(() => Math.max(260, productData.length * 36 + 40), [productData.length])
 
   return (
     <div className="feedback-dashboard-page">
@@ -380,7 +394,12 @@ function FeedbackDashboardPage() {
           <Col xs={24} lg={12}>
             <Card title="用户反馈量分布" className="feedback-dashboard-chart-card" variant="borderless">
               {hasProductData ? (
-                <ReactECharts option={productBarOption} style={{ height: 260 }} notMerge lazyUpdate />
+                <ReactECharts
+                  option={productBarOption}
+                  style={{ height: productChartHeight }}
+                  notMerge
+                  lazyUpdate
+                />
               ) : (
                 <div className="feedback-dashboard-empty-wrap">
                   <Empty description="暂无产品数据" />
