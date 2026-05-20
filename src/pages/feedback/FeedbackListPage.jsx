@@ -216,6 +216,10 @@ function normalizeCategoryList(value) {
   return []
 }
 
+function normalizeOptionText(value) {
+  return String(value || '').trim()
+}
+
 function getPrimaryCategory(record) {
   return String(record?.ai_primary_category || record?.ai_category || '').trim()
 }
@@ -261,6 +265,7 @@ function FeedbackListPage() {
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState([])
   const [dictProductNames, setDictProductNames] = useState(DEFAULT_PRODUCT_OPTIONS)
+  const [observedProductNames, setObservedProductNames] = useState([])
   const [dictChannelNames, setDictChannelNames] = useState(DEFAULT_CHANNEL_OPTIONS)
   const [importantEmailRules, setImportantEmailRules] = useState(() => readImportantEmailConfigCache())
   const [aiAnalyzeLoading, setAiAnalyzeLoading] = useState(false)
@@ -318,9 +323,13 @@ function FeedbackListPage() {
 
         if (productNames.length > 0) {
           setDictProductNames(productNames)
+        } else if (!productResult?.success) {
+          message.warning('产品字典加载失败，已使用反馈数据中的产品作为兜底选项')
         }
         if (channelNames.length > 0) {
           setDictChannelNames(channelNames)
+        } else if (!channelResult?.success) {
+          message.warning('反馈渠道字典加载失败，已使用反馈数据中的渠道作为兜底选项')
         }
         const nextImportantEmailRules = Array.isArray(importantEmailResult?.data) ? importantEmailResult.data : []
         setImportantEmailRules(nextImportantEmailRules)
@@ -374,6 +383,14 @@ function FeedbackListPage() {
       const pageData = result?.pagination || {}
 
       setRows(data)
+      setObservedProductNames((prev) => {
+        const next = new Set([...(Array.isArray(prev) ? prev : [])])
+        data.forEach((item) => {
+          const name = normalizeOptionText(item?.product)
+          if (name) next.add(name)
+        })
+        return Array.from(next)
+      })
       setPagination((prev) => {
         const next = {
           ...prev,
@@ -419,15 +436,6 @@ function FeedbackListPage() {
 
     return () => clearTimeout(timer)
   }, [fetchRows, filters.searchText])
-
-  const productTabs = useMemo(() => {
-    const products = [...new Set([...(dictProductNames || []), ...PINNED_PRODUCT_OPTIONS].filter(Boolean))]
-    return [
-      { key: 'all', label: '全部' },
-      { key: IMPORTANT_EMAIL_TAB_KEY, label: '✨重点邮件' },
-      ...products.map((product) => ({ key: product, label: product })),
-    ]
-  }, [dictProductNames])
 
   const groupedRows = useMemo(() => {
     const list = Array.isArray(rows) ? rows : []
@@ -477,9 +485,20 @@ function FeedbackListPage() {
     }))
   }, [importantEmailMap, rows])
 
+  const mergedProductOptions = useMemo(
+    () => [...new Set([...(dictProductNames || []), ...(observedProductNames || []), ...PINNED_PRODUCT_OPTIONS].filter(Boolean))],
+    [dictProductNames, observedProductNames],
+  )
+
+  const productTabs = useMemo(() => ([
+    { key: 'all', label: '全部' },
+    { key: IMPORTANT_EMAIL_TAB_KEY, label: '✨重点邮件' },
+    ...mergedProductOptions.map((product) => ({ key: product, label: product })),
+  ]), [mergedProductOptions])
+
   const productOptions = useMemo(
-    () => [...new Set([...(dictProductNames || []), ...PINNED_PRODUCT_OPTIONS].filter(Boolean))],
-    [dictProductNames],
+    () => mergedProductOptions,
+    [mergedProductOptions],
   )
 
   const channelOptions = useMemo(
