@@ -47,14 +47,14 @@ function parseDateText(value) {
   return date
 }
 
-function getDefaultWeekRange() {
+function getDefaultTwoWeekRange() {
   const today = new Date()
   const weekDay = today.getDay()
   const mondayOffset = weekDay === 0 ? -6 : 1 - weekDay
   const startDate = new Date(today)
   startDate.setDate(today.getDate() + mondayOffset)
   const endDate = new Date(startDate)
-  endDate.setDate(startDate.getDate() + 6)
+  endDate.setDate(startDate.getDate() + 13)
 
   return {
     startDate: toDateText(startDate),
@@ -148,7 +148,7 @@ function toPositiveInt(value) {
 }
 
 function HumanGanttPage() {
-  const defaultRange = useMemo(() => getDefaultWeekRange(), [])
+  const defaultRange = useMemo(() => getDefaultTwoWeekRange(), [])
   const defaultDepartmentId = useMemo(() => toPositiveInt(getCurrentUser()?.department_id), [])
   const [filters, setFilters] = useState({
     startDate: defaultRange.startDate,
@@ -344,7 +344,7 @@ function HumanGanttPage() {
   }
 
   const handleResetToWeek = () => {
-    const nextRange = getDefaultWeekRange()
+    const nextRange = getDefaultTwoWeekRange()
     applyQuickFilter({
       startDate: nextRange.startDate,
       endDate: nextRange.endDate,
