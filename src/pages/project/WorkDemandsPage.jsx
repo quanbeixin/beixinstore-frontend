@@ -20,6 +20,7 @@ import {
   Avatar,
   Button,
   Card,
+  Checkbox,
   DatePicker,
   Drawer,
   Empty,
@@ -28,6 +29,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popover,
   Popconfirm,
   Radio,
   Select,
@@ -106,6 +108,7 @@ const DETAIL_BASIC_AUTO_SAVE_DEBOUNCE_MS = 800
 const FEISHU_CHAT_QUERY_PAGE_SIZE = 100
 const FEISHU_CHAT_QUERY_MAX_PAGES = 30
 const FEISHU_CHAT_QUERY_MAX_ITEMS = 3000
+const DEMAND_TABLE_REQUIRED_COLUMN_KEYS = ['id', 'name', 'action']
 
 const STATUS_OPTIONS = [
   { label: '待开始', value: 'TODO' },
@@ -272,6 +275,7 @@ const DETAIL_LOG_FILTER_OPTIONS = [
   { label: '未完成', value: 'PENDING' },
   { label: '已逾期', value: 'OVERDUE' },
 ]
+const DEMAND_COLUMN_VISIBILITY_STORAGE_KEY_PREFIX = 'work_demands_visible_columns'
 const DEMAND_DETAIL_TAB_STATE_KEY_PREFIX = 'work_demand_detail_tab_state'
 const DEMAND_GROUP_COLLAPSE_STATE_KEY_PREFIX = 'work_demands_group_collapsed_state'
 const DEMAND_LIST_SCROLL_RESTORE_KEY_PREFIX = 'work_demands_list_scroll_restore'
@@ -369,6 +373,41 @@ function writeDemandDetailTabState(storageKey, value = 'basic') {
   }
 }
 
+function readDemandVisibleColumns(storageKey) {
+  if (typeof window === 'undefined' || !storageKey) return []
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return Array.from(
+      new Set(
+        parsed
+          .map((item) => String(item || '').trim())
+          .filter(Boolean),
+      ),
+    )
+  } catch {
+    return []
+  }
+}
+
+function writeDemandVisibleColumns(storageKey, keys = []) {
+  if (typeof window === 'undefined' || !storageKey) return
+  try {
+    const normalized = Array.from(
+      new Set(
+        (Array.isArray(keys) ? keys : [])
+          .map((item) => String(item || '').trim())
+          .filter(Boolean),
+      ),
+    )
+    window.localStorage.setItem(storageKey, JSON.stringify(normalized))
+  } catch {
+    // 忽略存储失败，避免影响主流程
+  }
+}
+
 function readDemandBugPanelRouteState(routeState, demandId) {
   const normalizedDemandId = String(demandId || '').trim()
   if (!normalizedDemandId || !routeState || typeof routeState !== 'object') return null
@@ -417,6 +456,13 @@ function normalizeDemandViewConfig(config = {}) {
   ).sort((a, b) => a - b)
   const priorityOrder = String(source.priority_order || '').trim().toLowerCase()
   const activeTabKey = String(source.active_tab_key || '').trim()
+  const visibleColumns = Array.from(
+    new Set(
+      (Array.isArray(source.visible_columns) ? source.visible_columns : [])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean),
+    ),
+  )
 
   return {
     keyword: String(source.keyword || '').trim(),
@@ -436,7 +482,15 @@ function normalizeDemandViewConfig(config = {}) {
     scope_filter: String(source.scope_filter || '').trim().toLowerCase() === 'mine' ? 'mine' : 'all',
     priority_order: priorityOrder === 'asc' || priorityOrder === 'desc' ? priorityOrder : '',
     compact_view: Boolean(source.compact_view),
+    visible_columns: visibleColumns,
   }
+}
+
+function getTableColumnKey(column) {
+  if (!column || typeof column !== 'object') return ''
+  const key = column.key ?? column.dataIndex
+  if (Array.isArray(key)) return String(key[0] || '').trim()
+  return String(key || '').trim()
 }
 
 function buildDemandViewDateRange(config = {}) {
@@ -488,6 +542,13 @@ function getInlinePreviewText(value, previewLength = 30) {
   if (!text) return '-'
   if (text.length <= previewLength) return text
   return `${text.slice(0, previewLength)}...`
+}
+
+function formatOptionalStageEstimatedHours(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return `${num.toFixed(1)} h`
 }
 
 function getDemandPhaseTagColor(phaseKey, phaseName) {
@@ -946,6 +1007,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const canViewDemandRelatedLogs = canViewSelfLogs || canViewTeamLogs || canManageWorkflow
   const canForceReplaceWorkflow = canManageWorkflow && hasRole('SUPER_ADMIN')
   const currentUser = getCurrentUser()
+  const demandColumnVisibilityStorageKey = `${DEMAND_COLUMN_VISIBILITY_STORAGE_KEY_PREFIX}:${listBasePath}:${Number(currentUser?.id || 0) || 'guest'}`
 
   const [form] = Form.useForm()
   const [saveViewForm] = Form.useForm()
@@ -1012,6 +1074,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [valueReviewParticipantModalSubmitting, setValueReviewParticipantModalSubmitting] = useState(false)
   const [valueReviewTargetDemand, setValueReviewTargetDemand] = useState(null)
   const [valueReviewParticipantUserIds, setValueReviewParticipantUserIds] = useState([])
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState(() => readDemandVisibleColumns(demandColumnVisibilityStorageKey))
 
   const [detailPageLoading, setDetailPageLoading] = useState(false)
   const [detailDemand, setDetailDemand] = useState(null)
@@ -1443,6 +1506,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       scope_filter: scopeFilter === 'mine' ? 'mine' : 'all',
       priority_order: prioritySortOrder === 'ascend' ? 'asc' : prioritySortOrder === 'descend' ? 'desc' : '',
       compact_view: Boolean(compactView),
+      visible_columns: Array.isArray(visibleColumnKeys) ? visibleColumnKeys : [],
     }),
     [
       activeDemandTabKey,
@@ -1457,6 +1521,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       statusFilter,
       templateFilter,
       updatedRange,
+      visibleColumnKeys,
     ],
   )
 
@@ -2120,6 +2185,11 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
           : undefined,
     )
     setCompactView(Boolean(config.compact_view))
+    setVisibleColumnKeys(
+      Array.isArray(config.visible_columns) && config.visible_columns.length > 0
+        ? config.visible_columns
+        : [],
+    )
 
     if (nextTabKey === '__DONE__') {
       setShowCompletedTabOnly(true)
@@ -2189,6 +2259,15 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   useEffect(() => {
     loadUsers()
   }, [loadUsers])
+
+  useEffect(() => {
+    if (Number(activeViewId || 0) > 0) return
+    setVisibleColumnKeys(readDemandVisibleColumns(demandColumnVisibilityStorageKey))
+  }, [activeViewId, demandColumnVisibilityStorageKey])
+
+  useEffect(() => {
+    writeDemandVisibleColumns(demandColumnVisibilityStorageKey, visibleColumnKeys)
+  }, [demandColumnVisibilityStorageKey, visibleColumnKeys])
 
   useEffect(() => {
     loadWorkflowAssignees()
@@ -4074,6 +4153,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setOwnerFilter(undefined)
     setUpdatedRange([])
     setScopeFilter('all')
+    setVisibleColumnKeys([])
     setPage(1)
   }
 
@@ -4448,6 +4528,27 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         render: (_, record) => (record?.__group ? null : formatDemandNodeSchedule(record)),
       },
       {
+        title: '前端开发',
+        dataIndex: 'frontend_dev_stage_estimated_hours',
+        key: 'frontend_dev_stage_estimated_hours',
+        width: 140,
+        render: (value, record) => (record?.__group ? null : formatOptionalStageEstimatedHours(value)),
+      },
+      {
+        title: '后端开发',
+        dataIndex: 'backend_dev_stage_estimated_hours',
+        key: 'backend_dev_stage_estimated_hours',
+        width: 140,
+        render: (value, record) => (record?.__group ? null : formatOptionalStageEstimatedHours(value)),
+      },
+      {
+        title: '测试通测',
+        dataIndex: 'test_notify_stage_estimated_hours',
+        key: 'test_notify_stage_estimated_hours',
+        width: 140,
+        render: (value, record) => (record?.__group ? null : formatOptionalStageEstimatedHours(value)),
+      },
+      {
         title: '优先级',
         dataIndex: 'priority',
         key: 'priority',
@@ -4656,6 +4757,61 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     valueReviewMap,
   ])
 
+  const demandColumnConfigOptions = useMemo(
+    () =>
+      (Array.isArray(demandColumns) ? demandColumns : [])
+        .filter((column) => {
+          const key = getTableColumnKey(column)
+          if (!key) return false
+          if (DEMAND_TABLE_REQUIRED_COLUMN_KEYS.includes(key)) return false
+          return true
+        })
+        .map((column) => {
+          const key = getTableColumnKey(column)
+          const title =
+            typeof column?.title === 'string' ? column.title : String(column?.title || key)
+          return { key, label: title }
+        }),
+    [demandColumns],
+  )
+
+  const allOptionalDemandColumnKeys = useMemo(
+    () => demandColumnConfigOptions.map((item) => item.key),
+    [demandColumnConfigOptions],
+  )
+
+  const normalizedVisibleDemandColumnKeys = useMemo(() => {
+    const allowedSet = new Set([
+      ...DEMAND_TABLE_REQUIRED_COLUMN_KEYS,
+      ...allOptionalDemandColumnKeys,
+    ])
+    const base =
+      Array.isArray(visibleColumnKeys) && visibleColumnKeys.length > 0
+        ? visibleColumnKeys
+        : [
+            ...DEMAND_TABLE_REQUIRED_COLUMN_KEYS,
+            ...allOptionalDemandColumnKeys,
+          ]
+    const merged = Array.from(
+      new Set(
+        [...DEMAND_TABLE_REQUIRED_COLUMN_KEYS, ...base]
+          .map((item) => String(item || '').trim())
+          .filter((item) => allowedSet.has(item)),
+      ),
+    )
+    return merged
+  }, [allOptionalDemandColumnKeys, visibleColumnKeys])
+
+  const visibleDemandColumns = useMemo(() => {
+    const visibleSet = new Set(normalizedVisibleDemandColumnKeys)
+    return (Array.isArray(demandColumns) ? demandColumns : []).filter((column) => {
+      const key = getTableColumnKey(column)
+      if (!key) return true
+      if (DEMAND_TABLE_REQUIRED_COLUMN_KEYS.includes(key)) return true
+      return visibleSet.has(key)
+    })
+  }, [demandColumns, normalizedVisibleDemandColumnKeys])
+
   const handleExportDemands = useCallback(() => {
     const exportRows = groupedDemands.flatMap((group) => (Array.isArray(group?.children) ? group.children : []))
     if (exportRows.length === 0) {
@@ -4793,6 +4949,63 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                 <Button size="small" icon={<SaveOutlined />} onClick={openSaveViewModal}>
                   存为视图
                 </Button>
+                <Popover
+                  trigger="click"
+                  placement="bottomLeft"
+                  content={(
+                    <div style={{ minWidth: 260, maxHeight: 320, overflow: 'auto' }}>
+                      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                        <Text type="secondary">固定列：需求ID、需求名称、操作</Text>
+                        <Checkbox.Group
+                          style={{ width: '100%' }}
+                          value={normalizedVisibleDemandColumnKeys.filter(
+                            (key) => !DEMAND_TABLE_REQUIRED_COLUMN_KEYS.includes(key),
+                          )}
+                          onChange={(checkedValues) => {
+                            const nextOptionalKeys = (Array.isArray(checkedValues) ? checkedValues : [])
+                              .map((item) => String(item || '').trim())
+                              .filter(Boolean)
+                            setVisibleColumnKeys([
+                              ...DEMAND_TABLE_REQUIRED_COLUMN_KEYS,
+                              ...nextOptionalKeys,
+                            ])
+                          }}
+                        >
+                          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                            {demandColumnConfigOptions.map((option) => (
+                              <Checkbox key={option.key} value={option.key}>
+                                {option.label}
+                              </Checkbox>
+                            ))}
+                          </Space>
+                        </Checkbox.Group>
+                        <Space size={6}>
+                          <Button
+                            size="small"
+                            onClick={() => {
+                              setVisibleColumnKeys([
+                                ...DEMAND_TABLE_REQUIRED_COLUMN_KEYS,
+                                ...allOptionalDemandColumnKeys,
+                              ])
+                            }}
+                          >
+                            全选
+                          </Button>
+                          <Button
+                            size="small"
+                            onClick={() => {
+                              setVisibleColumnKeys([])
+                            }}
+                          >
+                            重置默认
+                          </Button>
+                        </Space>
+                      </Space>
+                    </div>
+                  )}
+                >
+                  <Button size="small">列设置</Button>
+                </Popover>
                 <Button
                   size="small"
                   type={isActiveViewDirty ? 'primary' : 'default'}
@@ -5031,7 +5244,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               rowKey="id"
               loading={loading}
               size="small"
-              columns={demandColumns}
+              columns={visibleDemandColumns}
               dataSource={groupedDemands}
               rowClassName={(record) =>
                 record?.__group && isLaunchPlanPage ? 'work-demand-list__launch-group-row' : ''
