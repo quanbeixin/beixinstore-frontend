@@ -1,9 +1,10 @@
-import { DownloadOutlined, EyeOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, DatePicker, Empty, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
+import { DeleteOutlined, DownloadOutlined, EyeOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Button, Card, DatePicker, Empty, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getDepartmentsApi } from '../../api/org'
-import { getDemandScoreResultDetailApi, getDemandScoreResultsApi, getDemandScoreTeamRankingApi } from '../../api/work'
+import { deleteDemandScoreTaskApi, getDemandScoreResultDetailApi, getDemandScoreResultsApi, getDemandScoreTeamRankingApi } from '../../api/work'
+import { getAccessSnapshot } from '../../utils/access'
 import { pinyinSelectFilter } from '../../utils/selectSearch'
 
 const { RangePicker } = DatePicker
@@ -138,11 +139,14 @@ function renderRoleScoreValue(record, fieldKey, roleKey) {
 }
 
 function DemandScoreResultsPage() {
+  const access = useMemo(() => getAccessSnapshot(), [])
+  const canDeleteDemandScore = Boolean(access?.is_super_admin)
   const [activeTab, setActiveTab] = useState('demands')
   const [range, setRange] = useState(getDefaultRange)
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [rankingLoading, setRankingLoading] = useState(false)
+  const [deleteLoadingMap, setDeleteLoadingMap] = useState({})
   const [departmentLoading, setDepartmentLoading] = useState(false)
   const [rows, setRows] = useState([])
   const [rankingRows, setRankingRows] = useState([])
@@ -215,6 +219,40 @@ function DemandScoreResultsPage() {
       setRankingLoading(false)
     }
   }, [dateParams, departmentId])
+
+  const isDeletingDemandScore = useCallback(
+    (demandId) => Boolean(deleteLoadingMap[String(demandId || '').trim().toUpperCase()]),
+    [deleteLoadingMap],
+  )
+
+  const handleDeleteDemandScore = useCallback(async (record) => {
+    const demandId = String(record?.demand_id || '').trim().toUpperCase()
+    if (!demandId) return
+    setDeleteLoadingMap((prev) => ({ ...prev, [demandId]: true }))
+    try {
+      const result = await deleteDemandScoreTaskApi(demandId)
+      if (!result?.success) {
+        message.error(result?.message || '删除评分失败')
+        return
+      }
+      message.success(result?.message || '评分任务已删除')
+      await Promise.all([
+        loadDemands({
+          page: pagination.current || 1,
+          pageSize: pagination.pageSize || 20,
+        }),
+        loadRanking(),
+      ])
+    } catch (err) {
+      message.error(err?.message || '删除评分失败')
+    } finally {
+      setDeleteLoadingMap((prev) => {
+        const next = { ...prev }
+        delete next[demandId]
+        return next
+      })
+    }
+  }, [loadDemands, loadRanking, pagination])
 
   const loadDepartmentOptions = useCallback(async () => {
     setDepartmentLoading(true)
@@ -366,11 +404,30 @@ function DemandScoreResultsPage() {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 220,
       render: (_, record) => (
-        <Button icon={<EyeOutlined />} onClick={() => openDetail(record)}>
-          查看
-        </Button>
+        <Space size={8}>
+          <Button icon={<EyeOutlined />} onClick={() => openDetail(record)}>
+            查看
+          </Button>
+          {canDeleteDemandScore ? (
+            <Popconfirm
+              title="确认删除该需求评分？"
+              description="删除后会清空该需求全部评分数据，可后续重新发起评分。"
+              okText="确认删除"
+              cancelText="取消"
+              okButtonProps={{
+                danger: true,
+                loading: isDeletingDemandScore(record?.demand_id),
+              }}
+              onConfirm={() => handleDeleteDemandScore(record)}
+            >
+              <Button danger icon={<DeleteOutlined />} loading={isDeletingDemandScore(record?.demand_id)}>
+                删除评分
+              </Button>
+            </Popconfirm>
+          ) : null}
+        </Space>
       ),
     },
   ]

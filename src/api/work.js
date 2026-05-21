@@ -89,6 +89,10 @@ export function generateDemandScoreTaskApi(demandId, payload = {}) {
   return request.post(`/work/demand-scores/demands/${demandId}/generate`, payload)
 }
 
+export function deleteDemandScoreTaskApi(demandId) {
+  return request.delete(`/work/demand-scores/demands/${demandId}`)
+}
+
 export function getDemandScoreResultsApi(params) {
   return request.get('/work/demand-score-results', { params })
 }

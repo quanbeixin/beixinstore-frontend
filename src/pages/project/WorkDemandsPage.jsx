@@ -1000,6 +1000,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     canCreate || hasPermission('project.template.view') || hasPermission('project.template.manage')
   const canTransferOwner = hasPermission('demand.transfer_owner') || hasRole('ADMIN')
   const canManageDemandValueReview = hasPermission('demand.score.result.view') && (hasRole('ADMIN') || hasRole('SUPER_ADMIN'))
+  const canManageDemandScoring = hasPermission('demand.score.result.view') && hasRole('SUPER_ADMIN')
   const canViewSelfLogs = hasPermission('worklog.view.self')
   const canViewTeamLogs = hasPermission('worklog.view.team')
   const canViewWorkflow = hasPermission('demand.workflow.view') || hasPermission('demand.view')
@@ -1070,6 +1071,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [feishuChatOptions, setFeishuChatOptions] = useState([])
   const [valueReviewMap, setValueReviewMap] = useState({})
   const [valueReviewActionLoading, setValueReviewActionLoading] = useState({})
+  const [demandScoreActionLoading, setDemandScoreActionLoading] = useState({})
   const [valueReviewParticipantModalOpen, setValueReviewParticipantModalOpen] = useState(false)
   const [valueReviewParticipantModalSubmitting, setValueReviewParticipantModalSubmitting] = useState(false)
   const [valueReviewTargetDemand, setValueReviewTargetDemand] = useState(null)
@@ -2314,6 +2316,33 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     (demandId) => Boolean(valueReviewActionLoading[String(demandId || '').trim().toUpperCase()]),
     [valueReviewActionLoading],
   )
+
+  const isDemandScoreActionLoading = useCallback(
+    (demandId) => Boolean(demandScoreActionLoading[String(demandId || '').trim().toUpperCase()]),
+    [demandScoreActionLoading],
+  )
+
+  const handleLaunchPlanGenerateDemandScore = useCallback(async (record) => {
+    const demandId = String(record?.id || '').trim().toUpperCase()
+    if (!demandId) return
+    setDemandScoreActionLoading((prev) => ({ ...prev, [demandId]: true }))
+    try {
+      const result = await generateDemandScoreTaskApi(demandId)
+      if (!result?.success) {
+        message.error(result?.message || '发起评分失败')
+        return
+      }
+      message.success(result?.message || '评分任务已生成')
+    } catch (error) {
+      message.error(error?.message || '发起评分失败')
+    } finally {
+      setDemandScoreActionLoading((prev) => {
+        const next = { ...prev }
+        delete next[demandId]
+        return next
+      })
+    }
+  }, [])
 
   const handleOpenStartDemandValueReview = useCallback((record) => {
     const demandId = String(record?.id || '').trim().toUpperCase()
@@ -4672,10 +4701,13 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     columns.push({
       title: '操作',
       key: 'action',
-      width: canTransferOwner ? 420 : 320,
-      fixed: 'right',
+      width: isLaunchPlanPage ? undefined : canTransferOwner ? 420 : 320,
+      fixed: isLaunchPlanPage ? undefined : 'right',
+      onCell: () => ({
+        style: { whiteSpace: 'nowrap' },
+      }),
       render: (_, record) => (record?.__group ? null : (
-        <Space size={2}>
+        <Space size={2} wrap={false} style={{ whiteSpace: 'nowrap' }}>
           <Button type="link" onClick={() => openDetailDrawer(record)}>
             详情
           </Button>
@@ -4718,6 +4750,15 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               </Button>
             </Popconfirm>
           ) : null}
+          {isLaunchPlanPage && canManageDemandScoring && isDemandReleased(record) ? (
+            <Button
+              type="link"
+              loading={isDemandScoreActionLoading(record?.id)}
+              onClick={() => handleLaunchPlanGenerateDemandScore(record)}
+            >
+              发起评分
+            </Button>
+          ) : null}
           {isLaunchPlanPage && canManageDemandValueReview && canShowValueReviewAction(record) ? (
             (() => {
               const demandId = String(record?.id || '').trim().toUpperCase()
@@ -4751,6 +4792,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     handleQuickFieldSave,
     handleQuickStatusUpdate,
     handleDeleteDemand,
+    canManageDemandScoring,
+    handleLaunchPlanGenerateDemandScore,
+    isDemandScoreActionLoading,
     canManageDemandValueReview,
     handleOpenStartDemandValueReview,
     isValueReviewActionLoading,
