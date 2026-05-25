@@ -69,7 +69,7 @@ const DEFAULT_VISIBLE_COLUMNS = [
 ]
 
 const DEFAULT_PRODUCT_OPTIONS = ['A1', 'Minimix', 'Vimi', 'Couplelens', 'Veeo', 'Heyo', 'POPDoll', 'Beyo', 'Viyo']
-const PINNED_PRODUCT_OPTIONS = ['Pixop', 'Facefame']
+const PINNED_PRODUCT_OPTIONS = ['Pixpop', 'Facefame']
 const DEFAULT_CHANNEL_OPTIONS = ['邮件', '表单', '商店评论', '其他']
 const DUPLICATE_TIME_WINDOW_MINUTES = 5
 const DUPLICATE_TIME_WINDOW_MS = DUPLICATE_TIME_WINDOW_MINUTES * 60 * 1000
