@@ -120,7 +120,7 @@ function findClosestAvailableLane(preferredLane, occupiedLanes) {
 function estimateNodeWidth(title) {
   const text = String(title || '').trim()
   const count = Math.max(text.length, 2)
-  return clamp(34 + count * 14, 82, 208)
+  return clamp(48 + count * 13, 112, 248)
 }
 
 function buildNodePositions(topologicalOrder, nodeMap, incomingMap, outgoingMap) {
@@ -178,18 +178,25 @@ function buildNodePositions(topologicalOrder, nodeMap, incomingMap, outgoingMap)
     laneMap.set(nodeKey, assignedLane)
   })
 
-  const laneValues = [...laneMap.values()]
-  const minLane = laneValues.length > 0 ? Math.min(...laneValues) : 0
+  // Normalize sparse / fractional lanes into dense integer rows so columns with different
+  // node counts keep readable spacing without globally stretching the canvas.
+  const normalizedLaneMap = new Map()
+  const sortedLaneValues = [...new Set([...laneMap.values()])].sort((a, b) => Number(a) - Number(b))
+  sortedLaneValues.forEach((laneValue, index) => {
+    normalizedLaneMap.set(Number(laneValue), index)
+  })
 
   return topologicalOrder.map((nodeKey) => {
     const node = nodeMap.get(nodeKey)
     const width = estimateNodeWidth(node?.title)
+    const rawLane = Number(laneMap.get(nodeKey) || 0)
+    const normalizedLane = Number(normalizedLaneMap.get(rawLane) || 0)
     return {
       key: nodeKey,
       id: node?.id,
       node,
       level: Number(levelMap.get(nodeKey) || 0),
-      lane: Number(laneMap.get(nodeKey) || 0) - minLane,
+      lane: normalizedLane,
       width,
       height: 40,
     }
@@ -197,13 +204,13 @@ function buildNodePositions(topologicalOrder, nodeMap, incomingMap, outgoingMap)
 }
 
 export function buildWorkflowDagLayout(nodes, options = {}) {
-  const horizontalGap = Number(options.horizontalGap || options.columnGap || 38)
-  const verticalGap = Number(options.verticalGap || options.rowGap || 18)
+  const horizontalGap = Number(options.horizontalGap || options.columnGap || 78)
+  const verticalGap = Number(options.verticalGap || options.rowGap || 30)
   const config = {
     horizontalGap,
     verticalGap,
-    paddingX: Number(options.paddingX || 52),
-    paddingY: Number(options.paddingY || 24),
+    paddingX: Number(options.paddingX || 72),
+    paddingY: Number(options.paddingY || 36),
   }
 
   const { ordered, nodeMap, incomingMap, outgoingMap } = buildGraphMaps(nodes)
@@ -226,11 +233,51 @@ export function buildWorkflowDagLayout(nodes, options = {}) {
     runningX += Number(levelWidthMap.get(level) || 0) + config.horizontalGap
   }
 
+  const levelGroups = new Map()
+  positions.forEach((item) => {
+    const level = Number(item.level || 0)
+    if (!levelGroups.has(level)) {
+      levelGroups.set(level, [])
+    }
+    levelGroups.get(level).push(item)
+  })
+
+  const adaptiveNodeYMap = new Map()
+  levelGroups.forEach((group) => {
+    const sortedGroup = [...group].sort((a, b) => {
+      const laneDiff = Number(a.lane || 0) - Number(b.lane || 0)
+      if (laneDiff !== 0) return laneDiff
+      return Number(a.node?.order || 0) - Number(b.node?.order || 0)
+    })
+
+    const count = sortedGroup.length
+    const denseBoost = count >= 4 ? Math.min(18, (count - 3) * 6) : 0
+    const levelVerticalGap = config.verticalGap + denseBoost
+    const step = Number(sortedGroup[0]?.height || 40) + levelVerticalGap
+
+    const originalCenterY =
+      sortedGroup.reduce(
+        (sum, item) => sum + (config.paddingY + Number(item.lane || 0) * (Number(item.height || 40) + config.verticalGap)),
+        0,
+      ) / Math.max(count, 1)
+
+    const startY = originalCenterY - ((count - 1) * step) / 2
+    sortedGroup.forEach((item, index) => {
+      adaptiveNodeYMap.set(item.key, startY + index * step)
+    })
+  })
+
+  let minAdaptiveY = Number.POSITIVE_INFINITY
+  adaptiveNodeYMap.forEach((value) => {
+    minAdaptiveY = Math.min(minAdaptiveY, Number(value || 0))
+  })
+  const topShift = Number.isFinite(minAdaptiveY) && minAdaptiveY < config.paddingY ? config.paddingY - minAdaptiveY : 0
+
   positions.forEach((item) => {
     positionMap.set(item.key, {
       ...item,
       x: Number(levelOffsetMap.get(Number(item.level || 0)) || config.paddingX),
-      y: config.paddingY + item.lane * (item.height + config.verticalGap),
+      y: Number(adaptiveNodeYMap.get(item.key) || config.paddingY) + topShift,
     })
   })
 
@@ -258,18 +305,18 @@ export function buildWorkflowDagLayout(nodes, options = {}) {
       ? Math.max(...positions.map((item) => (levelOffsetMap.get(Number(item.level || 0)) || config.paddingX) + item.width)) +
         config.paddingX
       : config.paddingX * 2
+  const renderedNodes = positions.map((item) => ({
+    ...item,
+    x: Number(levelOffsetMap.get(Number(item.level || 0)) || config.paddingX),
+    y: Number(adaptiveNodeYMap.get(item.key) || config.paddingY) + topShift,
+  }))
   const height =
-    positions.length > 0
-      ? Math.max(...positions.map((item) => config.paddingY + item.lane * (item.height + config.verticalGap) + item.height)) +
-        config.paddingY
+    renderedNodes.length > 0
+      ? Math.max(...renderedNodes.map((item) => Number(item.y || 0) + Number(item.height || 40))) + config.paddingY
       : config.paddingY * 2
 
   return {
-    nodes: positions.map((item) => ({
-      ...item,
-      x: Number(levelOffsetMap.get(Number(item.level || 0)) || config.paddingX),
-      y: config.paddingY + item.lane * (item.height + config.verticalGap),
-    })),
+    nodes: renderedNodes,
     edges,
     width,
     height,

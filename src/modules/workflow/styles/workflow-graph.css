@@ -41,7 +41,7 @@
 }
 
 .workflow-graph-canvas.is-dag {
-  padding: 6px 4px 10px;
+  padding: 14px 12px 18px;
 }
 
 .workflow-graph-auto {
@@ -336,9 +336,9 @@
 .workflow-node-card.is-compact {
   width: auto;
   min-width: 0;
-  max-width: 208px;
-  min-height: 36px;
-  padding: 6px 10px;
+  max-width: 248px;
+  min-height: 42px;
+  padding: 9px 14px;
   gap: 7px;
   border-radius: 999px;
   background:
@@ -424,7 +424,7 @@
 }
 
 .workflow-node-card__template-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.2;
   color: #0f172a;
