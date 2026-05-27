@@ -337,6 +337,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
   const groupingLimitWarnedRef = useRef(false)
   const hasHydratedViewStateRef = useRef(false)
   const initialViewStateRef = useRef(initialViewState)
+  const loadBugsRequestSeqRef = useRef(0)
 
   useEffect(() => {
     initialViewStateRef.current = initialViewState
@@ -463,6 +464,8 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
 
   const loadBugs = useCallback(async () => {
     if (!demandId) return
+    const requestSeq = loadBugsRequestSeqRef.current + 1
+    loadBugsRequestSeqRef.current = requestSeq
     setLoading(true)
     try {
       const baseParams = buildListQueryParams()
@@ -478,6 +481,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
             page: currentPage,
             pageSize: GROUP_FETCH_PAGE_SIZE,
           })
+          if (requestSeq !== loadBugsRequestSeqRef.current) return
           if (!result?.success) {
             message.error(result?.message || '获取需求Bug列表失败')
             return
@@ -496,6 +500,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
           currentPage += 1
         }
 
+        if (requestSeq !== loadBugsRequestSeqRef.current) return
         setRows(collectedRows)
         setTotal(serverTotal || collectedRows.length)
         setGroupLimitExceeded(truncated)
@@ -514,6 +519,7 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
         page,
         pageSize,
       })
+      if (requestSeq !== loadBugsRequestSeqRef.current) return
       if (!result?.success) {
         message.error(result?.message || '获取需求Bug列表失败')
         return
@@ -523,9 +529,12 @@ function DemandBugPanel({ demandId, initialViewState = null, onViewStateChange =
       setGroupLimitExceeded(false)
       groupingLimitWarnedRef.current = false
     } catch (error) {
+      if (requestSeq !== loadBugsRequestSeqRef.current) return
       message.error(error?.message || '获取需求Bug列表失败')
     } finally {
-      setLoading(false)
+      if (requestSeq === loadBugsRequestSeqRef.current) {
+        setLoading(false)
+      }
     }
   }, [buildListQueryParams, demandId, isGroupingEnabled, page, pageSize])
 
