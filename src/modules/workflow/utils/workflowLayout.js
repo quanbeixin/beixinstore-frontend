@@ -123,6 +123,46 @@ function estimateNodeWidth(title) {
   return clamp(48 + count * 13, 112, 248)
 }
 
+function getNodeLayoutSemanticBias(node) {
+  const title = String(node?.title || '').trim()
+  const key = String(node?.key || node?.id || '').trim().toUpperCase()
+  const phaseKey = String(node?.phaseKey || '').trim().toUpperCase()
+
+  const isTestCase = title.includes('测试用例') || phaseKey.includes('TEST_CASE') || key === 'NODE_5'
+  if (isTestCase) return -2.2
+
+  const isCaseReview = title.includes('用例评审') || phaseKey.includes('CASE_REVIEW') || key === 'NODE_6'
+  if (isCaseReview) return -1.8
+
+  const isFrontendDev = title.includes('前端开发') || phaseKey.includes('FRONTEND_DEV')
+  if (isFrontendDev) return 0.6
+
+  const isJointDebug = title.includes('联调阶段') || phaseKey.includes('JOINT_DEBUG')
+  if (isJointDebug) return 1
+
+  return 0
+}
+
+function isJointDebugNode(node) {
+  const title = String(node?.title || '').trim()
+  const key = String(node?.key || node?.id || '').trim().toUpperCase()
+  const phaseKey = String(node?.phaseKey || '').trim().toUpperCase()
+  return title.includes('联调阶段') || key.includes('JOINT_DEBUG') || phaseKey.includes('JOINT_DEBUG')
+}
+
+function isCodeReviewNode(node) {
+  const title = String(node?.title || '').trim().toLowerCase()
+  const key = String(node?.key || node?.id || '').trim().toUpperCase()
+  const phaseKey = String(node?.phaseKey || '').trim().toUpperCase()
+  return title.includes('code review') || key.includes('CODE_REVIEW') || phaseKey.includes('CODE_REVIEW')
+}
+
+function computeAverage(values) {
+  const list = Array.isArray(values) ? values.filter((value) => Number.isFinite(Number(value))) : []
+  if (list.length === 0) return null
+  return list.reduce((sum, value) => sum + Number(value), 0) / list.length
+}
+
 function buildNodePositions(topologicalOrder, nodeMap, incomingMap, outgoingMap) {
   const levelMap = new Map()
   const laneMap = new Map()
@@ -210,7 +250,7 @@ export function buildWorkflowDagLayout(nodes, options = {}) {
     horizontalGap,
     verticalGap,
     paddingX: Number(options.paddingX || 72),
-    paddingY: Number(options.paddingY || 36),
+    paddingY: Number(options.paddingY || 20),
   }
 
   const { ordered, nodeMap, incomingMap, outgoingMap } = buildGraphMaps(nodes)
@@ -245,14 +285,16 @@ export function buildWorkflowDagLayout(nodes, options = {}) {
   const adaptiveNodeYMap = new Map()
   levelGroups.forEach((group) => {
     const sortedGroup = [...group].sort((a, b) => {
-      const laneDiff = Number(a.lane || 0) - Number(b.lane || 0)
+      const aScore = Number(a.lane || 0) + getNodeLayoutSemanticBias(a.node)
+      const bScore = Number(b.lane || 0) + getNodeLayoutSemanticBias(b.node)
+      const laneDiff = aScore - bScore
       if (laneDiff !== 0) return laneDiff
       return Number(a.node?.order || 0) - Number(b.node?.order || 0)
     })
 
     const count = sortedGroup.length
-    const denseBoost = count >= 4 ? Math.min(18, (count - 3) * 6) : 0
-    const levelVerticalGap = config.verticalGap + denseBoost
+    const compactOffset = count >= 4 ? Math.min(10, (count - 3) * 2) : 0
+    const levelVerticalGap = Math.max(18, config.verticalGap - compactOffset)
     const step = Number(sortedGroup[0]?.height || 40) + levelVerticalGap
 
     const originalCenterY =
@@ -267,11 +309,76 @@ export function buildWorkflowDagLayout(nodes, options = {}) {
     })
   })
 
+  // Keep each level close to upstream centerline to reduce total graph height.
+  const orderedLevels = [...levelGroups.keys()].map((level) => Number(level)).sort((a, b) => a - b)
+  orderedLevels.forEach((level) => {
+    if (!Number.isFinite(level) || level <= 0) return
+    const group = levelGroups.get(level) || []
+    if (group.length === 0) return
+
+    const currentCenter = computeAverage(group.map((item) => adaptiveNodeYMap.get(item.key)))
+    if (!Number.isFinite(currentCenter)) return
+
+    const predecessorYs = []
+    group.forEach((item) => {
+      const predecessors = sortKeysByOrder(incomingMap.get(item.key) || [], nodeMap)
+      predecessors.forEach((preKey) => {
+        const y = adaptiveNodeYMap.get(preKey)
+        if (Number.isFinite(Number(y))) predecessorYs.push(Number(y))
+      })
+    })
+
+    const previousLevelGroup = levelGroups.get(level - 1) || []
+    const previousLevelCenter = computeAverage(previousLevelGroup.map((item) => adaptiveNodeYMap.get(item.key)))
+    const targetCenter = computeAverage(predecessorYs) ?? previousLevelCenter
+    if (!Number.isFinite(targetCenter)) return
+
+    let shift = clamp(targetCenter - currentCenter, -42, 42)
+    const hasCodeReviewNode = group.some((item) => isCodeReviewNode(item?.node))
+    // Keep code-review column from drifting upward; allow keep/downward only.
+    if (hasCodeReviewNode && shift < 0) shift = 0
+    if (Math.abs(shift) < 0.5) return
+    group.forEach((item) => {
+      adaptiveNodeYMap.set(item.key, Number(adaptiveNodeYMap.get(item.key) || 0) + shift)
+    })
+  })
+
+  // Keep integration stage and downstream columns visually centered.
+  // This avoids an upper-drift after elevating testcase/case-review nodes.
+  const jointDebugLevels = positions
+    .filter((item) => isJointDebugNode(item?.node))
+    .map((item) => Number(item.level || 0))
+  const firstJointDebugLevel = jointDebugLevels.length > 0 ? Math.min(...jointDebugLevels) : null
+  if (Number.isFinite(firstJointDebugLevel)) {
+    const baselineNodes = positions.filter((item) => Number(item.level || 0) <= firstJointDebugLevel)
+    const baselineCenterY =
+      baselineNodes.reduce((sum, item) => sum + Number(adaptiveNodeYMap.get(item.key) || 0), 0) / Math.max(baselineNodes.length, 1)
+
+    const downstreamLevels = [...levelGroups.keys()]
+      .map((level) => Number(level))
+      .filter((level) => level >= firstJointDebugLevel)
+      .sort((a, b) => a - b)
+
+    downstreamLevels.forEach((level) => {
+      const group = levelGroups.get(level) || []
+      if (group.length === 0) return
+      const currentCenterY =
+        group.reduce((sum, item) => sum + Number(adaptiveNodeYMap.get(item.key) || 0), 0) / Math.max(group.length, 1)
+      let shift = clamp((baselineCenterY - currentCenterY) * 0.72, -84, 84)
+      const hasCodeReviewNode = group.some((item) => isCodeReviewNode(item?.node))
+      if (hasCodeReviewNode && shift < 0) shift = 0
+      if (Math.abs(shift) < 0.5) return
+      group.forEach((item) => {
+        adaptiveNodeYMap.set(item.key, Number(adaptiveNodeYMap.get(item.key) || 0) + shift)
+      })
+    })
+  }
+
   let minAdaptiveY = Number.POSITIVE_INFINITY
   adaptiveNodeYMap.forEach((value) => {
     minAdaptiveY = Math.min(minAdaptiveY, Number(value || 0))
   })
-  const topShift = Number.isFinite(minAdaptiveY) && minAdaptiveY < config.paddingY ? config.paddingY - minAdaptiveY : 0
+  const topShift = Number.isFinite(minAdaptiveY) ? config.paddingY - minAdaptiveY : 0
 
   positions.forEach((item) => {
     positionMap.set(item.key, {
