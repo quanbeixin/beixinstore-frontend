@@ -169,9 +169,6 @@ function Login() {
               <Form.Item name="remember" valuePropName="checked" noStyle>
                 <Checkbox className="remember-check">记住我</Checkbox>
               </Form.Item>
-              <a className="forgot-link" href="#">
-                忘记密码？
-              </a>
             </div>
 
             <Form.Item>

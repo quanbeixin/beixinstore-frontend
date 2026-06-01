@@ -297,8 +297,12 @@ function MyDemandValueReviewsPage() {
                     title: '评分理由',
                     dataIndex: 'score_reason',
                     key: 'score_reason',
-                    ellipsis: true,
-                    render: (value) => value || '-',
+                    width: 420,
+                    render: (value) => (
+                      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5 }}>
+                        {value || '-'}
+                      </div>
+                    ),
                   },
                   {
                     title: '状态',

@@ -98,6 +98,7 @@ function DemandValueReviewsPage() {
   const [participantOptions, setParticipantOptions] = useState([])
   const [participantUserIds, setParticipantUserIds] = useState([])
   const [deletingReviewId, setDeletingReviewId] = useState(0)
+  const [savingReviewDateId, setSavingReviewDateId] = useState(0)
 
   const reviewIdFromRoute = useMemo(() => {
     const reviewId = Number(params?.id || 0)
@@ -110,6 +111,7 @@ function DemandValueReviewsPage() {
       try {
         const values = form.getFieldsValue()
         const range = Array.isArray(values?.created_range) ? values.created_range : []
+        const reviewDateRange = Array.isArray(values?.review_date_range) ? values.review_date_range : []
         const result = await getDemandValueReviewsApi({
           keyword: keyword || undefined,
           status: status || undefined,
@@ -119,6 +121,8 @@ function DemandValueReviewsPage() {
           pageSize,
           start_date: range[0] ? dayjs(range[0]).format('YYYY-MM-DD') : undefined,
           end_date: range[1] ? dayjs(range[1]).format('YYYY-MM-DD') : undefined,
+          review_start_date: reviewDateRange[0] ? dayjs(reviewDateRange[0]).format('YYYY-MM-DD') : undefined,
+          review_end_date: reviewDateRange[1] ? dayjs(reviewDateRange[1]).format('YYYY-MM-DD') : undefined,
         })
         if (!result?.success) {
           message.error(result?.message || '获取复盘列表失败')
@@ -192,6 +196,7 @@ function DemandValueReviewsPage() {
         review_value_summary: data?.review_value_summary || '',
         review_benefit_result: data?.review_benefit_result || '',
         review_improvement_notes: data?.review_improvement_notes || '',
+        review_date: data?.review_date ? dayjs(data.review_date) : null,
       })
     } catch (error) {
       message.error(error?.message || '获取复盘详情失败')
@@ -212,7 +217,11 @@ function DemandValueReviewsPage() {
     setSubmitting(true)
     try {
       const values = form.getFieldsValue()
-      const result = await updateDemandValueReviewApi(activeReviewId, values)
+      const payload = {
+        ...values,
+        review_date: values?.review_date ? dayjs(values.review_date).format('YYYY-MM-DD') : null,
+      }
+      const result = await updateDemandValueReviewApi(activeReviewId, payload)
       if (!result?.success) {
         message.error(result?.message || '保存草稿失败')
         return
@@ -232,12 +241,17 @@ function DemandValueReviewsPage() {
     try {
       const values = await form.validateFields([
         'overall_score',
+        'review_date',
         'review_value_summary',
         'review_benefit_result',
         'review_improvement_notes',
       ])
+      const payload = {
+        ...values,
+        review_date: values?.review_date ? dayjs(values.review_date).format('YYYY-MM-DD') : null,
+      }
       setSubmitting(true)
-      const result = await submitDemandValueReviewApi(activeReviewId, values)
+      const result = await submitDemandValueReviewApi(activeReviewId, payload)
       if (!result?.success) {
         message.error(result?.message || '提交复盘失败')
         return
@@ -354,6 +368,27 @@ function DemandValueReviewsPage() {
     [activeReviewId, loadRows, navigate, pagination.current, pagination.pageSize, reviewIdFromRoute],
   )
 
+  const handleInlineReviewDateChange = useCallback(async (reviewId, dateValue) => {
+    const normalizedReviewId = Number(reviewId || 0)
+    if (!Number.isInteger(normalizedReviewId) || normalizedReviewId <= 0) return
+    if (savingReviewDateId === normalizedReviewId) return
+
+    setSavingReviewDateId(normalizedReviewId)
+    try {
+      const reviewDate = dateValue ? dayjs(dateValue).format('YYYY-MM-DD') : null
+      const result = await updateDemandValueReviewApi(normalizedReviewId, { review_date: reviewDate })
+      if (!result?.success) {
+        message.error(result?.message || '保存复盘时间失败')
+        return
+      }
+      await loadRows({ page: pagination.current, pageSize: pagination.pageSize })
+    } catch (error) {
+      message.error(error?.message || '保存复盘时间失败')
+    } finally {
+      setSavingReviewDateId(0)
+    }
+  }, [loadRows, pagination.current, pagination.pageSize, savingReviewDateId])
+
   const activeStatus = String(activeDetail?.status || '').toUpperCase()
   const canEdit = activeStatus === 'PENDING' || activeStatus === 'IN_REVIEW'
   const canReopen = activeStatus === 'COMPLETED'
@@ -414,6 +449,33 @@ function DemandValueReviewsPage() {
         render: (value) => renderStatusTag(value),
       },
       {
+        title: '复盘时间',
+        dataIndex: 'review_date',
+        key: 'review_date',
+        width: 168,
+        render: (value, record) => {
+          const reviewId = Number(record?.id || 0)
+          const statusValue = String(record?.status || '').trim().toUpperCase()
+          const canEditReviewDate = isAdmin && statusValue !== 'SKIPPED'
+          const dateValue = value ? dayjs(value) : null
+
+          if (!canEditReviewDate) {
+            return formatBeijingDate(value) || '-'
+          }
+          return (
+            <DatePicker
+              allowClear
+              value={dateValue}
+              size="small"
+              style={{ width: 140 }}
+              placeholder="选择日期"
+              onChange={(next) => handleInlineReviewDateChange(reviewId, next)}
+              disabled={savingReviewDateId === reviewId}
+            />
+          )
+        },
+      },
+      {
         title: '价值评分',
         dataIndex: 'overall_score',
         key: 'overall_score',
@@ -470,7 +532,7 @@ function DemandValueReviewsPage() {
         ),
       },
     ],
-    [deletingReviewId, handleDeleteReview, isAdmin, navigate],
+    [deletingReviewId, handleDeleteReview, handleInlineReviewDateChange, isAdmin, navigate, savingReviewDateId],
   )
 
   return (
@@ -485,7 +547,16 @@ function DemandValueReviewsPage() {
             </Button>
           )}
         >
-          <Space wrap size={[8, 8]} style={{ marginBottom: 12 }}>
+          <div
+            style={{
+              marginBottom: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'nowrap',
+              overflowX: 'auto',
+            }}
+          >
             <Search
               allowClear
               placeholder="搜索需求ID或需求名称"
@@ -506,16 +577,30 @@ function DemandValueReviewsPage() {
               }}
             />
             <Form form={form} component={false}>
-              <Form.Item name="created_range" style={{ margin: 0 }}>
-                <RangePicker
-                  allowClear
-                  onChange={() => {
-                    loadRows({ page: 1, pageSize: pagination.pageSize })
-                  }}
-                />
-              </Form.Item>
+              <Space size={8} wrap={false}>
+                <Form.Item name="created_range" style={{ margin: 0 }}>
+                  <RangePicker
+                    allowClear
+                    style={{ width: 260 }}
+                    placeholder={['创建开始日期', '创建结束日期']}
+                    onChange={() => {
+                      loadRows({ page: 1, pageSize: pagination.pageSize })
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item name="review_date_range" style={{ margin: 0 }}>
+                  <RangePicker
+                    allowClear
+                    style={{ width: 260 }}
+                    placeholder={['复盘开始日期', '复盘结束日期']}
+                    onChange={() => {
+                      loadRows({ page: 1, pageSize: pagination.pageSize })
+                    }}
+                  />
+                </Form.Item>
+              </Space>
             </Form>
-          </Space>
+          </div>
 
           <Table
             rowKey="id"
@@ -627,6 +712,9 @@ function DemandValueReviewsPage() {
                 {formatBeijingDateTime(activeDetail?.demand_created_at) || '-'}
               </Descriptions.Item>
               <Descriptions.Item label="需求负责人">{activeDetail?.demand_owner_name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="复盘时间">
+                {formatBeijingDate(activeDetail?.review_date) || '-'}
+              </Descriptions.Item>
               <Descriptions.Item label="上线日期">
                 {formatBeijingDate(activeDetail?.demand_expected_release_date) || '-'}
               </Descriptions.Item>
@@ -659,6 +747,13 @@ function DemandValueReviewsPage() {
                   ]}
                 >
                   <InputNumber min={0} max={100} precision={0} style={{ width: 180 }} />
+                </Form.Item>
+                <Form.Item
+                  label="复盘时间"
+                  name="review_date"
+                  rules={[{ required: true, message: '请选择复盘时间' }]}
+                >
+                  <DatePicker style={{ width: 180 }} placeholder="请选择复盘时间" />
                 </Form.Item>
                 <Form.Item
                   label="价值结论"
@@ -743,8 +838,12 @@ function DemandValueReviewsPage() {
                       title: '评分理由',
                       dataIndex: 'score_reason',
                       key: 'score_reason',
-                      ellipsis: true,
-                      render: (value) => value || '-',
+                      width: 420,
+                      render: (value) => (
+                        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5 }}>
+                          {value || '-'}
+                        </div>
+                      ),
                     },
                     {
                       title: '状态',
