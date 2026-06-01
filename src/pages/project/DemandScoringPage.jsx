@@ -36,12 +36,6 @@ function renderSlotStatus(status) {
   return <Tag color="warning">待评分</Tag>
 }
 
-function renderTaskStatus(status) {
-  if (status === 'COMPLETED') return <Tag color="success">已完成</Tag>
-  if (status === 'SCORING') return <Tag color="processing">评分中</Tag>
-  return <Tag color="warning">待评分</Tag>
-}
-
 function scoreHelpText(scoreValue) {
   const normalizedScore = Number(scoreValue)
   if (Number.isFinite(normalizedScore) && (normalizedScore < 70 || normalizedScore > 90)) {
@@ -192,7 +186,7 @@ function DemandScoringPage() {
       title: '需求',
       dataIndex: 'demand_name',
       key: 'demand_name',
-      width: 420,
+      width: 340,
       fixed: 'left',
       onCell: () => ({
         className: 'demand-scoring-page__cell--demand',
@@ -287,16 +281,10 @@ function DemandScoringPage() {
       render: renderSlotStatus,
     },
     {
-      title: '需求评分状态',
-      dataIndex: 'task_status',
-      key: 'task_status',
-      width: 140,
-      render: renderTaskStatus,
-    },
-    {
       title: '操作',
       key: 'action',
       width: 120,
+      fixed: 'right',
       render: (_, record) => (
         <Button type={record.status === 'SUBMITTED' ? 'default' : 'primary'} onClick={() => openSlot(record)}>
           {record.status === 'SUBMITTED' ? '查看/修改' : '去评分'}
@@ -340,7 +328,7 @@ function DemandScoringPage() {
           columns={columns}
           dataSource={rows}
           tableLayout="fixed"
-          scroll={{ x: 1960 }}
+          scroll={{ x: 1740 }}
           locale={{ emptyText: <Empty description="暂无需要你评分的需求" /> }}
           pagination={pagination}
           onChange={(nextPagination) => {
