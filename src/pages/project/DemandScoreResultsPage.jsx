@@ -43,6 +43,11 @@ function getWeekRange(offset = 0) {
   return [weekStart, weekEnd]
 }
 
+function getMonthRange(offset = 0) {
+  const base = dayjs().add(offset, 'month')
+  return [base.startOf('month'), base.endOf('month')]
+}
+
 function isSameDayRange(left = [], right = []) {
   if (!Array.isArray(left) || !Array.isArray(right) || left.length < 2 || right.length < 2) return false
   const leftStart = dayjs(left[0])
@@ -163,11 +168,13 @@ function DemandScoreResultsPage() {
   const [rankingSorter, setRankingSorter] = useState({ field: 'avg_final_score', order: 'descend' })
   const thisWeekRange = useMemo(() => getWeekRange(0), [])
   const lastWeekRange = useMemo(() => getWeekRange(-1), [])
+  const lastMonthRange = useMemo(() => getMonthRange(-1), [])
   const quickRangeKey = useMemo(() => {
+    if (isSameDayRange(range, lastMonthRange)) return 'LAST_MONTH'
     if (isSameDayRange(range, thisWeekRange)) return 'THIS_WEEK'
     if (isSameDayRange(range, lastWeekRange)) return 'LAST_WEEK'
     return ''
-  }, [lastWeekRange, range, thisWeekRange])
+  }, [lastMonthRange, lastWeekRange, range, thisWeekRange])
 
   const dateParams = useMemo(() => ({
     start_date: range?.[0]?.format?.('YYYY-MM-DD'),
@@ -904,6 +911,9 @@ function DemandScoreResultsPage() {
     <Card>
       <Space wrap>
         <Space.Compact>
+          <Button type={quickRangeKey === 'LAST_MONTH' ? 'primary' : 'default'} onClick={() => setRange(getMonthRange(-1))}>
+            上月
+          </Button>
           <Button type={quickRangeKey === 'THIS_WEEK' ? 'primary' : 'default'} onClick={() => setRange(getWeekRange(0))}>
             本周
           </Button>

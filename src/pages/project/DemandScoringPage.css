@@ -211,8 +211,29 @@
   padding: 18px;
 }
 
+.demand-scoring-page__drawer-hero .ant-card-body {
+  padding: 12px 14px;
+}
+
 .demand-scoring-page__drawer-hero {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92)) !important;
+}
+
+.demand-scoring-page__target-summary {
+  display: grid;
+  gap: 7px;
+}
+
+.demand-scoring-page__target-title {
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.demand-scoring-page__target-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  line-height: 1.4;
 }
 
 .demand-scoring-page__reference-card {
@@ -241,6 +262,56 @@
 
 .demand-scoring-page__form-card {
   background: rgba(255, 255, 255, 0.92) !important;
+}
+
+.demand-scoring-page__score-guide {
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.86);
+}
+
+.demand-scoring-page__score-guide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.demand-scoring-page__score-guide-table {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 10px;
+  background: rgba(226, 232, 240, 0.9);
+}
+
+.demand-scoring-page__score-guide-row {
+  display: grid;
+  grid-template-columns: 72px 56px minmax(0, 1fr) 94px;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.demand-scoring-page__score-guide-row--head {
+  min-height: 34px;
+  background: rgba(241, 245, 249, 0.96);
+  color: #64748b;
+  font-weight: 600;
+}
+
+.demand-scoring-page__score-guide-range {
+  color: #0f172a;
+  font-weight: 600;
 }
 
 .demand-scoring-page__form .ant-form-item-label > label {
@@ -275,5 +346,18 @@
 
   .demand-scoring-page__reference-grid {
     grid-template-columns: 1fr;
+  }
+
+  .demand-scoring-page__score-guide-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .demand-scoring-page__score-guide-table {
+    overflow-x: auto;
+  }
+
+  .demand-scoring-page__score-guide-row {
+    min-width: 520px;
   }
 }

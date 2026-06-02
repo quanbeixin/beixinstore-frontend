@@ -31,6 +31,39 @@ const PARTICIPATION_ROLE_COLORS = {
   项目管理: 'purple',
 }
 
+const SCORE_GUIDE_ROWS = [
+  {
+    range: '70-79',
+    level: '及格',
+    description: '基本达成预期，无明显问题',
+    required: true,
+  },
+  {
+    range: '80-85',
+    level: '良好',
+    description: '稳定交付，部分超出预期',
+    required: false,
+  },
+  {
+    range: '86-89',
+    level: '优秀',
+    description: '多数维度超出预期，值得肯定',
+    required: false,
+  },
+  {
+    range: '90-95',
+    level: '极好',
+    description: '显著超出预期，可作为标杆案例',
+    required: true,
+  },
+  {
+    range: '96-100',
+    level: '破圈',
+    description: '必须有跨部门、可举证的影响力事件',
+    required: true,
+  },
+]
+
 function renderSlotStatus(status) {
   if (status === 'SUBMITTED') return <Tag color="success">已评分</Tag>
   return <Tag color="warning">待评分</Tag>
@@ -38,8 +71,8 @@ function renderSlotStatus(status) {
 
 function scoreHelpText(scoreValue) {
   const normalizedScore = Number(scoreValue)
-  if (Number.isFinite(normalizedScore) && (normalizedScore < 70 || normalizedScore > 90)) {
-    return '评分低于 70 分、或高于 90 分时，需要填写评价说明。'
+  if (Number.isFinite(normalizedScore) && (normalizedScore < 80 || normalizedScore > 89)) {
+    return '除 80-89 分外，其他分数均需填写评价说明。'
   }
   return '评分只对你本人可见，结果页仅展示按身份聚合后的结果。'
 }
@@ -358,15 +391,16 @@ function DemandScoringPage() {
         {activeSlot ? (
           <div className="demand-scoring-page__drawer-content">
             <Card size="small" className="demand-scoring-page__drawer-hero">
-              <Space direction="vertical" size={8}>
-                <Tag variant="filled" className="demand-scoring-page__drawer-eyebrow">
-                  评分对象
-                </Tag>
-                <Text strong>{activeSlot.demand_name}</Text>
-                <Text type="secondary">被评价人：{activeSlot.evaluatee_name}</Text>
-                <Text type="secondary">评分身份：{(activeSlot.role_labels || []).join(' / ') || '-'}</Text>
-                <Text type="secondary">评分项：{activeSlot.score_item_label || '-'}</Text>
-              </Space>
+              <div className="demand-scoring-page__target-summary">
+                <Text strong className="demand-scoring-page__target-title">
+                  {activeSlot.demand_name}
+                </Text>
+                <div className="demand-scoring-page__target-meta">
+                  <Text type="secondary">被评价人：{activeSlot.evaluatee_name}</Text>
+                  <Text type="secondary">评分身份：{(activeSlot.role_labels || []).join(' / ') || '-'}</Text>
+                  <Text type="secondary">评分项：{activeSlot.score_item_label || '-'}</Text>
+                </div>
+              </div>
             </Card>
             <Card size="small" className="demand-scoring-page__reference-card" title="客观参考信息">
               <div className="demand-scoring-page__reference-grid">
@@ -391,6 +425,32 @@ function DemandScoringPage() {
             </Card>
             <Card size="small" className="demand-scoring-page__form-card" title="评分填写">
               <Form form={form} layout="vertical" className="demand-scoring-page__form">
+                <div className="demand-scoring-page__score-guide" aria-label="评分参考标准">
+                  <div className="demand-scoring-page__score-guide-header">
+                    <Text strong>评分参考标准</Text>
+                    <Text type="secondary">80-89 分不需要说明，其他分数必须阐述。</Text>
+                  </div>
+                  <div className="demand-scoring-page__score-guide-table">
+                    <div className="demand-scoring-page__score-guide-row demand-scoring-page__score-guide-row--head">
+                      <span>分数段</span>
+                      <span>等级</span>
+                      <span>参考依据</span>
+                      <span>说明要求</span>
+                    </div>
+                    {SCORE_GUIDE_ROWS.map((item) => (
+                      <div className="demand-scoring-page__score-guide-row" key={item.range}>
+                        <span className="demand-scoring-page__score-guide-range">{item.range}</span>
+                        <span>{item.level}</span>
+                        <span>{item.description}</span>
+                        <span>
+                          <Tag color={item.required ? 'warning' : 'success'}>
+                            {item.required ? '必须阐述' : '不需要'}
+                          </Tag>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 <Form.Item
                   label={activeSlot.score_item_label || '评分'}
                   name="score"
@@ -409,10 +469,10 @@ function DemandScoringPage() {
                         const score = Number(getFieldValue('score'))
                         if (
                           Number.isFinite(score) &&
-                          (score < 70 || score > 90) &&
+                          (score < 80 || score > 89) &&
                           !String(value || '').trim()
                         ) {
-                          return Promise.reject(new Error('低于 70 分、或高于 90 分时需要填写评价说明'))
+                          return Promise.reject(new Error('除 80-89 分外，其他分数均需填写评价说明'))
                         }
                         return Promise.resolve()
                       },
