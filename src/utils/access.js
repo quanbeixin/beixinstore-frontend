@@ -372,7 +372,11 @@ export function canAccessRoute(route) {
   const access = getAccessSnapshot()
   const menuKey = String(route.menu?.key || route.path || '').trim()
 
-  if (Array.isArray(route.requiredRoles) && route.requiredRoles.includes('SUPER_ADMIN')) {
+  if (
+    Array.isArray(route.requiredRoles) &&
+    route.requiredRoles.includes('SUPER_ADMIN') &&
+    !(route.allowDepartmentManager === true && Boolean(access?.is_department_manager))
+  ) {
     if (!access?.is_super_admin) return false
   }
 
@@ -387,6 +391,9 @@ export function canAccessRoute(route) {
    // Ensure owner-workbench menu can be shown for department managers.
   if (menuKey === '/owner-workbench') {
     if (access?.is_department_manager) return true
+  }
+  if (route.allowDepartmentManager === true && access?.is_department_manager) {
+    return true
   }
   const accessMap = getMenuVisibilityAccessMap()
   if (Object.prototype.hasOwnProperty.call(accessMap, menuKey)) {

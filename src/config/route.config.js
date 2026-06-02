@@ -263,8 +263,9 @@ export const PRIVATE_ROUTES = [
   {
     path: '/demand-score-results',
     componentKey: 'demandScoreResults',
-    requiredPermission: 'demand.score.result.view',
+    requiredPermission: null,
     requiredRoles: ['SUPER_ADMIN'],
+    allowDepartmentManager: true,
     page: {
       title: '评分结果',
       subtitle: '按需求与周期查看团队评分结果和维度表现。',

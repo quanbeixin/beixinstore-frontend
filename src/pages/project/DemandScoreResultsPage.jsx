@@ -2,8 +2,13 @@ import { DeleteOutlined, DownloadOutlined, EyeOutlined, QuestionCircleOutlined, 
 import { Button, Card, DatePicker, Empty, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getDepartmentsApi } from '../../api/org'
-import { deleteDemandScoreTaskApi, getDemandScoreResultDetailApi, getDemandScoreResultsApi, getDemandScoreTeamRankingApi } from '../../api/work'
+import {
+  deleteDemandScoreTaskApi,
+  getDemandScoreResultDetailApi,
+  getDemandScoreResultsApi,
+  getDemandScoreTeamRankingApi,
+  getInsightFilterOptionsApi,
+} from '../../api/work'
 import { getAccessSnapshot } from '../../utils/access'
 import { pinyinSelectFilter } from '../../utils/selectSearch'
 
@@ -146,6 +151,16 @@ function renderRoleScoreValue(record, fieldKey, roleKey) {
 function DemandScoreResultsPage() {
   const access = useMemo(() => getAccessSnapshot(), [])
   const canDeleteDemandScore = Boolean(access?.is_super_admin)
+  const canViewAllDepartments = Boolean(access?.is_super_admin)
+  const managedDepartmentIds = useMemo(
+    () =>
+      Array.isArray(access?.managed_department_ids)
+        ? access.managed_department_ids
+            .map((item) => Number(item))
+            .filter((item) => Number.isInteger(item) && item > 0)
+        : [],
+    [access],
+  )
   const [activeTab, setActiveTab] = useState('demands')
   const [range, setRange] = useState(getDefaultRange)
   const [keyword, setKeyword] = useState('')
@@ -264,12 +279,12 @@ function DemandScoreResultsPage() {
   const loadDepartmentOptions = useCallback(async () => {
     setDepartmentLoading(true)
     try {
-      const result = await getDepartmentsApi({ mode: 'flat' })
+      const result = await getInsightFilterOptionsApi()
       if (!result?.success) {
         message.error(result?.message || '获取部门列表失败')
         return
       }
-      const items = Array.isArray(result.data) ? result.data : []
+      const items = Array.isArray(result.data?.departments) ? result.data.departments : []
       setDepartmentOptions(
         items
           .map((item) => ({
@@ -284,6 +299,17 @@ function DemandScoreResultsPage() {
       setDepartmentLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    if (canViewAllDepartments) return
+    if (departmentOptions.length === 0) return
+    const currentDepartmentId = Number(departmentId || 0)
+    if (departmentOptions.some((item) => Number(item.value) === currentDepartmentId)) return
+    const fallbackDepartmentId = managedDepartmentIds.find((id) =>
+      departmentOptions.some((item) => Number(item.value) === Number(id)),
+    )
+    setDepartmentId(fallbackDepartmentId || departmentOptions[0]?.value)
+  }, [canViewAllDepartments, departmentId, departmentOptions, managedDepartmentIds])
 
   const rankingSortConfig = useMemo(() => {
     const field = RANKING_SORT_FIELDS.includes(rankingSorter?.field) ? rankingSorter.field : 'avg_final_score'
