@@ -421,6 +421,10 @@ function DemandScoringPage() {
                   <Text type="secondary">工时摘要</Text>
                   <Text>{`${formatActualHours(activeSlot.actual_hours_total)} · 共 ${Number(activeSlot.actual_worklog_count || 0)} 条工时`}</Text>
                 </div>
+                <div className="demand-scoring-page__reference-block demand-scoring-page__reference-block--metric">
+                  <Text type="secondary">Bug 数</Text>
+                  <Text>{`${Number(activeSlot.bug_count || 0)} 个`}</Text>
+                </div>
               </div>
             </Card>
             <Card size="small" className="demand-scoring-page__form-card" title="评分填写">

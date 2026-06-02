@@ -262,6 +262,15 @@ function MemberEfficiencyDetailPage() {
     work_item_list: [],
     trend: [],
     phase_distribution: [],
+    demand_bug_rate: {
+      demand_count: 0,
+      demand_actual_hours: 0,
+      bug_count: 0,
+      bug_rate_per_hour: 0,
+      bug_rate_per_100_hours: 0,
+      status_distribution: [],
+      demand_rows: [],
+    },
   })
   const access = useMemo(() => getAccessSnapshot() || {}, [])
   const canEditOwnerEstimate = hasPermission('workbench.view.owner') || Boolean(access?.is_super_admin)
@@ -318,6 +327,15 @@ function MemberEfficiencyDetailPage() {
   const phaseDistribution = useMemo(
     () => (Array.isArray(data.phase_distribution) ? data.phase_distribution : []),
     [data.phase_distribution],
+  )
+  const demandBugRate = data.demand_bug_rate || {}
+  const demandBugRows = useMemo(
+    () => (Array.isArray(demandBugRate.demand_rows) ? demandBugRate.demand_rows : []),
+    [demandBugRate.demand_rows],
+  )
+  const demandBugStatusDistribution = useMemo(
+    () => (Array.isArray(demandBugRate.status_distribution) ? demandBugRate.status_distribution : []),
+    [demandBugRate.status_distribution],
   )
   const demandFollowUpDetailRows = useMemo(() => {
     const detailMap = new Map()
@@ -796,6 +814,41 @@ function MemberEfficiencyDetailPage() {
     },
   ]
 
+  const demandBugColumns = [
+    {
+      title: '需求',
+      dataIndex: 'demand_name',
+      key: 'demand_name',
+      render: (value, row) => (
+        <div className="efficiency-demand-cell">
+          <Text strong className="efficiency-demand-cell__title">{value || `需求#${row.demand_id || '-'}`}</Text>
+          <Text type="secondary" className="efficiency-demand-cell__meta">ID：{row.demand_id || '-'}</Text>
+        </div>
+      ),
+    },
+    {
+      title: '投入工时(h)',
+      dataIndex: 'actual_hours',
+      key: 'actual_hours',
+      width: 120,
+      render: (value) => formatHours(value),
+    },
+    {
+      title: '关联 Bug',
+      dataIndex: 'bug_count',
+      key: 'bug_count',
+      width: 110,
+      render: (value) => <Text strong>{toNumber(value, 0)}</Text>,
+    },
+    {
+      title: '每100h Bug',
+      dataIndex: 'bug_rate_per_100_hours',
+      key: 'bug_rate_per_100_hours',
+      width: 130,
+      render: (value) => `${toNumber(value, 0).toFixed(2)} 个`,
+    },
+  ]
+
   const summaryItems = [
     { label: '事项数', value: toNumber(summary.total_item_count, 0), note: '当前筛选范围内的事项总数，口径对齐个人工作台历史记录的按事项视图' },
     {
@@ -889,17 +942,19 @@ function MemberEfficiencyDetailPage() {
           </div>
         </Card>
 
-        <Row gutter={[16, 16]} className="efficiency-summary-grid">
+        <div className="efficiency-summary-strip" aria-label="人效概览指标">
           {summaryItems.map((item) => (
-            <Col xs={24} sm={12} xl={6} key={item.label}>
-              <div className="efficiency-summary-card">
+            <div className="efficiency-summary-strip__item" key={item.label}>
+              <Tooltip title={item.note}>
+                <div className="efficiency-summary-card">
                 <div className="efficiency-summary-card__label">{item.label}</div>
                 <div className="efficiency-summary-card__value">{item.valueNode || item.value}</div>
                 <div className="efficiency-summary-card__note">{item.note}</div>
-              </div>
-            </Col>
+                </div>
+              </Tooltip>
+            </div>
           ))}
-        </Row>
+        </div>
 
         {!userId ? (
           <Card variant="borderless" className="efficiency-detail-card">
@@ -907,8 +962,8 @@ function MemberEfficiencyDetailPage() {
           </Card>
         ) : (
           <>
-            <Row gutter={[16, 16]}>
-              <Col xs={24} xl={14}>
+            <Row gutter={[16, 16]} className="efficiency-overview-row">
+              <Col xs={24} xl={12} className="efficiency-overview-main">
                 <Card variant="borderless" className="efficiency-detail-section">
                   <WorkTypeDistributionChart
                     data={data.work_type_distribution}
@@ -918,7 +973,7 @@ function MemberEfficiencyDetailPage() {
                   />
                 </Card>
               </Col>
-              <Col xs={24} xl={10}>
+              <Col xs={24} xl={12} className="efficiency-overview-side">
                 <Card title="阶段分布" variant="borderless" className="efficiency-detail-section">
                   <div className="efficiency-insight-stack">
                     <div className="efficiency-phase-summary">
@@ -943,6 +998,88 @@ function MemberEfficiencyDetailPage() {
                         {phaseDistribution.length === 0 ? <Text type="secondary">当前范围暂无阶段分布</Text> : null}
                       </div>
                     </div>
+                  </div>
+                </Card>
+
+                <Card
+                  title="需求 Bug 率"
+                  extra={<span className="efficiency-detail-toolbar__hint">当前周期内参与需求及处理人为当前成员的 Bug</span>}
+                  variant="borderless"
+                  className="efficiency-detail-section efficiency-bug-rate-section efficiency-bug-rate-section--compact"
+                >
+                  <div className="efficiency-bug-rate-layout">
+                    <div className="efficiency-bug-rate-metrics">
+                      <div className="efficiency-bug-rate-metric efficiency-bug-rate-metric--primary">
+                        <div className="efficiency-bug-rate-metric__label">每100h Bug</div>
+                        <div className="efficiency-bug-rate-metric__value">
+                          {toNumber(demandBugRate.bug_rate_per_100_hours, 0).toFixed(2)}
+                        </div>
+                        <div className="efficiency-bug-rate-metric__note">主指标，按需求实际投入折算</div>
+                      </div>
+                      <div className="efficiency-bug-rate-metric">
+                        <div className="efficiency-bug-rate-metric__label">小时 Bug 率</div>
+                        <div className="efficiency-bug-rate-metric__value">
+                          {toNumber(demandBugRate.bug_rate_per_hour, 0).toFixed(4)}
+                        </div>
+                        <div className="efficiency-bug-rate-metric__note">Bug 数 / 需求实际工时</div>
+                      </div>
+                      <div className="efficiency-bug-rate-metric">
+                        <div className="efficiency-bug-rate-metric__label">需求实际工时(h)</div>
+                        <div className="efficiency-bug-rate-metric__value">{formatHours(demandBugRate.demand_actual_hours)}</div>
+                        <div className="efficiency-bug-rate-metric__note">{toNumber(demandBugRate.demand_count, 0)} 个需求参与投入</div>
+                      </div>
+                      <div className="efficiency-bug-rate-metric">
+                        <div className="efficiency-bug-rate-metric__label">关联 Bug</div>
+                        <div className="efficiency-bug-rate-metric__value">{toNumber(demandBugRate.bug_count, 0)}</div>
+                        <div className="efficiency-bug-rate-metric__note">含主处理人与多人处理人，按 Bug 去重</div>
+                      </div>
+                    </div>
+
+                    <div className="efficiency-bug-rate-status">
+                      <span className="efficiency-bug-rate-status__label">状态分布</span>
+                      <div className="efficiency-note-row efficiency-bug-rate-status__chips">
+                        {demandBugStatusDistribution.map((item) => (
+                          <Tag
+                            key={item.status_code || item.status_name}
+                            color={item.color || 'default'}
+                            className="efficiency-bug-rate-status__tag"
+                          >
+                            {item.status_name || item.status_code || '未设置'} · {toNumber(item.bug_count, 0)}
+                          </Tag>
+                        ))}
+                        {demandBugStatusDistribution.length === 0 ? <Text type="secondary">当前范围暂无 Bug</Text> : null}
+                      </div>
+                    </div>
+
+                    <Table
+                      rowKey={(row) => `demand-bug-${row.demand_id || row.demand_name}`}
+                      columns={demandBugColumns}
+                      dataSource={demandBugRows}
+                      size="small"
+                      className="efficiency-detail-table efficiency-bug-rate-table"
+                      pagination={{ pageSize: 5, showSizeChanger: false, showTotal: (total) => `共 ${total} 个需求` }}
+                      scroll={{ x: 760 }}
+                      locale={{ emptyText: '当前范围暂无参与需求工时' }}
+                      expandable={{
+                        rowExpandable: (record) => Array.isArray(record.bugs) && record.bugs.length > 0,
+                        expandedRowRender: (record) => (
+                          <div className="efficiency-bug-rate-bugs">
+                            {record.bugs.map((bug) => (
+                              <div key={bug.id} className="efficiency-bug-rate-bug">
+                                <div className="efficiency-bug-rate-bug__main">
+                                  <Text strong>{bug.bug_no || `BUG#${bug.id}`}</Text>
+                                  <Text className="efficiency-bug-rate-bug__title">{bug.title || '-'}</Text>
+                                </div>
+                                <Space size={8} wrap>
+                                  <Tag color={bug.status_color || 'default'}>{bug.status_name || bug.status_code || '未设置'}</Tag>
+                                  <Text type="secondary">{formatBeijingDate(bug.created_at) || '-'}</Text>
+                                </Space>
+                              </div>
+                            ))}
+                          </div>
+                        ),
+                      }}
+                    />
                   </div>
                 </Card>
               </Col>

@@ -257,7 +257,7 @@
 }
 
 .demand-scoring-page__reference-block--metric {
-  grid-column: 1 / -1;
+  min-width: 0;
 }
 
 .demand-scoring-page__form-card {
