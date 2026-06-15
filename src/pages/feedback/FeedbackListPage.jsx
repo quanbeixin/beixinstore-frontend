@@ -174,10 +174,6 @@ async function copyTextWithFallback(text) {
   }
 }
 
-function getStatusLabel(value) {
-  return STATUS_META[value]?.label || String(value || '-')
-}
-
 function normalizeEmail(value) {
   const email = String(value || '').trim().toLowerCase()
   return email
@@ -606,52 +602,36 @@ function FeedbackListPage() {
     })
   }
 
-  const handleStatusChange = (record, newStatus) => {
+  const handleStatusChange = async (record, newStatus) => {
     if (newStatus === record.status) return
 
-    Modal.confirm({
-      title: '确认修改状态',
-      content: `确定将状态从“${getStatusLabel(record.status)}”改为“${getStatusLabel(newStatus)}”吗？`,
-      okText: '确认',
-      cancelText: '取消',
-      onOk: async () => {
-        try {
-          await updateFeedbackStatusApi(record.id, newStatus)
-          message.success('状态更新成功')
-          fetchRows()
-        } catch (error) {
-          message.error(error?.message || '状态更新失败')
-        }
-      },
-    })
+    try {
+      await updateFeedbackStatusApi(record.id, newStatus)
+      message.success('状态更新成功')
+      fetchRows()
+    } catch (error) {
+      message.error(error?.message || '状态更新失败')
+    }
   }
 
-  const handleBatchStatusChange = (newStatus) => {
+  const handleBatchStatusChange = async (newStatus) => {
     if (!newStatus) return
     if (selectedRowKeys.length === 0) {
       message.warning('请先勾选需要修改状态的数据')
       return
     }
 
-    Modal.confirm({
-      title: '确认批量修改状态',
-      content: `确定将选中的 ${selectedRowKeys.length} 条反馈状态改为“${getStatusLabel(newStatus)}”吗？`,
-      okText: '确认修改',
-      cancelText: '取消',
-      onOk: async () => {
-        setBatchStatusLoading(true)
-        try {
-          await batchUpdateFeedbackStatusApi(selectedRowKeys, newStatus)
-          message.success('批量状态更新成功')
-          setSelectedRowKeys([])
-          fetchRows()
-        } catch (error) {
-          message.error(error?.message || '批量状态更新失败')
-        } finally {
-          setBatchStatusLoading(false)
-        }
-      },
-    })
+    setBatchStatusLoading(true)
+    try {
+      await batchUpdateFeedbackStatusApi(selectedRowKeys, newStatus)
+      message.success('批量状态更新成功')
+      setSelectedRowKeys([])
+      fetchRows()
+    } catch (error) {
+      message.error(error?.message || '批量状态更新失败')
+    } finally {
+      setBatchStatusLoading(false)
+    }
   }
 
   const handleToggleNewRequest = async (record) => {
