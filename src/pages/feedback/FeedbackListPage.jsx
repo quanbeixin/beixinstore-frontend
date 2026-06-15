@@ -72,6 +72,26 @@ const DEFAULT_VISIBLE_COLUMNS = [
 
 const DEFAULT_PRODUCT_OPTIONS = ['A1', 'Minimix', 'Vimi', 'Couplelens', 'Veeo', 'Heyo', 'POPDoll', 'Beyo', 'Viyo']
 const PINNED_PRODUCT_OPTIONS = ['Pixpop', 'Facefame']
+const PRODUCT_ALIAS_MAP = {
+  a1: 'A1',
+  beyo: 'Beyo',
+  beatmo: 'Beatmo',
+  couplelens: 'Couplelens',
+  dradra: 'Dradra',
+  facefame: 'Facefame',
+  funpack: 'Funpack',
+  gloglo: 'gloglo',
+  heyo: 'Heyo',
+  makmak: 'makmak',
+  minimix: 'Minimix',
+  popdoll: 'POPDoll',
+  pixpop: 'Pixpop',
+  usgen: 'Usgen',
+  veeo: 'Veeo',
+  vimi: 'Vimi',
+  viyo: 'Viyo',
+  zikzik: 'Zikzik',
+}
 const DEFAULT_CHANNEL_OPTIONS = ['邮件', '表单', '商店评论', '其他']
 const DUPLICATE_TIME_WINDOW_MINUTES = 5
 const DUPLICATE_TIME_WINDOW_MS = DUPLICATE_TIME_WINDOW_MINUTES * 60 * 1000
@@ -228,6 +248,25 @@ function normalizeOptionText(value) {
   return String(value || '').trim()
 }
 
+function normalizeProductName(value) {
+  const text = normalizeOptionText(value)
+  if (!text) return ''
+  return PRODUCT_ALIAS_MAP[text.toLowerCase()] || text
+}
+
+function mergeProductOptions(...sources) {
+  const map = new Map()
+  sources.flat().forEach((item) => {
+    const normalized = normalizeProductName(item)
+    if (!normalized) return
+    const key = normalized.toLowerCase()
+    if (!map.has(key)) {
+      map.set(key, normalized)
+    }
+  })
+  return Array.from(map.values())
+}
+
 function getPrimaryCategory(record) {
   return String(record?.ai_primary_category || record?.ai_category || '').trim()
 }
@@ -325,7 +364,7 @@ function FeedbackListPage() {
         if (!active) return
 
         const productNames = (productResult?.data || [])
-          .map((item) => String(item?.item_name || '').trim())
+          .map((item) => normalizeProductName(item?.item_name))
           .filter(Boolean)
         const channelNames = (channelResult?.data || [])
           .map((item) => String(item?.item_name || '').trim())
@@ -398,7 +437,7 @@ function FeedbackListPage() {
       setObservedProductNames((prev) => {
         const next = new Set([...(Array.isArray(prev) ? prev : [])])
         data.forEach((item) => {
-          const name = normalizeOptionText(item?.product)
+          const name = normalizeProductName(item?.product)
           if (name) next.add(name)
         })
         return Array.from(next)
@@ -498,7 +537,7 @@ function FeedbackListPage() {
   }, [importantEmailMap, rows])
 
   const mergedProductOptions = useMemo(
-    () => [...new Set([...(dictProductNames || []), ...(observedProductNames || []), ...PINNED_PRODUCT_OPTIONS].filter(Boolean))],
+    () => mergeProductOptions(dictProductNames || [], observedProductNames || [], PINNED_PRODUCT_OPTIONS),
     [dictProductNames, observedProductNames],
   )
 
