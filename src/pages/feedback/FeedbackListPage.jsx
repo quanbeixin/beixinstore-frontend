@@ -35,13 +35,15 @@ import {
   analyzeSingleFeedbackApi,
   analyzeUnprocessedFeedbackApi,
   batchImportFeedbackApi,
+  batchUpdateFeedbackStatusApi,
   createFeedbackApi,
   deleteFeedbackApi,
   getAllFeedbackApi,
+  translateFeedbackReplyToEnglishApi,
   updateFeedbackApi,
   updateFeedbackStatusApi,
 } from '../../api/feedback'
-import { getImportantEmailConfigApi } from '../../api/aiConfig'
+import { getAIPromptConfigApi, getImportantEmailConfigApi } from '../../api/aiConfig'
 import { getDictItemsApi } from '../../api/configDict'
 import {
   readImportantEmailConfigCache,
@@ -51,12 +53,12 @@ import {
 const { TextArea, Search } = Input
 
 const VISIBLE_COLUMN_STORAGE_KEY = 'feedbackListVisibleColumns'
+const HIDDEN_COLUMN_KEYS = new Set(['ai_secondary_categories'])
 const DEFAULT_VISIBLE_COLUMNS = [
   'date',
   'email_subject',
   'user_question_cn',
   'ai_primary_category',
-  'ai_secondary_categories',
   'ai_reply',
   'ai_reply_en',
   'user_email',
@@ -74,6 +76,7 @@ const DEFAULT_CHANNEL_OPTIONS = ['邮件', '表单', '商店评论', '其他']
 const DUPLICATE_TIME_WINDOW_MINUTES = 5
 const DUPLICATE_TIME_WINDOW_MS = DUPLICATE_TIME_WINDOW_MINUTES * 60 * 1000
 const AI_CATEGORY_PREVIEW_CHARS = 10
+const AI_BATCH_ANALYZE_LIMIT = 50
 const IMPORTANT_EMAIL_TAB_KEY = '__important__'
 const STATUS_META = {
   pending: { label: '待处理', color: 'orange' },
@@ -86,7 +89,9 @@ function readVisibleColumns() {
     if (!raw) return DEFAULT_VISIBLE_COLUMNS
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_VISIBLE_COLUMNS
-    const normalized = parsed.map((item) => (item === 'ai_category' ? 'ai_primary_category' : item))
+    const normalized = parsed
+      .map((item) => (item === 'ai_category' ? 'ai_primary_category' : item))
+      .filter((item) => !HIDDEN_COLUMN_KEYS.has(item))
     if (!normalized.includes('email_subject')) {
       const dateIndex = normalized.indexOf('date')
       if (dateIndex >= 0) {
@@ -106,7 +111,10 @@ function readVisibleColumns() {
 
 function persistVisibleColumns(next) {
   try {
-    localStorage.setItem(VISIBLE_COLUMN_STORAGE_KEY, JSON.stringify(next))
+    localStorage.setItem(
+      VISIBLE_COLUMN_STORAGE_KEY,
+      JSON.stringify((Array.isArray(next) ? next : []).filter((item) => !HIDDEN_COLUMN_KEYS.has(item))),
+    )
   } catch {
     // noop
   }
@@ -216,6 +224,10 @@ function normalizeCategoryList(value) {
   return []
 }
 
+function parseCategoryConfig(value) {
+  return normalizeCategoryList(value)
+}
+
 function normalizeOptionText(value) {
   return String(value || '').trim()
 }
@@ -224,15 +236,11 @@ function getPrimaryCategory(record) {
   return String(record?.ai_primary_category || record?.ai_category || '').trim()
 }
 
-function getSecondaryCategories(record) {
-  return normalizeCategoryList(record?.ai_secondary_categories)
-}
-
 function getAllCategories(record) {
   const primary = getPrimaryCategory(record)
   const all = normalizeCategoryList(record?.ai_all_categories)
   if (all.length > 0) return all
-  return [primary].concat(getSecondaryCategories(record)).filter(Boolean)
+  return [primary].filter(Boolean)
 }
 
 function parseImportRows(jsonRows) {
@@ -267,14 +275,19 @@ function FeedbackListPage() {
   const [dictProductNames, setDictProductNames] = useState(DEFAULT_PRODUCT_OPTIONS)
   const [observedProductNames, setObservedProductNames] = useState([])
   const [dictChannelNames, setDictChannelNames] = useState(DEFAULT_CHANNEL_OPTIONS)
+  const [configuredAiCategoryNames, setConfiguredAiCategoryNames] = useState([])
   const [importantEmailRules, setImportantEmailRules] = useState(() => readImportantEmailConfigCache())
   const [aiAnalyzeLoading, setAiAnalyzeLoading] = useState(false)
+  const [replyTranslateLoading, setReplyTranslateLoading] = useState(false)
   const [analyzingIds, setAnalyzingIds] = useState(new Set())
+  const [updatingNewRequestIds, setUpdatingNewRequestIds] = useState(new Set())
   const [mockInsertLoading, setMockInsertLoading] = useState(false)
   const [importLoading, setImportLoading] = useState(false)
   const [fileList, setFileList] = useState([])
   const [activeTab, setActiveTab] = useState('all')
   const [visibleColumns, setVisibleColumns] = useState(readVisibleColumns)
+  const [selectedRowKeys, setSelectedRowKeys] = useState([])
+  const [batchStatusLoading, setBatchStatusLoading] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isMockModalOpen, setIsMockModalOpen] = useState(false)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
@@ -306,10 +319,11 @@ function FeedbackListPage() {
 
     const loadDictOptions = async () => {
       try {
-        const [productResult, channelResult, importantEmailResult] = await Promise.all([
+        const [productResult, channelResult, importantEmailResult, promptConfigResult] = await Promise.all([
           getDictItemsApi('feedback_product', { enabledOnly: true }).catch(() => null),
           getDictItemsApi('feedback_channel', { enabledOnly: true }).catch(() => null),
           getImportantEmailConfigApi().catch(() => null),
+          getAIPromptConfigApi().catch(() => null),
         ])
 
         if (!active) return
@@ -334,6 +348,8 @@ function FeedbackListPage() {
         const nextImportantEmailRules = Array.isArray(importantEmailResult?.data) ? importantEmailResult.data : []
         setImportantEmailRules(nextImportantEmailRules)
         writeImportantEmailConfigCache(nextImportantEmailRules)
+
+        setConfiguredAiCategoryNames(parseCategoryConfig(promptConfigResult?.data?.categories))
       } catch {
         setImportantEmailRules(readImportantEmailConfigCache())
       }
@@ -507,8 +523,13 @@ function FeedbackListPage() {
   )
 
   const aiCategoryOptions = useMemo(
-    () => [...new Set((rows || []).flatMap((item) => getAllCategories(item)).filter(Boolean))],
-    [rows],
+    () => [
+      ...new Set([
+        ...(configuredAiCategoryNames || []),
+        ...(rows || []).flatMap((item) => getAllCategories(item)),
+      ].filter(Boolean)),
+    ],
+    [configuredAiCategoryNames, rows],
   )
 
   const handleColumnChange = (selectedColumns) => {
@@ -563,7 +584,6 @@ function FeedbackListPage() {
       ...record,
       date: record?.date ? dayjs(record.date) : null,
       ai_primary_category: getPrimaryCategory(record) || undefined,
-      ai_secondary_categories: getSecondaryCategories(record),
     })
     setIsEditModalOpen(true)
   }
@@ -606,6 +626,58 @@ function FeedbackListPage() {
     })
   }
 
+  const handleBatchStatusChange = (newStatus) => {
+    if (!newStatus) return
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先勾选需要修改状态的数据')
+      return
+    }
+
+    Modal.confirm({
+      title: '确认批量修改状态',
+      content: `确定将选中的 ${selectedRowKeys.length} 条反馈状态改为“${getStatusLabel(newStatus)}”吗？`,
+      okText: '确认修改',
+      cancelText: '取消',
+      onOk: async () => {
+        setBatchStatusLoading(true)
+        try {
+          await batchUpdateFeedbackStatusApi(selectedRowKeys, newStatus)
+          message.success('批量状态更新成功')
+          setSelectedRowKeys([])
+          fetchRows()
+        } catch (error) {
+          message.error(error?.message || '批量状态更新失败')
+        } finally {
+          setBatchStatusLoading(false)
+        }
+      },
+    })
+  }
+
+  const handleToggleNewRequest = async (record) => {
+    if (!record?.id || updatingNewRequestIds.has(record.id)) return
+
+    setUpdatingNewRequestIds((prev) => {
+      const next = new Set(prev)
+      next.add(record.id)
+      return next
+    })
+
+    try {
+      await updateFeedbackApi(record.id, { is_new_request: !record.is_new_request })
+      message.success('是否新需求已更新')
+      fetchRows()
+    } catch (error) {
+      message.error(error?.message || '更新失败')
+    } finally {
+      setUpdatingNewRequestIds((prev) => {
+        const next = new Set(prev)
+        next.delete(record.id)
+        return next
+      })
+    }
+  }
+
   const handleSubmitEdit = async () => {
     if (!editingRow) return
 
@@ -616,7 +688,7 @@ function FeedbackListPage() {
         date: values.date ? values.date.format('YYYY-MM-DD HH:mm:ss') : null,
         ai_category: values.ai_primary_category || null,
         ai_primary_category: values.ai_primary_category || null,
-        ai_secondary_categories: Array.isArray(values.ai_secondary_categories) ? values.ai_secondary_categories : [],
+        ai_secondary_categories: [],
       }
 
       await updateFeedbackApi(editingRow.id, payload)
@@ -628,6 +700,30 @@ function FeedbackListPage() {
     } catch (error) {
       if (error?.errorFields) return
       message.error(error?.message || '更新失败')
+    }
+  }
+
+  const handleTranslateEditReply = async ({ sourceField, targetField, sourceLabel }) => {
+    const sourceText = String(editForm.getFieldValue(sourceField) || '').trim()
+    if (!sourceText) {
+      message.warning(`请先填写${sourceLabel}`)
+      return
+    }
+
+    setReplyTranslateLoading(true)
+    try {
+      const result = await translateFeedbackReplyToEnglishApi(sourceText)
+      const translatedText = String(result?.data?.text || result?.text || '').trim()
+      if (!translatedText) {
+        message.error('翻译失败，请稍后重试')
+        return
+      }
+      editForm.setFieldValue(targetField, translatedText)
+      message.success('英文翻译已生成')
+    } catch (error) {
+      message.error(error?.message || '翻译失败，请稍后重试')
+    } finally {
+      setReplyTranslateLoading(false)
     }
   }
 
@@ -665,13 +761,13 @@ function FeedbackListPage() {
   const handleAiAnalyzeBatch = () => {
     Modal.confirm({
       title: 'AI 批量分析确认',
-      content: '将分析当前所有未处理反馈，是否继续？',
+      content: `将最多分析 ${AI_BATCH_ANALYZE_LIMIT} 条未处理反馈，是否继续？`,
       okText: '开始分析',
       cancelText: '取消',
       onOk: async () => {
         setAiAnalyzeLoading(true)
         try {
-          const result = await analyzeUnprocessedFeedbackApi(5)
+          const result = await analyzeUnprocessedFeedbackApi(AI_BATCH_ANALYZE_LIMIT)
           message.success(result?.message || '分析完成')
           fetchRows()
         } catch (error) {
@@ -813,26 +909,6 @@ function FeedbackListPage() {
       },
     },
     {
-      title: 'AI 次分类',
-      dataIndex: 'ai_secondary_categories',
-      key: 'ai_secondary_categories',
-      width: 220,
-      render: (_, record) => {
-        const secondaryCategories = getSecondaryCategories(record)
-        if (secondaryCategories.length === 0) return '-'
-        return (
-          <Tooltip title={secondaryCategories.join('、')} placement="topLeft" styles={{ root: { maxWidth: 420 } }}>
-            <Space size={[4, 4]} wrap>
-              {secondaryCategories.slice(0, 2).map((item) => (
-                <Tag key={item}>{truncateText(item, 10)}</Tag>
-              ))}
-              {secondaryCategories.length > 2 ? <Tag>+{secondaryCategories.length - 2}</Tag> : null}
-            </Space>
-          </Tooltip>
-        )
-      },
-    },
-    {
       title: 'AI 回复',
       dataIndex: 'ai_reply',
       key: 'ai_reply',
@@ -965,9 +1041,22 @@ function FeedbackListPage() {
       dataIndex: 'is_new_request',
       key: 'is_new_request',
       width: 130,
-      render: (value) => (
-        <Tag color={value ? 'red' : 'blue'}>{value ? '新需求' : '已知需求'}</Tag>
-      ),
+      render: (value, record) => {
+        const updating = updatingNewRequestIds.has(record.id)
+        return (
+          <Button
+            type="text"
+            size="small"
+            loading={updating}
+            onClick={() => handleToggleNewRequest(record)}
+            style={{ paddingInline: 0 }}
+          >
+            <Tag color={value ? 'red' : 'blue'} style={{ cursor: updating ? 'default' : 'pointer', marginInlineEnd: 0 }}>
+              {value ? '新需求' : '已知需求'}
+            </Tag>
+          </Button>
+        )
+      },
     },
     {
       title: '问题描述',
@@ -1032,7 +1121,6 @@ function FeedbackListPage() {
     { label: 'AI 回复', value: 'ai_reply' },
     { label: 'AI 回复英文', value: 'ai_reply_en' },
     { label: 'AI主分类', value: 'ai_primary_category' },
-    { label: 'AI次分类', value: 'ai_secondary_categories' },
     { label: 'AI处理', value: 'ai_processed' },
     { label: '是否新需求', value: 'is_new_request' },
     { label: '状态', value: 'status' },
@@ -1131,7 +1219,29 @@ function FeedbackListPage() {
         </Space>
       </Card>
 
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <Space wrap>
+          <span style={{ color: selectedRowKeys.length > 0 ? '#1677ff' : '#999' }}>
+            已选 {selectedRowKeys.length} 条
+          </span>
+          <Select
+            style={{ width: 180 }}
+            placeholder="批量修改状态"
+            disabled={selectedRowKeys.length === 0}
+            loading={batchStatusLoading}
+            value={undefined}
+            onChange={handleBatchStatusChange}
+            options={[
+              { label: '改为待处理', value: 'pending' },
+              { label: '改为已处理', value: 'processed' },
+            ]}
+          />
+          <Button disabled={selectedRowKeys.length === 0} onClick={() => setSelectedRowKeys([])}>
+            清空选择
+          </Button>
+        </Space>
+
+        <Space wrap>
         <Dropdown
           trigger={['click']}
           menu={{
@@ -1178,6 +1288,7 @@ function FeedbackListPage() {
         >
           手动插入数据
         </Button>
+        </Space>
       </div>
 
       <Tabs
@@ -1195,6 +1306,11 @@ function FeedbackListPage() {
               loading={loading}
               dataSource={groupedRows}
               columns={columns}
+              rowSelection={{
+                selectedRowKeys,
+                preserveSelectedRowKeys: true,
+                onChange: (nextSelectedRowKeys) => setSelectedRowKeys(nextSelectedRowKeys),
+              }}
               scroll={{ x: 1500 }}
               rowClassName={(record) => {
                 const classNames = []
@@ -1308,13 +1424,37 @@ function FeedbackListPage() {
               options={aiCategoryOptions.map((item) => ({ label: item, value: item }))}
             />
           </Form.Item>
-          <Form.Item name="ai_secondary_categories" label="AI次分类">
-            <Select
-              mode="multiple"
-              allowClear
-              showSearch
-              options={aiCategoryOptions.map((item) => ({ label: item, value: item }))}
-            />
+          <Form.Item name="ai_reply" label="AI 回复（中文）">
+            <TextArea rows={4} />
+          </Form.Item>
+          <Form.Item
+            name="ai_reply_en"
+            label={(
+              <Space size={8}>
+                <span>AI 回复（英文）</span>
+                <Button
+                  size="small"
+                  icon={<ThunderboltOutlined />}
+                  loading={replyTranslateLoading}
+                  onClick={() => handleTranslateEditReply({
+                    sourceField: 'ai_reply',
+                    targetField: 'ai_reply_en',
+                    sourceLabel: 'AI 回复（中文）',
+                  })}
+                >
+                  翻译
+                </Button>
+                <Button
+                  size="small"
+                  icon={<CopyOutlined />}
+                  onClick={() => handleCopy(editForm.getFieldValue('ai_reply_en'), 'AI 回复（英文）')}
+                >
+                  复制
+                </Button>
+              </Space>
+            )}
+          >
+            <TextArea rows={4} />
           </Form.Item>
           <Form.Item name="is_new_request" label="是否新需求">
             <Select
@@ -1327,7 +1467,33 @@ function FeedbackListPage() {
           <Form.Item name="support_reply" label="人工回复（中文）">
             <TextArea rows={3} />
           </Form.Item>
-          <Form.Item name="support_reply_en" label="人工回复（英文）">
+          <Form.Item
+            name="support_reply_en"
+            label={(
+              <Space size={8}>
+                <span>人工回复（英文）</span>
+                <Button
+                  size="small"
+                  icon={<ThunderboltOutlined />}
+                  loading={replyTranslateLoading}
+                  onClick={() => handleTranslateEditReply({
+                    sourceField: 'support_reply',
+                    targetField: 'support_reply_en',
+                    sourceLabel: '人工回复（中文）',
+                  })}
+                >
+                  翻译
+                </Button>
+                <Button
+                  size="small"
+                  icon={<CopyOutlined />}
+                  onClick={() => handleCopy(editForm.getFieldValue('support_reply_en'), '人工回复（英文）')}
+                >
+                  复制
+                </Button>
+              </Space>
+            )}
+          >
             <TextArea rows={3} />
           </Form.Item>
           <Form.Item name="status" label="状态">
@@ -1481,7 +1647,6 @@ function FeedbackListPage() {
             <div style={{ marginBottom: 12 }}>
               <h3>AI 分析</h3>
               <p><strong>主分类：</strong>{getPrimaryCategory(viewingRow) || '-'}</p>
-              <p><strong>次分类：</strong>{getSecondaryCategories(viewingRow).join('、') || '-'}</p>
               <p><strong>情绪：</strong>{viewingRow.ai_sentiment || '-'}</p>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <strong>AI 自动回复（中文）</strong>

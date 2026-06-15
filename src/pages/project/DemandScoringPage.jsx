@@ -1,8 +1,8 @@
-import { CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, Drawer, Empty, Form, Input, InputNumber, Segmented, Space, Table, Tag, Tooltip, Typography, message } from 'antd'
+import { CheckCircleOutlined, MoreOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons'
+import { Button, Card, Drawer, Dropdown, Empty, Form, Input, InputNumber, Modal, Segmented, Space, Table, Tag, Tooltip, Typography, message } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { getMyDemandScoreSlotApi, getMyDemandScoreSlotsApi, submitDemandScoreSlotApi } from '../../api/work'
+import { declineDemandScoreSlotApi, getMyDemandScoreSlotApi, getMyDemandScoreSlotsApi, submitDemandScoreSlotApi } from '../../api/work'
 import './DemandScoringPage.css'
 
 const { Text } = Typography
@@ -11,6 +11,7 @@ const STATUS_OPTIONS = [
   { label: '全部', value: '' },
   { label: '待评分', value: 'PENDING' },
   { label: '已评分', value: 'SUBMITTED' },
+  { label: '已拒绝', value: 'DECLINED' },
 ]
 
 const ROLE_COLORS = {
@@ -66,7 +67,14 @@ const SCORE_GUIDE_ROWS = [
 
 function renderSlotStatus(status) {
   if (status === 'SUBMITTED') return <Tag color="success">已评分</Tag>
+  if (status === 'DECLINED') return <Tag color="default">已拒绝</Tag>
   return <Tag color="warning">待评分</Tag>
+}
+
+function getPrimaryActionText(status) {
+  if (status === 'SUBMITTED') return '查看/修改'
+  if (status === 'DECLINED') return '重新评分'
+  return '去评分'
 }
 
 function scoreHelpText(scoreValue) {
@@ -116,16 +124,20 @@ function DemandScoringPage() {
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [declining, setDeclining] = useState(false)
   const [status, setStatus] = useState(() => {
     const params = new URLSearchParams(location.search || '')
     const nextStatus = String(params.get('status') || '').trim().toUpperCase()
-    return ['PENDING', 'SUBMITTED'].includes(nextStatus) ? nextStatus : ''
+    return ['PENDING', 'SUBMITTED', 'DECLINED'].includes(nextStatus) ? nextStatus : ''
   })
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
   const [rows, setRows] = useState([])
   const [activeSlot, setActiveSlot] = useState(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [declineModalOpen, setDeclineModalOpen] = useState(false)
+  const [declineSlot, setDeclineSlot] = useState(null)
   const watchedValues = Form.useWatch([], form) || {}
+  const [declineForm] = Form.useForm()
   const demandIdFilter = String(new URLSearchParams(location.search || '').get('demand_id') || '').trim().toUpperCase()
 
   const loadRows = useCallback(async ({ page = 1, pageSize = 20 } = {}) => {
@@ -158,7 +170,7 @@ function DemandScoringPage() {
   useEffect(() => {
     const params = new URLSearchParams(location.search || '')
     const nextStatus = String(params.get('status') || '').trim().toUpperCase()
-    setStatus(['PENDING', 'SUBMITTED'].includes(nextStatus) ? nextStatus : '')
+    setStatus(['PENDING', 'SUBMITTED', 'DECLINED'].includes(nextStatus) ? nextStatus : '')
   }, [location.search])
 
   useEffect(() => {
@@ -188,6 +200,45 @@ function DemandScoringPage() {
       }
     } catch {
       // Keep list data as fallback.
+    }
+  }
+
+  const openDeclineModal = (record) => {
+    setDeclineSlot(record)
+    declineForm.setFieldsValue({
+      reason: record?.decline_reason || '',
+    })
+    setDeclineModalOpen(true)
+  }
+
+  const closeDeclineModal = () => {
+    if (declining) return
+    setDeclineModalOpen(false)
+    setDeclineSlot(null)
+    declineForm.resetFields()
+  }
+
+  const handleDecline = async () => {
+    if (!declineSlot?.id) return
+    try {
+      const values = await declineForm.validateFields()
+      setDeclining(true)
+      const result = await declineDemandScoreSlotApi(declineSlot.id, {
+        reason: values.reason,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '拒绝评分失败')
+        return
+      }
+      message.success(result?.message || '已拒绝评分')
+      closeDeclineModal()
+      loadRows({ page: pagination.current, pageSize: pagination.pageSize })
+    } catch (err) {
+      if (!err?.errorFields) {
+        message.error(err?.message || '拒绝评分失败')
+      }
+    } finally {
+      setDeclining(false)
     }
   }
 
@@ -316,13 +367,36 @@ function DemandScoringPage() {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 150,
       fixed: 'right',
-      render: (_, record) => (
-        <Button type={record.status === 'SUBMITTED' ? 'default' : 'primary'} onClick={() => openSlot(record)}>
-          {record.status === 'SUBMITTED' ? '查看/修改' : '去评分'}
-        </Button>
-      ),
+      render: (_, record) => {
+        const isSubmitted = record.status === 'SUBMITTED'
+        return (
+          <Space size={4}>
+            <Button type={isSubmitted ? 'default' : 'primary'} onClick={() => openSlot(record)}>
+              {getPrimaryActionText(record.status)}
+            </Button>
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [
+                  {
+                    key: 'decline',
+                    icon: <StopOutlined />,
+                    label: record.status === 'DECLINED' ? '修改拒绝理由' : '拒绝评分',
+                    danger: record.status !== 'DECLINED',
+                  },
+                ],
+                onClick: ({ key }) => {
+                  if (key === 'decline') openDeclineModal(record)
+                },
+              }}
+            >
+              <Button icon={<MoreOutlined />} />
+            </Dropdown>
+          </Space>
+        )
+      },
     },
   ]
 
@@ -490,6 +564,41 @@ function DemandScoringPage() {
           </div>
         ) : null}
       </Drawer>
+
+      <Modal
+        title={declineSlot?.status === 'DECLINED' ? '修改拒绝理由' : '拒绝评分'}
+        open={declineModalOpen}
+        onCancel={closeDeclineModal}
+        onOk={handleDecline}
+        confirmLoading={declining}
+        okText="确认拒绝"
+        cancelText="取消"
+        width={560}
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Text type="secondary">
+            拒绝后你将不参与该被评价人的本次评分，系统会从评分权重中剔除这条评价关系。
+          </Text>
+          {declineSlot ? (
+            <Card size="small">
+              <Space direction="vertical" size={4}>
+                <Text>{`需求：${declineSlot.demand_name || '-'}`}</Text>
+                <Text>{`被评价人：${declineSlot.evaluatee_name || '-'}`}</Text>
+                <Text>{`评分身份：${(declineSlot.role_labels || []).join(' / ') || '-'}`}</Text>
+              </Space>
+            </Card>
+          ) : null}
+          <Form form={declineForm} layout="vertical">
+            <Form.Item
+              label="拒绝理由"
+              name="reason"
+              rules={[{ required: true, message: '请填写拒绝评分理由' }]}
+            >
+              <Input.TextArea rows={4} maxLength={255} showCount placeholder="请说明为什么不参与本次评价" />
+            </Form.Item>
+          </Form>
+        </Space>
+      </Modal>
     </div>
   )
 }

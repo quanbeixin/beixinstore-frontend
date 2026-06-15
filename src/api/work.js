@@ -85,6 +85,10 @@ export function submitDemandScoreSlotApi(slotId, payload) {
   return request.post(`/work/demand-scores/slots/${slotId}`, payload)
 }
 
+export function declineDemandScoreSlotApi(slotId, payload) {
+  return request.post(`/work/demand-scores/slots/${slotId}/decline`, payload)
+}
+
 export function generateDemandScoreTaskApi(demandId, payload = {}) {
   return request.post(`/work/demand-scores/demands/${demandId}/generate`, payload)
 }

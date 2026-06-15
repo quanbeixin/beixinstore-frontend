@@ -46,3 +46,9 @@ export function analyzeSingleFeedbackApi(id) {
     timeout: FEEDBACK_ANALYZE_TIMEOUT,
   })
 }
+
+export function translateFeedbackReplyToEnglishApi(text) {
+  return request.post('/feedback/translate/en', { text }, {
+    timeout: FEEDBACK_ANALYZE_TIMEOUT,
+  })
+}

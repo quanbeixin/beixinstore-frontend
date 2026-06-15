@@ -193,6 +193,7 @@ function DemandValueReviewsPage() {
       )
       form.setFieldsValue({
         overall_score: data?.overall_score ?? undefined,
+        related_okr: data?.related_okr || '',
         review_value_summary: data?.review_value_summary || '',
         review_benefit_result: data?.review_benefit_result || '',
         review_improvement_notes: data?.review_improvement_notes || '',
@@ -242,6 +243,7 @@ function DemandValueReviewsPage() {
       const values = await form.validateFields([
         'overall_score',
         'review_date',
+        'related_okr',
         'review_value_summary',
         'review_benefit_result',
         'review_improvement_notes',
@@ -754,6 +756,12 @@ function DemandValueReviewsPage() {
                   rules={[{ required: true, message: '请选择复盘时间' }]}
                 >
                   <DatePicker style={{ width: 180 }} placeholder="请选择复盘时间" />
+                </Form.Item>
+                <Form.Item
+                  label="关联OKR"
+                  name="related_okr"
+                >
+                  <Input.TextArea rows={2} maxLength={10000} showCount placeholder="可填写本需求关联的 OKR 目标或关键结果" />
                 </Form.Item>
                 <Form.Item
                   label="价值结论"

@@ -134,6 +134,7 @@ function renderSubjectStatus(status, rowType = 'subject') {
   const normalized = String(status || '').trim().toUpperCase()
   if (rowType === 'slot') {
     if (normalized === 'SUBMITTED') return <Tag color="success">已提交</Tag>
+    if (normalized === 'DECLINED') return <Tag color="default">已拒绝</Tag>
     return <Tag color="warning">待提交</Tag>
   }
   if (normalized === 'COMPLETED') return <Tag color="success">已完成</Tag>
@@ -143,6 +144,7 @@ function renderSubjectStatus(status, rowType = 'subject') {
 
 function renderRoleScoreValue(record, fieldKey, roleKey) {
   if (record.row_type === 'slot') {
+    if (String(record.status || '').trim().toUpperCase() === 'DECLINED') return <Text type="secondary">已拒绝</Text>
     return record.primary_role_key === roleKey ? formatScore(record.score) : '-'
   }
   return formatScore(record[fieldKey])
@@ -759,7 +761,11 @@ function DemandScoreResultsPage() {
       const subjectId = Number(subject?.id || 0)
       if (!Number.isInteger(subjectId) || subjectId <= 0) return
       const slotRecords = Array.isArray(subject?.slot_records) ? subject.slot_records : []
-      const collaboratorSlots = slotRecords.filter((slot) => String(slot?.primary_role_key || '').trim().toUpperCase() === 'COLLABORATOR')
+      const collaboratorSlots = slotRecords.filter(
+        (slot) =>
+          String(slot?.primary_role_key || '').trim().toUpperCase() === 'COLLABORATOR' &&
+          String(slot?.status || '').trim().toUpperCase() !== 'DECLINED',
+      )
       const submittedCollaboratorCount = collaboratorSlots.filter((slot) => String(slot?.status || '').trim().toUpperCase() === 'SUBMITTED').length
       map.set(subjectId, {
         effectiveWeight: Number(subject?.effective_weight || 0),
@@ -857,10 +863,13 @@ function DemandScoreResultsPage() {
           actualWeight > 0 &&
           effectiveWeight > 0
 
-        const shareText = canCompute ? `占比：${formatPercent((actualWeight / effectiveWeight) * 100)}` : '占比：待提交后计算'
+        const isDeclined = String(record.status || '').trim().toUpperCase() === 'DECLINED'
+        const shareText = isDeclined
+          ? '占比：已剔除'
+          : canCompute ? `占比：${formatPercent((actualWeight / effectiveWeight) * 100)}` : '占比：待提交后计算'
         const contributionText = canCompute
           ? `贡献：+${formatScore((score * actualWeight) / effectiveWeight)} 分`
-          : '贡献：待提交后计算'
+          : isDeclined ? '贡献：不参与本次评分' : '贡献：待提交后计算'
 
         return (
           <Space orientation="vertical" size={0}>
@@ -877,7 +886,8 @@ function DemandScoreResultsPage() {
       render: (_, record) => {
         if (record.row_type !== 'slot') return '-'
         const comment = String(record.comment || '').trim()
-        if (!comment) return '-'
+        const declineReason = String(record.decline_reason || '').trim()
+        if (!comment && !declineReason) return '-'
         return (
           <Button
             type="text"
@@ -1073,7 +1083,7 @@ function DemandScoreResultsPage() {
       </Modal>
 
       <Modal
-        title="评价说明"
+        title={String(commentModal.record?.status || '').trim().toUpperCase() === 'DECLINED' ? '拒绝理由' : '评价说明'}
         open={commentModal.open}
         onCancel={() => setCommentModal({ open: false, record: null })}
         footer={
@@ -1091,11 +1101,22 @@ function DemandScoreResultsPage() {
               : '-'
           }`}</Text>
           <Text>{`评分项：${commentModal.record?.score_item_label || '-'}`}</Text>
-          <Text>{`分数：${formatScore(commentModal.record?.score)}`}</Text>
-          <Text>{`提交时间：${commentModal.record?.submitted_at || '-'}`}</Text>
-          <Card size="small" title="说明内容">
+          {String(commentModal.record?.status || '').trim().toUpperCase() === 'DECLINED' ? (
+            <Text>{`拒绝时间：${commentModal.record?.declined_at || '-'}`}</Text>
+          ) : (
+            <>
+              <Text>{`分数：${formatScore(commentModal.record?.score)}`}</Text>
+              <Text>{`提交时间：${commentModal.record?.submitted_at || '-'}`}</Text>
+            </>
+          )}
+          <Card
+            size="small"
+            title={String(commentModal.record?.status || '').trim().toUpperCase() === 'DECLINED' ? '拒绝理由' : '说明内容'}
+          >
             <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
-              {commentModal.record?.comment || '-'}
+              {String(commentModal.record?.status || '').trim().toUpperCase() === 'DECLINED'
+                ? commentModal.record?.decline_reason || '-'
+                : commentModal.record?.comment || '-'}
             </div>
           </Card>
         </Space>

@@ -14,9 +14,20 @@ instance.interceptors.request.use(
   (config) => {
     const token = getToken()
 
+    config.headers = config.headers || {}
+
     if (token) {
-      config.headers = config.headers || {}
       config.headers.Authorization = `Bearer ${token}`
+    }
+
+    if (String(config.method || '').toLowerCase() === 'get') {
+      config.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+      config.headers.Pragma = 'no-cache'
+      config.headers.Expires = '0'
+      config.params = {
+        ...(config.params || {}),
+        _t: Date.now(),
+      }
     }
 
     return config
