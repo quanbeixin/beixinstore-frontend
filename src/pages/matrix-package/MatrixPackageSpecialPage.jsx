@@ -9,9 +9,9 @@ function MatrixPackageSpecialPage() {
         image={Empty.PRESENTED_IMAGE_SIMPLE}
         description={
           <div>
-            <Title level={4}>矩阵包专项</Title>
+            <Title level={4}>矩阵包全景图</Title>
             <Paragraph type="secondary">
-              专项功能建设中，后续将在这里承载矩阵包相关管理能力。
+              全景图功能建设中，后续将在这里承载矩阵包专项的整体视图。
             </Paragraph>
           </div>
         }

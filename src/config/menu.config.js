@@ -4,6 +4,7 @@ const SECTION_META = {
   main: { key: 'main' },
   workbench: { key: 'workbench', label: '个人工作台', icon: 'dashboard' },
   project: { key: 'project', label: '项目管理', icon: 'tool' },
+  matrixPackage: { key: 'matrixPackage', label: '矩阵包专项', icon: 'tool' },
   feedback: { key: 'feedback', label: '用户反馈', icon: 'message' },
   personal: { key: 'personal', label: '个人设置', icon: 'setting' },
   efficiency: { key: 'efficiency', label: '效能总览', icon: 'dashboard' },
@@ -11,7 +12,17 @@ const SECTION_META = {
   integration: { key: 'integration', label: '第三方接入', icon: 'api' },
 }
 
-const SECTION_ORDER = ['workbench', 'main', 'project', 'efficiency', 'feedback', 'system', 'integration', 'personal']
+const SECTION_ORDER = [
+  'workbench',
+  'main',
+  'matrixPackage',
+  'project',
+  'efficiency',
+  'feedback',
+  'system',
+  'integration',
+  'personal',
+]
 
 function buildMenuSectionsFromRoutes() {
   const sectionMap = {}
