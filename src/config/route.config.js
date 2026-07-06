@@ -247,6 +247,43 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/matrix-package-special/cold-standby-production',
+    componentKey: 'coldStandbyProduction',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '冷备包生产线',
+      subtitle: '跟踪开发中到冷备包的生产推进信息。',
+    },
+    menu: {
+      section: 'matrixPackage',
+      label: '冷备包生产线',
+      icon: 'tool',
+    },
+  },
+  {
+    path: '/matrix-package-special/cold-standby-production/:id',
+    componentKey: 'coldStandbyProductionDetail',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '冷备包生产详情',
+      subtitle: '查看单个矩阵包的生产档案、预留流转模块与各侧补充信息。',
+    },
+  },
+  {
+    path: '/matrix-package-special/developer-accounts',
+    componentKey: 'developerAccount',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '开发者账号管理',
+      subtitle: '维护公司主体下的开发者账号，并作为矩阵包归属基础数据。',
+    },
+    menu: {
+      section: 'matrixPackage',
+      label: '开发者账号管理',
+      icon: 'setting',
+    },
+  },
+  {
     path: '/work-demands',
     componentKey: 'workDemands',
     requiredPermission: 'demand.view',

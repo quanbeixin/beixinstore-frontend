@@ -15,9 +15,7 @@ import {
   Empty,
   Form,
   Input,
-  InputNumber,
   Modal,
-  Progress,
   Row,
   Select,
   Space,
@@ -33,7 +31,9 @@ import {
   getMatrixPackagesApi,
   updateMatrixPackageApi,
 } from '../../api/matrixPackage'
+import { getDeveloperAccountOptionsApi } from '../../api/developerAccount'
 import { getDictItemsApi } from '../../api/configDict'
+import { getUsersApi } from '../../api/users'
 import { hasPermission } from '../../utils/access'
 import './MatrixPackageSpecialPage.css'
 
@@ -41,8 +41,13 @@ const { Text } = Typography
 const STATUS_DICT_KEY = 'matrix_package_status'
 const HEALTH_DICT_KEY = 'matrix_package_health'
 const DELIVERING_STATUS = 'DELIVERING'
+const PENDING_DEV_STATUS = 'PENDING_DEV'
+const IN_DEVELOPMENT_STATUS = 'IN_DEVELOPMENT'
+const DEFAULT_PRODUCTION_STAGE = 'REQUIREMENT_CONFIRM'
 
 const DEFAULT_STATUS_OPTIONS = [
+  { item_code: 'PENDING_DEV', item_name: '待开发', color: 'default' },
+  { item_code: 'IN_DEVELOPMENT', item_name: '开发中', color: 'cyan' },
   { item_code: 'COLD_STANDBY', item_name: '冷备包', color: 'blue' },
   { item_code: 'IN_REVIEW', item_name: '审核中', color: 'gold' },
   { item_code: 'HOT_STANDBY', item_name: '热备包', color: 'green' },
@@ -87,6 +92,19 @@ function getStatusTone(statusCode) {
   return 'steady'
 }
 
+function getUserDisplayName(user) {
+  return user?.real_name || user?.username || `用户${user?.id || ''}`
+}
+
+function buildUserOption(user) {
+  const name = getUserDisplayName(user)
+  return {
+    label: user.department_name ? `${name} / ${user.department_name}` : name,
+    value: user.id,
+    searchText: `${name} ${user.username || ''} ${user.department_name || ''}`,
+  }
+}
+
 function MatrixPackageSpecialPage() {
   const [form] = Form.useForm()
   const watchedStatusCode = Form.useWatch('status_code', form)
@@ -100,10 +118,13 @@ function MatrixPackageSpecialPage() {
   const [summary, setSummary] = useState({ total: 0, delivering: 0, abnormal: 0, standby: 0 })
   const [filters, setFilters] = useState({
     keyword: '',
+    developer_account_id: undefined,
     status_code: undefined,
     health_code: undefined,
     owner_name: '',
   })
+  const [developerAccountOptions, setDeveloperAccountOptions] = useState([])
+  const [userOptions, setUserOptions] = useState([])
   const [statusOptions, setStatusOptions] = useState(DEFAULT_STATUS_OPTIONS.map((item) => ({
     code: item.item_code,
     name: item.item_name,
@@ -136,6 +157,20 @@ function MatrixPackageSpecialPage() {
     }
   }, [])
 
+  const fetchDeveloperAccounts = useCallback(async () => {
+    const result = await getDeveloperAccountOptionsApi()
+    if (result?.success) {
+      setDeveloperAccountOptions(Array.isArray(result.data) ? result.data : [])
+    }
+  }, [])
+
+  const fetchUsers = useCallback(async () => {
+    const result = await getUsersApi({ page: 1, pageSize: 1000, keyword: '', sort_by: 'real_name', sort_order: 'asc' })
+    if (result?.success) {
+      setUserOptions(Array.isArray(result.data?.list) ? result.data.list : [])
+    }
+  }, [])
+
   const fetchPackages = useCallback(async (next = {}) => {
     const nextPage = next.page || 1
     const nextPageSize = next.pageSize || 20
@@ -145,6 +180,7 @@ function MatrixPackageSpecialPage() {
         page: nextPage,
         pageSize: nextPageSize,
         keyword: filters.keyword || undefined,
+        developer_account_id: filters.developer_account_id || undefined,
         status_code: filters.status_code || undefined,
         health_code: filters.health_code || undefined,
         owner_name: filters.owner_name || undefined,
@@ -179,6 +215,14 @@ function MatrixPackageSpecialPage() {
   }, [fetchDicts])
 
   useEffect(() => {
+    fetchDeveloperAccounts()
+  }, [fetchDeveloperAccounts])
+
+  useEffect(() => {
+    fetchUsers()
+  }, [fetchUsers])
+
+  useEffect(() => {
     fetchPackages({ page: 1 })
   }, [filters, fetchPackages])
 
@@ -192,14 +236,12 @@ function MatrixPackageSpecialPage() {
     setEditingRecord(null)
     form.setFieldsValue({
       package_name: '',
+      new_package_version: '',
+      developer_account_id: undefined,
       platform: 'Meta',
-      owner_name: '',
+      owner_user_id: undefined,
       status_code: 'COLD_STANDBY',
       health_code: undefined,
-      progress: 0,
-      current_stage: '',
-      risk_note: '',
-      remark: '',
     })
     setModalOpen(true)
   }
@@ -208,14 +250,12 @@ function MatrixPackageSpecialPage() {
     setEditingRecord(record)
     form.setFieldsValue({
       package_name: record.package_name || '',
+      new_package_version: record.new_package_version || '',
+      developer_account_id: record.developer_account_id || undefined,
       platform: record.platform || '',
-      owner_name: record.owner_name || '',
+      owner_user_id: record.owner_user_id || undefined,
       status_code: record.status_code || 'COLD_STANDBY',
       health_code: record.health_code || undefined,
-      progress: Number(record.progress || 0),
-      current_stage: record.current_stage || '',
-      risk_note: record.risk_note || '',
-      remark: record.remark || '',
     })
     setModalOpen(true)
   }
@@ -226,7 +266,6 @@ function MatrixPackageSpecialPage() {
       const payload = {
         ...values,
         health_code: values.status_code === DELIVERING_STATUS ? values.health_code : null,
-        progress: Number(values.progress || 0),
       }
 
       setSaving(true)
@@ -252,6 +291,36 @@ function MatrixPackageSpecialPage() {
     }
   }
 
+  const handlePromoteDevelopment = (record) => {
+    Modal.confirm({
+      title: '确认推进开发？',
+      content: `确认后「${record.package_name || '该矩阵包'}」将转为开发中，并进入冷备包生产线。`,
+      okText: '确认推进',
+      cancelText: '取消',
+      async onOk() {
+        const payload = {
+          package_name: record.package_name,
+          developer_account_id: record.developer_account_id || null,
+          platform: record.platform || '',
+          status_code: IN_DEVELOPMENT_STATUS,
+          health_code: null,
+          production_stage_code: record.production_stage_code || DEFAULT_PRODUCTION_STAGE,
+          expected_cold_ready_date: record.expected_cold_ready_date || null,
+          latest_progress: record.latest_progress || '',
+          production_checklist: Array.isArray(record.production_checklist) ? record.production_checklist : [],
+        }
+        const result = await updateMatrixPackageApi(record.id, payload)
+        if (!result?.success) {
+          message.error(result?.message || '推进开发失败')
+          return Promise.reject(new Error(result?.message || '推进开发失败'))
+        }
+        message.success('已推进到冷备包生产线')
+        fetchPackages({ page: pagination.current, pageSize: pagination.pageSize })
+        return undefined
+      },
+    })
+  }
+
   const columns = [
     {
       title: '矩阵包',
@@ -263,9 +332,22 @@ function MatrixPackageSpecialPage() {
         <div className="matrix-package-name-cell">
           <Text strong>{value || '-'}</Text>
           <Space size={4} wrap>
+            {record.new_package_version ? <Tag color="blue">{record.new_package_version}</Tag> : null}
             {record.platform ? <Tag>{record.platform}</Tag> : null}
             {record.owner_name ? <Text type="secondary">{record.owner_name}</Text> : null}
           </Space>
+        </div>
+      ),
+    },
+    {
+      title: '开发者账号',
+      dataIndex: 'developer_account_id',
+      key: 'developer_account_id',
+      width: 220,
+      render: (_, record) => (
+        <div className="matrix-package-account-cell">
+          <Text>{record.developer_account_name || '-'}</Text>
+          {record.developer_company_name ? <Text type="secondary">{record.developer_company_name}</Text> : null}
         </div>
       ),
     },
@@ -296,33 +378,6 @@ function MatrixPackageSpecialPage() {
       },
     },
     {
-      title: '进度',
-      dataIndex: 'progress',
-      key: 'progress',
-      width: 150,
-      render: (value, record) => (
-        <Progress
-          percent={Number(value || 0)}
-          size="small"
-          status={record.health_code === 'ABNORMAL' || record.status_code === 'BANNED' ? 'exception' : 'active'}
-        />
-      ),
-    },
-    {
-      title: '当前阶段',
-      dataIndex: 'current_stage',
-      key: 'current_stage',
-      width: 180,
-      render: (value) => value || '-',
-    },
-    {
-      title: '风险说明',
-      dataIndex: 'risk_note',
-      key: 'risk_note',
-      ellipsis: true,
-      render: (value) => value || <Text type="secondary">暂无</Text>,
-    },
-    {
       title: '更新时间',
       dataIndex: 'updated_at',
       key: 'updated_at',
@@ -333,16 +388,27 @@ function MatrixPackageSpecialPage() {
       title: '操作',
       key: 'actions',
       fixed: 'right',
-      width: 96,
+      width: 180,
       render: (_, record) => (
-        <Button
-          type="link"
-          icon={<EditOutlined />}
-          disabled={!canManage}
-          onClick={() => handleEdit(record)}
-        >
-          编辑
-        </Button>
+        <Space size={4}>
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            disabled={!canManage}
+            onClick={() => handleEdit(record)}
+          >
+            编辑
+          </Button>
+          {record.status_code === PENDING_DEV_STATUS ? (
+            <Button
+              type="link"
+              disabled={!canManage}
+              onClick={() => handlePromoteDevelopment(record)}
+            >
+              推进开发
+            </Button>
+          ) : null}
+        </Space>
       ),
     },
   ]
@@ -350,10 +416,6 @@ function MatrixPackageSpecialPage() {
   return (
     <div className="matrix-package-page">
       <div className="matrix-package-head">
-        <div>
-          <h1>矩阵包全景图</h1>
-          <p>集中查看所有矩阵包状态，优先识别投放异常与可启用热备包。</p>
-        </div>
         <Space>
           <Button
             icon={<ReloadOutlined />}
@@ -397,12 +459,26 @@ function MatrixPackageSpecialPage() {
             <Input
               allowClear
               prefix={<SearchOutlined />}
-              placeholder="搜索名称、平台、负责人、阶段"
+              placeholder="搜索名称、平台、负责人、账号"
               value={filters.keyword}
               onChange={(event) => setFilters((prev) => ({ ...prev, keyword: event.target.value }))}
             />
           </Col>
           <Col xs={12} md={5}>
+            <Select
+              allowClear
+              showSearch
+              placeholder="开发者账号"
+              value={filters.developer_account_id}
+              optionFilterProp="label"
+              options={developerAccountOptions.map((item) => ({
+                label: `${item.company_name || '-'} / ${item.account_name || '-'}`,
+                value: item.id,
+              }))}
+              onChange={(value) => setFilters((prev) => ({ ...prev, developer_account_id: value }))}
+            />
+          </Col>
+          <Col xs={12} md={4}>
             <Select
               allowClear
               placeholder="包状态"
@@ -411,7 +487,7 @@ function MatrixPackageSpecialPage() {
               onChange={(value) => setFilters((prev) => ({ ...prev, status_code: value }))}
             />
           </Col>
-          <Col xs={12} md={5}>
+          <Col xs={12} md={4}>
             <Select
               allowClear
               placeholder="健康度"
@@ -420,7 +496,7 @@ function MatrixPackageSpecialPage() {
               onChange={(value) => setFilters((prev) => ({ ...prev, health_code: value }))}
             />
           </Col>
-          <Col xs={24} md={5}>
+          <Col xs={24} md={4}>
             <Input
               allowClear
               placeholder="负责人"
@@ -437,7 +513,7 @@ function MatrixPackageSpecialPage() {
           loading={loading}
           columns={columns}
           dataSource={packages}
-          scroll={{ x: 1180 }}
+          scroll={{ x: 1260 }}
           rowClassName={(record) => `matrix-table-row-${getStatusTone(record.status_code)}`}
           locale={{
             emptyText: (
@@ -485,6 +561,25 @@ function MatrixPackageSpecialPage() {
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
+              <Form.Item label="新包版本" name="new_package_version">
+                <Input placeholder="例如：26/07/07版本" maxLength={50} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item label="开发者账号" name="developer_account_id">
+                <Select
+                  allowClear
+                  showSearch
+                  placeholder="选择开发者账号"
+                  optionFilterProp="label"
+                  options={developerAccountOptions.map((item) => ({
+                    label: `${item.company_name || '-'} / ${item.account_name || '-'}`,
+                    value: item.id,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
               <Form.Item label="平台" name="platform">
                 <Select
                   allowClear
@@ -497,8 +592,15 @@ function MatrixPackageSpecialPage() {
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item label="负责人" name="owner_name">
-                <Input placeholder="输入负责人" maxLength={80} />
+              <Form.Item label="负责人" name="owner_user_id">
+                <Select
+                  allowClear
+                  showSearch
+                  placeholder="选择系统用户"
+                  optionFilterProp="searchText"
+                  filterOption={(input, option) => String(option?.searchText || '').toLowerCase().includes(input.toLowerCase())}
+                  options={userOptions.map(buildUserOption)}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
@@ -529,26 +631,6 @@ function MatrixPackageSpecialPage() {
                     value: item.code,
                   }))}
                 />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item label="进度" name="progress">
-                <InputNumber min={0} max={100} addonAfter="%" style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col xs={24}>
-              <Form.Item label="当前阶段" name="current_stage">
-                <Input placeholder="例如：审核等待、预算消耗、素材复盘" maxLength={120} />
-              </Form.Item>
-            </Col>
-            <Col xs={24}>
-              <Form.Item label="风险说明" name="risk_note">
-                <Input.TextArea rows={3} placeholder="记录需要关注或排查的问题" maxLength={500} showCount />
-              </Form.Item>
-            </Col>
-            <Col xs={24}>
-              <Form.Item label="备注" name="remark">
-                <Input.TextArea rows={2} placeholder="补充说明" maxLength={500} showCount />
               </Form.Item>
             </Col>
           </Row>

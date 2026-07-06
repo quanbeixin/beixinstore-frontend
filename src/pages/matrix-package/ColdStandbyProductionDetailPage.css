@@ -1,0 +1,91 @@
+.cold-production-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cold-production-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cold-production-detail-head h4 {
+  margin: 0 0 4px;
+}
+
+.cold-production-detail-page .ant-card-body {
+  padding: 16px;
+}
+
+.cold-production-side-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cold-production-side-check-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cold-production-side-check-item > .ant-space:first-child {
+  padding-top: 3px;
+}
+
+.cold-production-side-check-icon-done {
+  color: #52c41a;
+}
+
+.cold-production-side-check-icon-pending {
+  color: #8c8c8c;
+}
+
+.cold-production-note-form .ant-form-item {
+  margin-bottom: 6px;
+}
+
+.cold-production-note-tabs .ant-tabs-nav {
+  margin-bottom: 14px;
+}
+
+.cold-production-note-pane {
+  max-width: 960px;
+}
+
+.cold-production-operation-form {
+  max-width: 1080px;
+}
+
+.cold-production-operation-form .ant-form-item {
+  margin-bottom: 10px;
+}
+
+.cold-production-operation-label {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+}
+
+.cold-production-operation-label .ant-btn {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
+  color: #8c8c8c;
+}
+
+.cold-production-operation-label .ant-btn:hover,
+.cold-production-operation-label .ant-btn:focus-visible {
+  color: #1677ff;
+  background: #e6f4ff;
+}
+
+@media (max-width: 768px) {
+  .cold-production-detail-head > .ant-space {
+    align-items: flex-start;
+  }
+}

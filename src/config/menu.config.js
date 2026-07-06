@@ -15,8 +15,8 @@ const SECTION_META = {
 const SECTION_ORDER = [
   'workbench',
   'main',
-  'matrixPackage',
   'project',
+  'matrixPackage',
   'efficiency',
   'feedback',
   'system',

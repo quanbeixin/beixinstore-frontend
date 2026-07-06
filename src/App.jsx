@@ -58,6 +58,9 @@ const FeedbackList = lazy(() => import('./pages/feedback/FeedbackListPage'))
 const FeedbackDashboard = lazy(() => import('./pages/feedback/FeedbackDashboardPage'))
 const FeedbackAIPromptConfig = lazy(() => import('./pages/feedback/AIPromptConfigPage'))
 const ImportantEmailConfig = lazy(() => import('./pages/feedback/ImportantEmailConfigPage'))
+const ColdStandbyProduction = lazy(() => import('./pages/matrix-package/ColdStandbyProductionPage'))
+const ColdStandbyProductionDetail = lazy(() => import('./pages/matrix-package/ColdStandbyProductionDetailPage'))
+const DeveloperAccount = lazy(() => import('./pages/matrix-package/DeveloperAccountPage'))
 const MatrixPackageSpecial = lazy(() => import('./pages/matrix-package/MatrixPackageSpecialPage'))
 const Login = lazy(() => import('./pages/auth/LoginPage'))
 const Register = lazy(() => import('./pages/auth/RegisterPage'))
@@ -78,6 +81,9 @@ const PAGE_COMPONENTS = {
   feedbackDashboard: FeedbackDashboard,
   feedbackAIPromptConfig: FeedbackAIPromptConfig,
   importantEmailConfig: ImportantEmailConfig,
+  coldStandbyProduction: ColdStandbyProduction,
+  coldStandbyProductionDetail: ColdStandbyProductionDetail,
+  developerAccount: DeveloperAccount,
   matrixPackageSpecial: MatrixPackageSpecial,
   morningStandupBoard: MorningStandupBoard,
   options: Options,

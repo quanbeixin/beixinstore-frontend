@@ -1,0 +1,73 @@
+.cold-production-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cold-production-head {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+
+.cold-production-filter-card .ant-card-body {
+  padding: 14px;
+}
+
+.cold-production-filter-card .ant-select,
+.cold-production-filter-card .ant-input-affix-wrapper,
+.cold-production-filter-card .ant-input {
+  width: 100%;
+}
+
+.cold-production-table-card .ant-card-body {
+  padding: 0;
+}
+
+.cold-production-name-cell,
+.cold-production-account-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.cold-production-progress-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cold-production-form {
+  padding-top: 8px;
+}
+
+.cold-production-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.cold-production-row-done td {
+  background: #fbfffb;
+}
+
+.cold-production-row-active td {
+  background: #fbfdff;
+}
+
+@media (max-width: 768px) {
+  .cold-production-head > .ant-space {
+    width: 100%;
+  }
+
+  .cold-production-head > .ant-space .ant-btn {
+    flex: 1;
+  }
+
+  .cold-production-checklist {
+    grid-template-columns: 1fr;
+  }
+}

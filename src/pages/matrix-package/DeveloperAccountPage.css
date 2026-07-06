@@ -1,0 +1,65 @@
+.developer-account-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.developer-account-head {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+
+.developer-account-filter-card .ant-card-body {
+  padding: 14px;
+}
+
+.developer-account-filter-card .ant-select,
+.developer-account-filter-card .ant-input-affix-wrapper,
+.developer-account-filter-card .ant-input {
+  width: 100%;
+}
+
+.developer-account-table-card .ant-card-body {
+  padding: 0;
+}
+
+.developer-account-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.developer-account-package-count {
+  padding: 0;
+  height: auto;
+  line-height: 1;
+}
+
+.developer-account-form {
+  padding-top: 8px;
+}
+
+.developer-account-row-risk td {
+  background: #fffbf0;
+}
+
+.developer-account-row-banned td {
+  background: #fff7f7;
+}
+
+.developer-account-row-disabled td {
+  color: #667085;
+}
+
+@media (max-width: 768px) {
+  .developer-account-head > .ant-space {
+    width: 100%;
+  }
+
+  .developer-account-head > .ant-space .ant-btn {
+    flex: 1;
+  }
+}
