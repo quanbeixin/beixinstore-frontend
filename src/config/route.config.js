@@ -233,6 +233,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/matrix-package-special',
+    componentKey: 'matrixPackageSpecial',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '矩阵包专项',
+      subtitle: '矩阵包相关专项能力入口。',
+    },
+    menu: {
+      section: 'main',
+      label: '矩阵包专项',
+      icon: 'tool',
+    },
+  },
+  {
     path: '/work-demands',
     componentKey: 'workDemands',
     requiredPermission: 'demand.view',

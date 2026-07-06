@@ -58,6 +58,7 @@ const FeedbackList = lazy(() => import('./pages/feedback/FeedbackListPage'))
 const FeedbackDashboard = lazy(() => import('./pages/feedback/FeedbackDashboardPage'))
 const FeedbackAIPromptConfig = lazy(() => import('./pages/feedback/AIPromptConfigPage'))
 const ImportantEmailConfig = lazy(() => import('./pages/feedback/ImportantEmailConfigPage'))
+const MatrixPackageSpecial = lazy(() => import('./pages/matrix-package/MatrixPackageSpecialPage'))
 const Login = lazy(() => import('./pages/auth/LoginPage'))
 const Register = lazy(() => import('./pages/auth/RegisterPage'))
 
@@ -77,6 +78,7 @@ const PAGE_COMPONENTS = {
   feedbackDashboard: FeedbackDashboard,
   feedbackAIPromptConfig: FeedbackAIPromptConfig,
   importantEmailConfig: ImportantEmailConfig,
+  matrixPackageSpecial: MatrixPackageSpecial,
   morningStandupBoard: MorningStandupBoard,
   options: Options,
   ownerWorkbench: OwnerWorkbench,
