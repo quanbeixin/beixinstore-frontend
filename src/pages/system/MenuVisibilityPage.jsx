@@ -176,7 +176,7 @@ function MenuVisibility() {
   )
 
   const menuRouteItems = useMemo(() => {
-    return PRIVATE_ROUTES.filter((route) => route.menu).map((route) => {
+    return PRIVATE_ROUTES.filter((route) => route.menu && !route.menu.hidden).map((route) => {
       const menuKey = String(route.menu.key || route.path || '').trim()
       const section = route.menu.section || 'main'
       return {

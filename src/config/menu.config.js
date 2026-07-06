@@ -29,6 +29,7 @@ function buildMenuSectionsFromRoutes() {
 
   PRIVATE_ROUTES.forEach((route) => {
     if (!route.menu) return
+    if (route.menu.hidden) return
 
     const sectionKey = route.menu.section || 'main'
     if (!sectionMap[sectionKey]) {

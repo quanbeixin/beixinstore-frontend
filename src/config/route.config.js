@@ -244,6 +244,7 @@ export const PRIVATE_ROUTES = [
       section: 'matrixPackage',
       label: '矩阵包全景图',
       icon: 'tool',
+      hidden: true,
     },
   },
   {
@@ -258,6 +259,7 @@ export const PRIVATE_ROUTES = [
       section: 'matrixPackage',
       label: '冷备包生产线',
       icon: 'tool',
+      hidden: true,
     },
   },
   {
@@ -281,6 +283,7 @@ export const PRIVATE_ROUTES = [
       section: 'matrixPackage',
       label: '开发者账号管理',
       icon: 'setting',
+      hidden: true,
     },
   },
   {
