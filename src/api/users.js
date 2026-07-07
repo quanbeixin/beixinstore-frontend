@@ -20,6 +20,10 @@ export function updateUserApi(userId, payload) {
   return request.post(`/users/${userId}/update`, payload)
 }
 
+export function resetUserPasswordApi(userId, payload) {
+  return request.post(`/users/${userId}/reset-password`, payload)
+}
+
 export function deleteUserApi(userId) {
   return request.post(`/users/${userId}/delete`)
 }

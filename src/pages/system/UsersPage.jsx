@@ -3,6 +3,7 @@ import {
   EditOutlined,
   EyeOutlined,
   FileSearchOutlined,
+  KeyOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
@@ -32,6 +33,7 @@ import {
   getUserChangeLogsApi,
   getUserByIdApi,
   getUsersApi,
+  resetUserPasswordApi,
   updateUserApi,
 } from '../../api/users'
 import { getCurrentUser } from '../../utils/access'
@@ -44,6 +46,7 @@ const USER_CHANGE_ACTION_OPTIONS = [
   { label: '全部类型', value: '' },
   { label: '新增用户', value: 'CREATE' },
   { label: '编辑用户', value: 'UPDATE' },
+  { label: '重置密码', value: 'RESET_PASSWORD' },
   { label: '删除用户', value: 'DELETE' },
   { label: '查看详情', value: 'VIEW' },
   { label: '新用户注册', value: 'REGISTER' },
@@ -130,6 +133,7 @@ function Users() {
     { item_code: 'DISABLED', item_name: '停用', color: 'default' },
   ])
   const [isLogModalVisible, setIsLogModalVisible] = useState(false)
+  const [isResetPasswordVisible, setIsResetPasswordVisible] = useState(false)
   const [isLogDetailVisible, setIsLogDetailVisible] = useState(false)
   const [logLoading, setLogLoading] = useState(false)
   const [userChangeLogs, setUserChangeLogs] = useState([])
@@ -141,8 +145,11 @@ function Users() {
   const [logOperatorUserId, setLogOperatorUserId] = useState(undefined)
   const [logKeyword, setLogKeyword] = useState('')
   const [logDateRange, setLogDateRange] = useState([])
+  const [resetPasswordUser, setResetPasswordUser] = useState(null)
+  const [resetPasswordSubmitting, setResetPasswordSubmitting] = useState(false)
 
   const [form] = Form.useForm()
+  const [resetPasswordForm] = Form.useForm()
 
   const getCurrentUserId = () => {
     const user = getCurrentUser()
@@ -381,6 +388,42 @@ function Users() {
     }
   }
 
+  const openResetPasswordModal = (user) => {
+    setResetPasswordUser(user)
+    resetPasswordForm.resetFields()
+    setIsResetPasswordVisible(true)
+  }
+
+  const closeResetPasswordModal = () => {
+    setIsResetPasswordVisible(false)
+    setResetPasswordUser(null)
+    resetPasswordForm.resetFields()
+  }
+
+  const handleResetPassword = async () => {
+    if (!resetPasswordUser?.id) return
+    try {
+      setResetPasswordSubmitting(true)
+      const values = await resetPasswordForm.validateFields()
+      const result = await resetUserPasswordApi(resetPasswordUser.id, {
+        password: values.password,
+        confirm_password: values.confirm_password,
+      })
+      if (!result.success) {
+        message.error(result.message || '重置密码失败')
+        return
+      }
+      message.success('密码已重置')
+      closeResetPasswordModal()
+    } catch (error) {
+      if (error?.errorFields) return
+      message.error(error?.message || '重置密码失败')
+      console.error('Reset user password error:', error)
+    } finally {
+      setResetPasswordSubmitting(false)
+    }
+  }
+
   const handleRefresh = () => {
     setKeyword('')
     setSortBy('real_name')
@@ -585,13 +628,16 @@ function Users() {
     {
       title: '操作',
       key: 'action',
-      width: 180,
+      width: 270,
       fixed: 'right',
       render: (_, record) =>
         record?.row_type === 'department_group' ? null : (
           <Space size="small">
             <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
               编辑
+            </Button>
+            <Button type="link" icon={<KeyOutlined />} onClick={() => openResetPasswordModal(record)}>
+              重置密码
             </Button>
             <Popconfirm
               title="确认删除"
@@ -631,6 +677,7 @@ function Users() {
         const colorMap = {
           CREATE: 'green',
           UPDATE: 'blue',
+          RESET_PASSWORD: 'purple',
           DELETE: 'red',
           VIEW: 'default',
           REGISTER: 'gold',
@@ -740,8 +787,54 @@ function Users() {
         expandable={{ defaultExpandAllRows: true }}
         pagination={false}
         onChange={handleTableChange}
-        scroll={{ x: 1200 }}
+        scroll={{ x: 1320 }}
       />
+
+      <Modal
+        title="重置密码"
+        open={isResetPasswordVisible}
+        onOk={handleResetPassword}
+        onCancel={closeResetPasswordModal}
+        okText="确认重置"
+        cancelText="取消"
+        confirmLoading={resetPasswordSubmitting}
+        destroyOnHidden
+      >
+        <div style={{ marginBottom: 16, color: '#667085' }}>
+          目标用户：{resetPasswordUser?.real_name || resetPasswordUser?.username || '-'}
+          {resetPasswordUser?.username ? `（${resetPasswordUser.username}）` : ''}
+        </div>
+        <Form form={resetPasswordForm} layout="vertical">
+          <Form.Item
+            label="新密码"
+            name="password"
+            rules={[
+              { required: true, message: '请输入新密码' },
+              { min: 6, message: '密码至少 6 个字符' },
+            ]}
+          >
+            <Input.Password placeholder="请输入新密码" autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item
+            label="确认密码"
+            name="confirm_password"
+            dependencies={['password']}
+            rules={[
+              { required: true, message: '请再次输入新密码' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('password') === value) {
+                    return Promise.resolve()
+                  }
+                  return Promise.reject(new Error('两次输入的密码不一致'))
+                },
+              }),
+            ]}
+          >
+            <Input.Password placeholder="请再次输入新密码" autoComplete="new-password" />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title="用户操作记录"
