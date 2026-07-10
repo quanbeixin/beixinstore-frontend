@@ -56,8 +56,30 @@ function normalizeDictItems(items, fallback) {
       code: String(item.item_code || '').trim().toUpperCase(),
       name: String(item.item_name || item.item_code || '').trim(),
       color: String(item.color || '').trim() || 'default',
+      englishName: parseDictEnglishName(item),
     }))
     .filter((item) => item.code && item.name)
+}
+
+function parseDictEnglishName(item) {
+  const rawExtra = item?.extra_json
+  if (rawExtra && typeof rawExtra === 'object' && !Array.isArray(rawExtra)) {
+    return String(rawExtra.englishName || rawExtra.english_name || rawExtra.enName || rawExtra.extra_json || '').trim()
+  }
+  if (typeof rawExtra === 'string' && rawExtra.trim()) {
+    try {
+      const parsed = JSON.parse(rawExtra)
+      if (typeof parsed === 'string') {
+        return parsed.trim()
+      }
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return String(parsed.englishName || parsed.english_name || parsed.enName || parsed.extra_json || '').trim()
+      }
+    } catch {
+      return rawExtra.trim()
+    }
+  }
+  return ''
 }
 
 function buildDictMap(options) {
@@ -137,6 +159,10 @@ function DeveloperAccountPage() {
   const packageStatusMap = useMemo(() => buildDictMap(packageStatusOptions), [packageStatusOptions])
   const packageHealthMap = useMemo(() => buildDictMap(packageHealthOptions), [packageHealthOptions])
   const treeAccounts = useMemo(() => buildCompanyTree(accounts), [accounts])
+  const companyEnglishNameMap = useMemo(
+    () => new Map(companyOptions.map((item) => [item.name, item.englishName || item.code || ''])),
+    [companyOptions],
+  )
 
   const fetchDicts = useCallback(async () => {
     const [accountStatusResult, companyResult, packageStatusResult, packageHealthResult] = await Promise.allSettled([
@@ -361,6 +387,17 @@ function DeveloperAccountPage() {
             <Text type="secondary">{record.company_name || '-'}</Text>
           </div>
         )
+      },
+    },
+    {
+      title: '主体英文名称',
+      dataIndex: 'company_name',
+      key: 'company_english_name',
+      width: 180,
+      render: (value, record) => {
+        const englishName = companyEnglishNameMap.get(record.company_name || value || '') || ''
+        if (!englishName) return <Text type="secondary">-</Text>
+        return <Text>{englishName}</Text>
       },
     },
     {
