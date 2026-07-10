@@ -1194,8 +1194,14 @@ function ColdStandbyProductionDetailPage() {
           size="small"
           disabled={!canManage || updatingUnifiedDeadline}
           value={detail?.expected_cold_ready_date ? dayjs(detail.expected_cold_ready_date) : null}
-          format="YYYY-MM-DD"
-          placeholder="选择日期"
+          format="YYYY-MM-DD HH:00"
+          placeholder="选择日期和小时"
+          showTime={{
+            format: 'HH',
+            minuteStep: 60,
+            secondStep: 60,
+            defaultOpenValue: dayjs().minute(0).second(0),
+          }}
           onChange={async (value) => {
             if (!detail?.id) return
             try {
@@ -1209,7 +1215,7 @@ function ColdStandbyProductionDetailPage() {
                 owner_user_id: detail.owner_user_id || null,
                 status_code: detail.status_code,
                 health_code: detail.health_code || null,
-                expected_cold_ready_date: value ? value.format('YYYY-MM-DD') : null,
+                expected_cold_ready_date: value ? value.minute(0).second(0).format('YYYY-MM-DD HH:mm:ss') : null,
               })
               if (!result?.success) {
                 message.error(result?.message || '统一截止时间更新失败')
