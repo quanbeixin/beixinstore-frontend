@@ -32,6 +32,10 @@
   min-width: 0;
 }
 
+.developer-account-company-icon {
+  color: #1677ff;
+}
+
 .developer-account-package-count {
   padding: 0;
   height: auto;
@@ -52,6 +56,14 @@
 
 .developer-account-row-disabled td {
   color: #667085;
+}
+
+.developer-account-company-row td {
+  background: #f7f9fc;
+}
+
+.developer-account-company-row .ant-table-cell {
+  font-weight: 500;
 }
 
 @media (max-width: 768px) {

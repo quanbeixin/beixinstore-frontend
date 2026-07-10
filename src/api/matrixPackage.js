@@ -24,10 +24,32 @@ export function getMatrixPackageSideNotesApi(id) {
   return request.get(`/matrix-packages/${id}/side-notes`)
 }
 
+export function getMatrixPackageProductionNodesApi(id) {
+  return request.get(`/matrix-packages/${id}/production-nodes`)
+}
+
+export function updateMatrixPackageProductionNodeApi(id, nodeCode, payload = {}) {
+  return request.put(`/matrix-packages/${id}/production-nodes/${nodeCode}`, payload)
+}
+
+export function remindMatrixPackageProductionNodeApi(id, nodeCode) {
+  return request.post(`/matrix-packages/${id}/production-nodes/${nodeCode}/remind`)
+}
+
 export function saveMatrixPackageSideNotesApi(id, notes) {
   return request.put(`/matrix-packages/${id}/side-notes`, { notes })
 }
 
 export function confirmMatrixPackageSideNoteApi(id, noteType) {
   return request.post(`/matrix-packages/${id}/side-notes/${noteType}/confirm`)
+}
+
+export function remindMatrixPackageSideNoteApi(id, noteType) {
+  return request.post(`/matrix-packages/${id}/side-notes/${noteType}/remind`)
+}
+
+export function getMatrixPackageSideNoteUploadPolicyApi(id, payload = {}) {
+  return request.post(`/matrix-packages/${id}/side-notes/upload-policy`, payload, {
+    timeout: 30000,
+  })
 }

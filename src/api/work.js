@@ -65,6 +65,20 @@ export function updateNotificationConfigApi(scene, payload) {
   return request.put(`/work/notification-configs/${scene}`, payload)
 }
 
+export function getNotificationTemplateFilesApi() {
+  return request.get('/work/notification-template-files')
+}
+
+export function upsertNotificationTemplateFileApi(templateKey, payload) {
+  return request.put(`/work/notification-template-files/${templateKey}`, payload)
+}
+
+export function getNotificationTemplateFileUploadPolicyApi(payload = {}) {
+  return request.post('/work/notification-template-files/upload-policy', payload, {
+    timeout: 30000,
+  })
+}
+
 export function getEfficiencyFactorSettingsApi() {
   return request.get('/work/efficiency-factor-settings')
 }

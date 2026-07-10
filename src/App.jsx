@@ -61,6 +61,8 @@ const ImportantEmailConfig = lazy(() => import('./pages/feedback/ImportantEmailC
 const ColdStandbyProduction = lazy(() => import('./pages/matrix-package/ColdStandbyProductionPage'))
 const ColdStandbyProductionDetail = lazy(() => import('./pages/matrix-package/ColdStandbyProductionDetailPage'))
 const DeveloperAccount = lazy(() => import('./pages/matrix-package/DeveloperAccountPage'))
+const MatrixPackageApiDebug = lazy(() => import('./pages/matrix-package/MatrixPackageApiDebugPage'))
+const MatrixPackageNotification = lazy(() => import('./pages/matrix-package/MatrixPackageNotificationPage'))
 const MatrixPackageSpecial = lazy(() => import('./pages/matrix-package/MatrixPackageSpecialPage'))
 const Login = lazy(() => import('./pages/auth/LoginPage'))
 const Register = lazy(() => import('./pages/auth/RegisterPage'))
@@ -84,6 +86,8 @@ const PAGE_COMPONENTS = {
   coldStandbyProduction: ColdStandbyProduction,
   coldStandbyProductionDetail: ColdStandbyProductionDetail,
   developerAccount: DeveloperAccount,
+  matrixPackageApiDebug: MatrixPackageApiDebug,
+  matrixPackageNotification: MatrixPackageNotification,
   matrixPackageSpecial: MatrixPackageSpecial,
   morningStandupBoard: MorningStandupBoard,
   options: Options,

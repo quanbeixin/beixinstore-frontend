@@ -2,6 +2,7 @@ import {
   AlertOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  DeleteOutlined,
   EditOutlined,
   FireOutlined,
   PlusOutlined,
@@ -16,6 +17,7 @@ import {
   Form,
   Input,
   Modal,
+  Popconfirm,
   Row,
   Select,
   Space,
@@ -28,6 +30,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createMatrixPackageApi,
+  deleteMatrixPackageApi,
   getMatrixPackagesApi,
   updateMatrixPackageApi,
 } from '../../api/matrixPackage'
@@ -113,6 +116,7 @@ function MatrixPackageSpecialPage() {
   const [saving, setSaving] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
   const [packages, setPackages] = useState([])
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
   const [summary, setSummary] = useState({ total: 0, delivering: 0, abnormal: 0, standby: 0 })
@@ -236,9 +240,10 @@ function MatrixPackageSpecialPage() {
     setEditingRecord(null)
     form.setFieldsValue({
       package_name: '',
+      app_id: '',
       new_package_version: '',
+      domain_info: '',
       developer_account_id: undefined,
-      platform: 'Meta',
       owner_user_id: undefined,
       status_code: 'COLD_STANDBY',
       health_code: undefined,
@@ -250,9 +255,10 @@ function MatrixPackageSpecialPage() {
     setEditingRecord(record)
     form.setFieldsValue({
       package_name: record.package_name || '',
+      app_id: record.app_id || '',
       new_package_version: record.new_package_version || '',
+      domain_info: record.domain_info || '',
       developer_account_id: record.developer_account_id || undefined,
-      platform: record.platform || '',
       owner_user_id: record.owner_user_id || undefined,
       status_code: record.status_code || 'COLD_STANDBY',
       health_code: record.health_code || undefined,
@@ -300,6 +306,8 @@ function MatrixPackageSpecialPage() {
       async onOk() {
         const payload = {
           package_name: record.package_name,
+          app_id: record.app_id || '',
+          domain_info: record.domain_info || '',
           developer_account_id: record.developer_account_id || null,
           platform: record.platform || '',
           status_code: IN_DEVELOPMENT_STATUS,
@@ -321,6 +329,25 @@ function MatrixPackageSpecialPage() {
     })
   }
 
+  const handleDelete = async (record) => {
+    if (!record?.id) return
+    setDeletingId(record.id)
+    try {
+      const result = await deleteMatrixPackageApi(record.id)
+      if (!result?.success) {
+        message.error(result?.message || '删除失败')
+        return
+      }
+
+      message.success('矩阵包已删除')
+      fetchPackages({ page: pagination.current, pageSize: pagination.pageSize })
+    } catch (error) {
+      message.error(error?.message || '删除失败')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   const columns = [
     {
       title: '矩阵包',
@@ -332,7 +359,9 @@ function MatrixPackageSpecialPage() {
         <div className="matrix-package-name-cell">
           <Text strong>{value || '-'}</Text>
           <Space size={4} wrap>
+            {record.app_id ? <Tag color="cyan">{record.app_id}</Tag> : null}
             {record.new_package_version ? <Tag color="blue">{record.new_package_version}</Tag> : null}
+            {record.domain_info ? <Tag color="purple">{record.domain_info}</Tag> : null}
             {record.platform ? <Tag>{record.platform}</Tag> : null}
             {record.owner_name ? <Text type="secondary">{record.owner_name}</Text> : null}
           </Space>
@@ -388,7 +417,7 @@ function MatrixPackageSpecialPage() {
       title: '操作',
       key: 'actions',
       fixed: 'right',
-      width: 180,
+      width: 240,
       render: (_, record) => (
         <Space size={4}>
           <Button
@@ -408,6 +437,23 @@ function MatrixPackageSpecialPage() {
               推进开发
             </Button>
           ) : null}
+          <Popconfirm
+            title="确认删除该矩阵包？"
+            description="删除后不可恢复，并会从全景图和生产线视图中移除。"
+            okText="确认删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true, loading: deletingId === record.id }}
+            onConfirm={() => handleDelete(record)}
+          >
+            <Button
+              type="link"
+              danger
+              icon={<DeleteOutlined />}
+              disabled={!canManage}
+            >
+              删除
+            </Button>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -459,7 +505,7 @@ function MatrixPackageSpecialPage() {
             <Input
               allowClear
               prefix={<SearchOutlined />}
-              placeholder="搜索名称、平台、负责人、账号"
+              placeholder="搜索名称、包ID、域名、负责人、账号"
               value={filters.keyword}
               onChange={(event) => setFilters((prev) => ({ ...prev, keyword: event.target.value }))}
             />
@@ -561,6 +607,20 @@ function MatrixPackageSpecialPage() {
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
+              <Form.Item label="包ID（应用ID）" name="app_id">
+                <Input placeholder="填写包ID或应用ID" maxLength={80} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="域名信息"
+                name="domain_info"
+                rules={[{ required: true, message: '请先补充好域名信息' }]}
+              >
+                <Input placeholder="例如：example.com 或多个域名用逗号分隔" maxLength={255} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
               <Form.Item label="新包版本" name="new_package_version">
                 <Input placeholder="例如：26/07/07版本" maxLength={50} />
               </Form.Item>
@@ -576,18 +636,6 @@ function MatrixPackageSpecialPage() {
                     label: `${item.company_name || '-'} / ${item.account_name || '-'}`,
                     value: item.id,
                   }))}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item label="平台" name="platform">
-                <Select
-                  allowClear
-                  placeholder="选择平台"
-                  options={[
-                    { label: 'Meta', value: 'Meta' },
-                    { label: 'Google', value: 'Google' },
-                  ]}
                 />
               </Form.Item>
             </Col>

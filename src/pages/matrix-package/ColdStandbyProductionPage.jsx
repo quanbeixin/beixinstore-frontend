@@ -76,6 +76,12 @@ function getChecklistPercent(values) {
   return Math.round((checked / CHECKLIST_TOTAL) * 100)
 }
 
+function getConfigCompletionPercent(record) {
+  const sideNotePercent = Number(record?.side_note_completion_percent)
+  if (Number.isFinite(sideNotePercent)) return sideNotePercent
+  return getChecklistPercent(record?.production_checklist)
+}
+
 function getRowTone(statusCode) {
   if (statusCode === 'COLD_STANDBY') return 'done'
   if (statusCode === 'IN_DEVELOPMENT') return 'active'
@@ -281,10 +287,10 @@ function ColdStandbyProductionPage() {
     },
     {
       title: '配置完整度',
-      dataIndex: 'production_checklist',
-      key: 'production_checklist',
+      dataIndex: 'side_note_completion_percent',
+      key: 'side_note_completion_percent',
       width: 150,
-      render: (value) => <Progress percent={getChecklistPercent(value)} size="small" />,
+      render: (_, record) => <Progress percent={getConfigCompletionPercent(record)} size="small" />,
     },
     {
       title: '更新时间',

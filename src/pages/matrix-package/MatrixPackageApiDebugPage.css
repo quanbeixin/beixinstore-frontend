@@ -1,0 +1,88 @@
+.matrix-api-debug-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.matrix-api-debug-toolbar .ant-card-body {
+  padding: 12px 14px;
+}
+
+.matrix-api-debug-page .ant-card-body {
+  padding: 16px;
+}
+
+.matrix-api-debug-alert {
+  margin-bottom: 12px;
+}
+
+.matrix-api-debug-response {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.matrix-api-debug-url {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.matrix-api-debug-url .ant-typography {
+  overflow-wrap: anywhere;
+}
+
+.matrix-api-debug-section-title {
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.matrix-api-debug-code {
+  max-height: 260px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid #edf0f5;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.matrix-api-debug-body {
+  max-height: 520px;
+}
+
+.matrix-api-debug-empty {
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px dashed #d9d9d9;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.matrix-api-debug-empty .anticon {
+  color: #8c8c8c;
+  font-size: 28px;
+}
+
+@media (max-width: 768px) {
+  .matrix-api-debug-page .ant-card-extra {
+    margin-top: 10px;
+    margin-left: 0;
+  }
+
+  .matrix-api-debug-page .ant-card-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

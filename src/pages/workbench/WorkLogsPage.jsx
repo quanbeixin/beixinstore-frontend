@@ -1751,10 +1751,9 @@ function WorkLogs({ mode = 'dashboard' }) {
   const loadDetailTimeline = useCallback(async (record) => {
     if (!record?.id) return false
     try {
-      const rangeParams = buildDetailDateRangeParams(record)
       const [planResult, entryResult] = await Promise.all([
-        getLogDailyPlansApi(record.id, rangeParams),
-        getLogDailyEntriesApi(record.id, rangeParams),
+        getLogDailyPlansApi(record.id),
+        getLogDailyEntriesApi(record.id),
       ])
 
       if (!planResult?.success) {
@@ -2593,7 +2592,6 @@ function WorkLogs({ mode = 'dashboard' }) {
       (acc, item) => {
         acc.days += 1
         acc.totalPlanned += toNumber(item?.planned_hours, 0)
-        acc.totalActual += toNumber(item?.actual_hours, 0)
         acc.totalEntries += toNumber(item?.entry_count, 0)
         return acc
       },
@@ -4064,7 +4062,9 @@ function WorkLogs({ mode = 'dashboard' }) {
           </div>
           <div style={SURFACE_CARD_STYLE}>
             <div style={SURFACE_LABEL_STYLE}>累计实际(h)</div>
-            <div style={SURFACE_VALUE_STYLE}>{toNumber(detailSummary.totalActual, 0).toFixed(1)}</div>
+            <div style={SURFACE_VALUE_STYLE}>
+              {toNumber(detailLog?.cumulative_actual_hours, detailLog?.actual_hours).toFixed(1)}
+            </div>
           </div>
           <div style={SURFACE_CARD_STYLE}>
             <div style={SURFACE_LABEL_STYLE}>投入记录数</div>
@@ -4100,11 +4100,7 @@ function WorkLogs({ mode = 'dashboard' }) {
               )}
             </div>
             <div>关联节点: {detailLog.phase_name || detailLog.phase_key || '-'}</div>
-            <div>
-              明细范围: {toDateInputValue(detailLog.expected_start_date) || toDateInputValue(detailLog.log_date) || '-'}
-              {' ~ '}
-              {toDateInputValue(detailLog.expected_completion_date) || '至今'}
-            </div>
+            <div>明细范围: 全量历史</div>
             <div>描述: {detailLog.description || '-'}</div>
           </div>
         ) : null}

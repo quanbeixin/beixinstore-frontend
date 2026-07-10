@@ -244,7 +244,6 @@ export const PRIVATE_ROUTES = [
       section: 'matrixPackage',
       label: '矩阵包全景图',
       icon: 'tool',
-      hidden: true,
     },
   },
   {
@@ -259,7 +258,6 @@ export const PRIVATE_ROUTES = [
       section: 'matrixPackage',
       label: '冷备包生产线',
       icon: 'tool',
-      hidden: true,
     },
   },
   {
@@ -283,7 +281,34 @@ export const PRIVATE_ROUTES = [
       section: 'matrixPackage',
       label: '开发者账号管理',
       icon: 'setting',
-      hidden: true,
+    },
+  },
+  {
+    path: '/matrix-package-special/api-debug',
+    componentKey: 'matrixPackageApiDebug',
+    requiredPermission: 'demand.manage',
+    page: {
+      title: '接口调试台',
+      subtitle: '通过后端代理调试外部站点接口连通性。',
+    },
+    menu: {
+      section: 'matrixPackage',
+      label: '接口调试台',
+      icon: 'api',
+    },
+  },
+  {
+    path: '/matrix-package-special/notification-rules',
+    componentKey: 'matrixPackageNotification',
+    requiredPermission: 'demand.manage',
+    page: {
+      title: '通知配置',
+      subtitle: '维护矩阵包专项的状态变更与定时提醒通知规则。',
+    },
+    menu: {
+      section: 'matrixPackage',
+      label: '通知配置',
+      icon: 'setting',
     },
   },
   {
