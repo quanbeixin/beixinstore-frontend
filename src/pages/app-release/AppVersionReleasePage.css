@@ -1,0 +1,46 @@
+.app-version-release-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.app-version-release-card .ant-card-body {
+  padding: 14px;
+}
+
+.app-version-release-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.app-version-release-search {
+  width: 320px;
+}
+
+.app-version-release-status {
+  width: 132px;
+}
+
+.app-version-release-link {
+  display: inline-block;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+@media (max-width: 720px) {
+  .app-version-release-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .app-version-release-search,
+  .app-version-release-status {
+    width: 100%;
+  }
+}

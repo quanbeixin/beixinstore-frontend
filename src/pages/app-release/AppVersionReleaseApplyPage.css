@@ -1,0 +1,68 @@
+.app-version-release-apply-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.app-version-release-apply-card .ant-card-body {
+  padding: 16px;
+}
+
+.app-version-release-apply-alert {
+  margin-bottom: 16px;
+}
+
+.app-version-release-apply-form {
+  max-width: 920px;
+}
+
+.app-version-release-apply-option-meta {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.app-version-release-apply-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.app-version-release-apply-conflicts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.app-version-release-apply-conflict {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+@media (max-width: 720px) {
+  .app-version-release-apply-card .ant-card-body {
+    padding: 12px;
+  }
+
+  .app-version-release-apply-actions {
+    flex-direction: column-reverse;
+  }
+
+  .app-version-release-apply-actions .ant-btn {
+    width: 100%;
+  }
+
+  .app-version-release-apply-conflict {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

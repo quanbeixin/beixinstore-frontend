@@ -19,6 +19,17 @@
   border: 1px solid #eef1f5;
 }
 
+.matrix-summary-card-clickable {
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.matrix-summary-card-clickable:hover {
+  border-color: #b8cbff;
+  box-shadow: 0 8px 20px rgba(59, 111, 223, 0.12);
+  transform: translateY(-1px);
+}
+
 .matrix-summary-card .ant-statistic-title {
   color: #667085;
   font-size: 13px;

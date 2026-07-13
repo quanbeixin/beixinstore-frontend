@@ -270,6 +270,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/matrix-package-special/review-plans',
+    componentKey: 'matrixPackageReviewPlan',
+    requiredPermission: 'demand.view',
+    page: {
+      title: '矩阵包送审排期',
+      subtitle: '规划冷备包送审时间，跟踪首次送审、审核、广告账号绑定、二次送审与热备状态。',
+    },
+    menu: {
+      section: 'matrixPackage',
+      label: '矩阵包送审排期',
+      icon: 'tool',
+    },
+  },
+  {
     path: '/matrix-package-special/developer-accounts',
     componentKey: 'developerAccount',
     requiredPermission: 'demand.view',
@@ -309,6 +323,34 @@ export const PRIVATE_ROUTES = [
       section: 'matrixPackage',
       label: '通知配置',
       icon: 'setting',
+    },
+  },
+  {
+    path: '/app-version-release',
+    componentKey: 'appVersionRelease',
+    requiredPermission: 'demand.view',
+    page: {
+      title: 'APP版本发布',
+      subtitle: '集中维护 APP 版本发布计划、发布节点与相关信息。',
+    },
+    menu: {
+      section: 'appRelease',
+      label: 'APP版本发布',
+      icon: 'tool',
+    },
+  },
+  {
+    path: '/app-version-release/apply',
+    componentKey: 'appVersionReleaseApply',
+    requiredPermission: 'demand.manage',
+    page: {
+      title: '版本发布申请',
+      subtitle: '手动选择一个或多个矩阵包，批量创建 APP 版本发布申请。',
+    },
+    menu: {
+      section: 'appRelease',
+      label: '版本发布申请',
+      icon: 'tool',
     },
   },
   {

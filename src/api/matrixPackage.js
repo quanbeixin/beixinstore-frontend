@@ -20,6 +20,10 @@ export function deleteMatrixPackageApi(id) {
   return request.delete(`/matrix-packages/${id}`)
 }
 
+export function completeMatrixPackageProductionApi(id) {
+  return request.post(`/matrix-packages/${id}/complete-production`)
+}
+
 export function getMatrixPackageSideNotesApi(id) {
   return request.get(`/matrix-packages/${id}/side-notes`)
 }

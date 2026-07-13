@@ -1,5 +1,4 @@
 import {
-  AlertOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
@@ -52,7 +51,9 @@ const DEFAULT_STATUS_OPTIONS = [
   { item_code: 'PENDING_DEV', item_name: '待开发', color: 'default' },
   { item_code: 'IN_DEVELOPMENT', item_name: '开发中', color: 'cyan' },
   { item_code: 'COLD_STANDBY', item_name: '冷备包', color: 'blue' },
+  { item_code: 'PENDING_REVIEW_SUBMIT', item_name: '待送审', color: 'orange' },
   { item_code: 'IN_REVIEW', item_name: '审核中', color: 'gold' },
+  { item_code: 'REVIEW_REJECTED', item_name: '被拒审', color: 'red' },
   { item_code: 'HOT_STANDBY', item_name: '热备包', color: 'green' },
   { item_code: 'DELIVERING', item_name: '投放中', color: 'processing' },
   { item_code: 'BANNED', item_name: '已封禁', color: 'red' },
@@ -119,7 +120,15 @@ function MatrixPackageSpecialPage() {
   const [deletingId, setDeletingId] = useState(null)
   const [packages, setPackages] = useState([])
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
-  const [summary, setSummary] = useState({ total: 0, delivering: 0, abnormal: 0, standby: 0 })
+  const [summary, setSummary] = useState({ total: 0, pendingDev: 0, inDevelopment: 0, delivering: 0, inReview: 0, hotStandby: 0 })
+  const [summaryModal, setSummaryModal] = useState({
+    open: false,
+    title: '',
+    statusCode: undefined,
+    rows: [],
+    loading: false,
+    pagination: { current: 1, pageSize: 20, total: 0 },
+  })
   const [filters, setFilters] = useState({
     keyword: '',
     developer_account_id: undefined,
@@ -203,9 +212,11 @@ function MatrixPackageSpecialPage() {
       })
       setSummary({
         total: Number(data.summary?.total || data.total || 0),
+        pendingDev: Number(data.summary?.pending_dev || 0),
+        inDevelopment: Number(data.summary?.in_development || 0),
         delivering: Number(data.summary?.delivering || 0),
-        abnormal: Number(data.summary?.abnormal || 0),
-        standby: Number(data.summary?.standby || 0),
+        inReview: Number(data.summary?.in_review || 0),
+        hotStandby: Number(data.summary?.hot_standby || 0),
       })
     } catch (error) {
       message.error(error?.message || '获取矩阵包列表失败')
@@ -213,6 +224,59 @@ function MatrixPackageSpecialPage() {
       setLoading(false)
     }
   }, [filters])
+
+  const fetchSummaryPackages = useCallback(async (config = {}) => {
+    const nextPage = config.page || 1
+    const nextPageSize = config.pageSize || 20
+    const statusCode = Object.prototype.hasOwnProperty.call(config, 'statusCode')
+      ? config.statusCode
+      : summaryModal.statusCode
+    const title = config.title || summaryModal.title
+
+    setSummaryModal((prev) => ({
+      ...prev,
+      open: true,
+      title,
+      statusCode,
+      loading: true,
+      pagination: {
+        ...prev.pagination,
+        current: nextPage,
+        pageSize: nextPageSize,
+      },
+    }))
+
+    try {
+      const result = await getMatrixPackagesApi({
+        page: nextPage,
+        pageSize: nextPageSize,
+        keyword: filters.keyword || undefined,
+        developer_account_id: filters.developer_account_id || undefined,
+        status_code: statusCode || filters.status_code || undefined,
+        health_code: filters.health_code || undefined,
+        owner_name: filters.owner_name || undefined,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '获取矩阵包列表失败')
+        return
+      }
+
+      const data = result.data || {}
+      setSummaryModal((prev) => ({
+        ...prev,
+        rows: Array.isArray(data.list) ? data.list : [],
+        pagination: {
+          current: Number(data.page || nextPage),
+          pageSize: Number(data.pageSize || nextPageSize),
+          total: Number(data.total || 0),
+        },
+      }))
+    } catch (error) {
+      message.error(error?.message || '获取矩阵包列表失败')
+    } finally {
+      setSummaryModal((prev) => ({ ...prev, loading: false }))
+    }
+  }, [filters, summaryModal.statusCode, summaryModal.title])
 
   useEffect(() => {
     fetchDicts()
@@ -459,6 +523,71 @@ function MatrixPackageSpecialPage() {
     },
   ]
 
+  const summaryModalColumns = [
+    {
+      title: '矩阵包',
+      dataIndex: 'package_name',
+      key: 'package_name',
+      width: 240,
+      render: (value, record) => (
+        <div className="matrix-package-name-cell">
+          <Text strong>{value || '-'}</Text>
+          <Space size={4} wrap>
+            {record.app_id ? <Tag color="cyan">{record.app_id}</Tag> : null}
+            {record.domain_info ? <Tag color="purple">{record.domain_info}</Tag> : null}
+          </Space>
+        </div>
+      ),
+    },
+    {
+      title: '开发者账号',
+      dataIndex: 'developer_account_name',
+      key: 'developer_account_name',
+      width: 200,
+      render: (_, record) => (
+        <div className="matrix-package-account-cell">
+          <Text>{record.developer_account_name || '-'}</Text>
+          {record.developer_company_name ? <Text type="secondary">{record.developer_company_name}</Text> : null}
+        </div>
+      ),
+    },
+    {
+      title: '包状态',
+      dataIndex: 'status_code',
+      key: 'status_code',
+      width: 110,
+      render: (value, record) => {
+        const meta = statusMap.get(value) || { name: record.status_name || value || '-', color: record.status_color || 'default' }
+        return <Tag color={record.status_color || meta.color}>{meta.name}</Tag>
+      },
+    },
+    {
+      title: '健康度',
+      dataIndex: 'health_code',
+      key: 'health_code',
+      width: 110,
+      render: (value, record) => {
+        if (record.status_code !== DELIVERING_STATUS) return <Text type="secondary">不适用</Text>
+        const meta = healthMap.get(value) || { name: record.health_name || value || '-', color: record.health_color || 'default' }
+        return <Tag color={record.health_color || meta.color}>{meta.name}</Tag>
+      },
+    },
+    {
+      title: '负责人',
+      dataIndex: 'owner_name',
+      key: 'owner_name',
+      width: 120,
+      render: (value) => value || '-',
+    },
+    {
+      title: '更新时间',
+      dataIndex: 'updated_at',
+      key: 'updated_at',
+      width: 170,
+      render: (value) => value || '-',
+    },
+  ]
+
   return (
     <div className="matrix-package-page">
       <div className="matrix-package-head">
@@ -477,24 +606,58 @@ function MatrixPackageSpecialPage() {
       </div>
 
       <Row gutter={[12, 12]} className="matrix-summary-row">
-        <Col xs={12} lg={6}>
-          <Card variant="borderless" className="matrix-summary-card matrix-summary-card-total">
+        <Col xs={12} flex="1 1 180px">
+          <Card
+            variant="borderless"
+            className="matrix-summary-card matrix-summary-card-total matrix-summary-card-clickable"
+            onClick={() => fetchSummaryPackages({ title: '矩阵包总数', statusCode: undefined, page: 1 })}
+          >
             <Statistic title="矩阵包总数" value={summary.total} prefix={<ClockCircleOutlined />} />
           </Card>
         </Col>
-        <Col xs={12} lg={6}>
-          <Card variant="borderless" className="matrix-summary-card">
+        <Col xs={12} flex="1 1 180px">
+          <Card
+            variant="borderless"
+            className="matrix-summary-card matrix-summary-card-clickable"
+            onClick={() => fetchSummaryPackages({ title: '待开发', statusCode: PENDING_DEV_STATUS, page: 1 })}
+          >
+            <Statistic title="待开发" value={summary.pendingDev} prefix={<ClockCircleOutlined />} />
+          </Card>
+        </Col>
+        <Col xs={12} flex="1 1 180px">
+          <Card
+            variant="borderless"
+            className="matrix-summary-card matrix-summary-card-clickable"
+            onClick={() => fetchSummaryPackages({ title: '生产中', statusCode: IN_DEVELOPMENT_STATUS, page: 1 })}
+          >
+            <Statistic title="生产中" value={summary.inDevelopment} prefix={<FireOutlined />} />
+          </Card>
+        </Col>
+        <Col xs={12} flex="1 1 180px">
+          <Card
+            variant="borderless"
+            className="matrix-summary-card matrix-summary-card-clickable"
+            onClick={() => fetchSummaryPackages({ title: '投放中', statusCode: DELIVERING_STATUS, page: 1 })}
+          >
             <Statistic title="投放中" value={summary.delivering} prefix={<FireOutlined />} />
           </Card>
         </Col>
-        <Col xs={12} lg={6}>
-          <Card variant="borderless" className="matrix-summary-card">
-            <Statistic title="需关注" value={summary.abnormal} prefix={<AlertOutlined />} />
+        <Col xs={12} flex="1 1 180px">
+          <Card
+            variant="borderless"
+            className="matrix-summary-card matrix-summary-card-clickable"
+            onClick={() => fetchSummaryPackages({ title: '审核中', statusCode: 'IN_REVIEW', page: 1 })}
+          >
+            <Statistic title="审核中" value={summary.inReview} prefix={<ClockCircleOutlined />} />
           </Card>
         </Col>
-        <Col xs={12} lg={6}>
-          <Card variant="borderless" className="matrix-summary-card">
-            <Statistic title="备包池" value={summary.standby} prefix={<CheckCircleOutlined />} />
+        <Col xs={12} flex="1 1 180px">
+          <Card
+            variant="borderless"
+            className="matrix-summary-card matrix-summary-card-clickable"
+            onClick={() => fetchSummaryPackages({ title: '热备包', statusCode: 'HOT_STANDBY', page: 1 })}
+          >
+            <Statistic title="热备包" value={summary.hotStandby} prefix={<CheckCircleOutlined />} />
           </Card>
         </Col>
       </Row>
@@ -579,6 +742,40 @@ function MatrixPackageSpecialPage() {
           }}
         />
       </Card>
+
+      <Modal
+        title={`${summaryModal.title || '矩阵包'}明细`}
+        open={summaryModal.open}
+        footer={null}
+        width={980}
+        destroyOnHidden
+        onCancel={() => setSummaryModal((prev) => ({ ...prev, open: false }))}
+      >
+        <Table
+          rowKey="id"
+          size="middle"
+          loading={summaryModal.loading}
+          columns={summaryModalColumns}
+          dataSource={summaryModal.rows}
+          scroll={{ x: 950 }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="暂无矩阵包"
+              />
+            ),
+          }}
+          pagination={{
+            current: summaryModal.pagination.current,
+            pageSize: summaryModal.pagination.pageSize,
+            total: summaryModal.pagination.total,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (page, pageSize) => fetchSummaryPackages({ page, pageSize }),
+          }}
+        />
+      </Modal>
 
       <Modal
         title={editingRecord ? '编辑矩阵包' : '新增矩阵包'}

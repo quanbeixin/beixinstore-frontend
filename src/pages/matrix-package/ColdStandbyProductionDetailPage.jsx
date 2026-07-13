@@ -18,6 +18,7 @@ import {
   Form,
   Image,
   Input,
+  Modal,
   Progress,
   Row,
   Skeleton,
@@ -35,6 +36,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   getMatrixPackageApi,
+  completeMatrixPackageProductionApi,
   getMatrixPackageProductionNodesApi,
   getMatrixPackageSideNotesApi,
   confirmMatrixPackageSideNoteApi,
@@ -219,6 +221,11 @@ const DESIGN_ATTACHMENT_FIELDS = [
 const DESIGN_FIELDS = [...DESIGN_UPLOAD_FIELDS, ...DESIGN_FORM_FIELDS, ...DESIGN_ATTACHMENT_FIELDS]
 const DESIGN_UPLOAD_MAX_FILE_SIZE = 50 * 1024 * 1024
 
+const FRONTEND_BASE_FIELDS = [
+  { name: 'appVersion', label: 'APP版本号', placeholder: '填写 APP 版本号' },
+  { name: 'appConsoleUrl', label: 'APP后台地址', placeholder: 'https://play.google.com/console/...' },
+]
+
 const FRONTEND_FIELD_DEFINITIONS = [
   { key: 'sha1Fingerprint', label: 'sha1指纹' },
   { key: 'sha256Fingerprint', label: 'sha256指纹' },
@@ -245,7 +252,7 @@ const FRONTEND_ENV_SECTIONS = [
   },
 ]
 
-const FRONTEND_FIELDS = FRONTEND_ENV_SECTIONS.flatMap((section) => section.fields)
+const FRONTEND_FIELDS = [...FRONTEND_BASE_FIELDS, ...FRONTEND_ENV_SECTIONS.flatMap((section) => section.fields)]
 
 const BACKEND_FIELDS = []
 
@@ -684,6 +691,7 @@ function ColdStandbyProductionDetailPage() {
   const pushSectionRefs = useRef({})
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [completingProduction, setCompletingProduction] = useState(false)
   const [updatingUnifiedDeadline, setUpdatingUnifiedDeadline] = useState(false)
   const [saveStatus, setSaveStatus] = useState('')
   const [confirmingType, setConfirmingType] = useState('')
@@ -715,7 +723,8 @@ function ColdStandbyProductionDetailPage() {
         message.error(detailResult?.message || '获取生产详情失败')
         return
       }
-      setDetail(detailResult.data || null)
+      const detailData = detailResult.data || null
+      setDetail(detailData)
       const notes = notesResult?.success && Array.isArray(notesResult.data) ? notesResult.data : []
       setSideNotes(notes)
       setSideNoteOwners(buildSideNoteOwnerValues(notes))
@@ -964,6 +973,33 @@ function ColdStandbyProductionDetailPage() {
     }
   }
 
+  const handleCompleteProduction = () => {
+    if (!canManage || !detail?.id) return
+    Modal.confirm({
+      title: '确认生产完成？',
+      content: '确认后会将矩阵包状态更新为冷备包，并自动创建一条 APP 版本发布记录。',
+      okText: '确认完成',
+      cancelText: '取消',
+      onOk: async () => {
+        setCompletingProduction(true)
+        try {
+          const result = await completeMatrixPackageProductionApi(detail.id)
+          if (!result?.success) {
+            message.error(result?.message || '生产完成失败')
+            return
+          }
+          const nextPackage = result.data?.package
+          if (nextPackage) setDetail(nextPackage)
+          message.success(result?.message || '生产已完成，APP发版记录已创建')
+        } catch (error) {
+          message.error(error?.message || '生产完成失败')
+        } finally {
+          setCompletingProduction(false)
+        }
+      },
+    })
+  }
+
   const productionNodeMap = useMemo(
     () => productionNodes.reduce((acc, item) => {
       acc[item.node_code] = item
@@ -998,6 +1034,15 @@ function ColdStandbyProductionDetailPage() {
         <Text type="secondary">负责人</Text>
         <Text>{detail?.owner_name || '-'}</Text>
       </div>
+      <Button
+        type="primary"
+        size="small"
+        disabled={!canManage}
+        loading={completingProduction}
+        onClick={handleCompleteProduction}
+      >
+        生产完成
+      </Button>
     </Space>
   )
 
@@ -1691,6 +1736,26 @@ function ColdStandbyProductionDetailPage() {
                       </Row>
                     ) : section.type === 'FRONTEND' ? (
                       <div className="cold-production-push-form">
+                        <div className="cold-production-push-module">
+                          <div className="cold-production-push-module-title">基础信息</div>
+                          <Row gutter={[14, 8]}>
+                            {FRONTEND_BASE_FIELDS.map((field) => (
+                              <Col xs={24} md={12} key={field.name}>
+                                <Form.Item
+                                  name={[section.type, field.name]}
+                                  label={renderStructuredFieldLabel(section.type, field)}
+                                >
+                                  <Input
+                                    allowClear
+                                    maxLength={1000}
+                                    disabled={!canManage}
+                                    placeholder={field.placeholder}
+                                  />
+                                </Form.Item>
+                              </Col>
+                            ))}
+                          </Row>
+                        </div>
                         {FRONTEND_ENV_SECTIONS.map((envSection) => (
                           <div className="cold-production-push-module" key={envSection.key}>
                             <div className="cold-production-push-module-title">{envSection.title}</div>
