@@ -17,11 +17,43 @@
 }
 
 .app-version-release-search {
-  width: 320px;
+  width: 180px;
+}
+
+.app-version-release-filter-input {
+  width: 132px;
+}
+
+.app-version-release-record-search {
+  width: 140px;
+}
+
+.app-version-release-urgency {
+  width: 132px;
 }
 
 .app-version-release-status {
   width: 132px;
+}
+
+.app-version-release-app-name {
+  width: 120px;
+}
+
+.app-version-release-demand {
+  width: 140px;
+}
+
+.app-version-release-demand .app-version-release-ellipsis {
+  max-width: 140px;
+}
+
+.app-version-release-ellipsis {
+  display: block;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-version-release-link {
@@ -31,6 +63,29 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+}
+
+.app-version-release-request-no {
+  display: inline-block;
+  max-width: 108px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.app-version-release-request-no-wrap {
+  max-width: 132px;
+}
+
+.app-version-release-copy-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+}
+
+.app-version-release-tooltip-text {
+  color: #fff;
 }
 
 @media (max-width: 720px) {

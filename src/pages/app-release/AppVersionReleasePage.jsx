@@ -16,7 +16,7 @@ import {
   Typography,
   message,
 } from 'antd'
-import { DeleteOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons'
+import { CopyOutlined, DeleteOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -34,6 +34,11 @@ const DEFAULT_PAGINATION = {
   pageSize: 20,
   total: 0,
 }
+
+const FALLBACK_RELEASE_TYPE_OPTIONS = [
+  { code: 'FIRST_RELEASE', name: '首次发版' },
+  { code: 'VERSION_UPDATE', name: '版本迭代' },
+]
 
 function renderDate(value) {
   return value ? String(value).slice(0, 16) : '-'
@@ -63,10 +68,15 @@ function AppVersionReleasePage() {
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [keyword, setKeyword] = useState('')
+  const [appNameFilter, setAppNameFilter] = useState('')
+  const [developerFilter, setDeveloperFilter] = useState('')
+  const [urgencyFilter, setUrgencyFilter] = useState('')
   const [releaseStatus, setReleaseStatus] = useState('')
+  const [requestNoFilter, setRequestNoFilter] = useState('')
   const [pagination, setPagination] = useState(DEFAULT_PAGINATION)
   const [rows, setRows] = useState([])
   const [statusOptions, setStatusOptions] = useState([])
+  const [releaseTypeOptions, setReleaseTypeOptions] = useState(FALLBACK_RELEASE_TYPE_OPTIONS)
   const [urgencyOptions, setUrgencyOptions] = useState([])
   const [editingRecord, setEditingRecord] = useState(null)
 
@@ -81,7 +91,11 @@ function AppVersionReleasePage() {
         page: nextPage,
         pageSize: nextPageSize,
         keyword,
+        app_name: appNameFilter || undefined,
+        app_developer: developerFilter || undefined,
+        urgency_code: urgencyFilter || undefined,
         release_status: releaseStatus || undefined,
+        release_request_no: requestNoFilter || undefined,
       })
       if (!result?.success) {
         message.error(result?.message || '获取APP版本发布列表失败')
@@ -90,6 +104,7 @@ function AppVersionReleasePage() {
       const data = result.data || {}
       setRows(Array.isArray(data.list) ? data.list : [])
       setStatusOptions(Array.isArray(data.release_status_options) ? data.release_status_options : [])
+      setReleaseTypeOptions(Array.isArray(data.release_type_options) ? data.release_type_options : FALLBACK_RELEASE_TYPE_OPTIONS)
       setUrgencyOptions(Array.isArray(data.urgency_options) ? data.urgency_options : [])
       setPagination({
         current: Number(data.page || nextPage),
@@ -101,7 +116,7 @@ function AppVersionReleasePage() {
     } finally {
       setLoading(false)
     }
-  }, [keyword, releaseStatus])
+  }, [appNameFilter, developerFilter, keyword, releaseStatus, requestNoFilter, urgencyFilter])
 
   useEffect(() => {
     fetchList({ page: 1 })
@@ -112,9 +127,15 @@ function AppVersionReleasePage() {
     ...statusOptions.map((item) => ({ label: item.name, value: item.code })),
   ], [statusOptions])
 
+  const urgencySelectOptions = useMemo(() => [
+    { label: '全部紧急程度', value: '' },
+    ...urgencyOptions.map((item) => ({ label: item.name, value: item.code })),
+  ], [urgencyOptions])
+
   const openEditModal = useCallback((record) => {
     setEditingRecord(record)
     form.setFieldsValue({
+      release_type: record.release_type || 'VERSION_UPDATE',
       release_status: record.release_status || 'PENDING_PLAN',
       urgency_code: record.urgency_code || 'P1',
       expected_submit_at: toDateTimeValue(record.expected_submit_at),
@@ -130,6 +151,7 @@ function AppVersionReleasePage() {
       const values = await form.validateFields()
       setSaving(true)
       const result = await updateAppVersionReleaseApi(editingRecord.id, {
+        release_type: values.release_type,
         release_status: values.release_status,
         urgency_code: values.urgency_code,
         expected_submit_at: formatDateTimeValue(values.expected_submit_at),
@@ -171,8 +193,40 @@ function AppVersionReleasePage() {
     }
   }, [fetchList, pagination])
 
+  const handleCopyRequestNo = useCallback(async (value) => {
+    const text = String(value || '').trim()
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      message.success('申请ID已复制')
+    } catch (error) {
+      message.error(error?.message || '复制失败')
+    }
+  }, [])
+
   const columns = useMemo(() => {
     const baseColumns = [
+    {
+      title: '申请ID',
+      dataIndex: 'release_request_no',
+      width: 150,
+      render: (value) => value ? (
+        <Space size={4} className="app-version-release-request-no-wrap">
+          <Tooltip title={value}>
+            <Text className="app-version-release-request-no">{value}</Text>
+          </Tooltip>
+          <Tooltip title="复制申请ID">
+            <Button
+              type="text"
+              size="small"
+              icon={<CopyOutlined />}
+              className="app-version-release-copy-btn"
+              onClick={() => handleCopyRequestNo(value)}
+            />
+          </Tooltip>
+        </Space>
+      ) : '-',
+    },
     {
       title: '版本号',
       dataIndex: 'app_version',
@@ -193,25 +247,34 @@ function AppVersionReleasePage() {
     {
       title: 'APP名称',
       dataIndex: 'app_name',
-      minWidth: 180,
+      width: 140,
       render: (value, record) => (
-        <Space direction="vertical" size={2}>
-          <Text strong>{value || '-'}</Text>
-          <Text type="secondary">包ID：{record.app_id || '-'}</Text>
-          <Text type="secondary">域名：{record.domain_info || '-'}</Text>
-        </Space>
+        <Tooltip
+          title={(
+            <Space direction="vertical" size={2}>
+              <Text className="app-version-release-tooltip-text">{value || '-'}</Text>
+              <Text className="app-version-release-tooltip-text">包ID：{record.app_id || '-'}</Text>
+              <Text className="app-version-release-tooltip-text">域名：{record.domain_info || '-'}</Text>
+            </Space>
+          )}
+        >
+          <Text strong className="app-version-release-ellipsis app-version-release-app-name">
+            {value || '-'}
+          </Text>
+        </Tooltip>
       ),
     },
     {
-      title: 'APP开发者',
+      title: '开发者账号',
       dataIndex: 'app_developer',
-      width: 180,
-      render: (value, record) => (
-        <Space direction="vertical" size={2}>
-          <Text>{value || '-'}</Text>
-          <Text type="secondary">{record.app_company_subject || '-'}</Text>
-        </Space>
-      ),
+      width: 130,
+      render: (value) => value || '-',
+    },
+    {
+      title: '公司主体',
+      dataIndex: 'app_company_subject',
+      width: 130,
+      render: (value) => value || '-',
     },
     {
       title: 'APP后台地址',
@@ -248,6 +311,44 @@ function AppVersionReleasePage() {
       dataIndex: 'listed_at',
       width: 150,
       render: renderDate,
+    },
+    {
+      title: '关联需求',
+      dataIndex: 'related_demand_name',
+      width: 160,
+      render: (value, record) => {
+        const demandId = String(record.related_demand_id || '').trim()
+        if (!demandId && !value) return '-'
+        return (
+          <Space direction="vertical" size={2} className="app-version-release-demand">
+            <Tooltip title={value || demandId}>
+              <Text className="app-version-release-ellipsis">{value || demandId}</Text>
+            </Tooltip>
+            {demandId ? (
+              <Tooltip title={demandId}>
+                <Text type="secondary" className="app-version-release-ellipsis">{demandId}</Text>
+              </Tooltip>
+            ) : null}
+          </Space>
+        )
+      },
+    },
+    {
+      title: '申请信息',
+      dataIndex: 'applicant_name',
+      width: 150,
+      render: (value, record) => (
+        <Space direction="vertical" size={2}>
+          <Text>{value || '-'}</Text>
+          <Text type="secondary">{renderDate(record.requested_at)}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: '发版负责人',
+      dataIndex: 'owner_name',
+      width: 110,
+      render: (value) => value || '-',
     },
     ]
 
@@ -292,7 +393,7 @@ function AppVersionReleasePage() {
         ),
       },
     ]
-  }, [canManage, deletingId, handleDelete, openEditModal])
+  }, [canManage, deletingId, handleCopyRequestNo, handleDelete, openEditModal])
 
   return (
     <div className="app-version-release-page">
@@ -301,11 +402,40 @@ function AppVersionReleasePage() {
           <Space size={8} wrap>
             <Input.Search
               allowClear
-              placeholder="搜索APP名称、版本号、包ID、域名"
+              placeholder="综合搜索"
               value={keyword}
               onChange={(event) => setKeyword(event.target.value)}
               onSearch={() => fetchList({ page: 1 })}
               className="app-version-release-search"
+            />
+            <Input
+              allowClear
+              placeholder="APP名称"
+              value={appNameFilter}
+              onChange={(event) => {
+                setAppNameFilter(event.target.value)
+                setPagination((current) => ({ ...current, current: 1 }))
+              }}
+              className="app-version-release-filter-input"
+            />
+            <Input
+              allowClear
+              placeholder="开发者"
+              value={developerFilter}
+              onChange={(event) => {
+                setDeveloperFilter(event.target.value)
+                setPagination((current) => ({ ...current, current: 1 }))
+              }}
+              className="app-version-release-filter-input"
+            />
+            <Select
+              value={urgencyFilter}
+              options={urgencySelectOptions}
+              onChange={(value) => {
+                setUrgencyFilter(value)
+                setPagination((current) => ({ ...current, current: 1 }))
+              }}
+              className="app-version-release-urgency"
             />
             <Select
               value={releaseStatus}
@@ -315,6 +445,14 @@ function AppVersionReleasePage() {
                 setPagination((current) => ({ ...current, current: 1 }))
               }}
               className="app-version-release-status"
+            />
+            <Input.Search
+              allowClear
+              placeholder="记录ID"
+              value={requestNoFilter}
+              onChange={(event) => setRequestNoFilter(event.target.value)}
+              onSearch={() => fetchList({ page: 1 })}
+              className="app-version-release-record-search"
             />
           </Space>
           <Button
@@ -365,6 +503,11 @@ function AppVersionReleasePage() {
       >
         <Form form={form} layout="vertical">
           <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item label="发版类型" name="release_type" rules={[{ required: true, message: '请选择发版类型' }]}>
+                <Select disabled options={releaseTypeOptions.map((item) => ({ label: item.name, value: item.code }))} />
+              </Form.Item>
+            </Col>
             <Col xs={24} md={12}>
               <Form.Item label="发版进度" name="release_status" rules={[{ required: true, message: '请选择发版进度' }]}>
                 <Select options={statusOptions.map((item) => ({ label: item.name, value: item.code }))} />
