@@ -46,6 +46,7 @@ const SCENE_TYPE_LABEL_MAP = {
   UPCOMING: '即将到期',
   OVERDUE: '逾期提醒',
   SIDE_DEADLINE: '侧信息提醒',
+  INVENTORY_LOW: '库存低水位',
 }
 
 const REMINDER_UNIT_OPTIONS = [
@@ -53,6 +54,10 @@ const REMINDER_UNIT_OPTIONS = [
   { label: '天', value: 'day' },
 ]
 const ANY_STATUS_OPTION = { label: '任意状态', value: '*' }
+const INVENTORY_TYPE_OPTIONS = [
+  { label: '冷备包', value: 'COLD_STANDBY' },
+  { label: '热备包', value: 'HOT_STANDBY' },
+]
 
 function normalizeTemplateRows(rows) {
   return (rows || []).map((row) => ({
@@ -234,6 +239,8 @@ function MatrixPackageNotificationPage() {
       schedule_minute: 0,
       reminder_offset_unit: 'hour',
       reminder_offset_value: 24,
+      inventory_type: 'HOT_STANDBY',
+      threshold_count: 3,
       chat_id_manual: '',
       is_enabled: true,
     })
@@ -255,6 +262,8 @@ function MatrixPackageNotificationPage() {
       schedule_minute: rule.schedule?.minute ?? 0,
       reminder_offset_unit: rule.reminder?.offset_unit || 'hour',
       reminder_offset_value: rule.reminder?.offset_value ?? 24,
+      inventory_type: rule.inventory?.inventory_type || 'HOT_STANDBY',
+      threshold_count: rule.inventory?.threshold_count ?? 3,
       is_enabled: Number(rule.is_enabled) === 1,
     })
     if (rule.chat_id && rule.chat_name) {
@@ -290,22 +299,31 @@ function MatrixPackageNotificationPage() {
         payload.chat_name = selectedChatOption?.label || finalChatId
       }
 
-      if ((sceneMap.get(values.scene_code)?.type || '') === 'STATUS_CHANGE') {
+      const selectedSceneType = sceneMap.get(values.scene_code)?.type || ''
+
+      if (selectedSceneType === 'STATUS_CHANGE') {
         payload.status_transitions = (values.status_transitions || []).map((item) => ({
           from_status: item?.from_status || '*',
           to_status: item?.to_status,
         }))
-      } else {
+      } else if (['UPCOMING', 'OVERDUE', 'SIDE_DEADLINE'].includes(selectedSceneType)) {
         payload.schedule = {
           hour: values.schedule_hour,
           minute: values.schedule_minute,
         }
       }
 
-      if (['UPCOMING', 'SIDE_DEADLINE'].includes(sceneMap.get(values.scene_code)?.type || '')) {
+      if (['UPCOMING', 'SIDE_DEADLINE'].includes(selectedSceneType)) {
         payload.reminder = {
           offset_unit: values.reminder_offset_unit,
           offset_value: values.reminder_offset_value,
+        }
+      }
+
+      if (selectedSceneType === 'INVENTORY_LOW') {
+        payload.inventory = {
+          inventory_type: values.inventory_type,
+          threshold_count: values.threshold_count,
         }
       }
 
@@ -456,7 +474,7 @@ function MatrixPackageNotificationPage() {
       key: 'scene_type',
       width: 120,
       render: (value, record) => (
-        <Tag color={value === 'STATUS_CHANGE' ? 'blue' : value === 'UPCOMING' ? 'gold' : 'red'}>
+        <Tag color={value === 'STATUS_CHANGE' ? 'blue' : value === 'UPCOMING' ? 'gold' : value === 'INVENTORY_LOW' ? 'purple' : 'red'}>
           {SCENE_TYPE_LABEL_MAP[value] || record.scene_name}
         </Tag>
       ),
@@ -738,7 +756,28 @@ function MatrixPackageNotificationPage() {
             </Form.Item>
           ) : null}
 
-          {sceneType !== 'STATUS_CHANGE' ? (
+          {sceneType === 'INVENTORY_LOW' ? (
+            <Space.Compact block>
+              <Form.Item
+                style={{ width: '50%' }}
+                name="inventory_type"
+                label="库存类型"
+                rules={[{ required: true, message: '请选择库存类型' }]}
+              >
+                <Select options={INVENTORY_TYPE_OPTIONS} />
+              </Form.Item>
+              <Form.Item
+                style={{ width: '50%' }}
+                name="threshold_count"
+                label="低库存准线"
+                rules={[{ required: true, message: '请输入低库存准线' }]}
+              >
+                <InputNumber min={1} precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Space.Compact>
+          ) : null}
+
+          {sceneType !== 'STATUS_CHANGE' && sceneType !== 'INVENTORY_LOW' ? (
             <Space.Compact block>
               <Form.Item
                 style={{ width: '50%' }}
