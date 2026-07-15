@@ -16,7 +16,7 @@ import {
   Typography,
   message,
 } from 'antd'
-import { CopyOutlined, DeleteOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons'
+import { CopyOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -79,6 +79,7 @@ function AppVersionReleasePage() {
   const [releaseTypeOptions, setReleaseTypeOptions] = useState(FALLBACK_RELEASE_TYPE_OPTIONS)
   const [urgencyOptions, setUrgencyOptions] = useState([])
   const [editingRecord, setEditingRecord] = useState(null)
+  const [remarkRecord, setRemarkRecord] = useState(null)
 
   const canManage = canManageAppRelease()
 
@@ -359,10 +360,18 @@ function AppVersionReleasePage() {
       {
         title: '操作',
         key: 'action',
-        width: 148,
+        width: 206,
         fixed: 'right',
         render: (_, record) => (
           <Space size={4}>
+            <Button
+              type="link"
+              size="small"
+              icon={<FileTextOutlined />}
+              onClick={() => setRemarkRecord(record)}
+            >
+              备注
+            </Button>
             <Button
               type="link"
               size="small"
@@ -540,6 +549,23 @@ function AppVersionReleasePage() {
             </Col>
           </Row>
         </Form>
+      </Modal>
+
+      <Modal
+        title={remarkRecord ? `备注：${remarkRecord.release_request_no || remarkRecord.app_name || '-'}` : '备注'}
+        open={Boolean(remarkRecord)}
+        onCancel={() => setRemarkRecord(null)}
+        footer={[
+          <Button key="close" type="primary" onClick={() => setRemarkRecord(null)}>
+            关闭
+          </Button>,
+        ]}
+        width={640}
+        destroyOnHidden
+      >
+        <div className="app-version-release-remark-content">
+          {String(remarkRecord?.remark || '').trim() || '暂无备注'}
+        </div>
       </Modal>
     </div>
   )
