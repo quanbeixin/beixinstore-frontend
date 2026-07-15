@@ -115,7 +115,7 @@ function ColdStandbyProductionPage() {
     color: item.color,
   })))
 
-  const canManage = hasPermission('demand.manage')
+  const canManage = hasPermission('matrix_package.manage')
   const statusMap = useMemo(() => buildDictMap(statusOptions), [statusOptions])
   const stageMap = useMemo(() => buildDictMap(stageOptions), [stageOptions])
 

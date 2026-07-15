@@ -134,7 +134,7 @@ function MatrixPackageReviewPlanPage() {
     owner_user_id: undefined,
   })
 
-  const canManage = hasPermission('demand.manage')
+  const canManage = hasPermission('matrix_package.manage')
   const stageMap = useMemo(() => buildOptionMap(stageOptions), [stageOptions])
   const adBindingMap = useMemo(() => buildOptionMap(adBindingOptions), [adBindingOptions])
 

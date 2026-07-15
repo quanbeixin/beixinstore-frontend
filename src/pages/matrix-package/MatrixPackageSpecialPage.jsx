@@ -151,7 +151,7 @@ function MatrixPackageSpecialPage() {
     remark: item.remark || '',
   })))
 
-  const canManage = hasPermission('demand.manage')
+  const canManage = hasPermission('matrix_package.manage')
   const statusMap = useMemo(() => buildDictMap(statusOptions), [statusOptions])
   const healthMap = useMemo(() => buildDictMap(healthOptions), [healthOptions])
   const isDelivering = watchedStatusCode === DELIVERING_STATUS

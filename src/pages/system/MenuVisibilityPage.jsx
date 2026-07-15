@@ -42,11 +42,15 @@ const SCOPE_META = {
 
 const SECTION_LABELS = {
   main: '主导航',
+  workbench: '个人工作台',
   project: '项目管理',
+  matrixPackage: '矩阵包专项',
+  appRelease: 'APP版本发布',
   efficiency: '效能总览',
   feedback: '用户反馈',
   system: '系统设置',
   integration: '第三方接入',
+  personal: '个人设置',
 }
 
 function toPositiveInt(value) {
@@ -213,7 +217,7 @@ function MenuVisibility() {
 
     const sections = Object.values(sectionMap).filter((section) => section.items.length > 0)
     const orderedSections = []
-    const preferredOrder = ['main', 'project', 'efficiency', 'feedback', 'system', 'integration']
+    const preferredOrder = ['workbench', 'main', 'project', 'matrixPackage', 'appRelease', 'efficiency', 'feedback', 'system', 'integration', 'personal']
 
     preferredOrder.forEach((key) => {
       const section = sections.find((item) => item.key === key)

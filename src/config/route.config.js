@@ -235,7 +235,7 @@ export const PRIVATE_ROUTES = [
   {
     path: '/matrix-package-special/panorama',
     componentKey: 'matrixPackageSpecial',
-    requiredPermission: 'demand.view',
+    requiredPermission: 'matrix_package.view',
     page: {
       title: '矩阵包全景图',
       subtitle: '矩阵包专项全景视图入口。',
@@ -249,7 +249,7 @@ export const PRIVATE_ROUTES = [
   {
     path: '/matrix-package-special/cold-standby-production',
     componentKey: 'coldStandbyProduction',
-    requiredPermission: 'demand.view',
+    requiredPermission: 'matrix_package.view',
     page: {
       title: '冷备包生产线',
       subtitle: '跟踪开发中到冷备包的生产推进信息。',
@@ -263,7 +263,7 @@ export const PRIVATE_ROUTES = [
   {
     path: '/matrix-package-special/cold-standby-production/:id',
     componentKey: 'coldStandbyProductionDetail',
-    requiredPermission: 'demand.view',
+    requiredPermission: 'matrix_package.view',
     page: {
       title: '冷备包生产详情',
       subtitle: '查看单个矩阵包的生产档案、预留流转模块与各侧补充信息。',
@@ -272,7 +272,7 @@ export const PRIVATE_ROUTES = [
   {
     path: '/matrix-package-special/review-plans',
     componentKey: 'matrixPackageReviewPlan',
-    requiredPermission: 'demand.view',
+    requiredPermission: 'matrix_package.view',
     page: {
       title: '矩阵包送审排期',
       subtitle: '规划冷备包送审时间，跟踪首次送审、审核、广告账号绑定、二次送审与热备状态。',
@@ -286,7 +286,7 @@ export const PRIVATE_ROUTES = [
   {
     path: '/matrix-package-special/developer-accounts',
     componentKey: 'developerAccount',
-    requiredPermission: 'demand.view',
+    requiredPermission: 'matrix_package.view',
     page: {
       title: '开发者账号管理',
       subtitle: '维护公司主体下的开发者账号，并作为矩阵包归属基础数据。',
@@ -300,7 +300,7 @@ export const PRIVATE_ROUTES = [
   {
     path: '/matrix-package-special/api-debug',
     componentKey: 'matrixPackageApiDebug',
-    requiredPermission: 'demand.manage',
+    requiredPermission: 'matrix_package.manage',
     page: {
       title: '接口调试台',
       subtitle: '通过后端代理调试外部站点接口连通性。',
@@ -314,7 +314,7 @@ export const PRIVATE_ROUTES = [
   {
     path: '/matrix-package-special/notification-rules',
     componentKey: 'matrixPackageNotification',
-    requiredPermission: 'demand.manage',
+    requiredPermission: 'matrix_package.notification.manage',
     page: {
       title: '通知配置',
       subtitle: '维护矩阵包专项的状态变更与定时提醒通知规则。',

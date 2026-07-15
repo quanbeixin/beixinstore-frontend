@@ -154,7 +154,7 @@ function DeveloperAccountPage() {
   const [packageStatusOptions, setPackageStatusOptions] = useState([])
   const [packageHealthOptions, setPackageHealthOptions] = useState([])
 
-  const canManage = hasPermission('demand.manage')
+  const canManage = hasPermission('matrix_package.manage')
   const statusMap = useMemo(() => buildDictMap(statusOptions), [statusOptions])
   const packageStatusMap = useMemo(() => buildDictMap(packageStatusOptions), [packageStatusOptions])
   const packageHealthMap = useMemo(() => buildDictMap(packageHealthOptions), [packageHealthOptions])

@@ -707,7 +707,7 @@ function ColdStandbyProductionDetailPage() {
   const [operationNodeValues, setOperationNodeValues] = useState({})
   const [frontendNodeValues, setFrontendNodeValues] = useState({})
 
-  const canManage = hasPermission('demand.manage')
+  const canManage = hasPermission('matrix_package.manage')
   const checklistPercent = useMemo(() => getSideNoteCompletionPercent(sideNotes, detail), [detail, sideNotes])
 
   const fetchDetail = useCallback(async () => {
