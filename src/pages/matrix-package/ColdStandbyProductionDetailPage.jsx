@@ -1034,6 +1034,21 @@ function ColdStandbyProductionDetailPage() {
         <Text type="secondary">负责人</Text>
         <Text>{detail?.owner_name || '-'}</Text>
       </div>
+      <div className="cold-production-flow-title-item">
+        <Text type="secondary">关联需求</Text>
+        {detail?.linked_demand_id ? (
+          <Button
+            type="link"
+            size="small"
+            className="cold-production-linked-demand-btn"
+            onClick={() => window.open(`/work-demands/${encodeURIComponent(detail.linked_demand_id)}`, '_blank', 'noopener,noreferrer')}
+          >
+            {detail.linked_demand_name || detail.linked_demand_id}
+          </Button>
+        ) : (
+          <Text>-</Text>
+        )}
+      </div>
       <Button
         type="primary"
         size="small"

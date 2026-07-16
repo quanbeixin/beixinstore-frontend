@@ -168,6 +168,13 @@
   font-size: 12px;
 }
 
+.cold-production-linked-demand-btn.ant-btn {
+  height: auto;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
 .cold-production-note-form .ant-form-item {
   margin-bottom: 6px;
 }
