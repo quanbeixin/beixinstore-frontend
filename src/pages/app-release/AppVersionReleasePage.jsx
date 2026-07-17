@@ -68,6 +68,31 @@ function buildUserOption(user) {
   }
 }
 
+async function copyTextToClipboard(text) {
+  const normalizedText = String(text || '')
+  if (!normalizedText) return false
+
+  if (window.isSecureContext && typeof navigator?.clipboard?.writeText === 'function') {
+    await navigator.clipboard.writeText(normalizedText)
+    return true
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = normalizedText
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  try {
+    return document.execCommand('copy')
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
 function canManageAppRelease() {
   const access = getAccessSnapshot()
   if (!access) return false
@@ -285,7 +310,10 @@ function AppVersionReleasePage() {
     const text = String(value || '').trim()
     if (!text) return
     try {
-      await navigator.clipboard.writeText(text)
+      const copied = await copyTextToClipboard(text)
+      if (!copied) {
+        throw new Error('clipboard unavailable')
+      }
       message.success('申请ID已复制')
     } catch (error) {
       message.error(error?.message || '复制失败')
