@@ -223,7 +223,7 @@ const DESIGN_UPLOAD_MAX_FILE_SIZE = 50 * 1024 * 1024
 
 const FRONTEND_BASE_FIELDS = [
   { name: 'appVersion', label: 'APP版本号', placeholder: '填写 APP 版本号' },
-  { name: 'appConsoleUrl', label: 'APP后台地址', placeholder: 'https://play.google.com/console/...' },
+  { name: 'appConsoleUrl', label: 'APP谷歌平台发版地址', placeholder: 'https://play.google.com/console/...' },
 ]
 
 const FRONTEND_FIELD_DEFINITIONS = [

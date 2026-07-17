@@ -20,7 +20,7 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createAppVersionReleaseApplicationsApi } from '../../api/appVersionRelease'
-import { getMatrixPackagesApi } from '../../api/matrixPackage'
+import { getMatrixPackageSideNotesApi, getMatrixPackagesApi } from '../../api/matrixPackage'
 import { getWorkDemandsApi } from '../../api/work'
 import './AppVersionReleaseApplyPage.css'
 
@@ -40,6 +40,24 @@ const RELEASE_TYPE_OPTIONS = [
 
 function formatDateValue(value) {
   return value ? value.format('YYYY-MM-DD') : null
+}
+
+function parseJsonObject(value) {
+  const text = String(value || '').trim()
+  if (!text) return {}
+  try {
+    const parsed = JSON.parse(text)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function extractFrontendAppConsoleUrl(notes = []) {
+  const frontendNote = Array.isArray(notes) ? notes.find((item) => item?.note_type === 'FRONTEND') : null
+  const content = String(frontendNote?.content || '').trim() || String(frontendNote?.confirmed_content || '').trim()
+  const parsed = parseJsonObject(content)
+  return String(parsed.appConsoleUrl || '').trim()
 }
 
 function buildPackageOption(item) {
@@ -100,6 +118,7 @@ function AppVersionReleaseApplyPage() {
   const [demandLoading, setDemandLoading] = useState(false)
   const [packages, setPackages] = useState([])
   const [demands, setDemands] = useState([])
+  const [appConsoleUrlMap, setAppConsoleUrlMap] = useState({})
 
   const fetchPackages = useCallback(async () => {
     setPackageLoading(true)
@@ -159,15 +178,46 @@ function AppVersionReleaseApplyPage() {
   )
 
   useEffect(() => {
+    const missingPackageIds = selectedPackageIds
+      .map((id) => Number(id))
+      .filter((id) => id > 0 && !Object.prototype.hasOwnProperty.call(appConsoleUrlMap, id))
+    if (missingPackageIds.length === 0) return
+
+    let cancelled = false
+    Promise.all(missingPackageIds.map(async (packageId) => {
+      try {
+        const result = await getMatrixPackageSideNotesApi(packageId)
+        return [packageId, result?.success ? extractFrontendAppConsoleUrl(result.data) : '']
+      } catch {
+        return [packageId, '']
+      }
+    })).then((entries) => {
+      if (cancelled) return
+      setAppConsoleUrlMap((current) => {
+        const next = { ...current }
+        entries.forEach(([packageId, appConsoleUrl]) => {
+          next[packageId] = appConsoleUrl || ''
+        })
+        return next
+      })
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [appConsoleUrlMap, selectedPackageIds])
+
+  useEffect(() => {
     const currentItems = Array.isArray(form.getFieldValue('package_items')) ? form.getFieldValue('package_items') : []
     const currentMap = new Map(currentItems.map((item) => [Number(item?.package_id), item]))
     const nextItems = selectedPackageIds.map((packageId) => {
       const currentItem = currentMap.get(Number(packageId))
+      const frontendAppConsoleUrl = appConsoleUrlMap[Number(packageId)] || ''
       return {
         package_id: Number(packageId),
         app_version: currentItem?.app_version || '',
         urgency_code: currentItem?.urgency_code || 'P1',
-        app_console_url: currentItem?.app_console_url || '',
+        app_console_url: currentItem?.app_console_url || frontendAppConsoleUrl,
         expected_submit_at: currentItem?.expected_submit_at || null,
       }
     })
@@ -187,7 +237,7 @@ function AppVersionReleaseApplyPage() {
     if (hasChanged) {
       form.setFieldsValue({ package_items: nextItems })
     }
-  }, [form, selectedPackageIds])
+  }, [appConsoleUrlMap, form, selectedPackageIds])
 
   const showConflicts = (conflicts = []) => {
     Modal.warning({
