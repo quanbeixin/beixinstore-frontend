@@ -358,7 +358,9 @@ function getLastWeeklyRange() {
 
 function toNumber(value, fallback = 0) {
   const num = Number(value)
-  return Number.isFinite(num) ? num : fallback
+  if (Number.isFinite(num)) return num
+  const fallbackNum = Number(fallback)
+  return Number.isFinite(fallbackNum) ? fallbackNum : 0
 }
 
 function hasFiniteNumber(value) {
@@ -380,22 +382,6 @@ function formatDateOnly(value) {
 function toDateInputValue(value) {
   const date = formatDateOnly(value)
   return date === '-' ? undefined : date
-}
-
-function buildDetailDateRangeParams(record) {
-  const startDate = toDateInputValue(record?.expected_start_date) || toDateInputValue(record?.log_date)
-  const endDate = toDateInputValue(record?.expected_completion_date)
-  if (!startDate && !endDate) return {}
-  if (startDate && endDate && startDate > endDate) {
-    return {
-      start_date: startDate,
-      end_date: startDate,
-    }
-  }
-  return {
-    ...(startDate ? { start_date: startDate } : {}),
-    ...(endDate ? { end_date: endDate } : {}),
-  }
 }
 
 function isDemandFollowupItem(item) {
