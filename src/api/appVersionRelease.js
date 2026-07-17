@@ -4,6 +4,10 @@ export function getAppVersionReleasesApi(params = {}) {
   return request.get('/app-version-releases', { params })
 }
 
+export function getGroupedAppVersionReleasesApi(params = {}) {
+  return request.get('/app-version-releases/grouped', { params })
+}
+
 export function createAppVersionReleaseApplicationsApi(payload = {}) {
   return request.post('/app-version-releases/applications', payload)
 }

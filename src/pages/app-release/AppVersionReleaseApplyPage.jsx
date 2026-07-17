@@ -38,8 +38,8 @@ const RELEASE_TYPE_OPTIONS = [
   { label: '版本迭代', value: 'VERSION_UPDATE' },
 ]
 
-function formatDateTimeValue(value) {
-  return value ? value.format('YYYY-MM-DD HH:mm:ss') : null
+function formatDateValue(value) {
+  return value ? value.format('YYYY-MM-DD') : null
 }
 
 function buildPackageOption(item) {
@@ -216,7 +216,7 @@ function AppVersionReleaseApplyPage() {
           app_version: item.app_version,
           app_console_url: item.app_console_url || '',
           urgency_code: item.urgency_code,
-          expected_submit_at: formatDateTimeValue(item.expected_submit_at),
+          expected_submit_at: formatDateValue(item.expected_submit_at),
         })),
       })
       if (!result?.success) {
@@ -366,8 +366,7 @@ function AppVersionReleaseApplyPage() {
                           name={['package_items', index, 'expected_submit_at']}
                         >
                           <DatePicker
-                            showTime
-                            format="YYYY-MM-DD HH:mm:ss"
+                            format="YYYY-MM-DD"
                             placeholder="选择送审预期"
                             disabledDate={(current) => current && current < dayjs().startOf('day')}
                             style={{ width: '100%' }}

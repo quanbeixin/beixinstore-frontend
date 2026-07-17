@@ -36,6 +36,13 @@
   width: 132px;
 }
 
+.app-version-release-group-summary {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  margin: -4px 0 8px;
+}
+
 .app-version-release-app-name {
   width: 120px;
 }
