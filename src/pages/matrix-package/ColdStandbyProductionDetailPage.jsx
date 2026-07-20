@@ -144,32 +144,38 @@ const PUSH_ENV_SECTIONS = [
 
 const PUSH_FIELDS = PUSH_ENV_SECTIONS.flatMap((section) => section.fields)
 
-const DEVOPS_FIELDS = [
+const DEVOPS_GOOGLE_FIELD_DEFINITIONS = [
+  { key: 'googleAuthClientId', label: '谷歌鉴权认证ClientId', placeholder: '填写谷歌鉴权认证 ClientId' },
+  { key: 'googleAuthClientSecret', label: '谷歌鉴权认证ClientSecret', placeholder: '填写谷歌鉴权认证 ClientSecret' },
+  { key: 'googlePayCertificateUrl', label: '谷歌支付证书地址', placeholder: '填写谷歌支付证书地址' },
+  { key: 'googlePayPackageName', label: '谷歌支付包名', placeholder: '填写谷歌支付包名' },
+]
+
+const DEVOPS_GOOGLE_ENV_SECTIONS = [
   {
-    name: 'googleAuthClientId',
-    label: '谷歌鉴权认证ClientId',
-    placeholder: '填写谷歌鉴权认证 ClientId',
+    key: 'prod',
+    title: '生产环境信息',
+    fields: DEVOPS_GOOGLE_FIELD_DEFINITIONS.map((field) => ({
+      name: `prod${field.key[0].toUpperCase()}${field.key.slice(1)}`,
+      label: field.label,
+      placeholder: `填写生产环境${field.label}`,
+      legacyName: field.key,
+    })),
   },
   {
-    name: 'googleAuthClientSecret',
-    label: '谷歌鉴权认证ClientSecret',
-    placeholder: '填写谷歌鉴权认证 ClientSecret',
+    key: 'test',
+    title: '测试环境信息',
+    fields: DEVOPS_GOOGLE_FIELD_DEFINITIONS.map((field) => ({
+      name: `test${field.key[0].toUpperCase()}${field.key.slice(1)}`,
+      label: field.label,
+      placeholder: `填写测试环境${field.label}`,
+    })),
   },
-  {
-    name: 'firebaseEmailAccount',
-    label: 'Firebase邮箱账号',
-    placeholder: '填写 Firebase 邮箱账号',
-  },
-  {
-    name: 'googlePayPackageName',
-    label: '谷歌支付包名',
-    placeholder: '填写谷歌支付包名',
-  },
-  {
-    name: 'googlePayCertificateUrl',
-    label: '谷歌支付证书地址',
-    placeholder: '填写谷歌支付证书地址',
-  },
+]
+
+const DEVOPS_BASE_FIELDS = []
+
+const DEVOPS_FILE_FIELDS = [
   {
     name: 'pushFcmFile',
     label: 'push-fcm文件',
@@ -184,6 +190,12 @@ const DEVOPS_FIELDS = [
     kind: 'file',
     accept: '.json,application/json,text/json',
   },
+]
+
+const DEVOPS_FIELDS = [
+  ...DEVOPS_BASE_FIELDS,
+  ...DEVOPS_GOOGLE_ENV_SECTIONS.flatMap((section) => section.fields),
+  ...DEVOPS_FILE_FIELDS,
 ]
 
 const DESIGN_UPLOAD_FIELDS = [
@@ -227,6 +239,7 @@ const FRONTEND_BASE_FIELDS = [
 ]
 
 const FRONTEND_FIELD_DEFINITIONS = [
+  { key: 'googlePlatformAppId', label: 'Google平台应用ID' },
   { key: 'sha1Fingerprint', label: 'sha1指纹' },
   { key: 'sha256Fingerprint', label: 'sha256指纹' },
 ]
@@ -467,9 +480,17 @@ function buildNoteFormValues(notes) {
   const values = {}
   for (const section of NOTE_SECTIONS) {
     const matched = notes.find((item) => item.note_type === section.type)
-    values[section.type] = STRUCTURED_NOTE_FIELDS[section.type]
+    const parsedValue = STRUCTURED_NOTE_FIELDS[section.type]
       ? parseStructuredContent(getNoteReadableContent(matched))
       : getNoteReadableContent(matched)
+    if (section.type === 'DEVOPS' && parsedValue && typeof parsedValue === 'object' && !Array.isArray(parsedValue)) {
+      DEVOPS_GOOGLE_ENV_SECTIONS[0].fields.forEach((field) => {
+        if (!parsedValue[field.name] && field.legacyName && parsedValue[field.legacyName]) {
+          parsedValue[field.name] = parsedValue[field.legacyName]
+        }
+      })
+    }
+    values[section.type] = parsedValue
   }
   return values
 }
@@ -516,6 +537,31 @@ function buildUploadFormData(policy = {}, file = null) {
   })
   formData.append('file', file)
   return formData
+}
+
+async function copyTextToClipboard(text) {
+  const normalizedText = String(text || '').trim()
+  if (!normalizedText) return false
+
+  if (window.isSecureContext && typeof navigator?.clipboard?.writeText === 'function') {
+    await navigator.clipboard.writeText(normalizedText)
+    return true
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = normalizedText
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  try {
+    return document.execCommand('copy')
+  } finally {
+    document.body.removeChild(textarea)
+  }
 }
 
 function normalizeUploadValue(value) {
@@ -688,7 +734,6 @@ function ColdStandbyProductionDetailPage() {
   const [form] = Form.useForm()
   const autoSaveTimerRef = useRef(null)
   const autoSaveSeqRef = useRef(0)
-  const pushSectionRefs = useRef({})
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [completingProduction, setCompletingProduction] = useState(false)
@@ -701,7 +746,6 @@ function ColdStandbyProductionDetailPage() {
   const [updatingNodeCode, setUpdatingNodeCode] = useState('')
   const [nodeBlockReasons, setNodeBlockReasons] = useState({})
   const [activeNoteTab, setActiveNoteTab] = useState(NOTE_SECTIONS[0]?.type || 'DELIVERY')
-  const [highlightPushSection, setHighlightPushSection] = useState('')
   const [userOptions, setUserOptions] = useState([])
   const [sideNoteOwners, setSideNoteOwners] = useState({})
   const [operationNodeValues, setOperationNodeValues] = useState({})
@@ -1073,7 +1117,23 @@ function ColdStandbyProductionDetailPage() {
       return
     }
     try {
-      await navigator.clipboard.writeText(value)
+      const copied = await copyTextToClipboard(value)
+      if (!copied) throw new Error('clipboard unavailable')
+      message.success('已复制')
+    } catch {
+      message.error('复制失败，请手动复制')
+    }
+  }
+
+  const handleCopyPlainText = async (value) => {
+    const text = String(value || '').trim()
+    if (!text) {
+      message.warning('暂无可复制内容')
+      return
+    }
+    try {
+      const copied = await copyTextToClipboard(text)
+      if (!copied) throw new Error('clipboard unavailable')
       message.success('已复制')
     } catch {
       message.error('复制失败，请手动复制')
@@ -1234,18 +1294,6 @@ function ColdStandbyProductionDetailPage() {
     )
   }
 
-  const jumpToPushSection = useCallback((sectionKey) => {
-    setActiveNoteTab('DELIVERY')
-    setHighlightPushSection(sectionKey)
-    window.setTimeout(() => {
-      const element = pushSectionRefs.current?.[sectionKey]
-      element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    }, 80)
-    window.setTimeout(() => {
-      setHighlightPushSection((current) => (current === sectionKey ? '' : current))
-    }, 1800)
-  }, [])
-
   const noteCardExtra = (
     <Space size={8} wrap>
       <Space size={4}>
@@ -1291,12 +1339,6 @@ function ColdStandbyProductionDetailPage() {
           }}
         />
       </Space>
-      <Button size="small" onClick={() => jumpToPushSection('prod')}>
-        生产环境信息一键配置
-      </Button>
-      <Button size="small" onClick={() => jumpToPushSection('test')}>
-        测试环境信息一键配置
-      </Button>
       <Text type={saveStatus === 'failed' ? 'danger' : 'secondary'}>
         {saving || saveStatus === 'saving'
           ? '保存中...'
@@ -1336,9 +1378,10 @@ function ColdStandbyProductionDetailPage() {
       if (!value) {
         message.warning('暂无可复制内容')
         return
-      }
-      try {
-        await navigator.clipboard.writeText(value)
+    }
+    try {
+        const copied = await copyTextToClipboard(value)
+        if (!copied) throw new Error('clipboard unavailable')
         message.success('已复制')
       } catch {
         message.error('复制失败，请手动复制')
@@ -1668,17 +1711,7 @@ function ColdStandbyProductionDetailPage() {
                     {section.type === 'DELIVERY' ? (
                       <div className="cold-production-push-form">
                         {PUSH_ENV_SECTIONS.map((envSection) => (
-                          <div
-                            className={`cold-production-push-module${highlightPushSection === envSection.key ? ' is-highlighted' : ''}`}
-                            key={envSection.key}
-                            ref={(node) => {
-                              if (node) {
-                                pushSectionRefs.current[envSection.key] = node
-                              } else {
-                                delete pushSectionRefs.current[envSection.key]
-                              }
-                            }}
-                          >
+                          <div className="cold-production-push-module" key={envSection.key}>
                             <div className="cold-production-push-module-title">{envSection.title}</div>
                             <Row gutter={[14, 8]}>
                               {envSection.fields.map((field) => (
@@ -1813,12 +1846,41 @@ function ColdStandbyProductionDetailPage() {
                               </Space>
                             </Space>
                           </div>
+                          {[
+                            {
+                              label: '开发者账号ID',
+                              value: detail?.developer_account_account_id,
+                            },
+                            {
+                              label: '生产环境Google平台应用ID',
+                              value: frontendNodeValues?.prodGooglePlatformAppId,
+                            },
+                            {
+                              label: '测试环境Google平台应用ID',
+                              value: frontendNodeValues?.testGooglePlatformAppId,
+                            },
+                          ].map((item) => (
+                            <div className="cold-production-backend-meta" key={item.label}>
+                              <Text type="secondary">{item.label}</Text>
+                              <Space size={4}>
+                                <Text>{item.value || '-'}</Text>
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  icon={<CopyOutlined />}
+                                  aria-label={`复制${item.label}`}
+                                  disabled={!item.value}
+                                  onClick={() => handleCopyPlainText(item.value)}
+                                />
+                              </Space>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     ) : section.type === 'DEVOPS' ? (
                       <div className="cold-production-devops-form">
                         <Row gutter={[14, 8]} className="cold-production-operation-form">
-                          {DEVOPS_FIELDS.filter((field) => field.kind !== 'file').map((field) => (
+                          {DEVOPS_BASE_FIELDS.map((field) => (
                             <Col xs={24} md={12} key={field.name}>
                               <Form.Item
                                 name={[section.type, field.name]}
@@ -1834,8 +1896,30 @@ function ColdStandbyProductionDetailPage() {
                             </Col>
                           ))}
                         </Row>
+                        {DEVOPS_GOOGLE_ENV_SECTIONS.map((envSection) => (
+                          <div className="cold-production-push-module" key={envSection.key}>
+                            <div className="cold-production-push-module-title">{envSection.title}</div>
+                            <Row gutter={[14, 8]}>
+                              {envSection.fields.map((field) => (
+                                <Col xs={24} md={12} key={field.name}>
+                                  <Form.Item
+                                    name={[section.type, field.name]}
+                                    label={renderStructuredFieldLabel(section.type, field)}
+                                  >
+                                    <Input
+                                      allowClear
+                                      maxLength={500}
+                                      disabled={!canManage}
+                                      placeholder={field.placeholder}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                              ))}
+                            </Row>
+                          </div>
+                        ))}
                         <div className="cold-production-devops-attachments">
-                          {DEVOPS_FIELDS.filter((field) => field.kind === 'file').map((field) => (
+                          {DEVOPS_FILE_FIELDS.map((field) => (
                             <Form.Item key={field.name} name={[section.type, field.name]}>
                               <DesignUploadField
                                 packageId={id}

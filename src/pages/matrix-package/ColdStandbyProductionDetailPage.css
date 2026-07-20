@@ -298,6 +298,13 @@
   font-weight: 600;
 }
 
+.cold-production-backend-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
 .cold-production-push-module .ant-form-item {
   margin-bottom: 10px;
 }
