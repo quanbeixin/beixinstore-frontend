@@ -58,6 +58,7 @@ const INVENTORY_TYPE_OPTIONS = [
   { label: '冷备包', value: 'COLD_STANDBY' },
   { label: '热备包', value: 'HOT_STANDBY' },
 ]
+const MATRIX_PACKAGE_GROUP_SCENE_TYPES = new Set(['UPCOMING', 'OVERDUE', 'SIDE_DEADLINE'])
 
 function normalizeTemplateRows(rows) {
   return (rows || []).map((row) => ({
@@ -288,18 +289,18 @@ function MatrixPackageNotificationPage() {
       const manualChatId = String(values.chat_id_manual || '').trim()
       const finalChatId = manualChatId || values.chat_id
       const selectedChatOption = chatOptions.find((item) => item.value === finalChatId)
+      const selectedSceneType = sceneMap.get(values.scene_code)?.type || ''
+      const useMatrixPackageGroup = MATRIX_PACKAGE_GROUP_SCENE_TYPES.has(selectedSceneType)
       const payload = {
         rule_name: values.rule_name,
         scene_code: values.scene_code,
         is_enabled: values.is_enabled ? 1 : 0,
       }
 
-      if ((sceneMap.get(values.scene_code)?.type || '') !== 'SIDE_DEADLINE') {
+      if (!useMatrixPackageGroup) {
         payload.chat_id = finalChatId
         payload.chat_name = selectedChatOption?.label || finalChatId
       }
-
-      const selectedSceneType = sceneMap.get(values.scene_code)?.type || ''
 
       if (selectedSceneType === 'STATUS_CHANGE') {
         payload.status_transitions = (values.status_transitions || []).map((item) => ({
@@ -679,7 +680,7 @@ function MatrixPackageNotificationPage() {
             <Select options={sceneOptions} />
           </Form.Item>
 
-          {sceneType !== 'SIDE_DEADLINE' ? (
+          {!MATRIX_PACKAGE_GROUP_SCENE_TYPES.has(sceneType) ? (
             <>
               <Form.Item
                 name="chat_id"
@@ -714,7 +715,7 @@ function MatrixPackageNotificationPage() {
             </>
           ) : (
             <Form.Item label="通知对象">
-              <Input value="各侧负责人" disabled />
+              <Input value="矩阵包生产群" disabled />
             </Form.Item>
           )}
 

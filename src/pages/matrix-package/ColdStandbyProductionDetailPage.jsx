@@ -87,6 +87,11 @@ const NOTE_SECTIONS = [
     title: '运维补充',
     placeholder: '记录部署配置、环境变量、构建打包、发布注意事项等信息',
   },
+  {
+    type: 'ADVERTISING',
+    title: '投放侧补充',
+    placeholder: '记录投放平台配置、归因解析、投放 SDK 密钥等信息',
+  },
 ]
 
 const SIDE_CHECK_SECTION_TYPES = NOTE_SECTIONS
@@ -183,13 +188,6 @@ const DEVOPS_FILE_FIELDS = [
     kind: 'file',
     accept: '.json,application/json,text/json',
   },
-  {
-    name: 'googleServiceJsonFile',
-    label: 'google-service.json文件',
-    placeholder: '上传 google-service.json 文件',
-    kind: 'file',
-    accept: '.json,application/json,text/json',
-  },
 ]
 
 const DEVOPS_FIELDS = [
@@ -238,6 +236,16 @@ const FRONTEND_BASE_FIELDS = [
   { name: 'appConsoleUrl', label: 'APP谷歌平台发版地址', placeholder: 'https://play.google.com/console/...' },
 ]
 
+const FRONTEND_FILE_FIELDS = [
+  {
+    name: 'googleServiceJsonFile',
+    label: 'google-service.json文件',
+    placeholder: '上传 google-service.json 文件',
+    kind: 'file',
+    accept: '.json,application/json,text/json',
+  },
+]
+
 const FRONTEND_FIELD_DEFINITIONS = [
   { key: 'googlePlatformAppId', label: 'Google平台应用ID' },
   { key: 'sha1Fingerprint', label: 'sha1指纹' },
@@ -265,9 +273,31 @@ const FRONTEND_ENV_SECTIONS = [
   },
 ]
 
-const FRONTEND_FIELDS = [...FRONTEND_BASE_FIELDS, ...FRONTEND_ENV_SECTIONS.flatMap((section) => section.fields)]
+const FRONTEND_FIELDS = [
+  ...FRONTEND_BASE_FIELDS,
+  ...FRONTEND_FILE_FIELDS,
+  ...FRONTEND_ENV_SECTIONS.flatMap((section) => section.fields),
+]
 
 const BACKEND_FIELDS = []
+
+const ADVERTISING_FIELDS = [
+  {
+    name: 'MATRIX_FACEBOOK_INSTALL_DECRYPT_SECRET',
+    label: 'Facebook 投放解析安装来源密钥',
+    placeholder: '填写 Facebook 投放解析安装来源密钥',
+  },
+  {
+    name: 'facebook_app_id',
+    label: 'android 内 facebook app id 配置',
+    placeholder: '填写 android 内 facebook app id 配置',
+  },
+  {
+    name: 'facebook_client_token',
+    label: 'android app 内 facebook 密钥',
+    placeholder: '填写 android app 内 facebook 密钥',
+  },
+]
 
 const STRUCTURED_NOTE_FIELDS = {
   DELIVERY: PUSH_FIELDS,
@@ -276,6 +306,7 @@ const STRUCTURED_NOTE_FIELDS = {
   FRONTEND: FRONTEND_FIELDS,
   BACKEND: BACKEND_FIELDS,
   DEVOPS: DEVOPS_FIELDS,
+  ADVERTISING: ADVERTISING_FIELDS,
 }
 
 const NODE_STATUS_META = {
@@ -491,6 +522,20 @@ function buildNoteFormValues(notes) {
       })
     }
     values[section.type] = parsedValue
+  }
+  const frontendValues = values.FRONTEND
+  const devopsValues = values.DEVOPS
+  if (
+    frontendValues &&
+    typeof frontendValues === 'object' &&
+    !Array.isArray(frontendValues) &&
+    devopsValues &&
+    typeof devopsValues === 'object' &&
+    !Array.isArray(devopsValues) &&
+    !frontendValues.googleServiceJsonFile &&
+    devopsValues.googleServiceJsonFile
+  ) {
+    frontendValues.googleServiceJsonFile = devopsValues.googleServiceJsonFile
   }
   return values
 }
@@ -1281,7 +1326,7 @@ function ColdStandbyProductionDetailPage() {
       <Space size={4} className="cold-production-operation-label">
         {labelText}
         {sectionType === 'DESIGN' ? <UploadOutlined className="cold-production-upload-label-icon" /> : null}
-        {sectionType === 'DELIVERY' || sectionType === 'OPERATION' || sectionType === 'FRONTEND' || sectionType === 'BACKEND' || sectionType === 'DEVOPS' ? (
+        {sectionType === 'DELIVERY' || sectionType === 'OPERATION' || sectionType === 'FRONTEND' || sectionType === 'BACKEND' || sectionType === 'DEVOPS' || sectionType === 'ADVERTISING' ? (
           <Button
             type="text"
             size="small"
@@ -1803,6 +1848,19 @@ function ColdStandbyProductionDetailPage() {
                               </Col>
                             ))}
                           </Row>
+                          <div className="cold-production-devops-attachments">
+                            {FRONTEND_FILE_FIELDS.map((field) => (
+                              <Form.Item key={field.name} name={[section.type, field.name]}>
+                                <DesignUploadField
+                                  packageId={id}
+                                  noteType={section.type}
+                                  field={field}
+                                  onUploaded={(fieldName, nextValue) => handleAttachmentUploadComplete(section.type, fieldName, nextValue)}
+                                  disabled={!canManage}
+                                />
+                              </Form.Item>
+                            ))}
+                          </div>
                         </div>
                         {FRONTEND_ENV_SECTIONS.map((envSection) => (
                           <div className="cold-production-push-module" key={envSection.key}>
