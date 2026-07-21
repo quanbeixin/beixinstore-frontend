@@ -103,9 +103,11 @@ function buildUploadFormData(policy = {}, file = null) {
 
 function MatrixPackageNotificationPage() {
   const [form] = Form.useForm()
+  const [inventoryForm] = Form.useForm()
   const [templateForm] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [inventorySaving, setInventorySaving] = useState(false)
   const [rules, setRules] = useState([])
   const [meta, setMeta] = useState({ scenes: [], statuses: [] })
   const [modalOpen, setModalOpen] = useState(false)
@@ -137,6 +139,18 @@ function MatrixPackageNotificationPage() {
     })
     return map
   }, [meta.scenes])
+
+  const inventoryRuleMap = useMemo(() => {
+    const map = new Map()
+    rules.forEach((rule) => {
+      if (rule?.scene_type !== 'INVENTORY_LOW') return
+      const inventoryType = String(rule?.inventory?.inventory_type || '').trim().toUpperCase()
+      if (inventoryType && !map.has(inventoryType)) {
+        map.set(inventoryType, rule)
+      }
+    })
+    return map
+  }, [rules])
 
   const sortedTemplateRows = useMemo(
     () => [...templateRows].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
@@ -234,6 +248,16 @@ function MatrixPackageNotificationPage() {
     loadChats()
     loadTemplateData()
   }, [loadPageData, loadChats, loadTemplateData])
+
+  useEffect(() => {
+    const hotRule = inventoryRuleMap.get('HOT_STANDBY')
+    const coldRule = inventoryRuleMap.get('COLD_STANDBY')
+    inventoryForm.setFieldsValue({
+      hot_threshold_count: hotRule?.inventory?.threshold_count ?? 5,
+      cold_threshold_count: coldRule?.inventory?.threshold_count ?? 30,
+      inventory_chat_id: hotRule?.chat_id || coldRule?.chat_id || undefined,
+    })
+  }, [inventoryForm, inventoryRuleMap])
 
   const sceneCode = Form.useWatch('scene_code', form)
   const sceneType = sceneMap.get(sceneCode)?.type || ''
@@ -362,6 +386,56 @@ function MatrixPackageNotificationPage() {
     }
     message.success('规则已删除')
     await loadPageData()
+  }
+
+  const handleInventoryBaselineSubmit = async () => {
+    try {
+      const values = await inventoryForm.validateFields()
+      const chatId = String(values.inventory_chat_id || '').trim()
+      const selectedChatOption = chatOptions.find((item) => item.value === chatId)
+      const configurations = [
+        {
+          inventoryType: 'HOT_STANDBY',
+          thresholdCount: values.hot_threshold_count,
+          ruleName: '【热备包存量不足】',
+        },
+        {
+          inventoryType: 'COLD_STANDBY',
+          thresholdCount: values.cold_threshold_count,
+          ruleName: '【冷备包存量不足】',
+        },
+      ]
+
+      setInventorySaving(true)
+      for (const config of configurations) {
+        const existingRule = inventoryRuleMap.get(config.inventoryType)
+        const payload = {
+          rule_name: existingRule?.rule_name || config.ruleName,
+          scene_code: 'matrix_package_inventory_low',
+          chat_id: chatId,
+          chat_name: selectedChatOption?.label || existingRule?.chat_name || chatId,
+          inventory: {
+            inventory_type: config.inventoryType,
+            threshold_count: config.thresholdCount,
+          },
+          is_enabled: existingRule ? Number(existingRule.is_enabled) : 1,
+        }
+        const result = existingRule
+          ? await updateMatrixPackageNotificationRuleApi(existingRule.id, payload)
+          : await createMatrixPackageNotificationRuleApi(payload)
+        if (!result?.success) {
+          throw new Error(result?.message || `${config.ruleName}保存失败`)
+        }
+      }
+
+      message.success('库存基线已保存')
+      await loadPageData()
+    } catch (error) {
+      if (error?.errorFields) return
+      message.error(error?.message || '库存基线保存失败')
+    } finally {
+      setInventorySaving(false)
+    }
   }
 
   const openTemplateModal = (row = null) => {
@@ -616,7 +690,7 @@ function MatrixPackageNotificationPage() {
           <Space>
             <Button
               icon={<ReloadOutlined />}
-              onClick={activeTab === 'rules' ? loadPageData : loadTemplateData}
+              onClick={activeTab === 'template' ? loadTemplateData : loadPageData}
             >
               刷新
             </Button>
@@ -628,6 +702,11 @@ function MatrixPackageNotificationPage() {
             {activeTab === 'template' ? (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => openTemplateModal()}>
                 新增模板
+              </Button>
+            ) : null}
+            {activeTab === 'inventory' ? (
+              <Button type="primary" loading={inventorySaving} onClick={handleInventoryBaselineSubmit}>
+                保存基线
               </Button>
             ) : null}
           </Space>
@@ -664,6 +743,55 @@ function MatrixPackageNotificationPage() {
                   scroll={{ x: 1020 }}
                   locale={{ emptyText: '暂无通用文件模板' }}
                 />
+              ),
+            },
+            {
+              key: 'inventory',
+              label: '库存基线',
+              children: (
+                <Form
+                  form={inventoryForm}
+                  layout="vertical"
+                  style={{ maxWidth: 720, paddingTop: 8 }}
+                >
+                  <Space.Compact block>
+                    <Form.Item
+                      name="hot_threshold_count"
+                      label="热备包基线"
+                      style={{ width: '50%' }}
+                      rules={[{ required: true, message: '请输入热备包基线' }]}
+                    >
+                      <InputNumber min={1} precision={0} addonAfter="个" style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item
+                      name="cold_threshold_count"
+                      label="冷备包基线"
+                      style={{ width: '50%' }}
+                      rules={[{ required: true, message: '请输入冷备包基线' }]}
+                    >
+                      <InputNumber min={1} precision={0} addonAfter="个" style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Space.Compact>
+                  <Form.Item
+                    name="inventory_chat_id"
+                    label="低库存通知飞书群"
+                    rules={[{ required: true, message: '请选择低库存通知飞书群' }]}
+                  >
+                    <Select
+                      showSearch
+                      filterOption={false}
+                      loading={chatLoading}
+                      onFocus={() => loadChats('')}
+                      onSearch={(value) => loadChats(value)}
+                      placeholder="选择低库存提醒的固定飞书群"
+                      notFoundContent={chatLoading ? '加载中...' : '暂无数据'}
+                      options={chatOptions}
+                    />
+                  </Form.Item>
+                  <Text type="secondary">
+                    库存数量发生变化后，热备包少于基线或冷备包少于基线时发送提醒；等于基线不提醒。
+                  </Text>
+                </Form>
               ),
             },
           ]}

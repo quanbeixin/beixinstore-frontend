@@ -354,6 +354,8 @@ function MatrixPackageSpecialPage() {
   useEffect(() => {
     if (watchedStatusCode && watchedStatusCode !== DELIVERING_STATUS) {
       form.setFieldValue('health_code', undefined)
+      form.setFieldValue('platform', [])
+      form.setFieldValue('delivery_status_code', undefined)
     }
   }, [form, watchedStatusCode])
 
@@ -381,8 +383,8 @@ function MatrixPackageSpecialPage() {
       app_id: record.app_id || '',
       new_package_version: record.new_package_version || '',
       domain_info: record.domain_info || '',
-      platform: normalizePlatformCodes(record.platform_codes || record.platform),
-      delivery_status_code: record.delivery_status_code || undefined,
+      platform: record.status_code === DELIVERING_STATUS ? normalizePlatformCodes(record.platform_codes || record.platform) : [],
+      delivery_status_code: record.status_code === DELIVERING_STATUS ? record.delivery_status_code || undefined : undefined,
       developer_account_id: record.developer_account_id || undefined,
       owner_user_id: record.owner_user_id || undefined,
       status_code: record.status_code || 'COLD_STANDBY',
@@ -394,9 +396,12 @@ function MatrixPackageSpecialPage() {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
+      const submitIsDelivering = values.status_code === DELIVERING_STATUS
       const payload = {
         ...values,
-        health_code: values.status_code === DELIVERING_STATUS ? values.health_code : null,
+        health_code: submitIsDelivering ? values.health_code : null,
+        platform: submitIsDelivering ? values.platform : [],
+        delivery_status_code: submitIsDelivering ? values.delivery_status_code : null,
       }
 
       setSaving(true)
@@ -542,6 +547,7 @@ function MatrixPackageSpecialPage() {
       key: 'platform',
       width: 180,
       render: (_, record) => {
+        if (record.status_code !== DELIVERING_STATUS) return '-'
         const codes = normalizePlatformCodes(record.platform_codes || record.platform)
         if (codes.length === 0) return '-'
         return (
@@ -560,6 +566,7 @@ function MatrixPackageSpecialPage() {
       key: 'delivery_status_code',
       width: 120,
       render: (value, record) => {
+        if (record.status_code !== DELIVERING_STATUS) return '-'
         if (!value) return '-'
         const meta = deliveryStatusMap.get(value) || {
           name: record.delivery_status_name || value,
@@ -940,7 +947,8 @@ function MatrixPackageSpecialPage() {
                 <Select
                   allowClear
                   mode="multiple"
-                  placeholder="选择投放平台"
+                  disabled={!isDelivering}
+                  placeholder={isDelivering ? '选择投放平台' : '仅运营中生效'}
                   options={platformOptions.map((item) => ({
                     label: item.name,
                     value: item.code,
@@ -952,7 +960,8 @@ function MatrixPackageSpecialPage() {
               <Form.Item label="投放状态" name="delivery_status_code">
                 <Select
                   allowClear
-                  placeholder="选择投放状态"
+                  disabled={!isDelivering}
+                  placeholder={isDelivering ? '选择投放状态' : '仅运营中生效'}
                   options={deliveryStatusOptions.map((item) => ({
                     label: item.name,
                     value: item.code,
