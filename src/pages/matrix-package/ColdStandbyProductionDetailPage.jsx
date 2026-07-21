@@ -237,7 +237,7 @@ const DESIGN_ATTACHMENT_FIELDS = [
 ]
 
 const DESIGN_FIELDS = [...DESIGN_UPLOAD_FIELDS, ...DESIGN_FORM_FIELDS, ...DESIGN_ATTACHMENT_FIELDS]
-const DESIGN_UPLOAD_MAX_FILE_SIZE = 50 * 1024 * 1024
+const DESIGN_UPLOAD_MAX_FILE_SIZE = 100 * 1024 * 1024
 
 const FRONTEND_BASE_FIELDS = [
   { name: 'appVersion', label: 'APP版本号', placeholder: '填写 APP 版本号' },
@@ -420,7 +420,7 @@ function stringifyCsvRows(rows = []) {
     return text
   }
 
-  return `\ufeff${rows.map((row) => row.map(escapeCsvCell).join(',')).join('\n')}\n`
+  return `${rows.map((row) => row.map(escapeCsvCell).join(',')).join('\r\n')}\r\n`
 }
 
 function normalizeTemplateKeyForMatch(value = '') {
@@ -706,7 +706,7 @@ function DesignUploadField({ packageId, noteType = 'DESIGN', field, value, onCha
   const handleUpload = async ({ file, onSuccess, onError }) => {
     try {
       if (file?.size > DESIGN_UPLOAD_MAX_FILE_SIZE) {
-        throw new Error('文件大小不能超过 50MB，请压缩后再上传')
+        throw new Error('文件大小不能超过 100MB，请压缩后再上传')
       }
       setUploading(true)
       const policyResult = await getMatrixPackageSideNoteUploadPolicyApi(packageId, {
