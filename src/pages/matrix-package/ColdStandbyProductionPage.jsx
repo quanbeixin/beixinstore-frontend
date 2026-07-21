@@ -200,7 +200,10 @@ function ColdStandbyProductionPage() {
       const payload = {
         package_name: editingRecord.package_name,
         developer_account_id: editingRecord.developer_account_id || null,
-        platform: editingRecord.platform || '',
+        platform: Array.isArray(editingRecord.platform_codes)
+          ? editingRecord.platform_codes
+          : editingRecord.platform || '',
+        delivery_status_code: editingRecord.delivery_status_code || null,
         owner_name: editingRecord.owner_name || '',
         health_code: editingRecord.health_code || null,
         status_code: values.status_code,

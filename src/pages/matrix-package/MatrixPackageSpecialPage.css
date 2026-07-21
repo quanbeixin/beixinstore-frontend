@@ -45,13 +45,51 @@
 }
 
 .matrix-filter-card .ant-card-body {
-  padding: 14px;
+  padding: 10px 12px;
+}
+
+.matrix-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 1px;
+}
+
+.matrix-filter-item {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.matrix-filter-item-keyword {
+  width: 260px;
+}
+
+.matrix-filter-item-account {
+  width: 190px;
+}
+
+.matrix-filter-item-status,
+.matrix-filter-item-health,
+.matrix-filter-item-delivery-status {
+  width: 118px;
+}
+
+.matrix-filter-item-platform {
+  width: 190px;
 }
 
 .matrix-filter-card .ant-select,
 .matrix-filter-card .ant-input-affix-wrapper,
 .matrix-filter-card .ant-input {
   width: 100%;
+}
+
+.matrix-filter-card .ant-select-selector,
+.matrix-filter-card .ant-input-affix-wrapper,
+.matrix-filter-card .ant-input {
+  min-height: 32px;
 }
 
 .matrix-table-card .ant-card-body {
@@ -124,5 +162,24 @@
 
   .matrix-package-head > .ant-space .ant-btn {
     flex: 1;
+  }
+
+  .matrix-filter-bar {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .matrix-filter-item,
+  .matrix-filter-item-keyword,
+  .matrix-filter-item-account,
+  .matrix-filter-item-status,
+  .matrix-filter-item-health,
+  .matrix-filter-item-platform,
+  .matrix-filter-item-delivery-status {
+    width: calc(50% - 4px);
+  }
+
+  .matrix-filter-item-keyword {
+    width: 100%;
   }
 }

@@ -46,6 +46,8 @@ const SCENE_TYPE_LABEL_MAP = {
   UPCOMING: '即将到期',
   OVERDUE: '逾期提醒',
   SIDE_DEADLINE: '侧信息提醒',
+  PRODUCTION_NODE_DEADLINE: '前置准备节点到期提醒',
+  PREPARATION_ALL_COMPLETED: '前置准备全部完成通知',
   INVENTORY_LOW: '库存低水位',
 }
 
@@ -58,7 +60,13 @@ const INVENTORY_TYPE_OPTIONS = [
   { label: '冷备包', value: 'COLD_STANDBY' },
   { label: '热备包', value: 'HOT_STANDBY' },
 ]
-const MATRIX_PACKAGE_GROUP_SCENE_TYPES = new Set(['UPCOMING', 'OVERDUE', 'SIDE_DEADLINE'])
+const MATRIX_PACKAGE_GROUP_SCENE_TYPES = new Set([
+  'UPCOMING',
+  'OVERDUE',
+  'SIDE_DEADLINE',
+  'PRODUCTION_NODE_DEADLINE',
+  'PREPARATION_ALL_COMPLETED',
+])
 
 function normalizeTemplateRows(rows) {
   return (rows || []).map((row) => ({
@@ -307,14 +315,14 @@ function MatrixPackageNotificationPage() {
           from_status: item?.from_status || '*',
           to_status: item?.to_status,
         }))
-      } else if (['UPCOMING', 'OVERDUE', 'SIDE_DEADLINE'].includes(selectedSceneType)) {
+      } else if (['UPCOMING', 'OVERDUE', 'SIDE_DEADLINE', 'PRODUCTION_NODE_DEADLINE'].includes(selectedSceneType)) {
         payload.schedule = {
           hour: values.schedule_hour,
           minute: values.schedule_minute,
         }
       }
 
-      if (['UPCOMING', 'SIDE_DEADLINE'].includes(selectedSceneType)) {
+      if (['UPCOMING', 'SIDE_DEADLINE', 'PRODUCTION_NODE_DEADLINE'].includes(selectedSceneType)) {
         payload.reminder = {
           offset_unit: values.reminder_offset_unit,
           offset_value: values.reminder_offset_value,
@@ -799,7 +807,7 @@ function MatrixPackageNotificationPage() {
             </Space.Compact>
           ) : null}
 
-          {sceneType === 'UPCOMING' || sceneType === 'SIDE_DEADLINE' ? (
+          {sceneType === 'UPCOMING' || sceneType === 'SIDE_DEADLINE' || sceneType === 'PRODUCTION_NODE_DEADLINE' ? (
             <Space.Compact block>
               <Form.Item
                 style={{ width: '50%' }}

@@ -42,9 +42,13 @@ import './MatrixPackageSpecialPage.css'
 const { Text } = Typography
 const STATUS_DICT_KEY = 'matrix_package_status'
 const HEALTH_DICT_KEY = 'matrix_package_health'
+const PLATFORM_DICT_KEY = 'matrix_package_delivery_platform'
+const DELIVERY_STATUS_DICT_KEY = 'matrix_package_delivery_status'
 const DELIVERING_STATUS = 'DELIVERING'
 const PENDING_DEV_STATUS = 'PENDING_DEV'
 const IN_DEVELOPMENT_STATUS = 'IN_DEVELOPMENT'
+const COLD_STANDBY_STATUS = 'COLD_STANDBY'
+const PENDING_REVIEW_SUBMIT_STATUS = 'PENDING_REVIEW_SUBMIT'
 const DEFAULT_PRODUCTION_STAGE = 'REQUIREMENT_CONFIRM'
 
 const DEFAULT_STATUS_OPTIONS = [
@@ -55,7 +59,7 @@ const DEFAULT_STATUS_OPTIONS = [
   { item_code: 'IN_REVIEW', item_name: '审核中', color: 'gold' },
   { item_code: 'REVIEW_REJECTED', item_name: '被拒审', color: 'red' },
   { item_code: 'HOT_STANDBY', item_name: '热备包', color: 'green' },
-  { item_code: 'DELIVERING', item_name: '投放中', color: 'processing' },
+  { item_code: 'DELIVERING', item_name: '运营中', color: 'processing' },
   { item_code: 'BANNED', item_name: '已封禁', color: 'red' },
   { item_code: 'ARCHIVED', item_name: '已归档', color: 'default' },
 ]
@@ -64,6 +68,18 @@ const DEFAULT_HEALTH_OPTIONS = [
   { item_code: 'NORMAL', item_name: '正常', color: 'green' },
   { item_code: 'WATCH', item_name: '关注', color: 'gold' },
   { item_code: 'ABNORMAL', item_name: '异常', color: 'red' },
+]
+
+const DEFAULT_PLATFORM_OPTIONS = [
+  { item_code: 'META', item_name: 'Meta', color: 'blue' },
+  { item_code: 'GOOGLE', item_name: 'Google', color: 'green' },
+  { item_code: 'SNAPCHAT', item_name: 'Snapchat', color: 'gold' },
+  { item_code: 'TT', item_name: 'TT', color: 'purple' },
+]
+
+const DEFAULT_DELIVERY_STATUS_OPTIONS = [
+  { item_code: 'ACTIVE', item_name: '在投', color: 'green' },
+  { item_code: 'STOPPED', item_name: '停投', color: 'default' },
 ]
 
 const HEALTH_ICON_MAP = {
@@ -87,6 +103,13 @@ function normalizeDictItems(items, fallback) {
 
 function buildDictMap(options) {
   return new Map((options || []).map((item) => [item.code, item]))
+}
+
+function normalizePlatformCodes(value) {
+  const source = Array.isArray(value)
+    ? value
+    : String(value || '').split(',')
+  return Array.from(new Set(source.map((item) => String(item || '').trim().toUpperCase()).filter(Boolean)))
 }
 
 function getStatusTone(statusCode) {
@@ -120,7 +143,16 @@ function MatrixPackageSpecialPage() {
   const [deletingId, setDeletingId] = useState(null)
   const [packages, setPackages] = useState([])
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
-  const [summary, setSummary] = useState({ total: 0, pendingDev: 0, inDevelopment: 0, delivering: 0, inReview: 0, hotStandby: 0 })
+  const [summary, setSummary] = useState({
+    total: 0,
+    pendingDev: 0,
+    inDevelopment: 0,
+    coldStandby: 0,
+    pendingReviewSubmit: 0,
+    inReview: 0,
+    hotStandby: 0,
+    delivering: 0,
+  })
   const [summaryModal, setSummaryModal] = useState({
     open: false,
     title: '',
@@ -134,7 +166,8 @@ function MatrixPackageSpecialPage() {
     developer_account_id: undefined,
     status_code: undefined,
     health_code: undefined,
-    owner_name: '',
+    platform: [],
+    delivery_status_code: undefined,
   })
   const [developerAccountOptions, setDeveloperAccountOptions] = useState([])
   const [userOptions, setUserOptions] = useState([])
@@ -150,16 +183,32 @@ function MatrixPackageSpecialPage() {
     color: item.color,
     remark: item.remark || '',
   })))
+  const [platformOptions, setPlatformOptions] = useState(DEFAULT_PLATFORM_OPTIONS.map((item) => ({
+    code: item.item_code,
+    name: item.item_name,
+    color: item.color,
+    remark: item.remark || '',
+  })))
+  const [deliveryStatusOptions, setDeliveryStatusOptions] = useState(DEFAULT_DELIVERY_STATUS_OPTIONS.map((item) => ({
+    code: item.item_code,
+    name: item.item_name,
+    color: item.color,
+    remark: item.remark || '',
+  })))
 
   const canManage = hasPermission('matrix_package.manage')
   const statusMap = useMemo(() => buildDictMap(statusOptions), [statusOptions])
   const healthMap = useMemo(() => buildDictMap(healthOptions), [healthOptions])
+  const platformMap = useMemo(() => buildDictMap(platformOptions), [platformOptions])
+  const deliveryStatusMap = useMemo(() => buildDictMap(deliveryStatusOptions), [deliveryStatusOptions])
   const isDelivering = watchedStatusCode === DELIVERING_STATUS
 
   const fetchDicts = useCallback(async () => {
-    const [statusResult, healthResult] = await Promise.allSettled([
+    const [statusResult, healthResult, platformResult, deliveryStatusResult] = await Promise.allSettled([
       getDictItemsApi(STATUS_DICT_KEY, { enabledOnly: true }),
       getDictItemsApi(HEALTH_DICT_KEY, { enabledOnly: true }),
+      getDictItemsApi(PLATFORM_DICT_KEY, { enabledOnly: true }),
+      getDictItemsApi(DELIVERY_STATUS_DICT_KEY, { enabledOnly: true }),
     ])
 
     if (statusResult.status === 'fulfilled' && statusResult.value?.success) {
@@ -167,6 +216,12 @@ function MatrixPackageSpecialPage() {
     }
     if (healthResult.status === 'fulfilled' && healthResult.value?.success) {
       setHealthOptions(normalizeDictItems(healthResult.value.data, DEFAULT_HEALTH_OPTIONS))
+    }
+    if (platformResult.status === 'fulfilled' && platformResult.value?.success) {
+      setPlatformOptions(normalizeDictItems(platformResult.value.data, DEFAULT_PLATFORM_OPTIONS))
+    }
+    if (deliveryStatusResult.status === 'fulfilled' && deliveryStatusResult.value?.success) {
+      setDeliveryStatusOptions(normalizeDictItems(deliveryStatusResult.value.data, DEFAULT_DELIVERY_STATUS_OPTIONS))
     }
   }, [])
 
@@ -196,7 +251,8 @@ function MatrixPackageSpecialPage() {
         developer_account_id: filters.developer_account_id || undefined,
         status_code: filters.status_code || undefined,
         health_code: filters.health_code || undefined,
-        owner_name: filters.owner_name || undefined,
+        platform: Array.isArray(filters.platform) && filters.platform.length > 0 ? filters.platform.join(',') : undefined,
+        delivery_status_code: filters.delivery_status_code || undefined,
       })
       if (!result?.success) {
         message.error(result?.message || '获取矩阵包列表失败')
@@ -214,9 +270,11 @@ function MatrixPackageSpecialPage() {
         total: Number(data.summary?.total || data.total || 0),
         pendingDev: Number(data.summary?.pending_dev || 0),
         inDevelopment: Number(data.summary?.in_development || 0),
-        delivering: Number(data.summary?.delivering || 0),
+        coldStandby: Number(data.summary?.cold_standby || 0),
+        pendingReviewSubmit: Number(data.summary?.pending_review_submit || 0),
         inReview: Number(data.summary?.in_review || 0),
         hotStandby: Number(data.summary?.hot_standby || 0),
+        delivering: Number(data.summary?.delivering || 0),
       })
     } catch (error) {
       message.error(error?.message || '获取矩阵包列表失败')
@@ -254,7 +312,6 @@ function MatrixPackageSpecialPage() {
         developer_account_id: filters.developer_account_id || undefined,
         status_code: statusCode || filters.status_code || undefined,
         health_code: filters.health_code || undefined,
-        owner_name: filters.owner_name || undefined,
       })
       if (!result?.success) {
         message.error(result?.message || '获取矩阵包列表失败')
@@ -307,6 +364,8 @@ function MatrixPackageSpecialPage() {
       app_id: '',
       new_package_version: '',
       domain_info: '',
+      platform: [],
+      delivery_status_code: undefined,
       developer_account_id: undefined,
       owner_user_id: undefined,
       status_code: 'COLD_STANDBY',
@@ -322,6 +381,8 @@ function MatrixPackageSpecialPage() {
       app_id: record.app_id || '',
       new_package_version: record.new_package_version || '',
       domain_info: record.domain_info || '',
+      platform: normalizePlatformCodes(record.platform_codes || record.platform),
+      delivery_status_code: record.delivery_status_code || undefined,
       developer_account_id: record.developer_account_id || undefined,
       owner_user_id: record.owner_user_id || undefined,
       status_code: record.status_code || 'COLD_STANDBY',
@@ -362,6 +423,11 @@ function MatrixPackageSpecialPage() {
   }
 
   const handlePromoteDevelopment = (record) => {
+    if (!record?.developer_account_id) {
+      message.warning('请先绑定开发者账号后推进开发')
+      return
+    }
+
     Modal.confirm({
       title: '确认推进开发？',
       content: `确认后「${record.package_name || '该矩阵包'}」将转为开发中，并进入冷备包生产线。`,
@@ -373,7 +439,8 @@ function MatrixPackageSpecialPage() {
           app_id: record.app_id || '',
           domain_info: record.domain_info || '',
           developer_account_id: record.developer_account_id || null,
-          platform: record.platform || '',
+          platform: normalizePlatformCodes(record.platform_codes || record.platform),
+          delivery_status_code: record.delivery_status_code || null,
           status_code: IN_DEVELOPMENT_STATUS,
           health_code: null,
           production_stage_code: record.production_stage_code || DEFAULT_PRODUCTION_STAGE,
@@ -426,7 +493,6 @@ function MatrixPackageSpecialPage() {
             {record.app_id ? <Tag color="cyan">{record.app_id}</Tag> : null}
             {record.new_package_version ? <Tag color="blue">{record.new_package_version}</Tag> : null}
             {record.domain_info ? <Tag color="purple">{record.domain_info}</Tag> : null}
-            {record.platform ? <Tag>{record.platform}</Tag> : null}
             {record.owner_name ? <Text type="secondary">{record.owner_name}</Text> : null}
           </Space>
         </div>
@@ -468,6 +534,38 @@ function MatrixPackageSpecialPage() {
             {meta.name}
           </Tag>
         )
+      },
+    },
+    {
+      title: '投放平台',
+      dataIndex: 'platform',
+      key: 'platform',
+      width: 180,
+      render: (_, record) => {
+        const codes = normalizePlatformCodes(record.platform_codes || record.platform)
+        if (codes.length === 0) return '-'
+        return (
+          <Space size={4} wrap>
+            {codes.map((code) => {
+              const meta = platformMap.get(code) || { name: code, color: 'default' }
+              return <Tag key={code} color={meta.color}>{meta.name}</Tag>
+            })}
+          </Space>
+        )
+      },
+    },
+    {
+      title: '投放状态',
+      dataIndex: 'delivery_status_code',
+      key: 'delivery_status_code',
+      width: 120,
+      render: (value, record) => {
+        if (!value) return '-'
+        const meta = deliveryStatusMap.get(value) || {
+          name: record.delivery_status_name || value,
+          color: record.delivery_status_color || 'default',
+        }
+        return <Tag color={record.delivery_status_color || meta.color}>{meta.name}</Tag>
       },
     },
     {
@@ -588,6 +686,58 @@ function MatrixPackageSpecialPage() {
     },
   ]
 
+  const summaryCards = [
+    {
+      title: '矩阵包总数',
+      value: summary.total,
+      statusCode: undefined,
+      icon: <ClockCircleOutlined />,
+      className: 'matrix-summary-card-total',
+    },
+    {
+      title: '待开发',
+      value: summary.pendingDev,
+      statusCode: PENDING_DEV_STATUS,
+      icon: <ClockCircleOutlined />,
+    },
+    {
+      title: '开发中',
+      value: summary.inDevelopment,
+      statusCode: IN_DEVELOPMENT_STATUS,
+      icon: <FireOutlined />,
+    },
+    {
+      title: '冷备包',
+      value: summary.coldStandby,
+      statusCode: COLD_STANDBY_STATUS,
+      icon: <CheckCircleOutlined />,
+    },
+    {
+      title: '待送审',
+      value: summary.pendingReviewSubmit,
+      statusCode: PENDING_REVIEW_SUBMIT_STATUS,
+      icon: <ClockCircleOutlined />,
+    },
+    {
+      title: '审核中',
+      value: summary.inReview,
+      statusCode: 'IN_REVIEW',
+      icon: <ClockCircleOutlined />,
+    },
+    {
+      title: '热备包',
+      value: summary.hotStandby,
+      statusCode: 'HOT_STANDBY',
+      icon: <CheckCircleOutlined />,
+    },
+    {
+      title: '运营中',
+      value: summary.delivering,
+      statusCode: DELIVERING_STATUS,
+      icon: <FireOutlined />,
+    },
+  ]
+
   return (
     <div className="matrix-package-page">
       <div className="matrix-package-head">
@@ -606,65 +756,22 @@ function MatrixPackageSpecialPage() {
       </div>
 
       <Row gutter={[12, 12]} className="matrix-summary-row">
-        <Col xs={12} flex="1 1 180px">
-          <Card
-            variant="borderless"
-            className="matrix-summary-card matrix-summary-card-total matrix-summary-card-clickable"
-            onClick={() => fetchSummaryPackages({ title: '矩阵包总数', statusCode: undefined, page: 1 })}
-          >
-            <Statistic title="矩阵包总数" value={summary.total} prefix={<ClockCircleOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={12} flex="1 1 180px">
-          <Card
-            variant="borderless"
-            className="matrix-summary-card matrix-summary-card-clickable"
-            onClick={() => fetchSummaryPackages({ title: '待开发', statusCode: PENDING_DEV_STATUS, page: 1 })}
-          >
-            <Statistic title="待开发" value={summary.pendingDev} prefix={<ClockCircleOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={12} flex="1 1 180px">
-          <Card
-            variant="borderless"
-            className="matrix-summary-card matrix-summary-card-clickable"
-            onClick={() => fetchSummaryPackages({ title: '生产中', statusCode: IN_DEVELOPMENT_STATUS, page: 1 })}
-          >
-            <Statistic title="生产中" value={summary.inDevelopment} prefix={<FireOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={12} flex="1 1 180px">
-          <Card
-            variant="borderless"
-            className="matrix-summary-card matrix-summary-card-clickable"
-            onClick={() => fetchSummaryPackages({ title: '投放中', statusCode: DELIVERING_STATUS, page: 1 })}
-          >
-            <Statistic title="投放中" value={summary.delivering} prefix={<FireOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={12} flex="1 1 180px">
-          <Card
-            variant="borderless"
-            className="matrix-summary-card matrix-summary-card-clickable"
-            onClick={() => fetchSummaryPackages({ title: '审核中', statusCode: 'IN_REVIEW', page: 1 })}
-          >
-            <Statistic title="审核中" value={summary.inReview} prefix={<ClockCircleOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={12} flex="1 1 180px">
-          <Card
-            variant="borderless"
-            className="matrix-summary-card matrix-summary-card-clickable"
-            onClick={() => fetchSummaryPackages({ title: '热备包', statusCode: 'HOT_STANDBY', page: 1 })}
-          >
-            <Statistic title="热备包" value={summary.hotStandby} prefix={<CheckCircleOutlined />} />
-          </Card>
-        </Col>
+        {summaryCards.map((item) => (
+          <Col key={item.title} xs={12} flex="1 1 150px">
+            <Card
+              variant="borderless"
+              className={`matrix-summary-card matrix-summary-card-clickable ${item.className || ''}`}
+              onClick={() => fetchSummaryPackages({ title: item.title, statusCode: item.statusCode, page: 1 })}
+            >
+              <Statistic title={item.title} value={item.value} prefix={item.icon} />
+            </Card>
+          </Col>
+        ))}
       </Row>
 
       <Card variant="borderless" className="matrix-filter-card">
-        <Row gutter={[12, 12]} align="middle">
-          <Col xs={24} md={7}>
+        <div className="matrix-filter-bar">
+          <div className="matrix-filter-item matrix-filter-item-keyword">
             <Input
               allowClear
               prefix={<SearchOutlined />}
@@ -672,8 +779,8 @@ function MatrixPackageSpecialPage() {
               value={filters.keyword}
               onChange={(event) => setFilters((prev) => ({ ...prev, keyword: event.target.value }))}
             />
-          </Col>
-          <Col xs={12} md={5}>
+          </div>
+          <div className="matrix-filter-item matrix-filter-item-account">
             <Select
               allowClear
               showSearch
@@ -686,8 +793,8 @@ function MatrixPackageSpecialPage() {
               }))}
               onChange={(value) => setFilters((prev) => ({ ...prev, developer_account_id: value }))}
             />
-          </Col>
-          <Col xs={12} md={4}>
+          </div>
+          <div className="matrix-filter-item matrix-filter-item-status">
             <Select
               allowClear
               placeholder="包状态"
@@ -695,8 +802,8 @@ function MatrixPackageSpecialPage() {
               options={statusOptions.map((item) => ({ label: item.name, value: item.code }))}
               onChange={(value) => setFilters((prev) => ({ ...prev, status_code: value }))}
             />
-          </Col>
-          <Col xs={12} md={4}>
+          </div>
+          <div className="matrix-filter-item matrix-filter-item-health">
             <Select
               allowClear
               placeholder="健康度"
@@ -704,16 +811,27 @@ function MatrixPackageSpecialPage() {
               options={healthOptions.map((item) => ({ label: item.name, value: item.code }))}
               onChange={(value) => setFilters((prev) => ({ ...prev, health_code: value }))}
             />
-          </Col>
-          <Col xs={24} md={4}>
-            <Input
+          </div>
+          <div className="matrix-filter-item matrix-filter-item-platform">
+            <Select
               allowClear
-              placeholder="负责人"
-              value={filters.owner_name}
-              onChange={(event) => setFilters((prev) => ({ ...prev, owner_name: event.target.value }))}
+              mode="multiple"
+              placeholder="投放平台"
+              value={filters.platform}
+              options={platformOptions.map((item) => ({ label: item.name, value: item.code }))}
+              onChange={(value) => setFilters((prev) => ({ ...prev, platform: Array.isArray(value) ? value : [] }))}
             />
-          </Col>
-        </Row>
+          </div>
+          <div className="matrix-filter-item matrix-filter-item-delivery-status">
+            <Select
+              allowClear
+              placeholder="投放状态"
+              value={filters.delivery_status_code}
+              options={deliveryStatusOptions.map((item) => ({ label: item.name, value: item.code }))}
+              onChange={(value) => setFilters((prev) => ({ ...prev, delivery_status_code: value }))}
+            />
+          </div>
+        </div>
       </Card>
 
       <Card variant="borderless" className="matrix-table-card">
@@ -722,7 +840,7 @@ function MatrixPackageSpecialPage() {
           loading={loading}
           columns={columns}
           dataSource={packages}
-          scroll={{ x: 1260 }}
+          scroll={{ x: 1560 }}
           rowClassName={(record) => `matrix-table-row-${getStatusTone(record.status_code)}`}
           locale={{
             emptyText: (
@@ -818,6 +936,31 @@ function MatrixPackageSpecialPage() {
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
+              <Form.Item label="投放平台" name="platform">
+                <Select
+                  allowClear
+                  mode="multiple"
+                  placeholder="选择投放平台"
+                  options={platformOptions.map((item) => ({
+                    label: item.name,
+                    value: item.code,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item label="投放状态" name="delivery_status_code">
+                <Select
+                  allowClear
+                  placeholder="选择投放状态"
+                  options={deliveryStatusOptions.map((item) => ({
+                    label: item.name,
+                    value: item.code,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
               <Form.Item label="新包版本" name="new_package_version">
                 <Input placeholder="例如：26/07/07版本" maxLength={50} />
               </Form.Item>
@@ -866,11 +1009,11 @@ function MatrixPackageSpecialPage() {
               <Form.Item
                 label="健康度"
                 name="health_code"
-                rules={isDelivering ? [{ required: true, message: '投放中必须选择健康度' }] : []}
+                rules={isDelivering ? [{ required: true, message: '运营中必须选择健康度' }] : []}
               >
                 <Select
                   disabled={!isDelivering}
-                  placeholder={isDelivering ? '选择健康度' : '仅投放中生效'}
+                  placeholder={isDelivering ? '选择健康度' : '仅运营中生效'}
                   options={healthOptions.map((item) => ({
                     label: item.name,
                     value: item.code,
