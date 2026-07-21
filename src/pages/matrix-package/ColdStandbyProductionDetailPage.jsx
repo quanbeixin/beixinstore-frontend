@@ -12,6 +12,7 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Col,
   DatePicker,
   Empty,
@@ -301,7 +302,12 @@ const FRONTEND_FIELDS = [
   ...FRONTEND_ENV_SECTIONS.flatMap((section) => section.fields),
 ]
 
-const BACKEND_FIELDS = []
+const BACKEND_FIELDS = [
+  { name: 'coldStartInfo', label: '冷启信息', type: 'checkbox' },
+  { name: 'productDetail', label: '商品详情', type: 'checkbox' },
+  { name: 'addOnPackage', label: '加量包', type: 'checkbox' },
+  { name: 'subscription', label: '订阅', type: 'checkbox' },
+]
 
 const ADVERTISING_FIELDS = [
   {
@@ -474,6 +480,11 @@ function serializeStructuredContent(value, fields) {
   let hasContent = false
   for (const field of fields) {
     const raw = source[field.name]
+    if (field.type === 'checkbox') {
+      normalized[field.name] = Boolean(raw)
+      if (raw) hasContent = true
+      continue
+    }
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
       const attachment = {
         file_name: String(raw.file_name || '').trim(),
@@ -1946,6 +1957,22 @@ function ColdStandbyProductionDetailPage() {
                       </div>
                     ) : section.type === 'BACKEND' ? (
                       <div className="cold-production-push-form">
+                        <div className="cold-production-push-module">
+                          <div className="cold-production-push-module-title">完成自检</div>
+                          <Row gutter={[14, 8]}>
+                            {BACKEND_FIELDS.map((field) => (
+                              <Col xs={12} md={6} key={field.name}>
+                                <Form.Item
+                                  name={[section.type, field.name]}
+                                  valuePropName="checked"
+                                  style={{ marginBottom: 0 }}
+                                >
+                                  <Checkbox disabled={!canManage}>{field.label}</Checkbox>
+                                </Form.Item>
+                              </Col>
+                            ))}
+                          </Row>
+                        </div>
                         <div className="cold-production-push-module">
                           <div className="cold-production-push-module-title">
                             <Space size={8} wrap>
