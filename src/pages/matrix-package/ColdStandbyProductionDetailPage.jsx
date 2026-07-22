@@ -512,6 +512,23 @@ function getExistingNoteContent(notes, noteType) {
   return matched?.content || ''
 }
 
+function mergeStructuredSectionValue(sectionType, nextValue, existingNotes = []) {
+  const fields = STRUCTURED_NOTE_FIELDS[sectionType]
+  if (!fields) return nextValue
+
+  const source = nextValue && typeof nextValue === 'object' && !Array.isArray(nextValue) ? nextValue : {}
+  const existingValue = parseStructuredContent(getExistingNoteContent(existingNotes, sectionType))
+  const merged = { ...existingValue }
+
+  fields.forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(source, field.name)) {
+      merged[field.name] = source[field.name]
+    }
+  })
+
+  return merged
+}
+
 function buildSideNoteOwnerValues(notes) {
   return NOTE_SECTIONS.reduce((acc, section) => {
     const matched = notes.find((item) => item.note_type === section.type)
@@ -536,7 +553,10 @@ function buildSideNotePayload(values, existingNotes, ownerValues = {}) {
       note_type: section.type,
       owner_user_id: ownerUserId,
       content: STRUCTURED_NOTE_FIELDS[section.type]
-        ? serializeStructuredContent(source[section.type], STRUCTURED_NOTE_FIELDS[section.type])
+        ? serializeStructuredContent(
+          mergeStructuredSectionValue(section.type, source[section.type], existingNotes),
+          STRUCTURED_NOTE_FIELDS[section.type],
+        )
         : source[section.type] || '',
     }
   })
@@ -859,6 +879,7 @@ function ColdStandbyProductionDetailPage() {
   const autoSaveSeqRef = useRef(0)
   const saveRequestSeqRef = useRef(0)
   const isApplyingRemoteFormValuesRef = useRef(false)
+  const sideNotesRef = useRef([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [completingProduction, setCompletingProduction] = useState(false)
@@ -895,6 +916,7 @@ function ColdStandbyProductionDetailPage() {
       const detailData = detailResult.data || null
       setDetail(detailData)
       const notes = notesResult?.success && Array.isArray(notesResult.data) ? notesResult.data : []
+      sideNotesRef.current = notes
       setSideNotes(notes)
       setSideNoteOwners(buildSideNoteOwnerValues(notes))
       const noteFormValues = buildNoteFormValues(notes, detailData)
@@ -956,7 +978,7 @@ function ColdStandbyProductionDetailPage() {
     const requestSeq = saveRequestSeqRef.current + 1
     saveRequestSeqRef.current = requestSeq
     try {
-      const notes = buildSideNotePayload(values, sideNotes, ownerValues)
+      const notes = buildSideNotePayload(values, sideNotesRef.current, ownerValues)
       setSaving(true)
       setSaveStatus('saving')
       const result = await saveMatrixPackageSideNotesApi(id, notes)
@@ -969,6 +991,7 @@ function ColdStandbyProductionDetailPage() {
         return
       }
       const nextNotes = Array.isArray(result.data) ? result.data : []
+      sideNotesRef.current = nextNotes
       setSideNotes(nextNotes)
       setSideNoteOwners(buildSideNoteOwnerValues(nextNotes))
       const nextNoteFormValues = buildNoteFormValues(nextNotes, detail)
@@ -996,7 +1019,7 @@ function ColdStandbyProductionDetailPage() {
         setSaving(false)
       }
     }
-  }, [detail, id, sideNoteOwners, sideNotes])
+  }, [detail, id, sideNoteOwners])
 
   const scheduleAutoSave = useCallback((allValues) => {
     if (!canManage) return
@@ -1053,6 +1076,7 @@ function ColdStandbyProductionDetailPage() {
         return
       }
       const nextNotes = Array.isArray(result.data) ? result.data : []
+      sideNotesRef.current = nextNotes
       setSideNotes(nextNotes)
       setSideNoteOwners(buildSideNoteOwnerValues(nextNotes))
       message.success('已确认完成')
