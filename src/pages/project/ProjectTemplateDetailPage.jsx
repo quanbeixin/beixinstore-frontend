@@ -1,7 +1,8 @@
-import { Alert, Button, Result, Spin, message } from 'antd'
+import { Alert, Button, Card, Checkbox, Result, Select, Space, Spin, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getDictItemsApi } from '../../api/configDict'
+import { getUsersApi } from '../../api/users'
 import { getProjectTemplateByIdApi, getProjectTemplatePhaseTypesApi, updateProjectTemplateApi } from '../../api/work'
 import {
   duplicateGraphNode,
@@ -19,6 +20,8 @@ import TemplateNodeInspector from '../../modules/project-template/components/Tem
 import { hasPermission } from '../../utils/access'
 import { formatBeijingDateTime } from '../../utils/datetime'
 import './ProjectTemplateDetailPage.css'
+
+const { Text } = Typography
 
 const FALLBACK_PHASE_TYPES = TEMPLATE_PHASE_OPTIONS.map((item, index) => ({
   phase_key: item.value,
@@ -50,6 +53,30 @@ function mapPhaseRowsToOptions(rows = []) {
     }))
 }
 
+function normalizeGroupChatConfig(value = {}) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  return {
+    auto_group_chat_enabled: source.auto_group_chat_enabled === false ? false : true,
+    include_owner: source.include_owner === false ? false : true,
+    default_member_user_ids: Array.from(
+      new Set(
+        (Array.isArray(source.default_member_user_ids) ? source.default_member_user_ids : [])
+          .map((item) => Number(item))
+          .filter((item) => Number.isInteger(item) && item > 0),
+      ),
+    ),
+  }
+}
+
+function buildUserOption(user) {
+  const name = String(user?.real_name || user?.username || `用户${user?.id || ''}`).trim()
+  const department = String(user?.department_name || '').trim()
+  return {
+    value: Number(user.id),
+    label: department ? `${name} / ${department}` : name,
+  }
+}
+
 function ProjectTemplateDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams()
@@ -62,16 +89,18 @@ function ProjectTemplateDetailPage() {
   const [nodes, setNodes] = useState([])
   const [phaseTypes, setPhaseTypes] = useState(FALLBACK_PHASE_TYPES)
   const [participantRoleOptions, setParticipantRoleOptions] = useState(FALLBACK_PARTICIPANT_ROLE_OPTIONS)
+  const [userOptions, setUserOptions] = useState([])
   const [selectedNodeId, setSelectedNodeId] = useState('')
 
   const loadTemplate = useCallback(async () => {
     if (!Number.isInteger(templateId) || templateId <= 0) return
     setLoading(true)
     try {
-      const [templateResult, phaseResult, participantRoleResult] = await Promise.all([
+      const [templateResult, phaseResult, participantRoleResult, usersResult] = await Promise.all([
         getProjectTemplateByIdApi(templateId),
         getProjectTemplatePhaseTypesApi({ enabled_only: 1 }).catch(() => null),
         getDictItemsApi('demand_participant_role', { enabledOnly: true }).catch(() => null),
+        getUsersApi({ page: 1, pageSize: 1000, keyword: '', sort_by: 'real_name', sort_order: 'asc' }).catch(() => null),
       ])
 
       if (!templateResult?.success) {
@@ -93,7 +122,12 @@ function ProjectTemplateDetailPage() {
             }))
           : FALLBACK_PARTICIPANT_ROLE_OPTIONS,
       )
-      setTemplate(currentTemplate)
+      const userRows = Array.isArray(usersResult?.data?.list) ? usersResult.data.list : []
+      setUserOptions(userRows.map(buildUserOption).filter((item) => item.value))
+      setTemplate({
+        ...currentTemplate,
+        group_chat_config: normalizeGroupChatConfig(currentTemplate?.group_chat_config),
+      })
       setNodes(mappedNodes)
       setSelectedNodeId((prev) => prev || mappedNodes[0]?.id || '')
     } catch (error) {
@@ -162,6 +196,11 @@ function ProjectTemplateDetailPage() {
     [template],
   )
 
+  const groupChatConfig = useMemo(
+    () => normalizeGroupChatConfig(template?.group_chat_config),
+    [template?.group_chat_config],
+  )
+
   const updateNode = useCallback((nodeId, patch) => {
     setNodes((prev) => upsertGraphNode(prev, nodeId, patch))
   }, [])
@@ -193,6 +232,19 @@ function ProjectTemplateDetailPage() {
       return {
         ...prev,
         status: normalizedStatus,
+      }
+    })
+  }, [])
+
+  const handleGroupChatConfigChange = useCallback((patch) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        group_chat_config: normalizeGroupChatConfig({
+          ...prev.group_chat_config,
+          ...patch,
+        }),
       }
     })
   }, [])
@@ -258,6 +310,7 @@ function ProjectTemplateDetailPage() {
         description: String(template?.description || '').trim(),
         status: Number(template?.status) === 1 ? 1 : 0,
         node_config: mapGraphNodesToTemplateNodeConfig(nodes),
+        group_chat_config: groupChatConfig,
       }
 
       const result = await updateProjectTemplateApi(templateId, payload)
@@ -350,6 +403,46 @@ function ProjectTemplateDetailPage() {
             onAddAfter={addNodeAfter}
             onAddNode={addNode}
           />
+          <Card
+            size="small"
+            title="自动拉群配置"
+            className="project-template-detail__group-chat-card"
+          >
+            <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+              <Checkbox
+                checked={groupChatConfig.auto_group_chat_enabled}
+                disabled={!canManage}
+                onChange={(event) => handleGroupChatConfigChange({ auto_group_chat_enabled: event.target.checked })}
+              >
+                创建需求时自动拉群
+              </Checkbox>
+              <Checkbox
+                checked={groupChatConfig.include_owner}
+                disabled={!canManage || !groupChatConfig.auto_group_chat_enabled}
+                onChange={(event) => handleGroupChatConfigChange({ include_owner: event.target.checked })}
+              >
+                自动包含需求负责人
+              </Checkbox>
+              <div>
+                <Text type="secondary">默认入群成员</Text>
+                <Select
+                  mode="multiple"
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  disabled={!canManage || !groupChatConfig.auto_group_chat_enabled}
+                  placeholder="选择默认拉进群的成员"
+                  value={groupChatConfig.default_member_user_ids}
+                  options={userOptions}
+                  style={{ width: '100%', marginTop: 6 }}
+                  onChange={(value) => handleGroupChatConfigChange({ default_member_user_ids: value })}
+                />
+              </div>
+              <Text type="secondary">
+                仅影响后续新建的自动群；已存在的群不会自动补成员。
+              </Text>
+            </Space>
+          </Card>
         </div>
       </div>
     </div>

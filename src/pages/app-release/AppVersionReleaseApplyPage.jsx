@@ -19,7 +19,7 @@ import { SendOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createAppVersionReleaseApplicationsApi } from '../../api/appVersionRelease'
+import { createAppVersionReleaseApplicationsApi, getAppVersionReleasesApi } from '../../api/appVersionRelease'
 import { getMatrixPackageSideNotesApi, getMatrixPackagesApi } from '../../api/matrixPackage'
 import { getWorkDemandsApi } from '../../api/work'
 import './AppVersionReleaseApplyPage.css'
@@ -58,6 +58,18 @@ function extractFrontendAppConsoleUrl(notes = []) {
   const content = String(frontendNote?.content || '').trim() || String(frontendNote?.confirmed_content || '').trim()
   const parsed = parseJsonObject(content)
   return String(parsed.appConsoleUrl || '').trim()
+}
+
+async function fetchHistoricalAppConsoleUrl(packageId) {
+  const result = await getAppVersionReleasesApi({
+    page: 1,
+    pageSize: 10,
+    matrix_package_id: packageId,
+  })
+  if (!result?.success) return ''
+  const rows = Array.isArray(result.data?.list) ? result.data.list : []
+  const matched = rows.find((item) => String(item?.app_console_url || '').trim())
+  return String(matched?.app_console_url || '').trim()
 }
 
 function buildPackageOption(item) {
@@ -186,6 +198,8 @@ function AppVersionReleaseApplyPage() {
     let cancelled = false
     Promise.all(missingPackageIds.map(async (packageId) => {
       try {
+        const historicalAppConsoleUrl = await fetchHistoricalAppConsoleUrl(packageId)
+        if (historicalAppConsoleUrl) return [packageId, historicalAppConsoleUrl]
         const result = await getMatrixPackageSideNotesApi(packageId)
         return [packageId, result?.success ? extractFrontendAppConsoleUrl(result.data) : '']
       } catch {
@@ -406,6 +420,7 @@ function AppVersionReleaseApplyPage() {
                         <Form.Item
                           label="APP后台地址"
                           name={['package_items', index, 'app_console_url']}
+                          rules={[{ required: true, whitespace: true, message: '请填写APP后台地址' }]}
                         >
                           <Input allowClear maxLength={1000} placeholder="https://play.google.com/console/..." />
                         </Form.Item>

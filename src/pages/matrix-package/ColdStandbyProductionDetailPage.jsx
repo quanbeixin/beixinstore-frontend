@@ -188,20 +188,9 @@ const DEVOPS_GOOGLE_ENV_SECTIONS = [
 
 const DEVOPS_BASE_FIELDS = []
 
-const DEVOPS_FILE_FIELDS = [
-  {
-    name: 'pushFcmFile',
-    label: 'push-fcm文件',
-    placeholder: '上传 push-fcm JSON 文件',
-    kind: 'file',
-    accept: '.json,application/json,text/json',
-  },
-]
-
 const DEVOPS_FIELDS = [
   ...DEVOPS_BASE_FIELDS,
   ...DEVOPS_GOOGLE_ENV_SECTIONS.flatMap((section) => section.fields),
-  ...DEVOPS_FILE_FIELDS,
 ]
 
 const DESIGN_UPLOAD_FIELDS = [
@@ -242,6 +231,13 @@ const DESIGN_UPLOAD_MAX_FILE_SIZE = 100 * 1024 * 1024
 const FRONTEND_BASE_FIELDS = [
   { name: 'appVersion', label: 'APP版本号', placeholder: '填写 APP 版本号' },
   { name: 'appConsoleUrl', label: 'APP谷歌平台发版地址', placeholder: 'https://play.google.com/console/...' },
+  {
+    name: 'pushFcmFile',
+    label: 'push-fcm文件',
+    placeholder: '上传 push-fcm JSON 文件',
+    kind: 'file',
+    accept: '.json,application/json,text/json',
+  },
 ]
 
 const FRONTEND_FILE_FIELDS = [
@@ -604,6 +600,18 @@ function buildNoteFormValues(notes, packageDetail = null) {
   ) {
     frontendValues.googleServiceJsonFile = devopsValues.googleServiceJsonFile
   }
+  if (
+    frontendValues &&
+    typeof frontendValues === 'object' &&
+    !Array.isArray(frontendValues) &&
+    devopsValues &&
+    typeof devopsValues === 'object' &&
+    !Array.isArray(devopsValues) &&
+    !frontendValues.pushFcmFile &&
+    devopsValues.pushFcmFile
+  ) {
+    frontendValues.pushFcmFile = devopsValues.pushFcmFile
+  }
   if (frontendValues && typeof frontendValues === 'object' && !Array.isArray(frontendValues)) {
     Object.assign(frontendValues, buildGeneratedH5Values(packageDetail))
   }
@@ -849,6 +857,8 @@ function ColdStandbyProductionDetailPage() {
   const [form] = Form.useForm()
   const autoSaveTimerRef = useRef(null)
   const autoSaveSeqRef = useRef(0)
+  const saveRequestSeqRef = useRef(0)
+  const isApplyingRemoteFormValuesRef = useRef(false)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [completingProduction, setCompletingProduction] = useState(false)
@@ -888,6 +898,11 @@ function ColdStandbyProductionDetailPage() {
       setSideNotes(notes)
       setSideNoteOwners(buildSideNoteOwnerValues(notes))
       const noteFormValues = buildNoteFormValues(notes, detailData)
+      isApplyingRemoteFormValuesRef.current = true
+      form.setFieldsValue(noteFormValues)
+      Promise.resolve().then(() => {
+        isApplyingRemoteFormValuesRef.current = false
+      })
       setOperationNodeValues(
         noteFormValues.OPERATION && typeof noteFormValues.OPERATION === 'object' ? noteFormValues.OPERATION : {},
       )
@@ -907,7 +922,7 @@ function ColdStandbyProductionDetailPage() {
     } finally {
       setLoading(false)
     }
-  }, [id])
+  }, [form, id])
 
   useEffect(() => {
     fetchDetail()
@@ -937,17 +952,17 @@ function ColdStandbyProductionDetailPage() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!detail) return
-    form.setFieldsValue(buildNoteFormValues(sideNotes, detail))
-  }, [detail, form, sideNotes])
-
   const saveNotes = useCallback(async (values, { showSuccess = false, ownerValues = sideNoteOwners } = {}) => {
+    const requestSeq = saveRequestSeqRef.current + 1
+    saveRequestSeqRef.current = requestSeq
     try {
       const notes = buildSideNotePayload(values, sideNotes, ownerValues)
       setSaving(true)
       setSaveStatus('saving')
       const result = await saveMatrixPackageSideNotesApi(id, notes)
+      if (saveRequestSeqRef.current !== requestSeq) {
+        return
+      }
       if (!result?.success) {
         message.error(result?.message || '保存补充信息失败')
         setSaveStatus('failed')
@@ -970,11 +985,16 @@ function ColdStandbyProductionDetailPage() {
       setSaveStatus('saved')
       if (showSuccess) message.success('补充信息已保存')
     } catch (error) {
+      if (saveRequestSeqRef.current !== requestSeq) {
+        return
+      }
       if (error?.errorFields) return
       setSaveStatus('failed')
       message.error(error?.message || '保存补充信息失败')
     } finally {
-      setSaving(false)
+      if (saveRequestSeqRef.current === requestSeq) {
+        setSaving(false)
+      }
     }
   }, [detail, id, sideNoteOwners, sideNotes])
 
@@ -993,6 +1013,7 @@ function ColdStandbyProductionDetailPage() {
   }, [canManage, saveNotes])
 
   const handleNoteValuesChange = (_, allValues) => {
+    if (isApplyingRemoteFormValuesRef.current) return
     const nextOperationValues = allValues?.OPERATION
     if (nextOperationValues && typeof nextOperationValues === 'object') {
       setOperationNodeValues(nextOperationValues)
@@ -1904,17 +1925,29 @@ function ColdStandbyProductionDetailPage() {
                           <Row gutter={[14, 8]}>
                             {FRONTEND_BASE_FIELDS.map((field) => (
                               <Col xs={24} md={12} key={field.name}>
-                                <Form.Item
-                                  name={[section.type, field.name]}
-                                  label={renderStructuredFieldLabel(section.type, field)}
-                                >
-                                  <Input
-                                    allowClear
-                                    maxLength={1000}
-                                    disabled={!canManage}
-                                    placeholder={field.placeholder}
-                                  />
-                                </Form.Item>
+                                {field.kind === 'file' ? (
+                                  <Form.Item name={[section.type, field.name]}>
+                                    <DesignUploadField
+                                      packageId={id}
+                                      noteType={section.type}
+                                      field={field}
+                                      onUploaded={(fieldName, nextValue) => handleAttachmentUploadComplete(section.type, fieldName, nextValue)}
+                                      disabled={!canManage}
+                                    />
+                                  </Form.Item>
+                                ) : (
+                                  <Form.Item
+                                    name={[section.type, field.name]}
+                                    label={renderStructuredFieldLabel(section.type, field)}
+                                  >
+                                    <Input
+                                      allowClear
+                                      maxLength={1000}
+                                      disabled={!canManage}
+                                      placeholder={field.placeholder}
+                                    />
+                                  </Form.Item>
+                                )}
                               </Col>
                             ))}
                           </Row>
@@ -2062,19 +2095,6 @@ function ColdStandbyProductionDetailPage() {
                             </Row>
                           </div>
                         ))}
-                        <div className="cold-production-devops-attachments">
-                          {DEVOPS_FILE_FIELDS.map((field) => (
-                            <Form.Item key={field.name} name={[section.type, field.name]}>
-                              <DesignUploadField
-                                packageId={id}
-                                noteType={section.type}
-                                field={field}
-                                onUploaded={(fieldName, nextValue) => handleAttachmentUploadComplete(section.type, fieldName, nextValue)}
-                                disabled={!canManage}
-                              />
-                            </Form.Item>
-                          ))}
-                        </div>
                       </div>
                     ) : STRUCTURED_NOTE_FIELDS[section.type] ? (
                       <Row gutter={[14, 8]} className="cold-production-operation-form">

@@ -338,6 +338,16 @@
   overflow: hidden;
 }
 
+.project-template-detail__group-chat-card {
+  margin-top: 12px;
+  border-radius: 20px;
+  border-color: rgba(148, 163, 184, 0.18);
+  box-shadow:
+    0 14px 32px rgba(15, 23, 42, 0.05),
+    0 1px 0 rgba(255, 255, 255, 0.7) inset;
+  overflow: hidden;
+}
+
 .project-template-detail__side :where(.ant-card-head) {
   min-height: 62px;
   padding-inline: 18px;
