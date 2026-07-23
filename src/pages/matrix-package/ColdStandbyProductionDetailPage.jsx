@@ -899,6 +899,10 @@ function ColdStandbyProductionDetailPage() {
 
   const canManage = hasPermission('matrix_package.manage')
   const checklistPercent = useMemo(() => getSideNoteCompletionPercent(sideNotes, detail), [detail, sideNotes])
+  const requiredSideChecksCompleted = useMemo(
+    () => SIDE_CHECK_SECTION_TYPES.every((sectionType) => getSideNote(sideNotes, sectionType)?.is_confirmed),
+    [sideNotes],
+  )
 
   const fetchDetail = useCallback(async () => {
     if (!id) return
@@ -1179,6 +1183,10 @@ function ColdStandbyProductionDetailPage() {
 
   const handleCompleteProduction = () => {
     if (!canManage || !detail?.id) return
+    if (!requiredSideChecksCompleted) {
+      message.warning('请先完成各侧信息check后再生产完成')
+      return
+    }
     Modal.confirm({
       title: '确认生产完成？',
       content: '确认后会将矩阵包状态更新为冷备包，并自动创建一条 APP 版本发布记录。',
@@ -1256,7 +1264,7 @@ function ColdStandbyProductionDetailPage() {
       <Button
         type="primary"
         size="small"
-        disabled={!canManage}
+        disabled={!canManage || !requiredSideChecksCompleted}
         loading={completingProduction}
         onClick={handleCompleteProduction}
       >

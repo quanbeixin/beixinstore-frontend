@@ -45,6 +45,25 @@ function toPositiveInt(value) {
   return Number.isInteger(num) && num > 0 ? num : null
 }
 
+function normalizePositiveIntList(value) {
+  const rawList = Array.isArray(value)
+    ? value
+    : String(value || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  return rawList
+    .map((item) => toPositiveInt(item))
+    .filter(Boolean)
+    .filter((item, index, arr) => arr.indexOf(item) === index)
+}
+
+function isSameNumberList(left, right) {
+  const leftList = normalizePositiveIntList(left)
+  const rightList = normalizePositiveIntList(right)
+  return leftList.length === rightList.length && leftList.every((item, index) => item === rightList[index])
+}
+
 function getAttachmentUrl(row) {
   return String(row?.download_url || row?.object_url || '').trim()
 }
@@ -114,13 +133,19 @@ function normalizeViewConfig(config = {}) {
     .filter((item, index, arr) => GROUP_FIELD_OPTIONS.some((option) => option.value === item) && arr.indexOf(item) === index)
     .slice(0, 3)
   const pageSize = Number(source.page_size || 0)
+  const assigneeIds = normalizePositiveIntList(source.assignee_ids)
+  const legacyAssigneeId = toPositiveInt(source.assignee_id)
+  if (legacyAssigneeId && !assigneeIds.includes(legacyAssigneeId)) {
+    assigneeIds.unshift(legacyAssigneeId)
+  }
   return {
     keyword: String(source.keyword || '').trim(),
     status_code: String(source.status_code || '').trim().toUpperCase(),
     severity_code: String(source.severity_code || '').trim().toUpperCase(),
     issue_stage: String(source.issue_stage || '').trim().toUpperCase(),
     demand_id: String(source.demand_id || '').trim(),
-    assignee_id: Number.isInteger(Number(source.assignee_id)) && Number(source.assignee_id) > 0 ? Number(source.assignee_id) : undefined,
+    assignee_id: assigneeIds[0] || undefined,
+    assignee_ids: assigneeIds,
     reporter_id: Number.isInteger(Number(source.reporter_id)) && Number(source.reporter_id) > 0 ? Number(source.reporter_id) : undefined,
     start_date: String(source.start_date || '').trim(),
     end_date: String(source.end_date || '').trim(),
@@ -161,6 +186,7 @@ function parseBugListQueryState(search, { forcedAssigneeId = null } = {}) {
     issue_stage: params.get('issue_stage') || '',
     demand_id: params.get('demand_id') || '',
     assignee_id: params.get('assignee_id') || '',
+    assignee_ids: params.get('assignee_ids') || '',
     reporter_id: params.get('reporter_id') || '',
     start_date: params.get('start_date') || '',
     end_date: params.get('end_date') || '',
@@ -174,7 +200,7 @@ function parseBugListQueryState(search, { forcedAssigneeId = null } = {}) {
     severityFilter: config.severity_code || '',
     issueStageFilter: config.issue_stage || '',
     demandFilter: config.demand_id || undefined,
-    assigneeFilter: forcedAssigneeId || config.assignee_id || undefined,
+    assigneeFilter: forcedAssigneeId ? [forcedAssigneeId] : config.assignee_ids,
     reporterFilter: config.reporter_id || undefined,
     createdRange: buildViewDateRange(config),
     groupFields: Array.isArray(config.group_fields) ? config.group_fields : [],
@@ -216,9 +242,9 @@ function buildBugListQueryString({
   const normalizedDemand = String(demandFilter || '').trim()
   if (normalizedDemand) params.set('demand_id', normalizedDemand)
 
-  const normalizedAssigneeId = Number(assigneeFilter || 0)
-  if (Number.isInteger(normalizedAssigneeId) && normalizedAssigneeId > 0) {
-    params.set('assignee_id', String(normalizedAssigneeId))
+  const normalizedAssigneeIds = normalizePositiveIntList(assigneeFilter)
+  if (normalizedAssigneeIds.length > 0) {
+    params.set('assignee_ids', normalizedAssigneeIds.join(','))
   }
 
   const normalizedReporterId = Number(reporterFilter || 0)
@@ -553,7 +579,7 @@ function BugListPage({
     severity_code: severityFilter || undefined,
     issue_stage: issueStageFilter || undefined,
     demand_id: demandFilter || undefined,
-    assignee_id: assigneeFilter || undefined,
+    assignee_ids: normalizePositiveIntList(assigneeFilter).join(',') || undefined,
     reporter_id: reporterFilter || undefined,
     start_date: createdRange?.[0]?.format?.('YYYY-MM-DD') || undefined,
     end_date: createdRange?.[1]?.format?.('YYYY-MM-DD') || undefined,
@@ -566,7 +592,8 @@ function BugListPage({
       severity_code: String(severityFilter || '').trim().toUpperCase(),
       issue_stage: String(issueStageFilter || '').trim().toUpperCase(),
       demand_id: String(demandFilter || '').trim(),
-      assignee_id: Number(assigneeFilter || 0) > 0 ? Number(assigneeFilter) : null,
+      assignee_id: null,
+      assignee_ids: normalizePositiveIntList(assigneeFilter),
       reporter_id: Number(reporterFilter || 0) > 0 ? Number(reporterFilter) : null,
       start_date: createdRange?.[0]?.format?.('YYYY-MM-DD') || '',
       end_date: createdRange?.[1]?.format?.('YYYY-MM-DD') || '',
@@ -622,7 +649,7 @@ function BugListPage({
     setSeverityFilter(config.severity_code || '')
     setIssueStageFilter(config.issue_stage || '')
     setDemandFilter(config.demand_id || undefined)
-    setAssigneeFilter(normalizedForcedAssigneeId || config.assignee_id || undefined)
+    setAssigneeFilter(normalizedForcedAssigneeId ? [normalizedForcedAssigneeId] : config.assignee_ids)
     setReporterFilter(config.reporter_id || undefined)
     setCreatedRange(buildViewDateRange(config))
     setGroupFields(Array.isArray(config.group_fields) ? config.group_fields : [])
@@ -782,7 +809,7 @@ function BugListPage({
 
   useEffect(() => {
     if (!normalizedForcedAssigneeId) return
-    setAssigneeFilter(normalizedForcedAssigneeId)
+    setAssigneeFilter([normalizedForcedAssigneeId])
   }, [normalizedForcedAssigneeId])
 
   useEffect(() => {
@@ -793,7 +820,7 @@ function BugListPage({
     setSeverityFilter((prev) => (prev === queryState.severityFilter ? prev : queryState.severityFilter))
     setIssueStageFilter((prev) => (prev === queryState.issueStageFilter ? prev : queryState.issueStageFilter))
     setDemandFilter((prev) => (prev === queryState.demandFilter ? prev : queryState.demandFilter))
-    setAssigneeFilter((prev) => (prev === queryState.assigneeFilter ? prev : queryState.assigneeFilter))
+    setAssigneeFilter((prev) => (isSameNumberList(prev, queryState.assigneeFilter) ? prev : queryState.assigneeFilter))
     setReporterFilter((prev) => (prev === queryState.reporterFilter ? prev : queryState.reporterFilter))
     setCreatedRange((prev) => {
       const prevStart = prev?.[0]?.format?.('YYYY-MM-DD') || ''
@@ -886,7 +913,7 @@ function BugListPage({
         severityFilter,
         issueStageFilter,
         demandFilter,
-        assigneeFilter,
+        normalizePositiveIntList(assigneeFilter).join(','),
         reporterFilter,
         Array.isArray(createdRange) && createdRange.length === 2 ? 'created_range' : '',
       ].filter(Boolean).length,
@@ -900,7 +927,7 @@ function BugListPage({
     setSeverityFilter('')
     setIssueStageFilter('')
     setDemandFilter(undefined)
-    setAssigneeFilter(normalizedForcedAssigneeId || undefined)
+    setAssigneeFilter(normalizedForcedAssigneeId ? [normalizedForcedAssigneeId] : [])
     setReporterFilter(undefined)
     setCreatedRange(null)
     setGroupFields([])
@@ -1654,8 +1681,10 @@ function BugListPage({
             />
             <Select
               size="small"
+              mode="multiple"
               showSearch
               allowClear={!isAssigneeForced}
+              maxTagCount="responsive"
               className="bug-list-page__filter-control"
               value={assigneeFilter}
               options={userOptions}
@@ -1665,7 +1694,7 @@ function BugListPage({
               disabled={isAssigneeForced}
               onChange={(value) => {
                 if (isAssigneeForced) return
-                setAssigneeFilter(value)
+                setAssigneeFilter(normalizePositiveIntList(value))
                 setPage(1)
               }}
             />
