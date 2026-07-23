@@ -161,6 +161,7 @@ const DEVOPS_GOOGLE_FIELD_DEFINITIONS = [
   { key: 'googleAuthClientId', label: '谷歌鉴权认证ClientId', placeholder: '填写谷歌鉴权认证 ClientId' },
   { key: 'googleAuthClientSecret', label: '谷歌鉴权认证ClientSecret', placeholder: '填写谷歌鉴权认证 ClientSecret' },
   { key: 'googlePayCertificateUrl', label: '谷歌支付证书地址', placeholder: '填写谷歌支付证书地址' },
+  { key: 'googlePayPackageName', label: '谷歌支付包名', placeholder: '填写谷歌支付包名' },
   {
     key: 'googlePayCertificateContent',
     label: '谷歌支付证书内容',
@@ -168,8 +169,8 @@ const DEVOPS_GOOGLE_FIELD_DEFINITIONS = [
     type: 'textarea',
     span: 24,
     maxLength: 200000,
+    className: 'cold-production-devops-certificate-content',
   },
-  { key: 'googlePayPackageName', label: '谷歌支付包名', placeholder: '填写谷歌支付包名' },
 ]
 
 const DEVOPS_GOOGLE_ENV_SECTIONS = [
@@ -2128,17 +2129,28 @@ function ColdStandbyProductionDetailPage() {
                             <div className="cold-production-push-module-title">{envSection.title}</div>
                             <Row gutter={[14, 8]}>
                               {envSection.fields.map((field) => (
-                                <Col xs={24} md={12} key={field.name}>
+                                <Col xs={24} md={field.span === 24 ? 24 : 12} key={field.name}>
                                   <Form.Item
                                     name={[section.type, field.name]}
                                     label={renderStructuredFieldLabel(section.type, field)}
                                   >
-                                    <Input
-                                      allowClear
-                                      maxLength={500}
-                                      disabled={!canManage}
-                                      placeholder={field.placeholder}
-                                    />
+                                    {field.type === 'textarea' ? (
+                                      <Input.TextArea
+                                        rows={8}
+                                        maxLength={field.maxLength || 200000}
+                                        showCount
+                                        disabled={!canManage}
+                                        placeholder={field.placeholder}
+                                        className={field.className}
+                                      />
+                                    ) : (
+                                      <Input
+                                        allowClear
+                                        maxLength={500}
+                                        disabled={!canManage}
+                                        placeholder={field.placeholder}
+                                      />
+                                    )}
                                   </Form.Item>
                                 </Col>
                               ))}

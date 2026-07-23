@@ -227,6 +227,15 @@
   max-width: 1080px;
 }
 
+.cold-production-devops-certificate-content.ant-input {
+  min-height: 220px;
+  max-height: 360px;
+  overflow: auto;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  line-height: 1.55;
+}
+
 .cold-production-backend-form {
   max-width: 960px;
 }
