@@ -789,7 +789,7 @@ function AppVersionReleasePage() {
                 setDeveloperFilter(value || '')
                 setPagination((current) => ({ ...current, current: 1 }))
               }}
-              className="app-version-release-filter-input"
+              className="app-version-release-developer-filter"
             />
             <Select
               value={urgencyFilter}
