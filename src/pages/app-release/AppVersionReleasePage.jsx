@@ -26,6 +26,7 @@ import {
   getAppVersionReleasesApi,
   updateAppVersionReleaseApi,
 } from '../../api/appVersionRelease'
+import { getDeveloperAccountOptionsApi } from '../../api/developerAccount'
 import { getUsersApi } from '../../api/users'
 import { getAccessSnapshot } from '../../utils/access'
 import './AppVersionReleasePage.css'
@@ -129,6 +130,7 @@ function AppVersionReleasePage() {
   const [releaseTypeOptions, setReleaseTypeOptions] = useState(FALLBACK_RELEASE_TYPE_OPTIONS)
   const [urgencyOptions, setUrgencyOptions] = useState([])
   const [userOptions, setUserOptions] = useState([])
+  const [developerAccountOptions, setDeveloperAccountOptions] = useState([])
   const [editingRecord, setEditingRecord] = useState(null)
   const [remarkRecord, setRemarkRecord] = useState(null)
 
@@ -142,6 +144,17 @@ function AppVersionReleasePage() {
       }
     } catch (error) {
       message.error(error?.message || '获取用户列表失败')
+    }
+  }, [])
+
+  const fetchDeveloperAccountOptions = useCallback(async () => {
+    try {
+      const result = await getDeveloperAccountOptionsApi()
+      if (result?.success) {
+        setDeveloperAccountOptions(Array.isArray(result.data) ? result.data : [])
+      }
+    } catch (error) {
+      message.error(error?.message || '获取开发者账号选项失败')
     }
   }, [])
 
@@ -223,6 +236,10 @@ function AppVersionReleasePage() {
     fetchUsers()
   }, [fetchUsers])
 
+  useEffect(() => {
+    fetchDeveloperAccountOptions()
+  }, [fetchDeveloperAccountOptions])
+
   const statusSelectOptions = useMemo(() => [
     { label: '全部进度', value: '' },
     ...statusOptions.map((item) => ({ label: item.name, value: item.code })),
@@ -232,6 +249,23 @@ function AppVersionReleasePage() {
     { label: '全部紧急程度', value: '' },
     ...urgencyOptions.map((item) => ({ label: item.name, value: item.code })),
   ], [urgencyOptions])
+
+  const developerSelectOptions = useMemo(() => {
+    const optionMap = new Map()
+    developerAccountOptions.forEach((item) => {
+      const accountName = String(item?.account_name || '').trim()
+      if (!accountName || optionMap.has(accountName)) return
+      const companyName = String(item?.company_name || '').trim()
+      const accountId = String(item?.account_id || '').trim()
+      const label = [companyName, accountName].filter(Boolean).join(' / ') || accountName
+      optionMap.set(accountName, {
+        label,
+        value: accountName,
+        searchText: `${companyName} ${accountName} ${accountId}`.trim(),
+      })
+    })
+    return [{ label: '全部开发者', value: '' }, ...Array.from(optionMap.values())]
+  }, [developerAccountOptions])
 
   const openEditModal = useCallback((record) => {
     setEditingRecord(record)
@@ -743,12 +777,16 @@ function AppVersionReleasePage() {
               }}
               className="app-version-release-filter-input"
             />
-            <Input
+            <Select
               allowClear
+              showSearch
               placeholder="开发者"
               value={developerFilter}
-              onChange={(event) => {
-                setDeveloperFilter(event.target.value)
+              options={developerSelectOptions}
+              optionFilterProp="label"
+              filterOption={(input, option) => String(option?.searchText || option?.label || '').toLowerCase().includes(input.toLowerCase())}
+              onChange={(value) => {
+                setDeveloperFilter(value || '')
                 setPagination((current) => ({ ...current, current: 1 }))
               }}
               className="app-version-release-filter-input"
