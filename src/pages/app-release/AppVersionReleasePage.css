@@ -67,13 +67,25 @@
   white-space: nowrap;
 }
 
+.app-version-release-previous-release {
+  display: block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .app-version-release-link {
   display: inline-block;
-  max-width: 190px;
+  max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+}
+
+.app-version-release-console-url-wrap {
+  max-width: 198px;
 }
 
 .app-version-release-request-no {
@@ -87,6 +99,19 @@
 
 .app-version-release-request-no-wrap {
   max-width: 132px;
+}
+
+.app-version-release-developer-wrap {
+  max-width: 236px;
+}
+
+.app-version-release-developer-text {
+  display: inline-block;
+  max-width: 206px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .app-version-release-copy-btn {

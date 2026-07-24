@@ -340,7 +340,7 @@ function AppVersionReleasePage() {
     }
   }, [fetchGrouped, fetchList, pagination, viewMode])
 
-  const handleCopyRequestNo = useCallback(async (value) => {
+  const handleCopyText = useCallback(async (value, successMessage = '已复制') => {
     const text = String(value || '').trim()
     if (!text) return
     try {
@@ -348,11 +348,15 @@ function AppVersionReleasePage() {
       if (!copied) {
         throw new Error('clipboard unavailable')
       }
-      message.success('申请ID已复制')
+      message.success(successMessage)
     } catch (error) {
       message.error(error?.message || '复制失败')
     }
   }, [])
+
+  const handleCopyRequestNo = useCallback((value) => {
+    handleCopyText(value, '申请ID已复制')
+  }, [handleCopyText])
 
   const renderGroupName = useCallback((value, record) => {
     if (record.row_type === 'developer') {
@@ -452,7 +456,26 @@ function AppVersionReleasePage() {
       title: '开发者账号',
       dataIndex: 'app_developer',
       width: 260,
-      render: (value) => value || '-',
+      render: (value) => {
+        const text = String(value || '').trim()
+        if (!text) return '-'
+        return (
+          <Space size={4} className="app-version-release-developer-wrap">
+            <Tooltip title={text}>
+              <Text className="app-version-release-developer-text">{text}</Text>
+            </Tooltip>
+            <Tooltip title="复制开发者账号">
+              <Button
+                type="text"
+                size="small"
+                icon={<CopyOutlined />}
+                className="app-version-release-copy-btn"
+                onClick={() => handleCopyText(text, '开发者账号已复制')}
+              />
+            </Tooltip>
+          </Space>
+        )
+      },
     },
     {
       title: '公司主体',
@@ -464,13 +487,28 @@ function AppVersionReleasePage() {
       title: 'APP后台地址',
       dataIndex: 'app_console_url',
       width: 220,
-      render: (value) => value ? (
-        <Tooltip title={value}>
-          <a href={value} target="_blank" rel="noreferrer" className="app-version-release-link">
-            {value}
-          </a>
-        </Tooltip>
-      ) : '-',
+      render: (value) => {
+        const text = String(value || '').trim()
+        if (!text) return '-'
+        return (
+          <Space size={4} className="app-version-release-console-url-wrap">
+            <Tooltip title={text}>
+              <a href={text} target="_blank" rel="noreferrer" className="app-version-release-link">
+                {text}
+              </a>
+            </Tooltip>
+            <Tooltip title="复制APP后台地址">
+              <Button
+                type="text"
+                size="small"
+                icon={<CopyOutlined />}
+                className="app-version-release-copy-btn"
+                onClick={() => handleCopyText(text, 'APP后台地址已复制')}
+              />
+            </Tooltip>
+          </Space>
+        )
+      },
     },
     {
       title: '发版进度',
@@ -481,10 +519,10 @@ function AppVersionReleasePage() {
     {
       title: '前序发版',
       dataIndex: 'previous_release_info',
-      width: 150,
+      width: 260,
       render: (value) => value ? (
         <Tooltip title={value}>
-          <Text className="app-version-release-ellipsis">{value}</Text>
+          <Text className="app-version-release-previous-release">{value}</Text>
         </Tooltip>
       ) : '-',
     },
@@ -595,7 +633,7 @@ function AppVersionReleasePage() {
         ),
       },
     ]
-  }, [canManage, deletingId, handleCopyRequestNo, handleDelete, openEditModal])
+  }, [canManage, deletingId, handleCopyRequestNo, handleCopyText, handleDelete, openEditModal])
 
   const groupedColumns = useMemo(() => {
     const baseColumns = [
@@ -657,10 +695,10 @@ function AppVersionReleasePage() {
       {
         title: '前序发版',
         dataIndex: 'previous_release_info',
-        width: 150,
+        width: 260,
         render: (value, record) => record.row_type === 'release' && value ? (
           <Tooltip title={value}>
-            <Text className="app-version-release-ellipsis">{value}</Text>
+            <Text className="app-version-release-previous-release">{value}</Text>
           </Tooltip>
         ) : '-',
       },

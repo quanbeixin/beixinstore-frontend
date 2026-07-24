@@ -1204,6 +1204,19 @@ function ColdStandbyProductionDetailPage() {
       onOk: async () => {
         setCompletingProduction(true)
         try {
+          if (frontendBuildNode.status_code !== 'COMPLETED') {
+            const nodeResult = await updateMatrixPackageProductionNodeApi(detail.id, 'DESIGN_PRODUCTION', {
+              status_code: 'COMPLETED',
+              block_reason: '',
+            })
+            if (!nodeResult?.success) {
+              message.error(nodeResult?.message || '前端构建状态更新失败')
+              return
+            }
+            if (Array.isArray(nodeResult.data)) {
+              setProductionNodes(nodeResult.data)
+            }
+          }
           const result = await completeMatrixPackageProductionApi(detail.id)
           if (!result?.success) {
             message.error(result?.message || '生产完成失败')
@@ -1228,6 +1241,8 @@ function ColdStandbyProductionDetailPage() {
     }, {}),
     [productionNodes],
   )
+  const backendScriptNode = productionNodeMap.BACKEND_SCRIPT || {}
+  const frontendBuildNode = productionNodeMap.DESIGN_PRODUCTION || {}
 
   const nodeFlowTitleExtra = (
     <Space size={16} wrap className="cold-production-flow-title-meta">
@@ -1270,15 +1285,6 @@ function ColdStandbyProductionDetailPage() {
           <Text>-</Text>
         )}
       </div>
-      <Button
-        type="primary"
-        size="small"
-        disabled={!canManage || !requiredSideChecksCompleted}
-        loading={completingProduction}
-        onClick={handleCompleteProduction}
-      >
-        生产完成
-      </Button>
     </Space>
   )
 
@@ -1858,6 +1864,132 @@ function ColdStandbyProductionDetailPage() {
             <div className="cold-production-side-check-progress">
               <Text type="secondary">配置完整度</Text>
               <Progress percent={checklistPercent} size="small" />
+            </div>
+            <div className="cold-production-complete-panel">
+              <div className="cold-production-complete-tasks">
+                <div className="cold-production-complete-task-row">
+                  <Text className="cold-production-complete-task-title">后端脚本</Text>
+                  <Tag color={backendScriptNode.status_code === 'COMPLETED' ? 'blue' : 'orange'}>
+                    {backendScriptNode.status_code === 'COMPLETED' ? '已完成' : '待完成'}
+                  </Tag>
+                  <div className="cold-production-complete-meta-item">
+                    <Text type="secondary">负责人</Text>
+                    <Select
+                      allowClear
+                      showSearch
+                      size="small"
+                      disabled={!canManage || updatingNodeCode === 'BACKEND_SCRIPT'}
+                      placeholder="选择人员"
+                      optionFilterProp="searchText"
+                      value={backendScriptNode.owner_user_id || undefined}
+                      filterOption={(input, option) => String(option?.searchText || '').includes(input.toLowerCase())}
+                      options={userOptions.map(buildUserOption)}
+                      onChange={(value) => handleUpdateProductionNode('BACKEND_SCRIPT', backendScriptNode.status_code || 'NOT_STARTED', {
+                        owner_user_id: value || null,
+                      })}
+                    />
+                    <Tooltip title="手动催一下">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<BellOutlined />}
+                        disabled={!canManage}
+                        onClick={() => handleRemindProductionNode('BACKEND_SCRIPT')}
+                      />
+                    </Tooltip>
+                  </div>
+                  <div className="cold-production-complete-meta-item">
+                    <Text type="secondary">预期完成</Text>
+                    <DatePicker
+                      size="small"
+                      disabled={!canManage || updatingNodeCode === 'BACKEND_SCRIPT'}
+                      value={backendScriptNode.expected_delivery_date ? dayjs(backendScriptNode.expected_delivery_date) : null}
+                      format="YYYY-MM-DD HH:00"
+                      placeholder="选择日期和小时"
+                      showTime={{
+                        format: 'HH',
+                        minuteStep: 60,
+                        secondStep: 60,
+                        defaultOpenValue: dayjs().minute(0).second(0),
+                      }}
+                      onChange={(value) => handleUpdateProductionNode('BACKEND_SCRIPT', backendScriptNode.status_code || 'NOT_STARTED', {
+                        expected_delivery_date: value ? value.minute(0).second(0).format('YYYY-MM-DD HH:mm:ss') : null,
+                      })}
+                    />
+                  </div>
+                </div>
+                <div className="cold-production-complete-task-row">
+                  <Text className="cold-production-complete-task-title">前端构建</Text>
+                  <Tag color={frontendBuildNode.status_code === 'COMPLETED' ? 'blue' : 'orange'}>
+                    {frontendBuildNode.status_code === 'COMPLETED' ? '已完成' : '待完成'}
+                  </Tag>
+                  <div className="cold-production-complete-meta-item">
+                    <Text type="secondary">负责人</Text>
+                    <Select
+                      allowClear
+                      showSearch
+                      size="small"
+                      disabled={!canManage || updatingNodeCode === 'DESIGN_PRODUCTION'}
+                      placeholder="选择人员"
+                      optionFilterProp="searchText"
+                      value={frontendBuildNode.owner_user_id || undefined}
+                      filterOption={(input, option) => String(option?.searchText || '').includes(input.toLowerCase())}
+                      options={userOptions.map(buildUserOption)}
+                      onChange={(value) => handleUpdateProductionNode('DESIGN_PRODUCTION', frontendBuildNode.status_code || 'NOT_STARTED', {
+                        owner_user_id: value || null,
+                      })}
+                    />
+                    <Tooltip title="手动催一下">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<BellOutlined />}
+                        disabled={!canManage}
+                        onClick={() => handleRemindProductionNode('DESIGN_PRODUCTION')}
+                      />
+                    </Tooltip>
+                  </div>
+                  <div className="cold-production-complete-meta-item">
+                    <Text type="secondary">预期完成</Text>
+                    <DatePicker
+                      size="small"
+                      disabled={!canManage || updatingNodeCode === 'DESIGN_PRODUCTION'}
+                      value={frontendBuildNode.expected_delivery_date ? dayjs(frontendBuildNode.expected_delivery_date) : null}
+                      format="YYYY-MM-DD HH:00"
+                      placeholder="选择日期和小时"
+                      showTime={{
+                        format: 'HH',
+                        minuteStep: 60,
+                        secondStep: 60,
+                        defaultOpenValue: dayjs().minute(0).second(0),
+                      }}
+                      onChange={(value) => handleUpdateProductionNode('DESIGN_PRODUCTION', frontendBuildNode.status_code || 'NOT_STARTED', {
+                        expected_delivery_date: value ? value.minute(0).second(0).format('YYYY-MM-DD HH:mm:ss') : null,
+                      })}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="cold-production-complete-actions">
+                <Button
+                  type="primary"
+                  size="small"
+                  disabled={!canManage || backendScriptNode.status_code === 'COMPLETED'}
+                  loading={updatingNodeCode === 'BACKEND_SCRIPT'}
+                  onClick={() => handleUpdateProductionNode('BACKEND_SCRIPT', 'COMPLETED')}
+                >
+                  脚本跑完
+                </Button>
+                <Button
+                  type="primary"
+                  size="small"
+                  disabled={!canManage || !requiredSideChecksCompleted}
+                  loading={completingProduction}
+                  onClick={handleCompleteProduction}
+                >
+                  生产完成
+                </Button>
+              </div>
             </div>
           </Card>
         </Col>
