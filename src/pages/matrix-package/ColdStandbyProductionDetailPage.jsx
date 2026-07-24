@@ -5,6 +5,7 @@ import {
   ClockCircleOutlined,
   CopyOutlined,
   DownloadOutlined,
+  EditOutlined,
   FileOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
@@ -34,7 +35,7 @@ import {
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   getMatrixPackageApi,
   completeMatrixPackageProductionApi,
@@ -883,6 +884,7 @@ function DesignUploadField({ packageId, noteType = 'DESIGN', field, value, onCha
 function ColdStandbyProductionDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [form] = Form.useForm()
   const autoSaveTimerRef = useRef(null)
   const autoSaveSeqRef = useRef(0)
@@ -907,6 +909,11 @@ function ColdStandbyProductionDetailPage() {
   const [frontendNodeValues, setFrontendNodeValues] = useState({})
 
   const canManage = hasPermission('matrix_package.manage')
+  const isViewMode = searchParams.get('mode') === 'view'
+  const fromPanorama = searchParams.get('from') === 'panorama'
+  const canEdit = canManage && !isViewMode
+  const backPath = fromPanorama ? '/matrix-package-special/panorama' : '/matrix-package-special/cold-standby-production'
+  const editPath = `/matrix-package-special/cold-standby-production/${id}?mode=edit${fromPanorama ? '&from=panorama' : ''}`
   const checklistPercent = useMemo(() => getSideNoteCompletionPercent(sideNotes, detail), [detail, sideNotes])
   const requiredSideChecksCompleted = useMemo(
     () => SIDE_CHECK_SECTION_TYPES.every((sectionType) => getSideNote(sideNotes, sectionType)?.is_confirmed),
@@ -1035,7 +1042,7 @@ function ColdStandbyProductionDetailPage() {
   }, [detail, id, sideNoteOwners])
 
   const scheduleAutoSave = useCallback((allValues) => {
-    if (!canManage) return
+    if (!canEdit) return
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current)
     }
@@ -1046,7 +1053,7 @@ function ColdStandbyProductionDetailPage() {
       if (autoSaveSeqRef.current !== currentSeq) return
       saveNotes(allValues)
     }, 800)
-  }, [canManage, saveNotes])
+  }, [canEdit, saveNotes])
 
   const handleNoteValuesChange = (_, allValues) => {
     if (isApplyingRemoteFormValuesRef.current) return
@@ -1062,7 +1069,7 @@ function ColdStandbyProductionDetailPage() {
   }
 
   const handleAttachmentUploadComplete = useCallback((sectionType, fieldName, nextValue) => {
-    if (!canManage) return
+    if (!canEdit) return
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current)
       autoSaveTimerRef.current = null
@@ -1078,9 +1085,10 @@ function ColdStandbyProductionDetailPage() {
     }
     form.setFieldsValue({ [sectionType]: nextSectionValues })
     return saveNotes(nextValues)
-  }, [canManage, form, saveNotes])
+  }, [canEdit, form, saveNotes])
 
   const handleConfirmNote = async (noteType) => {
+    if (!canEdit) return
     setConfirmingType(noteType)
     try {
       const result = await confirmMatrixPackageSideNoteApi(id, noteType)
@@ -1101,7 +1109,7 @@ function ColdStandbyProductionDetailPage() {
   }
 
   const handleRemindProductionNode = async (nodeCode) => {
-    if (!canManage) return
+    if (!canEdit) return
     try {
       const result = await remindMatrixPackageProductionNodeApi(id, nodeCode)
       if (!result?.success) {
@@ -1115,7 +1123,7 @@ function ColdStandbyProductionDetailPage() {
   }
 
   const handleRemindSideNote = async (noteType) => {
-    if (!canManage) return
+    if (!canEdit) return
     try {
       const result = await remindMatrixPackageSideNoteApi(id, noteType)
       if (!result?.success) {
@@ -1129,7 +1137,7 @@ function ColdStandbyProductionDetailPage() {
   }
 
   const handleOperationNodeFieldChange = (fieldName, value) => {
-    if (!canManage) return
+    if (!canEdit) return
     const currentValues = form.getFieldsValue(true)
     const nextOperationValues = {
       ...(currentValues.OPERATION && typeof currentValues.OPERATION === 'object' ? currentValues.OPERATION : {}),
@@ -1145,7 +1153,7 @@ function ColdStandbyProductionDetailPage() {
   }
 
   const handleFrontendNodeFieldChange = (fieldName, value) => {
-    if (!canManage) return
+    if (!canEdit) return
     const currentValues = form.getFieldsValue(true)
     const nextFrontendValues = {
       ...(currentValues.FRONTEND && typeof currentValues.FRONTEND === 'object' ? currentValues.FRONTEND : {}),
@@ -1161,6 +1169,7 @@ function ColdStandbyProductionDetailPage() {
   }
 
   const handleUpdateProductionNode = async (nodeCode, statusCode, extraPayload = {}) => {
+    if (!canEdit) return
     setUpdatingNodeCode(nodeCode)
     try {
       const payload = {
@@ -1191,14 +1200,14 @@ function ColdStandbyProductionDetailPage() {
   }
 
   const handleCompleteProduction = () => {
-    if (!canManage || !detail?.id) return
+    if (!canEdit || !detail?.id) return
     if (!requiredSideChecksCompleted) {
       message.warning('请先完成各侧信息check后再生产完成')
       return
     }
     Modal.confirm({
       title: '确认生产完成？',
-      content: '确认后会将矩阵包状态更新为冷备包，并自动创建一条 APP 版本发布记录。',
+      content: '确认后会将矩阵包状态更新为测试中，并推进关联需求进入测试通测阶段。',
       okText: '确认完成',
       cancelText: '取消',
       onOk: async () => {
@@ -1224,7 +1233,7 @@ function ColdStandbyProductionDetailPage() {
           }
           const nextPackage = result.data?.package
           if (nextPackage) setDetail(nextPackage)
-          message.success(result?.message || '生产已完成，APP发版记录已创建')
+          message.success(result?.message || '生产已完成，已进入测试中')
         } catch (error) {
           message.error(error?.message || '生产完成失败')
         } finally {
@@ -1483,7 +1492,7 @@ function ColdStandbyProductionDetailPage() {
         <Text type="secondary">统一截止时间</Text>
         <DatePicker
           size="small"
-          disabled={!canManage || updatingUnifiedDeadline}
+          disabled={!canEdit || updatingUnifiedDeadline}
           value={detail?.expected_cold_ready_date ? dayjs(detail.expected_cold_ready_date) : null}
           format="YYYY-MM-DD HH:00"
           placeholder="选择日期和小时"
@@ -1494,7 +1503,7 @@ function ColdStandbyProductionDetailPage() {
             defaultOpenValue: dayjs().minute(0).second(0),
           }}
           onChange={async (value) => {
-            if (!detail?.id) return
+            if (!canEdit || !detail?.id) return
             try {
               setUpdatingUnifiedDeadline(true)
               const result = await updateMatrixPackageApi(detail.id, {
@@ -1523,7 +1532,9 @@ function ColdStandbyProductionDetailPage() {
         />
       </Space>
       <Text type={saveStatus === 'failed' ? 'danger' : 'secondary'}>
-        {saving || saveStatus === 'saving'
+        {isViewMode
+          ? '只读模式'
+          : saving || saveStatus === 'saving'
           ? '保存中...'
           : saveStatus === 'pending'
             ? '待自动保存'
@@ -1537,7 +1548,7 @@ function ColdStandbyProductionDetailPage() {
   )
 
   const handleSideNoteOwnerChange = async (noteType, ownerUserId) => {
-    if (!canManage) return
+    if (!canEdit) return
     const nextOwnerValues = {
       ...sideNoteOwners,
       [noteType]: ownerUserId || null,
@@ -1582,7 +1593,7 @@ function ColdStandbyProductionDetailPage() {
             <Button
               size="small"
               type="primary"
-              disabled={!canManage}
+              disabled={!canEdit}
               loading={isUpdating}
               onClick={() => handleUpdateProductionNode(node.node_code, 'COMPLETED')}
             >
@@ -1590,7 +1601,7 @@ function ColdStandbyProductionDetailPage() {
             </Button>
             <Button
               size="small"
-              disabled={!canManage || !String(blockReason).trim()}
+              disabled={!canEdit || !String(blockReason).trim()}
               loading={isUpdating}
               onClick={() => handleUpdateProductionNode(node.node_code, 'BLOCKED')}
             >
@@ -1599,7 +1610,7 @@ function ColdStandbyProductionDetailPage() {
             {node.status_code === 'BLOCKED' ? (
               <Button
                 size="small"
-                disabled={!canManage}
+                disabled={!canEdit}
                 loading={isUpdating}
                 onClick={() => handleUpdateProductionNode(node.node_code, 'IN_PROGRESS')}
               >
@@ -1634,7 +1645,7 @@ function ColdStandbyProductionDetailPage() {
                           <Input.TextArea
                             rows={3}
                             maxLength={field.maxLength || 2000}
-                            disabled={!canManage}
+                            disabled={!canEdit}
                             value={values?.[field.name] || ''}
                             placeholder={field.placeholder}
                             onChange={(event) => onFieldChange?.(field.name, event.target.value)}
@@ -1642,7 +1653,7 @@ function ColdStandbyProductionDetailPage() {
                         ) : (
                           <Input
                             maxLength={500}
-                            disabled={!canManage}
+                            disabled={!canEdit}
                             value={values?.[field.name] || ''}
                             placeholder={field.placeholder}
                             onChange={(event) => onFieldChange?.(field.name, event.target.value)}
@@ -1674,7 +1685,7 @@ function ColdStandbyProductionDetailPage() {
                   <Input.TextArea
                     rows={3}
                     maxLength={field.maxLength || 2000}
-                    disabled={!canManage}
+                    disabled={!canEdit}
                     value={values?.[field.name] || ''}
                     placeholder={field.placeholder}
                     onChange={(event) => onFieldChange?.(field.name, event.target.value)}
@@ -1682,7 +1693,7 @@ function ColdStandbyProductionDetailPage() {
                 ) : (
                   <Input
                     maxLength={500}
-                    disabled={!canManage}
+                    disabled={!canEdit}
                     value={values?.[field.name] || ''}
                     placeholder={field.placeholder}
                     onChange={(event) => onFieldChange?.(field.name, event.target.value)}
@@ -1701,7 +1712,7 @@ function ColdStandbyProductionDetailPage() {
           <Input
             maxLength={1000}
             value={blockReason}
-            disabled={!canManage}
+            disabled={!canEdit}
             placeholder="填写阻塞原因"
             onChange={(event) => {
               const nextValue = event.target.value
@@ -1720,7 +1731,7 @@ function ColdStandbyProductionDetailPage() {
               <Select
                 allowClear
                 showSearch
-                disabled={!canManage || isUpdating}
+                disabled={!canEdit || isUpdating}
                 placeholder="选择系统用户"
                 optionFilterProp="searchText"
                 value={node.owner_user_id || undefined}
@@ -1737,7 +1748,7 @@ function ColdStandbyProductionDetailPage() {
             <Space size={6} align="center" wrap>
               <Text type="secondary">预期完成时间</Text>
               <DatePicker
-                disabled={!canManage || isUpdating}
+                disabled={!canEdit || isUpdating}
                 value={node.expected_delivery_date ? dayjs(node.expected_delivery_date) : null}
                 format="YYYY-MM-DD HH:00"
                 placeholder="选择日期和小时"
@@ -1755,7 +1766,7 @@ function ColdStandbyProductionDetailPage() {
                 <Button
                   type="text"
                   icon={<BellOutlined />}
-                  disabled={!canManage}
+                  disabled={!canEdit}
                   onClick={() => handleRemindProductionNode(node.node_code)}
                 />
               </Tooltip>
@@ -1778,8 +1789,8 @@ function ColdStandbyProductionDetailPage() {
     return (
       <div className="cold-production-detail-page">
         <Empty description="未找到矩阵包生产详情">
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/matrix-package-special/cold-standby-production')}>
-            返回生产线
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backPath)}>
+            {fromPanorama ? '返回全景图' : '返回生产线'}
           </Button>
         </Empty>
       </div>
@@ -1789,9 +1800,14 @@ function ColdStandbyProductionDetailPage() {
   return (
     <div className="cold-production-detail-page">
       <div className="cold-production-detail-head">
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/matrix-package-special/cold-standby-production')}>
-          返回生产线
+        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backPath)}>
+          {fromPanorama ? '返回全景图' : '返回生产线'}
         </Button>
+        {isViewMode && canManage ? (
+          <Button type="primary" icon={<EditOutlined />} onClick={() => navigate(editPath)}>
+            编辑
+          </Button>
+        ) : null}
       </div>
 
       <Row gutter={[14, 14]} align="stretch">
@@ -1842,14 +1858,14 @@ function ColdStandbyProductionDetailPage() {
                           type="text"
                           size="small"
                           icon={<BellOutlined />}
-                          disabled={!canManage}
+                          disabled={!canEdit}
                           onClick={() => handleRemindSideNote(section.type)}
                         />
                       </Tooltip>
                       {!confirmed ? (
                         <Button
                           size="small"
-                          disabled={!canManage || !completed}
+                          disabled={!canEdit || !completed}
                           loading={confirmingType === section.type}
                           onClick={() => handleConfirmNote(section.type)}
                         >
@@ -1878,7 +1894,7 @@ function ColdStandbyProductionDetailPage() {
                       allowClear
                       showSearch
                       size="small"
-                      disabled={!canManage || updatingNodeCode === 'BACKEND_SCRIPT'}
+                      disabled={!canEdit || updatingNodeCode === 'BACKEND_SCRIPT'}
                       placeholder="选择人员"
                       optionFilterProp="searchText"
                       value={backendScriptNode.owner_user_id || undefined}
@@ -1893,7 +1909,7 @@ function ColdStandbyProductionDetailPage() {
                         type="text"
                         size="small"
                         icon={<BellOutlined />}
-                        disabled={!canManage}
+                        disabled={!canEdit}
                         onClick={() => handleRemindProductionNode('BACKEND_SCRIPT')}
                       />
                     </Tooltip>
@@ -1902,7 +1918,7 @@ function ColdStandbyProductionDetailPage() {
                     <Text type="secondary">预期完成</Text>
                     <DatePicker
                       size="small"
-                      disabled={!canManage || updatingNodeCode === 'BACKEND_SCRIPT'}
+                      disabled={!canEdit || updatingNodeCode === 'BACKEND_SCRIPT'}
                       value={backendScriptNode.expected_delivery_date ? dayjs(backendScriptNode.expected_delivery_date) : null}
                       format="YYYY-MM-DD HH:00"
                       placeholder="选择日期和小时"
@@ -1929,7 +1945,7 @@ function ColdStandbyProductionDetailPage() {
                       allowClear
                       showSearch
                       size="small"
-                      disabled={!canManage || updatingNodeCode === 'DESIGN_PRODUCTION'}
+                      disabled={!canEdit || updatingNodeCode === 'DESIGN_PRODUCTION'}
                       placeholder="选择人员"
                       optionFilterProp="searchText"
                       value={frontendBuildNode.owner_user_id || undefined}
@@ -1944,7 +1960,7 @@ function ColdStandbyProductionDetailPage() {
                         type="text"
                         size="small"
                         icon={<BellOutlined />}
-                        disabled={!canManage}
+                        disabled={!canEdit}
                         onClick={() => handleRemindProductionNode('DESIGN_PRODUCTION')}
                       />
                     </Tooltip>
@@ -1953,7 +1969,7 @@ function ColdStandbyProductionDetailPage() {
                     <Text type="secondary">预期完成</Text>
                     <DatePicker
                       size="small"
-                      disabled={!canManage || updatingNodeCode === 'DESIGN_PRODUCTION'}
+                      disabled={!canEdit || updatingNodeCode === 'DESIGN_PRODUCTION'}
                       value={frontendBuildNode.expected_delivery_date ? dayjs(frontendBuildNode.expected_delivery_date) : null}
                       format="YYYY-MM-DD HH:00"
                       placeholder="选择日期和小时"
@@ -1974,7 +1990,7 @@ function ColdStandbyProductionDetailPage() {
                 <Button
                   type="primary"
                   size="small"
-                  disabled={!canManage || backendScriptNode.status_code === 'COMPLETED'}
+                  disabled={!canEdit || backendScriptNode.status_code === 'COMPLETED'}
                   loading={updatingNodeCode === 'BACKEND_SCRIPT'}
                   onClick={() => handleUpdateProductionNode('BACKEND_SCRIPT', 'COMPLETED')}
                 >
@@ -1983,7 +1999,7 @@ function ColdStandbyProductionDetailPage() {
                 <Button
                   type="primary"
                   size="small"
-                  disabled={!canManage || !requiredSideChecksCompleted}
+                  disabled={!canEdit || !requiredSideChecksCompleted}
                   loading={completingProduction}
                   onClick={handleCompleteProduction}
                 >
@@ -2032,7 +2048,7 @@ function ColdStandbyProductionDetailPage() {
                                     <Input
                                       allowClear={!field.autoGenerated}
                                       maxLength={500}
-                                      disabled={!canManage || field.autoGenerated}
+                                      disabled={!canEdit || field.autoGenerated}
                                       placeholder={field.placeholder}
                                     />
                                   </Form.Item>
@@ -2054,7 +2070,7 @@ function ColdStandbyProductionDetailPage() {
                                     noteType={section.type}
                                     field={field}
                                     onUploaded={(fieldName, nextValue) => handleAttachmentUploadComplete(section.type, fieldName, nextValue)}
-                                    disabled={!canManage}
+                                    disabled={!canEdit}
                                   />
                                 </Form.Item>
                               </Col>
@@ -2072,7 +2088,7 @@ function ColdStandbyProductionDetailPage() {
                                 <Input
                                   allowClear
                                   maxLength={1000}
-                                  disabled={!canManage}
+                                  disabled={!canEdit}
                                   placeholder={field.placeholder}
                                 />
                               </Form.Item>
@@ -2084,7 +2100,7 @@ function ColdStandbyProductionDetailPage() {
                                   noteType={section.type}
                                   field={field}
                                   onUploaded={(fieldName, nextValue) => handleAttachmentUploadComplete(section.type, fieldName, nextValue)}
-                                  disabled={!canManage}
+                                  disabled={!canEdit}
                                 />
                               </Form.Item>
                             ))}
@@ -2105,7 +2121,7 @@ function ColdStandbyProductionDetailPage() {
                                       noteType={section.type}
                                       field={field}
                                       onUploaded={(fieldName, nextValue) => handleAttachmentUploadComplete(section.type, fieldName, nextValue)}
-                                      disabled={!canManage}
+                                      disabled={!canEdit}
                                     />
                                   </Form.Item>
                                 ) : (
@@ -2116,7 +2132,7 @@ function ColdStandbyProductionDetailPage() {
                                     <Input
                                       allowClear
                                       maxLength={1000}
-                                      disabled={!canManage}
+                                      disabled={!canEdit}
                                       placeholder={field.placeholder}
                                     />
                                   </Form.Item>
@@ -2132,7 +2148,7 @@ function ColdStandbyProductionDetailPage() {
                                   noteType={section.type}
                                   field={field}
                                   onUploaded={(fieldName, nextValue) => handleAttachmentUploadComplete(section.type, fieldName, nextValue)}
-                                  disabled={!canManage}
+                                  disabled={!canEdit}
                                 />
                               </Form.Item>
                             ))}
@@ -2153,14 +2169,14 @@ function ColdStandbyProductionDetailPage() {
                                         rows={5}
                                         maxLength={field.maxLength || 200000}
                                         showCount
-                                        disabled={!canManage}
+                                        disabled={!canEdit}
                                         placeholder={field.placeholder}
                                       />
                                     ) : (
                                       <Input
                                         allowClear
                                         maxLength={500}
-                                        disabled={!canManage}
+                                        disabled={!canEdit}
                                         placeholder={field.placeholder}
                                       />
                                     )}
@@ -2183,7 +2199,7 @@ function ColdStandbyProductionDetailPage() {
                                   valuePropName="checked"
                                   style={{ marginBottom: 0 }}
                                 >
-                                  <Checkbox disabled={!canManage}>{field.label}</Checkbox>
+                                  <Checkbox disabled={!canEdit}>{field.label}</Checkbox>
                                 </Form.Item>
                               </Col>
                             ))}
@@ -2249,7 +2265,7 @@ function ColdStandbyProductionDetailPage() {
                                 <Input
                                   allowClear
                                   maxLength={500}
-                                  disabled={!canManage}
+                                  disabled={!canEdit}
                                   placeholder={field.placeholder}
                                 />
                               </Form.Item>
@@ -2271,7 +2287,7 @@ function ColdStandbyProductionDetailPage() {
                                         rows={8}
                                         maxLength={field.maxLength || 200000}
                                         showCount
-                                        disabled={!canManage}
+                                        disabled={!canEdit}
                                         placeholder={field.placeholder}
                                         className={field.className}
                                       />
@@ -2279,7 +2295,7 @@ function ColdStandbyProductionDetailPage() {
                                       <Input
                                         allowClear
                                         maxLength={500}
-                                        disabled={!canManage}
+                                        disabled={!canEdit}
                                         placeholder={field.placeholder}
                                       />
                                     )}
@@ -2303,14 +2319,14 @@ function ColdStandbyProductionDetailPage() {
                                   rows={4}
                                   maxLength={field.maxLength || 2000}
                                   showCount
-                                  disabled={!canManage}
+                                  disabled={!canEdit}
                                   placeholder={field.placeholder}
                                 />
                               ) : (
                                 <Input
                                   allowClear
                                   maxLength={500}
-                                  disabled={!canManage}
+                                  disabled={!canEdit}
                                   placeholder={field.placeholder}
                                 />
                               )}
@@ -2324,7 +2340,7 @@ function ColdStandbyProductionDetailPage() {
                           rows={8}
                           maxLength={4000}
                           showCount
-                          disabled={!canManage}
+                          disabled={!canEdit}
                           placeholder={section.placeholder}
                         />
                       </Form.Item>
@@ -2349,7 +2365,7 @@ function ColdStandbyProductionDetailPage() {
                             allowClear
                             showSearch
                             size="small"
-                            disabled={!canManage}
+                            disabled={!canEdit}
                             placeholder="选择系统用户"
                             optionFilterProp="searchText"
                             value={sideNoteOwners?.[section.type] || undefined}

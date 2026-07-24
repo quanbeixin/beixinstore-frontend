@@ -61,6 +61,7 @@ const INVENTORY_TYPE_OPTIONS = [
   { label: '热备包', value: 'HOT_STANDBY' },
 ]
 const MATRIX_PACKAGE_GROUP_SCENE_TYPES = new Set([
+  'STATUS_CHANGE',
   'UPCOMING',
   'OVERDUE',
   'SIDE_DEADLINE',

@@ -37,11 +37,11 @@ import './ColdStandbyProductionPage.css'
 const { Text } = Typography
 const STATUS_DICT_KEY = 'matrix_package_status'
 const PRODUCTION_STAGE_DICT_KEY = 'matrix_package_production_stage'
-const PRODUCTION_STATUS_CODES = ['IN_DEVELOPMENT', 'COLD_STANDBY']
+const PRODUCTION_STATUS_CODES = ['IN_DEVELOPMENT', 'TESTING']
 
 const DEFAULT_STATUS_OPTIONS = [
   { item_code: 'IN_DEVELOPMENT', item_name: '开发中', color: 'cyan' },
-  { item_code: 'COLD_STANDBY', item_name: '冷备包', color: 'blue' },
+  { item_code: 'TESTING', item_name: '测试中', color: 'purple' },
 ]
 
 const DEFAULT_STAGE_OPTIONS = [
@@ -84,6 +84,7 @@ function getConfigCompletionPercent(record) {
 
 function getRowTone(statusCode) {
   if (statusCode === 'COLD_STANDBY') return 'done'
+  if (statusCode === 'TESTING') return 'active'
   if (statusCode === 'IN_DEVELOPMENT') return 'active'
   return 'pending'
 }

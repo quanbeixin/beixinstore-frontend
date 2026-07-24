@@ -19,6 +19,28 @@
   border: 1px solid #eef1f5;
 }
 
+.matrix-summary-card-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.matrix-summary-card-content .ant-statistic {
+  min-width: 0;
+}
+
+.matrix-summary-card-extra {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  color: #667085;
+  font-size: 13px;
+  line-height: 22px;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .matrix-summary-card-clickable {
   cursor: pointer;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;

@@ -3,6 +3,7 @@ import {
   ClockCircleOutlined,
   DeleteOutlined,
   EditOutlined,
+  EyeOutlined,
   FireOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -27,6 +28,7 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   createMatrixPackageApi,
   deleteMatrixPackageApi,
@@ -47,6 +49,7 @@ const DELIVERY_STATUS_DICT_KEY = 'matrix_package_delivery_status'
 const DELIVERING_STATUS = 'DELIVERING'
 const PENDING_DEV_STATUS = 'PENDING_DEV'
 const IN_DEVELOPMENT_STATUS = 'IN_DEVELOPMENT'
+const TESTING_STATUS = 'TESTING'
 const COLD_STANDBY_STATUS = 'COLD_STANDBY'
 const PENDING_REVIEW_SUBMIT_STATUS = 'PENDING_REVIEW_SUBMIT'
 const DEFAULT_PRODUCTION_STAGE = 'REQUIREMENT_CONFIRM'
@@ -54,6 +57,7 @@ const DEFAULT_PRODUCTION_STAGE = 'REQUIREMENT_CONFIRM'
 const DEFAULT_STATUS_OPTIONS = [
   { item_code: 'PENDING_DEV', item_name: '待开发', color: 'default' },
   { item_code: 'IN_DEVELOPMENT', item_name: '开发中', color: 'cyan' },
+  { item_code: 'TESTING', item_name: '测试中', color: 'purple' },
   { item_code: 'COLD_STANDBY', item_name: '冷备包', color: 'blue' },
   { item_code: 'PENDING_REVIEW_SUBMIT', item_name: '待送审', color: 'orange' },
   { item_code: 'IN_REVIEW', item_name: '审核中', color: 'gold' },
@@ -114,6 +118,7 @@ function normalizePlatformCodes(value) {
 
 function getStatusTone(statusCode) {
   if (statusCode === 'DELIVERING') return 'active'
+  if (statusCode === 'TESTING') return 'active'
   if (statusCode === 'BANNED') return 'danger'
   if (statusCode === 'ARCHIVED') return 'muted'
   return 'steady'
@@ -133,6 +138,7 @@ function buildUserOption(user) {
 }
 
 function MatrixPackageSpecialPage() {
+  const navigate = useNavigate()
   const [form] = Form.useForm()
   const watchedStatusCode = Form.useWatch('status_code', form)
 
@@ -147,9 +153,11 @@ function MatrixPackageSpecialPage() {
     total: 0,
     pendingDev: 0,
     inDevelopment: 0,
+    testing: 0,
     coldStandby: 0,
     pendingReviewSubmit: 0,
     inReview: 0,
+    inReviewFirstRelease: 0,
     hotStandby: 0,
     delivering: 0,
   })
@@ -270,9 +278,11 @@ function MatrixPackageSpecialPage() {
         total: Number(data.summary?.total || data.total || 0),
         pendingDev: Number(data.summary?.pending_dev || 0),
         inDevelopment: Number(data.summary?.in_development || 0),
+        testing: Number(data.summary?.testing || 0),
         coldStandby: Number(data.summary?.cold_standby || 0),
         pendingReviewSubmit: Number(data.summary?.pending_review_submit || 0),
         inReview: Number(data.summary?.in_review || 0),
+        inReviewFirstRelease: Number(data.summary?.in_review_first_release || 0),
         hotStandby: Number(data.summary?.hot_standby || 0),
         delivering: Number(data.summary?.delivering || 0),
       })
@@ -586,9 +596,16 @@ function MatrixPackageSpecialPage() {
       title: '操作',
       key: 'actions',
       fixed: 'right',
-      width: 240,
+      width: 320,
       render: (_, record) => (
         <Space size={4}>
+          <Button
+            type="link"
+            icon={<EyeOutlined />}
+            onClick={() => navigate(`/matrix-package-special/cold-standby-production/${record.id}?mode=view&from=panorama`)}
+          >
+            查看详情
+          </Button>
           <Button
             type="link"
             icon={<EditOutlined />}
@@ -638,6 +655,7 @@ function MatrixPackageSpecialPage() {
         <div className="matrix-package-name-cell">
           <Text strong>{value || '-'}</Text>
           <Space size={4} wrap>
+            {record.release_type_name ? <Tag color={record.release_type_color || 'default'}>{record.release_type_name}</Tag> : null}
             {record.app_id ? <Tag color="cyan">{record.app_id}</Tag> : null}
             {record.domain_info ? <Tag color="purple">{record.domain_info}</Tag> : null}
           </Space>
@@ -714,6 +732,12 @@ function MatrixPackageSpecialPage() {
       icon: <FireOutlined />,
     },
     {
+      title: '测试中',
+      value: summary.testing,
+      statusCode: TESTING_STATUS,
+      icon: <ClockCircleOutlined />,
+    },
+    {
       title: '冷备包',
       value: summary.coldStandby,
       statusCode: COLD_STANDBY_STATUS,
@@ -730,6 +754,8 @@ function MatrixPackageSpecialPage() {
       value: summary.inReview,
       statusCode: 'IN_REVIEW',
       icon: <ClockCircleOutlined />,
+      extraLabel: '首次提审包',
+      extraValue: summary.inReviewFirstRelease,
     },
     {
       title: '热备包',
@@ -770,7 +796,14 @@ function MatrixPackageSpecialPage() {
               className={`matrix-summary-card matrix-summary-card-clickable ${item.className || ''}`}
               onClick={() => fetchSummaryPackages({ title: item.title, statusCode: item.statusCode, page: 1 })}
             >
-              <Statistic title={item.title} value={item.value} prefix={item.icon} />
+              <div className="matrix-summary-card-content">
+                <Statistic title={item.title} value={item.value} prefix={item.icon} />
+                {item.extraLabel ? (
+                  <div className="matrix-summary-card-extra">
+                    {item.extraLabel}：{item.extraValue ?? 0}
+                  </div>
+                ) : null}
+              </div>
             </Card>
           </Col>
         ))}
