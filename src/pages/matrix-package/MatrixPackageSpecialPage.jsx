@@ -438,11 +438,6 @@ function MatrixPackageSpecialPage() {
   }
 
   const handlePromoteDevelopment = (record) => {
-    if (!record?.developer_account_id) {
-      message.warning('请先绑定开发者账号后推进开发')
-      return
-    }
-
     Modal.confirm({
       title: '确认推进开发？',
       content: `确认后「${record.package_name || '该矩阵包'}」将转为开发中，并进入冷备包生产线。`,
