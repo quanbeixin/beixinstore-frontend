@@ -997,8 +997,27 @@ function AppVersionReleasePage() {
         width={640}
         destroyOnHidden
       >
-        <div className="app-version-release-remark-content">
-          {String(remarkRecord?.remark || '').trim() || '暂无备注'}
+        <div className="app-version-release-remark-section">
+          <Text strong>备注信息</Text>
+          <div className="app-version-release-remark-content">
+            {String(remarkRecord?.remark || '').trim() || '暂无备注'}
+          </div>
+        </div>
+        <div className="app-version-release-remark-section">
+          <Text strong>最近操作</Text>
+          {String(remarkRecord?.last_operation_summary || '').trim() ? (
+            <div className="app-version-release-operation-content">
+              <Text>{remarkRecord.last_operation_summary}</Text>
+              <Text type="secondary">
+                {[
+                  remarkRecord.last_operation_user_name || '',
+                  remarkRecord.last_operation_at || '',
+                ].filter(Boolean).join(' · ')}
+              </Text>
+            </div>
+          ) : (
+            <div className="app-version-release-operation-empty">暂无操作记录</div>
+          )}
         </div>
       </Modal>
     </div>

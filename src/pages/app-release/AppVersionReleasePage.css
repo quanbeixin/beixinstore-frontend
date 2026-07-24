@@ -126,12 +126,39 @@
 
 .app-version-release-remark-content {
   min-height: 80px;
-  max-height: 420px;
+  max-height: 280px;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
   color: rgba(0, 0, 0, 0.88);
   line-height: 1.7;
+}
+
+.app-version-release-remark-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-version-release-remark-section + .app-version-release-remark-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(5, 5, 5, 0.06);
+}
+
+.app-version-release-operation-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(5, 5, 5, 0.06);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.02);
+  line-height: 1.6;
+}
+
+.app-version-release-operation-empty {
+  color: rgba(0, 0, 0, 0.45);
 }
 
 @media (max-width: 720px) {
