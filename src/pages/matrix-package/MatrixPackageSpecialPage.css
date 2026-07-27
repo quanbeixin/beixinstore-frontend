@@ -29,11 +29,18 @@
 
 .matrix-summary-card-content .ant-statistic {
   min-width: 0;
+  width: 100%;
+}
+
+.matrix-summary-card-content .ant-statistic-content {
+  display: flex;
+  align-items: center;
+  width: 100%;
 }
 
 .matrix-summary-card-extra {
   flex: 0 0 auto;
-  align-self: flex-start;
+  margin-left: auto;
   color: #667085;
   font-size: 13px;
   line-height: 22px;
@@ -94,6 +101,7 @@
 
 .matrix-filter-item-status,
 .matrix-filter-item-health,
+.matrix-filter-item-delivery-channel,
 .matrix-filter-item-delivery-status {
   width: 118px;
 }
@@ -197,6 +205,7 @@
   .matrix-filter-item-status,
   .matrix-filter-item-health,
   .matrix-filter-item-platform,
+  .matrix-filter-item-delivery-channel,
   .matrix-filter-item-delivery-status {
     width: calc(50% - 4px);
   }
