@@ -1240,7 +1240,11 @@ function ColdStandbyProductionDetailPage() {
   const handleCompleteProduction = () => {
     if (!canEdit || !detail?.id) return
     if (!requiredSideChecksCompleted) {
-      message.warning('请先完成各侧信息check后再生产完成')
+      Modal.warning({
+        title: '各侧信息check未完成',
+        content: '请先完成各侧信息check后，再进行前端产包/生产完成操作。',
+        okText: '知道了',
+      })
       return
     }
     Modal.confirm({
@@ -1257,7 +1261,7 @@ function ColdStandbyProductionDetailPage() {
               block_reason: '',
             })
             if (!nodeResult?.success) {
-              message.error(nodeResult?.message || '前端构建状态更新失败')
+              message.error(nodeResult?.message || '前端产包状态更新失败')
               return
             }
             if (Array.isArray(nodeResult.data)) {
@@ -1973,7 +1977,7 @@ function ColdStandbyProductionDetailPage() {
                   </div>
                 </div>
                 <div className="cold-production-complete-task-row">
-                  <Text className="cold-production-complete-task-title">前端构建</Text>
+                  <Text className="cold-production-complete-task-title">前端产包</Text>
                   <Tag color={frontendBuildNode.status_code === 'COMPLETED' ? 'blue' : 'orange'}>
                     {frontendBuildNode.status_code === 'COMPLETED' ? '已完成' : '待完成'}
                   </Tag>
@@ -2037,7 +2041,7 @@ function ColdStandbyProductionDetailPage() {
                 <Button
                   type="primary"
                   size="small"
-                  disabled={!canEdit || !requiredSideChecksCompleted}
+                  disabled={!canEdit}
                   loading={completingProduction}
                   onClick={handleCompleteProduction}
                 >
