@@ -915,7 +915,7 @@ function AppVersionReleasePage() {
       </Card>
 
       <Modal
-        title={editingRecord ? `编辑APP发版：${editingRecord.app_name || '-'}` : '编辑APP发版'}
+        title={editingRecord ? `编辑APP发版：${editingRecord.app_name || '-'}（版本：${editingRecord.app_version || '-'}）` : '编辑APP发版'}
         open={Boolean(editingRecord)}
         onCancel={() => {
           setEditingRecord(null)

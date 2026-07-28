@@ -283,7 +283,7 @@ function ColdStandbyProductionPage() {
       },
     },
     {
-      title: '预计冷备完成',
+      title: '预计生产完成',
       dataIndex: 'expected_cold_ready_date',
       key: 'expected_cold_ready_date',
       width: 140,
@@ -435,7 +435,7 @@ function ColdStandbyProductionPage() {
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item label="预计冷备完成时间" name="expected_cold_ready_date">
+              <Form.Item label="预计生产完成时间" name="expected_cold_ready_date">
                 <DatePicker style={{ width: '100%' }} />
               </Form.Item>
             </Col>
