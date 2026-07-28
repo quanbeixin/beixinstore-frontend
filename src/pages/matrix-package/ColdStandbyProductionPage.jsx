@@ -209,7 +209,7 @@ function ColdStandbyProductionPage() {
         health_code: editingRecord.health_code || null,
         status_code: values.status_code,
         expected_cold_ready_date: values.expected_cold_ready_date
-          ? values.expected_cold_ready_date.format('YYYY-MM-DD')
+          ? values.expected_cold_ready_date.minute(0).second(0).format('YYYY-MM-DD HH:mm:ss')
           : null,
       }
 
@@ -286,8 +286,8 @@ function ColdStandbyProductionPage() {
       title: '预计生产完成',
       dataIndex: 'expected_cold_ready_date',
       key: 'expected_cold_ready_date',
-      width: 140,
-      render: (value) => value || <Text type="secondary">未设置</Text>,
+      width: 160,
+      render: (value) => (value ? dayjs(value).format('YYYY-MM-DD HH:00') : <Text type="secondary">未设置</Text>),
     },
     {
       title: '配置完整度',
@@ -436,7 +436,17 @@ function ColdStandbyProductionPage() {
             </Col>
             <Col xs={24} md={12}>
               <Form.Item label="预计生产完成时间" name="expected_cold_ready_date">
-                <DatePicker style={{ width: '100%' }} />
+                <DatePicker
+                  style={{ width: '100%' }}
+                  format="YYYY-MM-DD HH:00"
+                  placeholder="选择日期和小时"
+                  showTime={{
+                    format: 'HH',
+                    minuteStep: 60,
+                    secondStep: 60,
+                    defaultOpenValue: dayjs().minute(0).second(0),
+                  }}
+                />
               </Form.Item>
             </Col>
           </Row>

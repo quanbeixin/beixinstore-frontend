@@ -1252,7 +1252,7 @@ function ColdStandbyProductionDetailPage() {
         setCompletingProduction(true)
         try {
           if (frontendBuildNode.status_code !== 'COMPLETED') {
-            const nodeResult = await updateMatrixPackageProductionNodeApi(detail.id, 'DESIGN_PRODUCTION', {
+            const nodeResult = await updateMatrixPackageProductionNodeApi(detail.id, 'FRONTEND_BUILD', {
               status_code: 'COMPLETED',
               block_reason: '',
             })
@@ -1289,7 +1289,7 @@ function ColdStandbyProductionDetailPage() {
     [productionNodes],
   )
   const backendScriptNode = productionNodeMap.BACKEND_SCRIPT || {}
-  const frontendBuildNode = productionNodeMap.DESIGN_PRODUCTION || {}
+  const frontendBuildNode = productionNodeMap.FRONTEND_BUILD || {}
 
   const nodeFlowTitleExtra = (
     <Space size={16} wrap className="cold-production-flow-title-meta">
@@ -1531,7 +1531,7 @@ function ColdStandbyProductionDetailPage() {
         <DatePicker
           size="small"
           disabled={!canEdit || updatingUnifiedDeadline}
-          value={detail?.expected_cold_ready_date ? dayjs(detail.expected_cold_ready_date) : null}
+          value={detail?.side_check_deadline_at ? dayjs(detail.side_check_deadline_at) : null}
           format="YYYY-MM-DD HH:00"
           placeholder="选择日期和小时"
           showTime={{
@@ -1553,7 +1553,7 @@ function ColdStandbyProductionDetailPage() {
                 owner_user_id: detail.owner_user_id || null,
                 status_code: detail.status_code,
                 health_code: detail.health_code || null,
-                expected_cold_ready_date: value ? value.minute(0).second(0).format('YYYY-MM-DD HH:mm:ss') : null,
+                side_check_deadline_at: value ? value.minute(0).second(0).format('YYYY-MM-DD HH:mm:ss') : null,
               })
               if (!result?.success) {
                 message.error(result?.message || '统一截止时间更新失败')
@@ -1983,13 +1983,13 @@ function ColdStandbyProductionDetailPage() {
                       allowClear
                       showSearch
                       size="small"
-                      disabled={!canEdit || updatingNodeCode === 'DESIGN_PRODUCTION'}
+                      disabled={!canEdit || updatingNodeCode === 'FRONTEND_BUILD'}
                       placeholder="选择人员"
                       optionFilterProp="searchText"
                       value={frontendBuildNode.owner_user_id || undefined}
                       filterOption={(input, option) => String(option?.searchText || '').includes(input.toLowerCase())}
                       options={userOptions.map(buildUserOption)}
-                      onChange={(value) => handleUpdateProductionNode('DESIGN_PRODUCTION', frontendBuildNode.status_code || 'NOT_STARTED', {
+                      onChange={(value) => handleUpdateProductionNode('FRONTEND_BUILD', frontendBuildNode.status_code || 'NOT_STARTED', {
                         owner_user_id: value || null,
                       })}
                     />
@@ -1999,7 +1999,7 @@ function ColdStandbyProductionDetailPage() {
                         size="small"
                         icon={<BellOutlined />}
                         disabled={!canEdit}
-                        onClick={() => handleRemindProductionNode('DESIGN_PRODUCTION')}
+                        onClick={() => handleRemindProductionNode('FRONTEND_BUILD')}
                       />
                     </Tooltip>
                   </div>
@@ -2007,7 +2007,7 @@ function ColdStandbyProductionDetailPage() {
                     <Text type="secondary">预期完成</Text>
                     <DatePicker
                       size="small"
-                      disabled={!canEdit || updatingNodeCode === 'DESIGN_PRODUCTION'}
+                      disabled={!canEdit || updatingNodeCode === 'FRONTEND_BUILD'}
                       value={frontendBuildNode.expected_delivery_date ? dayjs(frontendBuildNode.expected_delivery_date) : null}
                       format="YYYY-MM-DD HH:00"
                       placeholder="选择日期和小时"
@@ -2017,7 +2017,7 @@ function ColdStandbyProductionDetailPage() {
                         secondStep: 60,
                         defaultOpenValue: dayjs().minute(0).second(0),
                       }}
-                      onChange={(value) => handleUpdateProductionNode('DESIGN_PRODUCTION', frontendBuildNode.status_code || 'NOT_STARTED', {
+                      onChange={(value) => handleUpdateProductionNode('FRONTEND_BUILD', frontendBuildNode.status_code || 'NOT_STARTED', {
                         expected_delivery_date: value ? value.minute(0).second(0).format('YYYY-MM-DD HH:mm:ss') : null,
                       })}
                     />
