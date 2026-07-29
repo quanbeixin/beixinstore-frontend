@@ -39,6 +39,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   getMatrixPackageApi,
   completeMatrixPackageProductionApi,
+  downloadMatrixPackageDataSafetyFileApi,
   getMatrixPackageProductionNodesApi,
   getMatrixPackageSideNotesApi,
   confirmMatrixPackageSideNoteApi,
@@ -55,7 +56,6 @@ import { hasPermission } from '../../utils/access'
 import './ColdStandbyProductionDetailPage.css'
 
 const { Text } = Typography
-const DATA_SAFETY_TEMPLATE_KEYS = ['date-safe-file']
 const PRODUCT_CONFIG_TEMPLATE_KEYS = ['product_config_link', 'product-config-link']
 
 const NOTE_SECTIONS = [
@@ -363,85 +363,6 @@ const NODE_STATUS_META = {
   BLOCKED: { label: '阻塞', color: 'error' },
 }
 
-function parseCsvText(text = '') {
-  const rows = []
-  let currentRow = []
-  let currentCell = ''
-  let index = 0
-  let inQuotes = false
-  const normalizedText = String(text || '').replace(/^\ufeff/, '')
-
-  while (index < normalizedText.length) {
-    const char = normalizedText[index]
-
-    if (inQuotes) {
-      if (char === '"') {
-        if (normalizedText[index + 1] === '"') {
-          currentCell += '"'
-          index += 2
-          continue
-        }
-        inQuotes = false
-        index += 1
-        continue
-      }
-
-      currentCell += char
-      index += 1
-      continue
-    }
-
-    if (char === '"') {
-      inQuotes = true
-      index += 1
-      continue
-    }
-
-    if (char === ',') {
-      currentRow.push(currentCell)
-      currentCell = ''
-      index += 1
-      continue
-    }
-
-    if (char === '\n') {
-      currentRow.push(currentCell)
-      rows.push(currentRow)
-      currentRow = []
-      currentCell = ''
-      index += 1
-      continue
-    }
-
-    if (char === '\r') {
-      index += 1
-      continue
-    }
-
-    currentCell += char
-    index += 1
-  }
-
-  if (currentCell.length > 0 || currentRow.length > 0) {
-    currentRow.push(currentCell)
-    rows.push(currentRow)
-  }
-
-  return rows
-}
-
-function stringifyCsvRows(rows = []) {
-  const escapeCsvCell = (value) => {
-    const text = String(value ?? '')
-    if (/[",\n\r]/.test(text)) {
-      return `"${text.replace(/"/g, '""')}"`
-    }
-    return text
-  }
-
-  return `${rows.map((row) => row.map(escapeCsvCell).join(',')).join('\r\n')}\r\n`
-}
-
 function normalizeTemplateKeyForMatch(value = '') {
   return String(value || '')
     .trim()
@@ -567,22 +488,24 @@ function buildSideNotePayload(values, existingNotes, ownerValues = {}) {
   return NOTE_SECTIONS.map((section) => {
     const hasSectionValue = Object.prototype.hasOwnProperty.call(source, section.type)
     const ownerUserId = section.type === 'BACKEND' ? null : (ownerValues?.[section.type] || null)
+    const existingContent = getExistingNoteContent(existingNotes, section.type)
     if (!hasSectionValue || source[section.type] === undefined) {
       return {
         note_type: section.type,
-        content: getExistingNoteContent(existingNotes, section.type),
+        content: existingContent,
         owner_user_id: ownerUserId,
       }
     }
+    const nextContent = STRUCTURED_NOTE_FIELDS[section.type]
+      ? serializeStructuredContent(
+        mergeStructuredSectionValue(section.type, source[section.type], existingNotes),
+        STRUCTURED_NOTE_FIELDS[section.type],
+      )
+      : source[section.type] || ''
     return {
       note_type: section.type,
       owner_user_id: ownerUserId,
-      content: STRUCTURED_NOTE_FIELDS[section.type]
-        ? serializeStructuredContent(
-          mergeStructuredSectionValue(section.type, source[section.type], existingNotes),
-          STRUCTURED_NOTE_FIELDS[section.type],
-        )
-        : source[section.type] || '',
+      content: nextContent || existingContent,
     }
   })
 }
@@ -976,6 +899,7 @@ function ColdStandbyProductionDetailPage() {
   const [frontendNodeValues, setFrontendNodeValues] = useState({})
 
   const canManage = hasPermission('matrix_package.manage')
+  const canRemind = canManage || hasPermission('matrix_package.view')
   const isViewMode = searchParams.get('mode') === 'view'
   const fromPanorama = searchParams.get('from') === 'panorama'
   const canEdit = canManage && !isViewMode
@@ -1176,7 +1100,7 @@ function ColdStandbyProductionDetailPage() {
   }
 
   const handleRemindProductionNode = async (nodeCode) => {
-    if (!canEdit) return
+    if (!canRemind) return
     try {
       const result = await remindMatrixPackageProductionNodeApi(id, nodeCode)
       if (!result?.success) {
@@ -1190,7 +1114,7 @@ function ColdStandbyProductionDetailPage() {
   }
 
   const handleRemindSideNote = async (noteType) => {
-    if (!canEdit) return
+    if (!canRemind) return
     try {
       const result = await remindMatrixPackageSideNoteApi(id, noteType)
       if (!result?.success) {
@@ -1452,51 +1376,12 @@ function ColdStandbyProductionDetailPage() {
     }
 
     try {
-      const templateResult = await getNotificationTemplateFilesApi()
-      if (!templateResult?.success) {
-        message.error(templateResult?.message || '获取数据安全文件模板失败')
-        return
-      }
-
-      const templateRow = findTemplateByKeys(templateResult.data, DATA_SAFETY_TEMPLATE_KEYS)
-
-      const templateUrl = String(
-        templateRow?.preview_url || templateRow?.download_url || templateRow?.object_url || '',
-      ).trim()
-
-      if (!templateUrl) {
-        message.warning('请先在通用文件模板里上传数据安全文件模板')
-        return
-      }
-
-      const templateResponse = await fetch(templateUrl)
-      if (!templateResponse.ok) {
-        throw new Error(`模板下载失败(${templateResponse.status})`)
-      }
-
-      const templateText = await templateResponse.text()
-      const rows = parseCsvText(templateText)
-      if (!rows.length) {
-        message.warning('模板文件内容为空')
-        return
-      }
-
-      const targetRow = rows.find((row) => row.some((cell) => String(cell || '').trim() === 'PSL_ACCOUNT_DELETION_URL'))
-      if (!targetRow) {
-        message.warning('模板中未找到 PSL_ACCOUNT_DELETION_URL 行')
-        return
-      }
-
-      while (targetRow.length < 3) {
-        targetRow.push('')
-      }
-      targetRow[2] = dataDeletionUrl
-
-      const csvContent = stringifyCsvRows(rows)
+      const fileBlob = await downloadMatrixPackageDataSafetyFileApi(detail.id, {
+        data_deletion_url: dataDeletionUrl,
+      })
       const packageName = String(detail?.package_name || '').trim() || 'matrix-package'
       const safeFileName = packageName.replace(/[\\/:*?"<>|]+/g, '-')
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
+      const url = URL.createObjectURL(fileBlob)
       const link = document.createElement('a')
       link.href = url
       link.download = `${safeFileName}-数据安全文件.csv`
@@ -1837,7 +1722,7 @@ function ColdStandbyProductionDetailPage() {
                 <Button
                   type="text"
                   icon={<BellOutlined />}
-                  disabled={!canEdit}
+                  disabled={!canRemind}
                   onClick={() => handleRemindProductionNode(node.node_code)}
                 />
               </Tooltip>
@@ -1929,7 +1814,7 @@ function ColdStandbyProductionDetailPage() {
                           type="text"
                           size="small"
                           icon={<BellOutlined />}
-                          disabled={!canEdit}
+                          disabled={!canRemind}
                           onClick={() => handleRemindSideNote(section.type)}
                         />
                       </Tooltip>
@@ -1980,7 +1865,7 @@ function ColdStandbyProductionDetailPage() {
                         type="text"
                         size="small"
                         icon={<BellOutlined />}
-                        disabled={!canEdit}
+                        disabled={!canRemind}
                         onClick={() => handleRemindProductionNode('BACKEND_SCRIPT')}
                       />
                     </Tooltip>
@@ -2031,7 +1916,7 @@ function ColdStandbyProductionDetailPage() {
                         type="text"
                         size="small"
                         icon={<BellOutlined />}
-                        disabled={!canEdit}
+                        disabled={!canRemind}
                         onClick={() => handleRemindProductionNode('FRONTEND_BUILD')}
                       />
                     </Tooltip>

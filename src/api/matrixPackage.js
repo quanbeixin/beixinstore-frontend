@@ -57,3 +57,11 @@ export function getMatrixPackageSideNoteUploadPolicyApi(id, payload = {}) {
     timeout: 30000,
   })
 }
+
+export function downloadMatrixPackageDataSafetyFileApi(id, params = {}) {
+  return request.get(`/matrix-packages/${id}/data-safety-file`, {
+    params,
+    responseType: 'blob',
+    timeout: 30000,
+  })
+}
