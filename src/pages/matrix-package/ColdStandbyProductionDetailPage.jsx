@@ -1420,21 +1420,21 @@ function ColdStandbyProductionDetailPage() {
     )
   }
 
-  const nodeFlowTitleExtra = (
-    <Space size={16} wrap className="cold-production-flow-title-meta">
-      <div className="cold-production-flow-title-item">
+  const detailHeaderMeta = (
+    <Space size={16} wrap className="cold-production-header-meta">
+      <div className="cold-production-header-meta-item">
         <Text type="secondary">矩阵包</Text>
         <Text>{detail?.package_name || '-'}</Text>
       </div>
-      <div className="cold-production-flow-title-item">
+      <div className="cold-production-header-meta-item">
         <Text type="secondary">域名</Text>
         <Text>{detail?.domain_info || '-'}</Text>
       </div>
-      <div className="cold-production-flow-title-item">
+      <div className="cold-production-header-meta-item">
         <Text type="secondary">包ID（应用ID）</Text>
         <Text>{detail?.app_id || '-'}</Text>
       </div>
-      <div className="cold-production-flow-title-item">
+      <div className="cold-production-header-meta-item">
         <Text type="secondary">开发者账号</Text>
         <Text>
           {detail?.developer_company_name || detail?.developer_account_name
@@ -1442,11 +1442,11 @@ function ColdStandbyProductionDetailPage() {
             : '-'}
         </Text>
       </div>
-      <div className="cold-production-flow-title-item">
+      <div className="cold-production-header-meta-item">
         <Text type="secondary">负责人</Text>
         <Text>{detail?.owner_name || '-'}</Text>
       </div>
-      <div className="cold-production-flow-title-item">
+      <div className="cold-production-header-meta-item">
         <Text type="secondary">关联需求</Text>
         {detail?.linked_demand_id ? (
           <Button
@@ -1740,9 +1740,9 @@ function ColdStandbyProductionDetailPage() {
     }
   }
 
-  const renderStageScheduleExtra = (stageKey) => (
+  const renderStageScheduleExtra = (stageKey, label = '阶段预期') => (
     <Space size={8} wrap className="cold-production-stage-schedule-extra">
-      <Text type="secondary">阶段预期</Text>
+      <Text type="secondary">{label}</Text>
       <DatePicker
         size="small"
         disabled={!canEdit || updatingStageSchedule === stageKey}
@@ -1768,6 +1768,8 @@ function ColdStandbyProductionDetailPage() {
       </Text>
     </Space>
   )
+
+  const activeStageTitle = PRODUCTION_STAGE_ITEMS.find((stage) => stage.key === activeProductionStage)?.title || '阶段'
 
   const renderNoteSection = (section) => {
     if (!section) return null
@@ -2606,12 +2608,6 @@ function ColdStandbyProductionDetailPage() {
         <Card
           variant="borderless"
           title="前置准备"
-          extra={(
-            <Space size={16} wrap className="cold-production-stage-card-extra">
-              {nodeFlowTitleExtra}
-              {renderStageScheduleExtra(PRODUCTION_STAGE_KEYS.PREPARATION)}
-            </Space>
-          )}
           className="cold-production-flow-card"
         >
           {productionNodes.length ? (
@@ -2642,7 +2638,6 @@ function ColdStandbyProductionDetailPage() {
             <Card
               variant="borderless"
               title="基础信息完善"
-              extra={renderStageScheduleExtra(PRODUCTION_STAGE_KEYS.BASIC_INFO)}
               className="cold-production-stage-main-card"
             >
               {renderNoteTabs(STAGE_NOTE_TYPES[PRODUCTION_STAGE_KEYS.BASIC_INFO])}
@@ -2662,7 +2657,6 @@ function ColdStandbyProductionDetailPage() {
             <Card
               variant="borderless"
               title="前端补充+PUSH配置"
-              extra={renderStageScheduleExtra(PRODUCTION_STAGE_KEYS.FRONTEND_PUSH)}
               className="cold-production-stage-main-card"
             >
               {renderNoteTabs(STAGE_NOTE_TYPES[PRODUCTION_STAGE_KEYS.FRONTEND_PUSH])}
@@ -2682,7 +2676,6 @@ function ColdStandbyProductionDetailPage() {
             <Card
               variant="borderless"
               title="GP初始化配置信息"
-              extra={renderStageScheduleExtra(PRODUCTION_STAGE_KEYS.BACKEND_INIT)}
               className="cold-production-stage-main-card"
             >
               {renderNoteSection(NOTE_SECTIONS.find((section) => section.type === 'BACKEND'))}
@@ -2700,7 +2693,6 @@ function ColdStandbyProductionDetailPage() {
         <Card
           variant="borderless"
           title="投放侧补充"
-          extra={renderStageScheduleExtra(PRODUCTION_STAGE_KEYS.PRODUCTION_TEST)}
         >
           {renderNoteSection(NOTE_SECTIONS.find((section) => section.type === 'ADVERTISING'))}
         </Card>
@@ -2732,14 +2724,18 @@ function ColdStandbyProductionDetailPage() {
   return (
     <div className="cold-production-detail-page">
       <div className="cold-production-detail-head">
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backPath)}>
-          {fromPanorama ? '返回全景图' : '返回生产线'}
-        </Button>
-        {isViewMode && canManage ? (
-          <Button type="primary" icon={<EditOutlined />} onClick={() => navigate(editPath)}>
-            编辑
+        <Space size={8} className="cold-production-detail-head-actions">
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backPath)}>
+            {fromPanorama ? '返回全景图' : '返回生产线'}
           </Button>
-        ) : null}
+          {isViewMode && canManage ? (
+            <Button type="primary" icon={<EditOutlined />} onClick={() => navigate(editPath)}>
+              编辑
+            </Button>
+          ) : null}
+        </Space>
+        {detailHeaderMeta}
+        {renderStageScheduleExtra(activeProductionStage, `${activeStageTitle}预期`)}
       </div>
 
       <Card variant="borderless" className="cold-production-stage-nav-card">

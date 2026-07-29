@@ -564,15 +564,6 @@ function MatrixPackageSpecialPage() {
       },
     },
     {
-      title: '运营过',
-      dataIndex: 'has_operated',
-      key: 'has_operated',
-      width: 100,
-      render: (value) => (
-        value ? <Tag color="green">是</Tag> : <Tag>否</Tag>
-      ),
-    },
-    {
       title: '健康度',
       dataIndex: 'health_code',
       key: 'health_code',

@@ -11,8 +11,42 @@
   gap: 12px;
 }
 
+.cold-production-detail-head-actions {
+  flex: none;
+}
+
 .cold-production-detail-head h4 {
   margin: 0 0 4px;
+}
+
+.cold-production-header-meta {
+  flex: 1;
+  justify-content: flex-end;
+  min-width: 0;
+  row-gap: 4px;
+}
+
+.cold-production-header-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.cold-production-header-meta-item .ant-typography {
+  max-width: 220px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cold-production-header-meta-item .ant-typography-secondary {
+  flex: none;
+  max-width: none;
 }
 
 .cold-production-detail-page .ant-card-body {
@@ -106,6 +140,7 @@
 }
 
 .cold-production-stage-schedule-extra {
+  flex: none;
   justify-content: flex-end;
 }
 
@@ -781,6 +816,19 @@
   }
 
   .cold-production-flow-title-meta {
+    justify-content: flex-start;
+  }
+
+  .cold-production-detail-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .cold-production-header-meta {
+    justify-content: flex-start;
+  }
+
+  .cold-production-stage-schedule-extra {
     justify-content: flex-start;
   }
 
