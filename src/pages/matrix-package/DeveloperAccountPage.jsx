@@ -98,11 +98,14 @@ function buildCompanyTree(accounts) {
 
   ;(accounts || []).forEach((account) => {
     const companyName = account.company_name || '未设置公司主体'
+    const companyCode = account.company_code || companyName
     if (!companyMap.has(companyName)) {
       companyMap.set(companyName, {
-        row_key: `company:${companyName}`,
+        row_key: `company:${companyCode}`,
         isCompanyNode: true,
+        company_code: companyCode,
         company_name: companyName,
+        company_english_name: account.company_english_name || '',
         account_count: 0,
         package_count: 0,
         updated_at: '',
@@ -115,6 +118,9 @@ function buildCompanyTree(accounts) {
     company.package_count += Number(account.package_count || 0)
     if (!company.updated_at || String(account.updated_at || '') > company.updated_at) {
       company.updated_at = account.updated_at || company.updated_at
+    }
+    if (!company.company_english_name && account.company_english_name) {
+      company.company_english_name = account.company_english_name
     }
     company.children.push({
       ...account,
@@ -140,7 +146,7 @@ function DeveloperAccountPage() {
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
   const [filters, setFilters] = useState({
     keyword: '',
-    company_name: '',
+    company_code: undefined,
     status_code: undefined,
     owner_name: '',
   })
@@ -159,11 +165,6 @@ function DeveloperAccountPage() {
   const packageStatusMap = useMemo(() => buildDictMap(packageStatusOptions), [packageStatusOptions])
   const packageHealthMap = useMemo(() => buildDictMap(packageHealthOptions), [packageHealthOptions])
   const treeAccounts = useMemo(() => buildCompanyTree(accounts), [accounts])
-  const companyEnglishNameMap = useMemo(
-    () => new Map(companyOptions.map((item) => [item.name, item.englishName || item.code || ''])),
-    [companyOptions],
-  )
-
   const fetchDicts = useCallback(async () => {
     const [accountStatusResult, companyResult, packageStatusResult, packageHealthResult] = await Promise.allSettled([
       getDictItemsApi(STATUS_DICT_KEY, { enabledOnly: true }),
@@ -202,7 +203,7 @@ function DeveloperAccountPage() {
         page: nextPage,
         pageSize: nextPageSize,
         keyword: filters.keyword || undefined,
-        company_name: filters.company_name || undefined,
+        company_code: filters.company_code || undefined,
         status_code: filters.status_code || undefined,
         owner_name: filters.owner_name || undefined,
       })
@@ -240,7 +241,7 @@ function DeveloperAccountPage() {
   const handleCreate = () => {
     setEditingRecord(null)
     form.setFieldsValue({
-      company_name: undefined,
+      company_code: undefined,
       account_name: '',
       account_id: '',
       status_code: 'NORMAL',
@@ -252,7 +253,7 @@ function DeveloperAccountPage() {
   const handleEdit = (record) => {
     setEditingRecord(record)
     form.setFieldsValue({
-      company_name: record.company_name || '',
+      company_code: record.company_code || '',
       account_name: record.account_name || '',
       account_id: record.account_id || '',
       status_code: record.status_code || 'NORMAL',
@@ -395,7 +396,7 @@ function DeveloperAccountPage() {
       key: 'company_english_name',
       width: 180,
       render: (value, record) => {
-        const englishName = companyEnglishNameMap.get(record.company_name || value || '') || ''
+        const englishName = record.company_english_name || ''
         if (!englishName) return <Text type="secondary">-</Text>
         return <Text>{englishName}</Text>
       },
@@ -533,10 +534,10 @@ function DeveloperAccountPage() {
               allowClear
               showSearch
               placeholder="公司主体"
-              value={filters.company_name || undefined}
+              value={filters.company_code || undefined}
               optionFilterProp="label"
-              options={companyOptions.map((item) => ({ label: item.name, value: item.name }))}
-              onChange={(value) => setFilters((prev) => ({ ...prev, company_name: value || '' }))}
+              options={companyOptions.map((item) => ({ label: item.name, value: item.code }))}
+              onChange={(value) => setFilters((prev) => ({ ...prev, company_code: value }))}
             />
           </Col>
           <Col xs={12} md={5}>
@@ -611,7 +612,7 @@ function DeveloperAccountPage() {
             <Col xs={24} md={12}>
               <Form.Item
                 label="公司主体"
-                name="company_name"
+                name="company_code"
                 rules={[{ required: true, message: '请选择公司主体' }]}
               >
                 <Select
@@ -620,7 +621,7 @@ function DeveloperAccountPage() {
                   optionFilterProp="label"
                   options={companyOptions.map((item) => ({
                     label: item.name,
-                    value: item.name,
+                    value: item.code,
                   }))}
                 />
               </Form.Item>
