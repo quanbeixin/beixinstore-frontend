@@ -22,6 +22,7 @@ import {
   Select,
   Space,
   Statistic,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -390,6 +391,9 @@ function MatrixPackageSpecialPage() {
       form.setFieldValue('delivery_channel_code', undefined)
       form.setFieldValue('delivery_status_code', undefined)
     }
+    if (watchedStatusCode === DELIVERING_STATUS) {
+      form.setFieldValue('has_operated', true)
+    }
   }, [form, watchedStatusCode])
 
   const handleCreate = () => {
@@ -406,6 +410,7 @@ function MatrixPackageSpecialPage() {
       owner_user_id: undefined,
       status_code: 'COLD_STANDBY',
       health_code: undefined,
+      has_operated: false,
     })
     setModalOpen(true)
   }
@@ -424,6 +429,7 @@ function MatrixPackageSpecialPage() {
       owner_user_id: record.owner_user_id || undefined,
       status_code: record.status_code || 'COLD_STANDBY',
       health_code: record.health_code || undefined,
+      has_operated: Boolean(record.has_operated),
     })
     setModalOpen(true)
   }
@@ -438,6 +444,7 @@ function MatrixPackageSpecialPage() {
         platform: submitIsDelivering ? values.platform : [],
         delivery_channel_code: submitIsDelivering ? values.delivery_channel_code : null,
         delivery_status_code: submitIsDelivering ? values.delivery_status_code : null,
+        has_operated: submitIsDelivering ? true : Boolean(values.has_operated),
       }
 
       setSaving(true)
@@ -555,6 +562,15 @@ function MatrixPackageSpecialPage() {
         const meta = statusMap.get(value) || { name: record.status_name || value || '-', color: record.status_color || 'default' }
         return <Tag color={record.status_color || meta.color}>{meta.name}</Tag>
       },
+    },
+    {
+      title: '运营过',
+      dataIndex: 'has_operated',
+      key: 'has_operated',
+      width: 100,
+      render: (value) => (
+        value ? <Tag color="green">是</Tag> : <Tag>否</Tag>
+      ),
     },
     {
       title: '健康度',
@@ -1107,6 +1123,11 @@ function MatrixPackageSpecialPage() {
                     value: item.code,
                   }))}
                 />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item label="是否运营过" name="has_operated" valuePropName="checked">
+                <Switch checkedChildren="是" unCheckedChildren="否" disabled={isDelivering} />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>

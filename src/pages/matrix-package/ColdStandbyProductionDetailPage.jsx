@@ -913,6 +913,7 @@ function ColdStandbyProductionDetailPage() {
   const [sideNoteExpectedDates, setSideNoteExpectedDates] = useState({})
   const [operationNodeValues, setOperationNodeValues] = useState({})
   const [frontendNodeValues, setFrontendNodeValues] = useState({})
+  const [pendingNoteFormValues, setPendingNoteFormValues] = useState(null)
 
   const canManage = hasPermission('matrix_package.manage')
   const canRemind = canManage || hasPermission('matrix_package.view')
@@ -947,11 +948,7 @@ function ColdStandbyProductionDetailPage() {
       setSideNoteOwners(buildSideNoteOwnerValues(notes))
       setSideNoteExpectedDates(buildSideNoteExpectedDateValues(notes))
       const noteFormValues = buildNoteFormValues(notes, detailData)
-      isApplyingRemoteFormValuesRef.current = true
-      form.setFieldsValue(noteFormValues)
-      Promise.resolve().then(() => {
-        isApplyingRemoteFormValuesRef.current = false
-      })
+      setPendingNoteFormValues(noteFormValues)
       setOperationNodeValues(
         noteFormValues.OPERATION && typeof noteFormValues.OPERATION === 'object' ? noteFormValues.OPERATION : {},
       )
@@ -971,11 +968,21 @@ function ColdStandbyProductionDetailPage() {
     } finally {
       setLoading(false)
     }
-  }, [form, id])
+  }, [id])
 
   useEffect(() => {
     fetchDetail()
   }, [fetchDetail])
+
+  useEffect(() => {
+    if (!detail || !pendingNoteFormValues) return
+    isApplyingRemoteFormValuesRef.current = true
+    form.setFieldsValue(pendingNoteFormValues)
+    Promise.resolve().then(() => {
+      isApplyingRemoteFormValuesRef.current = false
+    })
+    setPendingNoteFormValues(null)
+  }, [detail, form, pendingNoteFormValues])
 
   useEffect(() => {
     let cancelled = false
@@ -2750,7 +2757,7 @@ function ColdStandbyProductionDetailPage() {
                 {stage.title}
               </span>
             ),
-            description: renderStageDescription(stage),
+            content: renderStageDescription(stage),
             status: productionStageStatusMap[stage.key] ? 'finish' : (stage.key === activeProductionStage ? 'process' : 'wait'),
             className: productionStageStatusMap[stage.key] ? 'cold-production-stage-item-completed' : undefined,
           }))}
