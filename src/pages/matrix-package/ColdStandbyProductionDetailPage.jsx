@@ -727,9 +727,22 @@ function normalizeUploadValue(value) {
   return text ? { object_url: text, file_name: text } : null
 }
 
+async function getFreshAttachmentDownloadUrl(packageId, noteType, fieldName, fallbackUrl = '') {
+  const result = await getMatrixPackageSideNotesApi(packageId)
+  if (!result?.success || !Array.isArray(result.data)) return fallbackUrl
+
+  const note = result.data.find((item) => String(item?.note_type || '').toUpperCase() === String(noteType || '').toUpperCase())
+  if (!note) return fallbackUrl
+
+  const content = parseStructuredContent(getNoteReadableContent(note))
+  const attachment = normalizeUploadValue(content?.[fieldName])
+  return attachment?.download_url || attachment?.preview_url || attachment?.object_url || fallbackUrl
+}
+
 function DesignUploadField({ packageId, noteType = 'DESIGN', field, value, onChange, onUploaded, disabled }) {
   const normalized = normalizeUploadValue(value)
   const [uploading, setUploading] = useState(false)
+  const [openingDownload, setOpeningDownload] = useState(false)
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
   const isFileField = field.kind === 'file'
   const imageUrl = normalized?.preview_url || normalized?.object_url || ''
@@ -804,6 +817,23 @@ function DesignUploadField({ packageId, noteType = 'DESIGN', field, value, onCha
     showUploadList: false,
   }
 
+  const handleOpenDownload = async () => {
+    if (!downloadUrl || openingDownload) return
+    setOpeningDownload(true)
+    try {
+      const freshUrl = await getFreshAttachmentDownloadUrl(packageId, noteType, field.name, downloadUrl)
+      if (!freshUrl) {
+        message.warning('下载链接暂不可用，请刷新后重试')
+        return
+      }
+      window.open(freshUrl, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      message.error(error?.message || '刷新下载链接失败')
+    } finally {
+      setOpeningDownload(false)
+    }
+  }
+
   return (
     <div
       className={`cold-production-design-upload cold-production-design-upload-${field.name}${isFileField ? ' cold-production-design-upload-fileField' : ''}`}
@@ -821,8 +851,9 @@ function DesignUploadField({ packageId, noteType = 'DESIGN', field, value, onCha
               size="small"
               type="text"
               icon={<DownloadOutlined />}
-              disabled={!downloadUrl}
-              onClick={() => window.open(downloadUrl, '_blank', 'noopener,noreferrer')}
+              disabled={!downloadUrl || openingDownload}
+              loading={openingDownload}
+              onClick={handleOpenDownload}
             >
               下载
             </Button>
