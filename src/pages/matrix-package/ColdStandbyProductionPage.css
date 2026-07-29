@@ -33,15 +33,56 @@
   min-width: 0;
 }
 
-.cold-production-progress-cell {
+.cold-production-form {
+  padding-top: 8px;
+}
+
+.cold-production-stage-progress-cell {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
 }
 
-.cold-production-form {
-  padding-top: 8px;
+.cold-production-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 0 7px;
+  border: 1px solid #d9d9d9;
+  border-radius: 999px;
+  background: #fafafa;
+  color: #595959;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.cold-production-stage-pill-name {
+  color: inherit;
+}
+
+.cold-production-stage-pill-status {
+  font-weight: 600;
+}
+
+.cold-production-stage-pill.is-done {
+  border-color: #b7eb8f;
+  background: #f6ffed;
+  color: #237804;
+}
+
+.cold-production-stage-pill.is-pending-confirm {
+  border-color: #ffd591;
+  background: #fff7e6;
+  color: #d46b08;
+}
+
+.cold-production-stage-pill.is-blocked {
+  border-color: #ffa39e;
+  background: #fff1f0;
+  color: #cf1322;
 }
 
 .cold-production-checklist {

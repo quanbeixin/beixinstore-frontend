@@ -44,6 +44,10 @@ export function saveMatrixPackageSideNotesApi(id, notes) {
   return request.put(`/matrix-packages/${id}/side-notes`, { notes })
 }
 
+export function patchMatrixPackageSideNoteFieldsApi(id, noteType, payload = {}) {
+  return request.patch(`/matrix-packages/${id}/side-notes/${noteType}/fields`, payload)
+}
+
 export function confirmMatrixPackageSideNoteApi(id, noteType) {
   return request.post(`/matrix-packages/${id}/side-notes/${noteType}/confirm`)
 }

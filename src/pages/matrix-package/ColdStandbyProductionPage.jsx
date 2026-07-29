@@ -13,7 +13,6 @@ import {
   Form,
   Input,
   Modal,
-  Progress,
   Row,
   Select,
   Space,
@@ -53,7 +52,34 @@ const DEFAULT_STAGE_OPTIONS = [
   { item_code: 'READY_FOR_COLD_STANDBY', item_name: '待转冷备', color: 'green' },
 ]
 
-const CHECKLIST_TOTAL = 6
+const PRODUCTION_STAGE_ITEMS = [
+  {
+    key: 'PREPARATION',
+    title: '前置准备',
+    nodeCodes: ['OPERATION_MATERIAL', 'DESIGN_PRODUCTION'],
+  },
+  {
+    key: 'BASIC_INFO',
+    title: '基础信息',
+    noteTypes: ['DESIGN', 'OPERATION', 'DEVOPS'],
+  },
+  {
+    key: 'FRONTEND_PUSH',
+    title: '前端+PUSH',
+    noteTypes: ['FRONTEND', 'DELIVERY'],
+  },
+  {
+    key: 'BACKEND_INIT',
+    title: '后端脚本',
+    nodeCodes: ['BACKEND_SCRIPT'],
+    needsBackendSelfCheck: true,
+  },
+  {
+    key: 'PRODUCTION_TEST',
+    title: '生产提测',
+    nodeCodes: ['FRONTEND_BUILD'],
+  },
+]
 
 function normalizeDictItems(items, fallback) {
   const source = Array.isArray(items) && items.length > 0 ? items : fallback
@@ -71,22 +97,32 @@ function buildDictMap(options) {
   return new Map((options || []).map((item) => [item.code, item]))
 }
 
-function getChecklistPercent(values) {
-  const checked = Array.isArray(values) ? values.length : 0
-  return Math.round((checked / CHECKLIST_TOTAL) * 100)
-}
-
-function getConfigCompletionPercent(record) {
-  const sideNotePercent = Number(record?.side_note_completion_percent)
-  if (Number.isFinite(sideNotePercent)) return sideNotePercent
-  return getChecklistPercent(record?.production_checklist)
-}
-
 function getRowTone(statusCode) {
   if (statusCode === 'COLD_STANDBY') return 'done'
   if (statusCode === 'TESTING') return 'active'
   if (statusCode === 'IN_DEVELOPMENT') return 'active'
   return 'pending'
+}
+
+function getProductionStageMeta(record, stage) {
+  const nodeStatusMap = record?.production_node_status_map || {}
+  const confirmedSideNoteTypes = new Set(Array.isArray(record?.confirmed_side_note_types) ? record.confirmed_side_note_types : [])
+  const nodeCodes = stage.nodeCodes || []
+  const noteTypes = stage.noteTypes || []
+  const hasBlockedNode = nodeCodes.some((nodeCode) => nodeStatusMap[nodeCode] === 'BLOCKED')
+  if (hasBlockedNode) return { label: '阻塞', className: 'is-blocked' }
+
+  const nodesCompleted = nodeCodes.every((nodeCode) => nodeStatusMap[nodeCode] === 'COMPLETED')
+  const notesConfirmed = noteTypes.every((noteType) => confirmedSideNoteTypes.has(noteType))
+  const backendSelfCheckCompleted = !stage.needsBackendSelfCheck || Boolean(record?.backend_self_check_completed)
+
+  if (nodesCompleted && notesConfirmed && backendSelfCheckCompleted) {
+    return { label: '已完成', className: 'is-done' }
+  }
+  if (noteTypes.length && !notesConfirmed) {
+    return { label: '待确认', className: 'is-pending-confirm' }
+  }
+  return { label: '待完成', className: 'is-pending' }
 }
 
 function ColdStandbyProductionPage() {
@@ -290,11 +326,23 @@ function ColdStandbyProductionPage() {
       render: (value) => (value ? dayjs(value).format('YYYY-MM-DD HH:00') : <Text type="secondary">未设置</Text>),
     },
     {
-      title: '配置完整度',
-      dataIndex: 'side_note_completion_percent',
-      key: 'side_note_completion_percent',
-      width: 150,
-      render: (_, record) => <Progress percent={getConfigCompletionPercent(record)} size="small" />,
+      title: '阶段完成情况',
+      dataIndex: 'production_stage_progress',
+      key: 'production_stage_progress',
+      width: 330,
+      render: (_, record) => (
+        <div className="cold-production-stage-progress-cell">
+          {PRODUCTION_STAGE_ITEMS.map((stage) => {
+            const meta = getProductionStageMeta(record, stage)
+            return (
+              <span className={`cold-production-stage-pill ${meta.className}`} key={stage.key}>
+                <span className="cold-production-stage-pill-name">{stage.title}</span>
+                <span className="cold-production-stage-pill-status">{meta.label}</span>
+              </span>
+            )
+          })}
+        </div>
+      ),
     },
     {
       title: '更新时间',
