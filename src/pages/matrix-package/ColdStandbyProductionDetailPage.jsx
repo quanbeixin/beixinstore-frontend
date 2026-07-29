@@ -2740,6 +2740,10 @@ function ColdStandbyProductionDetailPage() {
           type="navigation"
           size="small"
           current={PRODUCTION_STAGE_ITEMS.findIndex((stage) => stage.key === activeProductionStage)}
+          onChange={(nextIndex) => {
+            const nextStage = PRODUCTION_STAGE_ITEMS[nextIndex]
+            if (nextStage?.key) setActiveProductionStage(nextStage.key)
+          }}
           items={PRODUCTION_STAGE_ITEMS.map((stage) => ({
             title: (
               <span className={productionStageStatusMap[stage.key] ? 'cold-production-stage-title is-completed' : 'cold-production-stage-title'}>
@@ -2749,7 +2753,6 @@ function ColdStandbyProductionDetailPage() {
             description: renderStageDescription(stage),
             status: productionStageStatusMap[stage.key] ? 'finish' : (stage.key === activeProductionStage ? 'process' : 'wait'),
             className: productionStageStatusMap[stage.key] ? 'cold-production-stage-item-completed' : undefined,
-            onClick: () => setActiveProductionStage(stage.key),
           }))}
         />
       </Card>
