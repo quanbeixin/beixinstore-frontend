@@ -53,11 +53,14 @@ function parseJsonObject(value) {
   }
 }
 
-function extractFrontendAppConsoleUrl(notes = []) {
+function extractFrontendReleaseInfo(notes = []) {
   const frontendNote = Array.isArray(notes) ? notes.find((item) => item?.note_type === 'FRONTEND') : null
   const content = String(frontendNote?.content || '').trim() || String(frontendNote?.confirmed_content || '').trim()
   const parsed = parseJsonObject(content)
-  return String(parsed.appConsoleUrl || '').trim()
+  return {
+    appVersion: String(parsed.appVersion || '').trim(),
+    appConsoleUrl: String(parsed.appConsoleUrl || '').trim(),
+  }
 }
 
 async function fetchHistoricalAppConsoleUrl(packageId) {
@@ -130,7 +133,7 @@ function AppVersionReleaseApplyPage() {
   const [demandLoading, setDemandLoading] = useState(false)
   const [packages, setPackages] = useState([])
   const [demands, setDemands] = useState([])
-  const [appConsoleUrlMap, setAppConsoleUrlMap] = useState({})
+  const [packagePrefillMap, setPackagePrefillMap] = useState({})
 
   const fetchPackages = useCallback(async () => {
     setPackageLoading(true)
@@ -192,25 +195,30 @@ function AppVersionReleaseApplyPage() {
   useEffect(() => {
     const missingPackageIds = selectedPackageIds
       .map((id) => Number(id))
-      .filter((id) => id > 0 && !Object.prototype.hasOwnProperty.call(appConsoleUrlMap, id))
+      .filter((id) => id > 0 && !Object.prototype.hasOwnProperty.call(packagePrefillMap, id))
     if (missingPackageIds.length === 0) return
 
     let cancelled = false
     Promise.all(missingPackageIds.map(async (packageId) => {
       try {
-        const historicalAppConsoleUrl = await fetchHistoricalAppConsoleUrl(packageId)
-        if (historicalAppConsoleUrl) return [packageId, historicalAppConsoleUrl]
-        const result = await getMatrixPackageSideNotesApi(packageId)
-        return [packageId, result?.success ? extractFrontendAppConsoleUrl(result.data) : '']
+        const [historicalAppConsoleUrl, sideNotesResult] = await Promise.all([
+          fetchHistoricalAppConsoleUrl(packageId),
+          getMatrixPackageSideNotesApi(packageId),
+        ])
+        const frontendInfo = sideNotesResult?.success ? extractFrontendReleaseInfo(sideNotesResult.data) : {}
+        return [packageId, {
+          app_version: frontendInfo.appVersion || '',
+          app_console_url: historicalAppConsoleUrl || frontendInfo.appConsoleUrl || '',
+        }]
       } catch {
-        return [packageId, '']
+        return [packageId, { app_version: '', app_console_url: '' }]
       }
     })).then((entries) => {
       if (cancelled) return
-      setAppConsoleUrlMap((current) => {
+      setPackagePrefillMap((current) => {
         const next = { ...current }
-        entries.forEach(([packageId, appConsoleUrl]) => {
-          next[packageId] = appConsoleUrl || ''
+        entries.forEach(([packageId, prefill]) => {
+          next[packageId] = prefill || { app_version: '', app_console_url: '' }
         })
         return next
       })
@@ -219,19 +227,20 @@ function AppVersionReleaseApplyPage() {
     return () => {
       cancelled = true
     }
-  }, [appConsoleUrlMap, selectedPackageIds])
+  }, [packagePrefillMap, selectedPackageIds])
 
   useEffect(() => {
     const currentItems = Array.isArray(form.getFieldValue('package_items')) ? form.getFieldValue('package_items') : []
     const currentMap = new Map(currentItems.map((item) => [Number(item?.package_id), item]))
     const nextItems = selectedPackageIds.map((packageId) => {
       const currentItem = currentMap.get(Number(packageId))
-      const frontendAppConsoleUrl = appConsoleUrlMap[Number(packageId)] || ''
+      const prefill = packagePrefillMap[Number(packageId)] || {}
+      const prefillAppVersion = prefill.app_version || ''
       return {
         package_id: Number(packageId),
-        app_version: currentItem?.app_version || '',
+        app_version: currentItem?.app_version || prefillAppVersion,
         urgency_code: currentItem?.urgency_code || 'P1',
-        app_console_url: currentItem?.app_console_url || frontendAppConsoleUrl,
+        app_console_url: currentItem?.app_console_url || prefill.app_console_url || '',
         expected_submit_at: currentItem?.expected_submit_at || null,
       }
     })
@@ -251,7 +260,7 @@ function AppVersionReleaseApplyPage() {
     if (hasChanged) {
       form.setFieldsValue({ package_items: nextItems })
     }
-  }, [appConsoleUrlMap, form, selectedPackageIds])
+  }, [form, packagePrefillMap, selectedPackageIds])
 
   const showConflicts = (conflicts = []) => {
     Modal.warning({
@@ -404,7 +413,7 @@ function AppVersionReleaseApplyPage() {
                           name={['package_items', index, 'app_version']}
                           rules={[{ required: true, message: '请填写版本号' }]}
                         >
-                          <Input allowClear maxLength={80} placeholder="例如 1.0.3" />
+                          <Input disabled maxLength={80} placeholder="从矩阵包APP版本号自动带出" />
                         </Form.Item>
                       </Col>
                       <Col xs={24} md={6}>

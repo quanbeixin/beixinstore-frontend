@@ -120,14 +120,14 @@ const PRODUCTION_STAGE_ITEMS = [
     description: '设计、运营、运维补充',
   },
   {
-    key: PRODUCTION_STAGE_KEYS.FRONTEND_PUSH,
-    title: '前端补充+PUSH配置',
-    description: '前端配置与 PUSH 信息',
-  },
-  {
     key: PRODUCTION_STAGE_KEYS.BACKEND_INIT,
     title: '后端脚本初始化',
     description: 'GP配置与脚本状态',
+  },
+  {
+    key: PRODUCTION_STAGE_KEYS.FRONTEND_PUSH,
+    title: '前端补充+PUSH配置',
+    description: '前端配置与 PUSH 信息',
   },
   {
     key: PRODUCTION_STAGE_KEYS.PRODUCTION_TEST,
@@ -739,7 +739,7 @@ async function getFreshAttachmentDownloadUrl(packageId, noteType, fieldName, fal
   return attachment?.download_url || attachment?.preview_url || attachment?.object_url || fallbackUrl
 }
 
-function DesignUploadField({ packageId, noteType = 'DESIGN', field, value, onChange, onUploaded, disabled }) {
+function DesignUploadField({ packageId, noteType = 'DESIGN', field, value, onChange, onUploaded, disabled, hint }) {
   const normalized = normalizeUploadValue(value)
   const [uploading, setUploading] = useState(false)
   const [openingDownload, setOpeningDownload] = useState(false)
@@ -839,7 +839,10 @@ function DesignUploadField({ packageId, noteType = 'DESIGN', field, value, onCha
       className={`cold-production-design-upload cold-production-design-upload-${field.name}${isFileField ? ' cold-production-design-upload-fileField' : ''}`}
     >
       <div className="cold-production-design-upload-head">
-        <Text className="cold-production-design-upload-title">{field.label}</Text>
+        <div className="cold-production-design-upload-titleWrap">
+          <Text className="cold-production-design-upload-title">{field.label}</Text>
+          {hint ? <div className="cold-production-design-upload-hint">{hint}</div> : null}
+        </div>
         <Space size={6}>
           <Upload {...uploadProps}>
             <Button size="small" icon={<UploadOutlined />} loading={uploading} disabled={disabled}>
@@ -953,6 +956,7 @@ function ColdStandbyProductionDetailPage() {
   const canEdit = canManage && !isViewMode
   const backPath = fromPanorama ? '/matrix-package-special/panorama' : '/matrix-package-special/cold-standby-production'
   const editPath = `/matrix-package-special/cold-standby-production/${id}?mode=edit${fromPanorama ? '&from=panorama' : ''}`
+  const matrixPackageDisplayName = String(detail?.package_name || '').trim()
   const requiredSideChecksCompleted = useMemo(
     () => SIDE_CHECK_SECTION_TYPES.every((sectionType) => getSideNote(sideNotes, sectionType)?.is_confirmed),
     [sideNotes],
@@ -1860,6 +1864,15 @@ function ColdStandbyProductionDetailPage() {
                         packageId={id}
                         noteType={section.type}
                         field={field}
+                        hint={
+                          field.name === 'dynamicWatermarkImage'
+                            ? `${matrixPackageDisplayName || '包名'}.gif`
+                            : field.name === 'emailLogoImage'
+                              ? 'brand_clip.png'
+                            : field.name === 'dynamicWatermarkBrandImage'
+                              ? 'Splash_Screen_Slogan.png'
+                              : ''
+                        }
                         onUploaded={(fieldName, nextValue) => handleAttachmentUploadComplete(section.type, fieldName, nextValue)}
                         disabled={!canEdit}
                       />

@@ -34,6 +34,8 @@ import {
   createMatrixPackageApi,
   deleteMatrixPackageApi,
   getMatrixPackagesApi,
+  getMatrixPackageSideNotesApi,
+  patchMatrixPackageSideNoteFieldsApi,
   updateMatrixPackageApi,
 } from '../../api/matrixPackage'
 import { getDeveloperAccountOptionsApi } from '../../api/developerAccount'
@@ -55,6 +57,24 @@ const TESTING_STATUS = 'TESTING'
 const COLD_STANDBY_STATUS = 'COLD_STANDBY'
 const PENDING_REVIEW_SUBMIT_STATUS = 'PENDING_REVIEW_SUBMIT'
 const DEFAULT_PRODUCTION_STAGE = 'REQUIREMENT_CONFIRM'
+
+function parseJsonObject(value) {
+  const text = String(value || '').trim()
+  if (!text) return {}
+  try {
+    const parsed = JSON.parse(text)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function extractFrontendAppVersion(notes = []) {
+  const frontendNote = Array.isArray(notes) ? notes.find((item) => item?.note_type === 'FRONTEND') : null
+  const content = String(frontendNote?.content || '').trim() || String(frontendNote?.confirmed_content || '').trim()
+  const parsed = parseJsonObject(content)
+  return String(parsed.appVersion || '').trim()
+}
 
 const DEFAULT_STATUS_OPTIONS = [
   { item_code: 'PENDING_DEV', item_name: '待开发', color: 'default' },
@@ -401,7 +421,7 @@ function MatrixPackageSpecialPage() {
     form.setFieldsValue({
       package_name: '',
       app_id: '',
-      new_package_version: '',
+      app_version: '',
       domain_info: '',
       platform: [],
       delivery_channel_code: undefined,
@@ -420,7 +440,7 @@ function MatrixPackageSpecialPage() {
     form.setFieldsValue({
       package_name: record.package_name || '',
       app_id: record.app_id || '',
-      new_package_version: record.new_package_version || '',
+      app_version: '',
       domain_info: record.domain_info || '',
       platform: record.status_code === DELIVERING_STATUS ? normalizePlatformCodes(record.platform_codes || record.platform) : [],
       delivery_channel_code: record.status_code === DELIVERING_STATUS ? record.delivery_channel_code || undefined : undefined,
@@ -432,14 +452,22 @@ function MatrixPackageSpecialPage() {
       has_operated: Boolean(record.has_operated),
     })
     setModalOpen(true)
+    getMatrixPackageSideNotesApi(record.id)
+      .then((result) => {
+        if (!result?.success) return
+        form.setFieldValue('app_version', extractFrontendAppVersion(result.data))
+      })
+      .catch(() => {})
   }
 
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
       const submitIsDelivering = values.status_code === DELIVERING_STATUS
+      const appVersion = String(values.app_version || '').trim()
+      const { app_version: _appVersion, ...matrixPackageValues } = values
       const payload = {
-        ...values,
+        ...matrixPackageValues,
         health_code: submitIsDelivering ? values.health_code : null,
         platform: submitIsDelivering ? values.platform : [],
         delivery_channel_code: submitIsDelivering ? values.delivery_channel_code : null,
@@ -455,6 +483,19 @@ function MatrixPackageSpecialPage() {
       if (!result?.success) {
         message.error(result?.message || '保存失败')
         return
+      }
+
+      const packageId = editingRecord?.id || result.data?.id
+      if (packageId) {
+        const noteResult = await patchMatrixPackageSideNoteFieldsApi(packageId, 'FRONTEND', {
+          fields: {
+            appVersion,
+          },
+        })
+        if (!noteResult?.success) {
+          message.error(noteResult?.message || 'APP版本号保存失败')
+          return
+        }
       }
 
       message.success(editingRecord?.id ? '矩阵包已更新' : '矩阵包已新增')
@@ -534,7 +575,6 @@ function MatrixPackageSpecialPage() {
           <Text strong>{value || '-'}</Text>
           <Space size={4} wrap>
             {record.app_id ? <Tag color="cyan">{record.app_id}</Tag> : null}
-            {record.new_package_version ? <Tag color="blue">{record.new_package_version}</Tag> : null}
             {record.domain_info ? <Tag color="purple">{record.domain_info}</Tag> : null}
             {record.owner_name ? <Text type="secondary">{record.owner_name}</Text> : null}
           </Space>
@@ -1072,8 +1112,8 @@ function MatrixPackageSpecialPage() {
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item label="新包版本" name="new_package_version">
-                <Input placeholder="例如：26/07/07版本" maxLength={50} />
+              <Form.Item label="APP版本号" name="app_version">
+                <Input placeholder="例如：1.0.3" maxLength={50} />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>

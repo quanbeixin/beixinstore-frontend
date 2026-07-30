@@ -64,15 +64,15 @@ const PRODUCTION_STAGE_ITEMS = [
     noteTypes: ['DESIGN', 'OPERATION', 'DEVOPS'],
   },
   {
-    key: 'FRONTEND_PUSH',
-    title: '前端+PUSH',
-    noteTypes: ['FRONTEND', 'DELIVERY'],
-  },
-  {
     key: 'BACKEND_INIT',
     title: '后端脚本',
     nodeCodes: ['BACKEND_SCRIPT'],
     needsBackendSelfCheck: true,
+  },
+  {
+    key: 'FRONTEND_PUSH',
+    title: '前端+PUSH',
+    noteTypes: ['FRONTEND', 'DELIVERY'],
   },
   {
     key: 'PRODUCTION_TEST',
