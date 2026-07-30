@@ -47,6 +47,7 @@ import {
   patchMatrixPackageSideNoteFieldsApi,
   remindMatrixPackageProductionNodeApi,
   remindMatrixPackageSideNoteApi,
+  syncMatrixPackageDevopsMetaApi,
   updateMatrixPackageApi,
   updateMatrixPackageProductionNodeApi,
 } from '../../api/matrixPackage'
@@ -936,6 +937,7 @@ function ColdStandbyProductionDetailPage() {
   const [updatingStageSchedule, setUpdatingStageSchedule] = useState('')
   const [saveStatus, setSaveStatus] = useState('')
   const [confirmingType, setConfirmingType] = useState('')
+  const [syncingDevopsMetaEnv, setSyncingDevopsMetaEnv] = useState('')
   const [detail, setDetail] = useState(null)
   const [sideNotes, setSideNotes] = useState([])
   const [productionNodes, setProductionNodes] = useState([])
@@ -1676,6 +1678,39 @@ function ColdStandbyProductionDetailPage() {
     })
   }
 
+  const handleSyncDevopsMeta = async (env) => {
+    if (!canEdit || !detail?.id) return
+    const normalizedEnv = env === 'test' ? 'test' : 'prod'
+    const fieldPrefix = normalizedEnv === 'test' ? 'test' : 'prod'
+    const currentDevopsValues = form.getFieldValue('DEVOPS')
+    const devopsValues = currentDevopsValues && typeof currentDevopsValues === 'object' ? currentDevopsValues : {}
+    const syncFields = {
+      [`${fieldPrefix}GoogleAuthClientId`]: devopsValues[`${fieldPrefix}GoogleAuthClientId`],
+      [`${fieldPrefix}GoogleAuthClientSecret`]: devopsValues[`${fieldPrefix}GoogleAuthClientSecret`],
+      [`${fieldPrefix}GooglePayCertificateContent`]: devopsValues[`${fieldPrefix}GooglePayCertificateContent`],
+    }
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+      autoSaveTimerRef.current = null
+      pendingFieldPatchRef.current = {}
+    }
+    setSyncingDevopsMetaEnv(normalizedEnv)
+    try {
+      const savedNotes = await patchSideNoteFields('DEVOPS', { fields: syncFields })
+      if (!savedNotes) return
+      const result = await syncMatrixPackageDevopsMetaApi(detail.id, { env: normalizedEnv })
+      if (!result?.success) {
+        message.error(result?.message || '数据同步失败')
+        return
+      }
+      message.success(`${normalizedEnv === 'test' ? '测试环境' : '生产环境'}数据同步成功`)
+    } catch (error) {
+      message.error(error?.message || '数据同步失败')
+    } finally {
+      setSyncingDevopsMetaEnv('')
+    }
+  }
+
   const getStageExpectedDateValue = (stageKey) => {
     const targets = STAGE_SCHEDULE_TARGETS[stageKey] || {}
     const dates = [
@@ -2216,6 +2251,26 @@ function ColdStandbyProductionDetailPage() {
                 placeholder="选择日期"
                 onChange={(value) => handleSideNoteExpectedDateChange(section.type, value)}
               />
+              {section.type === 'DEVOPS' ? (
+                <Space size={6}>
+                  <Button
+                    size="small"
+                    loading={syncingDevopsMetaEnv === 'prod'}
+                    disabled={!canEdit || Boolean(syncingDevopsMetaEnv)}
+                    onClick={() => handleSyncDevopsMeta('prod')}
+                  >
+                    同步生产
+                  </Button>
+                  <Button
+                    size="small"
+                    loading={syncingDevopsMetaEnv === 'test'}
+                    disabled={!canEdit || Boolean(syncingDevopsMetaEnv)}
+                    onClick={() => handleSyncDevopsMeta('test')}
+                  >
+                    同步测试
+                  </Button>
+                </Space>
+              ) : null}
             </div>
             <div className="cold-production-note-meta-updated">
               {note?.updated_at ? (

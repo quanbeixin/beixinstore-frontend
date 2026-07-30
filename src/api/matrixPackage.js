@@ -56,6 +56,12 @@ export function remindMatrixPackageSideNoteApi(id, noteType) {
   return request.post(`/matrix-packages/${id}/side-notes/${noteType}/remind`)
 }
 
+export function syncMatrixPackageDevopsMetaApi(id, payload = {}) {
+  return request.post(`/matrix-packages/${id}/devops-meta-sync`, payload, {
+    timeout: 30000,
+  })
+}
+
 export function getMatrixPackageSideNoteUploadPolicyApi(id, payload = {}) {
   return request.post(`/matrix-packages/${id}/side-notes/upload-policy`, payload, {
     timeout: 30000,

@@ -437,6 +437,7 @@
   align-items: center;
   gap: 8px;
   min-width: 190px;
+  flex-wrap: wrap;
 }
 
 .cold-production-note-meta-date .ant-picker {
