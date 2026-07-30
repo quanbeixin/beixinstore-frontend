@@ -584,14 +584,12 @@ function AppVersionReleasePage() {
     },
     ]
 
-    if (!canManage) return baseColumns
-
     return [
       ...baseColumns,
       {
         title: '操作',
         key: 'action',
-        width: 206,
+        width: canManage ? 206 : 92,
         fixed: 'right',
         render: (_, record) => (
           <Space size={4}>
@@ -603,32 +601,36 @@ function AppVersionReleasePage() {
             >
               备注
             </Button>
-            <Button
-              type="link"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => openEditModal(record)}
-            >
-              编辑
-            </Button>
-            <Popconfirm
-              title="确认删除这条发版记录？"
-              description="删除后列表中将不再展示该记录。"
-              okText="删除"
-              cancelText="取消"
-              okButtonProps={{ danger: true, loading: deletingId === record.id }}
-              onConfirm={() => handleDelete(record)}
-            >
+            {canManage ? (
               <Button
-                danger
                 type="link"
                 size="small"
-                icon={<DeleteOutlined />}
-                loading={deletingId === record.id}
+                icon={<EditOutlined />}
+                onClick={() => openEditModal(record)}
               >
-                删除
+                编辑
               </Button>
-            </Popconfirm>
+            ) : null}
+            {canManage ? (
+              <Popconfirm
+                title="确认删除这条发版记录？"
+                description="删除后列表中将不再展示该记录。"
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true, loading: deletingId === record.id }}
+                onConfirm={() => handleDelete(record)}
+              >
+                <Button
+                  danger
+                  type="link"
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  loading={deletingId === record.id}
+                >
+                  删除
+                </Button>
+              </Popconfirm>
+            ) : null}
           </Space>
         ),
       },
@@ -733,14 +735,12 @@ function AppVersionReleasePage() {
       },
     ]
 
-    if (!canManage) return baseColumns
-
     return [
       ...baseColumns,
       {
         title: '操作',
         key: 'action',
-        width: 206,
+        width: canManage ? 206 : 92,
         fixed: 'right',
         render: (_, record) => record.row_type === 'release' ? (
           <Space size={4}>
@@ -752,32 +752,36 @@ function AppVersionReleasePage() {
             >
               备注
             </Button>
-            <Button
-              type="link"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => openEditModal(record)}
-            >
-              编辑
-            </Button>
-            <Popconfirm
-              title="确认删除这条发版记录？"
-              description="删除后列表中将不再展示该记录。"
-              okText="删除"
-              cancelText="取消"
-              okButtonProps={{ danger: true, loading: deletingId === record.id }}
-              onConfirm={() => handleDelete(record)}
-            >
+            {canManage ? (
               <Button
-                danger
                 type="link"
                 size="small"
-                icon={<DeleteOutlined />}
-                loading={deletingId === record.id}
+                icon={<EditOutlined />}
+                onClick={() => openEditModal(record)}
               >
-                删除
+                编辑
               </Button>
-            </Popconfirm>
+            ) : null}
+            {canManage ? (
+              <Popconfirm
+                title="确认删除这条发版记录？"
+                description="删除后列表中将不再展示该记录。"
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true, loading: deletingId === record.id }}
+                onConfirm={() => handleDelete(record)}
+              >
+                <Button
+                  danger
+                  type="link"
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  loading={deletingId === record.id}
+                >
+                  删除
+                </Button>
+              </Popconfirm>
+            ) : null}
           </Space>
         ) : null,
       },
@@ -884,7 +888,7 @@ function AppVersionReleasePage() {
               columns={groupedColumns}
               dataSource={groupRows}
               size="middle"
-              scroll={{ x: canManage ? 1540 : 1330 }}
+              scroll={{ x: canManage ? 1540 : 1420 }}
               pagination={false}
               expandable={{ defaultExpandAllRows: false }}
             />
@@ -896,7 +900,7 @@ function AppVersionReleasePage() {
             columns={columns}
             dataSource={rows}
             size="middle"
-            scroll={{ x: canManage ? 1750 : 1600 }}
+            scroll={{ x: canManage ? 1750 : 1690 }}
             pagination={{
               current: pagination.current,
               pageSize: pagination.pageSize,
