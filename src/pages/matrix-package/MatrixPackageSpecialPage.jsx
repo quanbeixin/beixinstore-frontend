@@ -563,6 +563,20 @@ function MatrixPackageSpecialPage() {
     }
   }
 
+  const renderPlatformTags = (_, record) => {
+    if (record.status_code !== DELIVERING_STATUS) return '-'
+    const codes = normalizePlatformCodes(record.platform_codes || record.platform)
+    if (codes.length === 0) return '-'
+    return (
+      <Space size={4} wrap>
+        {codes.map((code) => {
+          const meta = platformMap.get(code) || { name: code, color: 'default' }
+          return <Tag key={code} color={meta.color}>{meta.name}</Tag>
+        })}
+      </Space>
+    )
+  }
+
   const columns = [
     {
       title: '矩阵包',
@@ -624,19 +638,7 @@ function MatrixPackageSpecialPage() {
       dataIndex: 'platform',
       key: 'platform',
       width: 180,
-      render: (_, record) => {
-        if (record.status_code !== DELIVERING_STATUS) return '-'
-        const codes = normalizePlatformCodes(record.platform_codes || record.platform)
-        if (codes.length === 0) return '-'
-        return (
-          <Space size={4} wrap>
-            {codes.map((code) => {
-              const meta = platformMap.get(code) || { name: code, color: 'default' }
-              return <Tag key={code} color={meta.color}>{meta.name}</Tag>
-            })}
-          </Space>
-        )
-      },
+      render: renderPlatformTags,
     },
     {
       title: '投放渠道',
@@ -779,11 +781,11 @@ function MatrixPackageSpecialPage() {
       },
     },
     {
-      title: '负责人',
-      dataIndex: 'owner_name',
-      key: 'owner_name',
-      width: 120,
-      render: (value) => value || '-',
+      title: '投放平台',
+      dataIndex: 'platform',
+      key: 'platform',
+      width: 160,
+      render: renderPlatformTags,
     },
     {
       title: '更新时间',
@@ -1001,7 +1003,7 @@ function MatrixPackageSpecialPage() {
         title={`${summaryModal.title || '矩阵包'}明细`}
         open={summaryModal.open}
         footer={null}
-        width={980}
+        width={1100}
         destroyOnHidden
         onCancel={() => setSummaryModal((prev) => ({ ...prev, open: false }))}
       >
@@ -1011,7 +1013,7 @@ function MatrixPackageSpecialPage() {
           loading={summaryModal.loading}
           columns={summaryModalColumns}
           dataSource={summaryModal.rows}
-          scroll={{ x: 950 }}
+          scroll={{ x: 1080 }}
           locale={{
             emptyText: (
               <Empty

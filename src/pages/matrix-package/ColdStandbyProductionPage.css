@@ -15,9 +15,39 @@
   padding: 14px;
 }
 
+.cold-production-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.cold-production-filter-item {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.cold-production-filter-keyword {
+  flex: 1 1 260px;
+}
+
+.cold-production-filter-account {
+  width: 220px;
+}
+
+.cold-production-filter-status,
+.cold-production-filter-stage {
+  width: 150px;
+}
+
+.cold-production-filter-date {
+  width: 160px;
+}
+
 .cold-production-filter-card .ant-select,
 .cold-production-filter-card .ant-input-affix-wrapper,
-.cold-production-filter-card .ant-input {
+.cold-production-filter-card .ant-input,
+.cold-production-filter-card .ant-picker {
   width: 100%;
 }
 
@@ -110,5 +140,19 @@
 
   .cold-production-checklist {
     grid-template-columns: 1fr;
+  }
+
+  .cold-production-filter-bar {
+    flex-wrap: wrap;
+  }
+
+  .cold-production-filter-item {
+    flex: 1 1 calc(50% - 5px);
+    width: auto;
+  }
+
+  .cold-production-filter-keyword,
+  .cold-production-filter-account {
+    flex-basis: 100%;
   }
 }

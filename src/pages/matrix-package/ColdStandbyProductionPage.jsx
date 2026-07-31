@@ -139,6 +139,7 @@ function ColdStandbyProductionPage() {
     developer_account_id: undefined,
     status_code: undefined,
     production_stage_code: undefined,
+    expected_cold_ready_date: '',
   })
   const [developerAccountOptions, setDeveloperAccountOptions] = useState([])
   const [statusOptions, setStatusOptions] = useState(DEFAULT_STATUS_OPTIONS.map((item) => ({
@@ -190,6 +191,7 @@ function ColdStandbyProductionPage() {
         developer_account_id: filters.developer_account_id || undefined,
         status_code: filters.status_code || undefined,
         production_stage_code: filters.production_stage_code || undefined,
+        expected_cold_ready_date: filters.expected_cold_ready_date || undefined,
       })
       if (!result?.success) {
         message.error(result?.message || '获取冷备包生产线失败')
@@ -245,7 +247,7 @@ function ColdStandbyProductionPage() {
         health_code: editingRecord.health_code || null,
         status_code: values.status_code,
         expected_cold_ready_date: values.expected_cold_ready_date
-          ? values.expected_cold_ready_date.minute(0).second(0).format('YYYY-MM-DD HH:mm:ss')
+          ? values.expected_cold_ready_date.format('YYYY-MM-DD')
           : null,
       }
 
@@ -323,7 +325,7 @@ function ColdStandbyProductionPage() {
       dataIndex: 'expected_cold_ready_date',
       key: 'expected_cold_ready_date',
       width: 160,
-      render: (value) => (value ? dayjs(value).format('YYYY-MM-DD HH:00') : <Text type="secondary">未设置</Text>),
+      render: (value) => (value ? dayjs(value).format('YYYY-MM-DD') : <Text type="secondary">未设置</Text>),
     },
     {
       title: '阶段完成情况',
@@ -384,8 +386,8 @@ function ColdStandbyProductionPage() {
       </div>
 
       <Card variant="borderless" className="cold-production-filter-card">
-        <Row gutter={[12, 12]} align="middle">
-          <Col xs={24} md={7}>
+        <div className="cold-production-filter-bar">
+          <div className="cold-production-filter-item cold-production-filter-keyword">
             <Input
               allowClear
               prefix={<SearchOutlined />}
@@ -393,8 +395,8 @@ function ColdStandbyProductionPage() {
               value={filters.keyword}
               onChange={(event) => setFilters((prev) => ({ ...prev, keyword: event.target.value }))}
             />
-          </Col>
-          <Col xs={24} md={5}>
+          </div>
+          <div className="cold-production-filter-item cold-production-filter-account">
             <Select
               allowClear
               showSearch
@@ -407,8 +409,8 @@ function ColdStandbyProductionPage() {
               }))}
               onChange={(value) => setFilters((prev) => ({ ...prev, developer_account_id: value }))}
             />
-          </Col>
-          <Col xs={12} md={5}>
+          </div>
+          <div className="cold-production-filter-item cold-production-filter-status">
             <Select
               allowClear
               placeholder="包状态"
@@ -416,8 +418,8 @@ function ColdStandbyProductionPage() {
               options={statusOptions.map((item) => ({ label: item.name, value: item.code }))}
               onChange={(value) => setFilters((prev) => ({ ...prev, status_code: value }))}
             />
-          </Col>
-          <Col xs={12} md={5}>
+          </div>
+          <div className="cold-production-filter-item cold-production-filter-stage">
             <Select
               allowClear
               placeholder="生产节点"
@@ -425,8 +427,21 @@ function ColdStandbyProductionPage() {
               options={stageOptions.map((item) => ({ label: item.name, value: item.code }))}
               onChange={(value) => setFilters((prev) => ({ ...prev, production_stage_code: value }))}
             />
-          </Col>
-        </Row>
+          </div>
+          <div className="cold-production-filter-item cold-production-filter-date">
+            <DatePicker
+              allowClear
+              style={{ width: '100%' }}
+              format="YYYY-MM-DD"
+              placeholder="预计完成日期"
+              value={filters.expected_cold_ready_date ? dayjs(filters.expected_cold_ready_date) : null}
+              onChange={(_, dateString) => setFilters((prev) => ({
+                ...prev,
+                expected_cold_ready_date: Array.isArray(dateString) ? dateString[0] || '' : dateString || '',
+              }))}
+            />
+          </div>
+        </div>
       </Card>
 
       <Card variant="borderless" className="cold-production-table-card">
@@ -486,14 +501,8 @@ function ColdStandbyProductionPage() {
               <Form.Item label="预计生产完成时间" name="expected_cold_ready_date">
                 <DatePicker
                   style={{ width: '100%' }}
-                  format="YYYY-MM-DD HH:00"
-                  placeholder="选择日期和小时"
-                  showTime={{
-                    format: 'HH',
-                    minuteStep: 60,
-                    secondStep: 60,
-                    defaultOpenValue: dayjs().minute(0).second(0),
-                  }}
+                  format="YYYY-MM-DD"
+                  placeholder="选择日期"
                 />
               </Form.Item>
             </Col>
