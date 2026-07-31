@@ -276,6 +276,11 @@
   min-width: 88px;
 }
 
+.cold-production-devops-sync-btn {
+  min-width: 76px;
+  font-weight: 500;
+}
+
 .cold-production-side-check-icon-done {
   color: #52c41a;
 }

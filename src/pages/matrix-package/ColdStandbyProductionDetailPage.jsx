@@ -2254,7 +2254,9 @@ function ColdStandbyProductionDetailPage() {
               {section.type === 'DEVOPS' ? (
                 <Space size={6}>
                   <Button
+                    type="primary"
                     size="small"
+                    className="cold-production-devops-sync-btn"
                     loading={syncingDevopsMetaEnv === 'prod'}
                     disabled={!canEdit || Boolean(syncingDevopsMetaEnv)}
                     onClick={() => handleSyncDevopsMeta('prod')}
@@ -2262,7 +2264,9 @@ function ColdStandbyProductionDetailPage() {
                     同步生产
                   </Button>
                   <Button
+                    type="primary"
                     size="small"
+                    className="cold-production-devops-sync-btn"
                     loading={syncingDevopsMetaEnv === 'test'}
                     disabled={!canEdit || Boolean(syncingDevopsMetaEnv)}
                     onClick={() => handleSyncDevopsMeta('test')}

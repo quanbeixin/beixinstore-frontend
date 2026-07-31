@@ -60,7 +60,27 @@ function extractFrontendReleaseInfo(notes = []) {
   return {
     appVersion: String(parsed.appVersion || '').trim(),
     appConsoleUrl: String(parsed.appConsoleUrl || '').trim(),
+    prodGooglePlatformAppId: String(parsed.prodGooglePlatformAppId || '').trim(),
   }
+}
+
+function extractSideNoteContent(notes = [], noteType) {
+  const normalizedNoteType = String(noteType || '').trim().toUpperCase()
+  const note = Array.isArray(notes)
+    ? notes.find((item) => String(item?.note_type || '').trim().toUpperCase() === normalizedNoteType)
+    : null
+  const content = String(note?.content || '').trim() || String(note?.confirmed_content || '').trim()
+  return parseJsonObject(content)
+}
+
+function buildGeneratedAppConsoleUrl(packageDetail, operationValues = {}, frontendValues = {}) {
+  const developerAccountId = String(packageDetail?.developer_account_account_id || '').trim()
+  const prodGooglePlatformAppId = String(
+    operationValues?.prodGooglePlatformAppId || frontendValues?.prodGooglePlatformAppId || '',
+  ).trim()
+  return developerAccountId && prodGooglePlatformAppId
+    ? `https://play.google.com/console/u/0/developers/${developerAccountId}/app/${prodGooglePlatformAppId}/publishing`
+    : ''
 }
 
 async function fetchHistoricalAppConsoleUrl(packageId) {
@@ -206,9 +226,15 @@ function AppVersionReleaseApplyPage() {
           getMatrixPackageSideNotesApi(packageId),
         ])
         const frontendInfo = sideNotesResult?.success ? extractFrontendReleaseInfo(sideNotesResult.data) : {}
+        const operationInfo = sideNotesResult?.success ? extractSideNoteContent(sideNotesResult.data, 'OPERATION') : {}
+        const generatedAppConsoleUrl = buildGeneratedAppConsoleUrl(
+          packageMap.get(Number(packageId)),
+          operationInfo,
+          frontendInfo,
+        )
         return [packageId, {
           app_version: frontendInfo.appVersion || '',
-          app_console_url: historicalAppConsoleUrl || frontendInfo.appConsoleUrl || '',
+          app_console_url: generatedAppConsoleUrl || frontendInfo.appConsoleUrl || historicalAppConsoleUrl || '',
         }]
       } catch {
         return [packageId, { app_version: '', app_console_url: '' }]
@@ -227,7 +253,7 @@ function AppVersionReleaseApplyPage() {
     return () => {
       cancelled = true
     }
-  }, [packagePrefillMap, selectedPackageIds])
+  }, [packageMap, packagePrefillMap, selectedPackageIds])
 
   useEffect(() => {
     const currentItems = Array.isArray(form.getFieldValue('package_items')) ? form.getFieldValue('package_items') : []
