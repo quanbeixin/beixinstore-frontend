@@ -38,6 +38,20 @@ const RELEASE_TYPE_OPTIONS = [
   { label: '版本迭代', value: 'VERSION_UPDATE' },
 ]
 
+const MATRIX_PACKAGE_STATUS_COLOR_MAP = {
+  PENDING_DEV: 'default',
+  IN_DEVELOPMENT: 'cyan',
+  TESTING: 'purple',
+  COLD_STANDBY: 'blue',
+  PENDING_REVIEW_SUBMIT: 'orange',
+  IN_REVIEW: 'gold',
+  REVIEW_REJECTED: 'red',
+  HOT_STANDBY: 'green',
+  DELIVERING: 'processing',
+  BANNED: 'red',
+  ARCHIVED: 'default',
+}
+
 function formatDateValue(value) {
   return value ? value.format('YYYY-MM-DD') : null
 }
@@ -98,10 +112,22 @@ async function fetchHistoricalAppConsoleUrl(packageId) {
 function buildPackageOption(item) {
   const appId = item.app_id ? `包ID：${item.app_id}` : '包ID：-'
   const domain = item.domain_info ? `域名：${item.domain_info}` : '域名：-'
+  const statusCode = String(item.status_code || '').trim().toUpperCase()
+  const statusName = String(item.status_name || item.status_code || '').trim()
   return {
     label: (
-      <Space direction="vertical" size={0}>
-        <Text>{item.package_name || `矩阵包 ${item.id}`}</Text>
+      <Space orientation="vertical" size={0}>
+        <span className="app-version-release-apply-package-option-title">
+          <Text>{item.package_name || `矩阵包 ${item.id}`}</Text>
+          {statusName ? (
+            <Tag
+              color={MATRIX_PACKAGE_STATUS_COLOR_MAP[statusCode] || 'default'}
+              className="app-version-release-apply-package-status-tag"
+            >
+              {statusName}
+            </Tag>
+          ) : null}
+        </span>
         <Text type="secondary" className="app-version-release-apply-option-meta">
           {appId} / {domain}
         </Text>
@@ -115,7 +141,7 @@ function buildPackageOption(item) {
 function buildDemandOption(item) {
   return {
     label: (
-      <Space direction="vertical" size={0}>
+      <Space orientation="vertical" size={0}>
         <Text>{item.name || item.id}</Text>
         <Text type="secondary" className="app-version-release-apply-option-meta">
           {item.id || '-'} / {item.owner_name || '-'} / {item.status || '-'}
@@ -132,7 +158,7 @@ function renderConflictList(conflicts = []) {
     <div className="app-version-release-apply-conflicts">
       {conflicts.map((item) => (
         <div className="app-version-release-apply-conflict" key={`${item.matrix_package_id}-${item.id}`}>
-          <Space direction="vertical" size={2}>
+          <Space orientation="vertical" size={2}>
             <Text strong>{item.package_name || `矩阵包 ${item.matrix_package_id}`}</Text>
             <Text type="secondary">
               包ID：{item.app_id || '-'} / 域名：{item.domain_info || '-'} / 版本：{item.app_version || '-'}

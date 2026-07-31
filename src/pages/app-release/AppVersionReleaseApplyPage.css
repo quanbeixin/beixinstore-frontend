@@ -56,6 +56,20 @@
   line-height: 18px;
 }
 
+.app-version-release-apply-package-option-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.app-version-release-apply-package-status-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+  font-size: 11px;
+  line-height: 18px;
+}
+
 .app-version-release-apply-actions {
   display: flex;
   justify-content: flex-end;
