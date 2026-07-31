@@ -58,6 +58,7 @@ const FeedbackList = lazy(() => import('./pages/feedback/FeedbackListPage'))
 const FeedbackDashboard = lazy(() => import('./pages/feedback/FeedbackDashboardPage'))
 const FeedbackAIPromptConfig = lazy(() => import('./pages/feedback/AIPromptConfigPage'))
 const ImportantEmailConfig = lazy(() => import('./pages/feedback/ImportantEmailConfigPage'))
+const CulturePushConfig = lazy(() => import('./pages/culture/CulturePushConfigPage'))
 const AppVersionRelease = lazy(() => import('./pages/app-release/AppVersionReleasePage'))
 const AppVersionReleaseApply = lazy(() => import('./pages/app-release/AppVersionReleaseApplyPage'))
 const ColdStandbyProduction = lazy(() => import('./pages/matrix-package/ColdStandbyProductionPage'))
@@ -86,6 +87,7 @@ const PAGE_COMPONENTS = {
   feedbackDashboard: FeedbackDashboard,
   feedbackAIPromptConfig: FeedbackAIPromptConfig,
   importantEmailConfig: ImportantEmailConfig,
+  culturePushConfig: CulturePushConfig,
   appVersionRelease: AppVersionRelease,
   appVersionReleaseApply: AppVersionReleaseApply,
   coldStandbyProduction: ColdStandbyProduction,

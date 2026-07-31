@@ -551,6 +551,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/culture/push-config',
+    componentKey: 'culturePushConfig',
+    requiredPermission: null,
+    page: {
+      title: '文化推送配置',
+      subtitle: '维护文化中心内容的推送规则。',
+    },
+    menu: {
+      section: 'culture',
+      label: '文化推送配置',
+      icon: 'setting',
+    },
+  },
+  {
     path: '/notification/rules',
     componentKey: 'notificationRules',
     requiredPermission: 'notification.rule.manage',

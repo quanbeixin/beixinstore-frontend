@@ -1,6 +1,7 @@
 import {
   ApiOutlined,
   ApartmentOutlined,
+  BookOutlined,
   DashboardOutlined,
   MessageOutlined,
   SafetyCertificateOutlined,
@@ -16,6 +17,7 @@ import { canAccessRoute } from '../utils/access'
 const iconMap = {
   api: <ApiOutlined />,
   apartment: <ApartmentOutlined />,
+  book: <BookOutlined />,
   dashboard: <DashboardOutlined />,
   message: <MessageOutlined />,
   safety: <SafetyCertificateOutlined />,
