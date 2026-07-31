@@ -428,7 +428,7 @@ function MatrixPackageSpecialPage() {
       delivery_status_code: undefined,
       developer_account_id: undefined,
       owner_user_id: undefined,
-      status_code: 'COLD_STANDBY',
+      status_code: PENDING_DEV_STATUS,
       health_code: undefined,
       has_operated: false,
     })
