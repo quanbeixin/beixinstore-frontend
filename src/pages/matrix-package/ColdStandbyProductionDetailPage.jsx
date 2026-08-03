@@ -412,11 +412,6 @@ const BACKEND_FIELDS = [
 
 const ADVERTISING_FIELDS = [
   {
-    name: 'MATRIX_FACEBOOK_INSTALL_DECRYPT_SECRET',
-    label: 'Facebook 投放解析安装来源密钥',
-    placeholder: '填写 Facebook 投放解析安装来源密钥',
-  },
-  {
     name: 'facebook_app_id',
     label: 'android 内 facebook app id 配置',
     placeholder: '填写 android 内 facebook app id 配置',
@@ -425,6 +420,11 @@ const ADVERTISING_FIELDS = [
     name: 'facebook_client_token',
     label: 'android app 内 facebook 密钥',
     placeholder: '填写 android app 内 facebook 密钥',
+  },
+  {
+    name: 'MATRIX_FACEBOOK_INSTALL_DECRYPT_SECRET',
+    label: 'Facebook 投放解析安装来源密钥',
+    placeholder: '填写 Facebook 投放解析安装来源密钥',
   },
 ]
 
@@ -963,6 +963,17 @@ function ColdStandbyProductionDetailPage() {
     () => SIDE_CHECK_SECTION_TYPES.every((sectionType) => getSideNote(sideNotes, sectionType)?.is_confirmed),
     [sideNotes],
   )
+  const advertisingFacebookConfigCompleted = useMemo(() => {
+    const advertisingValues = parseStructuredContent(getNoteReadableContent(getSideNote(sideNotes, 'ADVERTISING')))
+    return ['facebook_app_id', 'facebook_client_token'].every((fieldName) => (
+      String(advertisingValues[fieldName] || '').trim()
+    ))
+  }, [sideNotes])
+  const productionCompleteDisabledReason = useMemo(() => {
+    if (!requiredSideChecksCompleted) return '请先完成各侧信息check后，再进行前端产包/生产完成操作。'
+    if (!advertisingFacebookConfigCompleted) return '请联系投放负责人补充相关信息～'
+    return ''
+  }, [advertisingFacebookConfigCompleted, requiredSideChecksCompleted])
 
   const fetchDetail = useCallback(async () => {
     if (!id) return
@@ -1354,6 +1365,14 @@ function ColdStandbyProductionDetailPage() {
       Modal.warning({
         title: '各侧信息check未完成',
         content: '请先完成各侧信息check后，再进行前端产包/生产完成操作。',
+        okText: '知道了',
+      })
+      return
+    }
+    if (!advertisingFacebookConfigCompleted) {
+      Modal.warning({
+        title: '投放信息未补充',
+        content: '请联系投放负责人补充相关信息～',
         okText: '知道了',
       })
       return
@@ -2691,15 +2710,19 @@ function ColdStandbyProductionDetailPage() {
           </div>
         </div>
         <div className="cold-production-complete-actions">
-          <Button
-            type="primary"
-            size="small"
-            disabled={!canEdit}
-            loading={completingProduction}
-            onClick={handleCompleteProduction}
-          >
-            生产完成
-          </Button>
+          <Tooltip title={canEdit ? productionCompleteDisabledReason : ''}>
+            <span>
+              <Button
+                type="primary"
+                size="small"
+                disabled={!canEdit || Boolean(productionCompleteDisabledReason)}
+                loading={completingProduction}
+                onClick={handleCompleteProduction}
+              >
+                生产完成
+              </Button>
+            </span>
+          </Tooltip>
         </div>
       </div>
     </Card>
