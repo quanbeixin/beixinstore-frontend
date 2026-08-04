@@ -86,12 +86,14 @@ function buildSyncTargetLabel(record) {
   const requestNo = String(record?.release_request_no || `记录${record?.id || ''}`).trim()
   const appVersion = String(record?.app_version || '').trim()
   const applicantName = String(record?.applicant_name || '').trim()
-  const createdAt = String(record?.created_at || '').trim()
   const parts = [requestNo]
   if (appVersion) parts.push(`版本：${appVersion}`)
   if (applicantName) parts.push(`申请人：${applicantName}`)
-  if (createdAt) parts.push(`创建时间：${createdAt}`)
   return parts.join(' / ')
+}
+
+function buildSyncTargetSearchText(record) {
+  return [buildSyncTargetLabel(record), String(record?.remark || '').trim()].filter(Boolean).join(' ')
 }
 
 function getGroupByLabel(groupBy) {
@@ -705,7 +707,7 @@ function AppVersionReleasePage() {
         render: renderDate,
       },
       {
-        title: '上架日期',
+        title: '上架/取消日期',
         dataIndex: 'listed_at',
         width: 150,
         render: renderDate,
@@ -1164,9 +1166,15 @@ function AppVersionReleasePage() {
             loading={syncTargetLoading}
             placeholder="选择后续发版申请"
             options={syncTargetOptions.map((item) => ({
-              label: buildSyncTargetLabel(item),
+              label: (
+                <Tooltip title={item.remark ? `备注：${item.remark}` : '暂无备注'} placement="right">
+                  <span className="app-version-release-sync-target-label">
+                    {buildSyncTargetLabel(item)}
+                  </span>
+                </Tooltip>
+              ),
               value: item.id,
-              searchText: buildSyncTargetLabel(item),
+              searchText: buildSyncTargetSearchText(item),
             }))}
             optionFilterProp="searchText"
             filterOption={(input, option) => String(option?.searchText || option?.label || '').toLowerCase().includes(input.toLowerCase())}

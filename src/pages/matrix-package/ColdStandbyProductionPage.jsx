@@ -134,7 +134,10 @@ function ColdStandbyProductionPage() {
   const [editingRecord, setEditingRecord] = useState(null)
   const [packages, setPackages] = useState([])
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
-  const [sortConfig, setSortConfig] = useState({ sort_by: '', sort_order: '' })
+  const [sortConfig, setSortConfig] = useState({
+    sort_by: 'expected_cold_ready_date',
+    sort_order: 'asc',
+  })
   const [filters, setFilters] = useState({
     keyword: '',
     developer_account_id: undefined,

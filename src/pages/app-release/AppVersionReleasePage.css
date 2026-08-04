@@ -120,6 +120,13 @@
   white-space: nowrap;
 }
 
+.app-version-release-sync-target-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .app-version-release-link {
   display: inline-block;
   max-width: 160px;
