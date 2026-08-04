@@ -47,6 +47,38 @@
   margin: -4px 0 8px;
 }
 
+.app-version-release-group-config {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(5, 5, 5, 0.06);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.015);
+}
+
+.app-version-release-group-config-main {
+  width: 100%;
+}
+
+.app-version-release-group-select {
+  min-width: 360px;
+  max-width: 100%;
+  flex: 1;
+}
+
+.app-version-release-group-order {
+  width: 100%;
+}
+
+.app-version-release-group-order-item {
+  padding: 2px 6px;
+  border: 1px solid rgba(5, 5, 5, 0.06);
+  border-radius: 999px;
+  background: #fff;
+}
+
 .app-version-release-app-name {
   width: 120px;
 }
@@ -90,7 +122,7 @@
 
 .app-version-release-request-no {
   display: inline-block;
-  max-width: 108px;
+  max-width: 184px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -98,7 +130,7 @@
 }
 
 .app-version-release-request-no-wrap {
-  max-width: 132px;
+  max-width: 208px;
 }
 
 .app-version-release-developer-wrap {

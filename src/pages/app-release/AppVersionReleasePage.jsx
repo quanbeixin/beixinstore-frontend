@@ -17,7 +17,16 @@ import {
   Typography,
   message,
 } from 'antd'
-import { CopyOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, ReloadOutlined } from '@ant-design/icons'
+import {
+  ArrowDownOutlined,
+  ArrowUpOutlined,
+  CloseOutlined,
+  CopyOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  FileTextOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -43,6 +52,15 @@ const FALLBACK_RELEASE_TYPE_OPTIONS = [
   { code: 'FIRST_RELEASE', name: '首次发版' },
   { code: 'VERSION_UPDATE', name: '版本迭代' },
 ]
+const GROUP_BY_OPTIONS = [
+  { value: 'developer', label: '开发者' },
+  { value: 'app', label: 'APP' },
+  { value: 'status', label: '发版进度' },
+  { value: 'company_subject', label: '公司主体' },
+  { value: 'owner', label: '负责人' },
+  { value: 'urgency', label: '紧急程度' },
+]
+const DEFAULT_GROUP_BY = ['developer', 'app', 'status']
 
 function renderDate(value) {
   return value ? String(value).slice(0, 10) : '-'
@@ -58,6 +76,10 @@ function formatDateValue(value) {
 
 function getUserDisplayName(user) {
   return user?.real_name || user?.username || `用户${user?.id || ''}`
+}
+
+function getGroupByLabel(groupBy) {
+  return GROUP_BY_OPTIONS.find((item) => item.value === groupBy)?.label || groupBy
 }
 
 function buildUserOption(user) {
@@ -111,6 +133,7 @@ function AppVersionReleasePage() {
   const [groupLoading, setGroupLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
+  const [groupBy, setGroupBy] = useState(DEFAULT_GROUP_BY)
   const [keyword, setKeyword] = useState('')
   const [appNameFilter, setAppNameFilter] = useState('')
   const [developerFilter, setDeveloperFilter] = useState('')
@@ -122,9 +145,8 @@ function AppVersionReleasePage() {
   const [groupRows, setGroupRows] = useState([])
   const [groupSummary, setGroupSummary] = useState({
     total: 0,
-    developer_count: 0,
-    app_count: 0,
-    status_group_count: 0,
+    groupBy: DEFAULT_GROUP_BY,
+    groupCounts: {},
   })
   const [statusOptions, setStatusOptions] = useState([])
   const [releaseTypeOptions, setReleaseTypeOptions] = useState(FALLBACK_RELEASE_TYPE_OPTIONS)
@@ -201,7 +223,10 @@ function AppVersionReleasePage() {
   const fetchGrouped = useCallback(async () => {
     setGroupLoading(true)
     try {
-      const result = await getGroupedAppVersionReleasesApi(buildFilterParams())
+      const result = await getGroupedAppVersionReleasesApi({
+        ...buildFilterParams(),
+        group_by: groupBy,
+      })
       if (!result?.success) {
         message.error(result?.message || '获取APP版本发布分组失败')
         return
@@ -210,9 +235,8 @@ function AppVersionReleasePage() {
       setGroupRows(Array.isArray(data.tree) ? data.tree : [])
       setGroupSummary({
         total: Number(data.total || 0),
-        developer_count: Number(data.developer_count || 0),
-        app_count: Number(data.app_count || 0),
-        status_group_count: Number(data.status_group_count || 0),
+        groupBy: Array.isArray(data.group_by) && data.group_by.length > 0 ? data.group_by : groupBy,
+        groupCounts: data.group_counts || {},
       })
       setStatusOptions(Array.isArray(data.release_status_options) ? data.release_status_options : [])
       setReleaseTypeOptions(Array.isArray(data.release_type_options) ? data.release_type_options : FALLBACK_RELEASE_TYPE_OPTIONS)
@@ -222,7 +246,7 @@ function AppVersionReleasePage() {
     } finally {
       setGroupLoading(false)
     }
-  }, [buildFilterParams])
+  }, [buildFilterParams, groupBy])
 
   useEffect(() => {
     if (viewMode === 'group') {
@@ -249,6 +273,40 @@ function AppVersionReleasePage() {
     { label: '全部紧急程度', value: '' },
     ...urgencyOptions.map((item) => ({ label: item.name, value: item.code })),
   ], [urgencyOptions])
+
+  const groupBySelectOptions = useMemo(() => GROUP_BY_OPTIONS.map((item) => ({
+    label: item.label,
+    value: item.value,
+  })), [])
+
+  const handleGroupByChange = useCallback((nextValue) => {
+    const nextGroupBy = Array.isArray(nextValue)
+      ? nextValue
+          .map((item) => String(item || '').trim())
+          .filter((item, index, array) => item && array.indexOf(item) === index && GROUP_BY_OPTIONS.some((option) => option.value === item))
+      : []
+    setGroupBy(nextGroupBy.length > 0 ? nextGroupBy : DEFAULT_GROUP_BY)
+  }, [])
+
+  const moveGroupBy = useCallback((index, direction) => {
+    setGroupBy((current) => {
+      const next = [...current]
+      const targetIndex = index + direction
+      if (index < 0 || index >= next.length || targetIndex < 0 || targetIndex >= next.length) {
+        return current
+      }
+      const [item] = next.splice(index, 1)
+      next.splice(targetIndex, 0, item)
+      return next
+    })
+  }, [])
+
+  const removeGroupBy = useCallback((groupKey) => {
+    setGroupBy((current) => {
+      const next = current.filter((item) => item !== groupKey)
+      return next.length > 0 ? next : DEFAULT_GROUP_BY
+    })
+  }, [])
 
   const developerSelectOptions = useMemo(() => {
     const optionMap = new Map()
@@ -359,229 +417,214 @@ function AppVersionReleasePage() {
   }, [handleCopyText])
 
   const renderGroupName = useCallback((value, record) => {
-    if (record.row_type === 'developer') {
+    if (record.row_type === 'group') {
       return (
         <Space orientation="vertical" size={2}>
-          <Text strong>{value || '-'}</Text>
-          <Text type="secondary">{record.app_company_subject || '公司主体未设置'}</Text>
+          <Text strong>
+            {`${getGroupByLabel(record.group_field)}：${value || '-'}`}
+          </Text>
+          <Text type="secondary">{`记录数：${Number(record.release_count || 0)}`}</Text>
         </Space>
       )
     }
-    if (record.row_type === 'app') {
-      return (
-        <Tooltip
-          title={`包ID：${record.app_id || '-'} / 域名：${record.domain_info || '-'}`}
-        >
-          <Space orientation="vertical" size={2}>
-            <Text strong className="app-version-release-ellipsis">{value || '-'}</Text>
-            <Text type="secondary" className="app-version-release-ellipsis">
-              {record.app_id || record.domain_info || '包信息未设置'}
-            </Text>
-          </Space>
-        </Tooltip>
-      )
-    }
-    if (record.row_type === 'status') {
-      return <Tag color={record.release_status_color || 'default'}>{record.release_status_name || value || '-'}</Tag>
-    }
     return (
       <Space orientation="vertical" size={2}>
-        <Text>{record.release_request_no || value || '-'}</Text>
+        <Text strong>{record.release_request_no || value || '-'}</Text>
         <Text type="secondary">{record.app_name || '-'}</Text>
       </Space>
     )
   }, [])
 
-  const columns = useMemo(() => {
+  const detailColumns = useMemo(() => {
     const baseColumns = [
-    {
-      title: '申请ID',
-      dataIndex: 'release_request_no',
-      width: 150,
-      render: (value) => value ? (
-        <Space size={4} className="app-version-release-request-no-wrap">
-          <Tooltip title={value}>
-            <Text className="app-version-release-request-no">{value}</Text>
-          </Tooltip>
-          <Tooltip title="复制申请ID">
-            <Button
-              type="text"
-              size="small"
-              icon={<CopyOutlined />}
-              className="app-version-release-copy-btn"
-              onClick={() => handleCopyRequestNo(value)}
-            />
-          </Tooltip>
-        </Space>
-      ) : '-',
-    },
-    {
-      title: '版本号',
-      dataIndex: 'app_version',
-      width: 120,
-      render: (value, record) => (
-        <Space orientation="vertical" size={2}>
-          <Text strong>{value || '-'}</Text>
-          <Tag color={record.release_type_color || 'default'}>{record.release_type_name || '-'}</Tag>
-        </Space>
-      ),
-    },
-    {
-      title: '紧急程度',
-      dataIndex: 'urgency_name',
-      width: 92,
-      render: (value, record) => <Tag color={record.urgency_color || 'default'}>{value || '-'}</Tag>,
-    },
-    {
-      title: 'APP名称',
-      dataIndex: 'app_name',
-      width: 140,
-      render: (value, record) => (
-        <Tooltip
-          title={(
-            <Space orientation="vertical" size={2}>
-              <Text className="app-version-release-tooltip-text">{value || '-'}</Text>
-              <Text className="app-version-release-tooltip-text">包ID：{record.app_id || '-'}</Text>
-              <Text className="app-version-release-tooltip-text">域名：{record.domain_info || '-'}</Text>
-            </Space>
-          )}
-        >
-          <Text strong className="app-version-release-ellipsis app-version-release-app-name">
-            {value || '-'}
-          </Text>
-        </Tooltip>
-      ),
-    },
-    {
-      title: '开发者账号',
-      dataIndex: 'app_developer',
-      width: 260,
-      render: (value) => {
-        const text = String(value || '').trim()
-        if (!text) return '-'
-        return (
-          <Space size={4} className="app-version-release-developer-wrap">
-            <Tooltip title={text}>
-              <Text className="app-version-release-developer-text">{text}</Text>
+      {
+        title: '申请ID',
+        dataIndex: 'release_request_no',
+        width: 220,
+        render: (value) => value ? (
+          <Space size={4} className="app-version-release-request-no-wrap">
+            <Tooltip title={value}>
+              <Text className="app-version-release-request-no">{value}</Text>
             </Tooltip>
-            <Tooltip title="复制开发者账号">
+            <Tooltip title="复制申请ID">
               <Button
                 type="text"
                 size="small"
                 icon={<CopyOutlined />}
                 className="app-version-release-copy-btn"
-                onClick={() => handleCopyText(text, '开发者账号已复制')}
+                onClick={() => handleCopyRequestNo(value)}
               />
             </Tooltip>
           </Space>
-        )
+        ) : '-',
       },
-    },
-    {
-      title: '公司主体',
-      dataIndex: 'app_company_subject',
-      width: 130,
-      render: (value) => value || '-',
-    },
-    {
-      title: 'APP后台地址',
-      dataIndex: 'app_console_url',
-      width: 220,
-      render: (value) => {
-        const text = String(value || '').trim()
-        if (!text) return '-'
-        return (
-          <Space size={4} className="app-version-release-console-url-wrap">
-            <Tooltip title={text}>
-              <a href={text} target="_blank" rel="noreferrer" className="app-version-release-link">
-                {text}
-              </a>
-            </Tooltip>
-            <Tooltip title="复制APP后台地址">
-              <Button
-                type="text"
-                size="small"
-                icon={<CopyOutlined />}
-                className="app-version-release-copy-btn"
-                onClick={() => handleCopyText(text, 'APP后台地址已复制')}
-              />
-            </Tooltip>
+      {
+        title: '版本号',
+        dataIndex: 'app_version',
+        width: 120,
+        render: (value, record) => (
+          <Space orientation="vertical" size={2}>
+            <Text strong>{value || '-'}</Text>
+            <Tag color={record.release_type_color || 'default'}>{record.release_type_name || '-'}</Tag>
           </Space>
-        )
+        ),
       },
-    },
-    {
-      title: '发版进度',
-      dataIndex: 'release_status_name',
-      width: 110,
-      render: (value, record) => <Tag color={record.release_status_color || 'default'}>{value || '-'}</Tag>,
-    },
-    {
-      title: '前序发版',
-      dataIndex: 'previous_release_info',
-      width: 260,
-      render: (value) => value ? (
-        <Tooltip title={value}>
-          <Text className="app-version-release-previous-release">{value}</Text>
-        </Tooltip>
-      ) : '-',
-    },
-    {
-      title: '送审预期',
-      dataIndex: 'expected_submit_at',
-      width: 150,
-      render: renderDate,
-    },
-    {
-      title: '送审日期',
-      dataIndex: 'submitted_at',
-      width: 150,
-      render: renderDate,
-    },
-    {
-      title: '上架日期',
-      dataIndex: 'listed_at',
-      width: 150,
-      render: renderDate,
-    },
-    {
-      title: '关联需求',
-      dataIndex: 'related_demand_name',
-      width: 160,
-      render: (value, record) => {
-        const demandId = String(record.related_demand_id || '').trim()
-        if (!demandId && !value) return '-'
-        return (
-          <Space orientation="vertical" size={2} className="app-version-release-demand">
-            <Tooltip title={value || demandId}>
-              <Text className="app-version-release-ellipsis">{value || demandId}</Text>
-            </Tooltip>
-            {demandId ? (
-              <Tooltip title={demandId}>
-                <Text type="secondary" className="app-version-release-ellipsis">{demandId}</Text>
+      {
+        title: '紧急程度',
+        dataIndex: 'urgency_name',
+        width: 92,
+        render: (value, record) => <Tag color={record.urgency_color || 'default'}>{value || '-'}</Tag>,
+      },
+      {
+        title: 'APP名称',
+        dataIndex: 'app_name',
+        width: 140,
+        render: (value, record) => (
+          <Tooltip
+            title={(
+              <Space orientation="vertical" size={2}>
+                <Text className="app-version-release-tooltip-text">{value || '-'}</Text>
+                <Text className="app-version-release-tooltip-text">包ID：{record.app_id || '-'}</Text>
+                <Text className="app-version-release-tooltip-text">域名：{record.domain_info || '-'}</Text>
+              </Space>
+            )}
+          >
+            <Text strong className="app-version-release-ellipsis app-version-release-app-name">
+              {value || '-'}
+            </Text>
+          </Tooltip>
+        ),
+      },
+      {
+        title: '开发者账号',
+        dataIndex: 'app_developer',
+        width: 260,
+        render: (value) => {
+          const text = String(value || '').trim()
+          if (!text) return '-'
+          return (
+            <Space size={4} className="app-version-release-developer-wrap">
+              <Tooltip title={text}>
+                <Text className="app-version-release-developer-text">{text}</Text>
               </Tooltip>
-            ) : null}
-          </Space>
-        )
+              <Tooltip title="复制开发者账号">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<CopyOutlined />}
+                  className="app-version-release-copy-btn"
+                  onClick={() => handleCopyText(text, '开发者账号已复制')}
+                />
+              </Tooltip>
+            </Space>
+          )
+        },
       },
-    },
-    {
-      title: '申请信息',
-      dataIndex: 'applicant_name',
-      width: 150,
-      render: (value, record) => (
-        <Space orientation="vertical" size={2}>
-          <Text>{value || '-'}</Text>
-          <Text type="secondary">{renderDate(record.requested_at)}</Text>
-        </Space>
-      ),
-    },
-    {
-      title: '发版负责人',
-      dataIndex: 'owner_name',
-      width: 110,
-      render: (value) => value || '-',
-    },
+      {
+        title: '公司主体',
+        dataIndex: 'app_company_subject',
+        width: 130,
+        render: (value) => value || '-',
+      },
+      {
+        title: 'APP后台地址',
+        dataIndex: 'app_console_url',
+        width: 220,
+        render: (value) => {
+          const text = String(value || '').trim()
+          if (!text) return '-'
+          return (
+            <Space size={4} className="app-version-release-console-url-wrap">
+              <Tooltip title={text}>
+                <a href={text} target="_blank" rel="noreferrer" className="app-version-release-link">
+                  {text}
+                </a>
+              </Tooltip>
+              <Tooltip title="复制APP后台地址">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<CopyOutlined />}
+                  className="app-version-release-copy-btn"
+                  onClick={() => handleCopyText(text, 'APP后台地址已复制')}
+                />
+              </Tooltip>
+            </Space>
+          )
+        },
+      },
+      {
+        title: '发版进度',
+        dataIndex: 'release_status_name',
+        width: 110,
+        render: (value, record) => <Tag color={record.release_status_color || 'default'}>{value || '-'}</Tag>,
+      },
+      {
+        title: '前序发版',
+        dataIndex: 'previous_release_info',
+        width: 260,
+        render: (value) => value ? (
+          <Tooltip title={value}>
+            <Text className="app-version-release-previous-release">{value}</Text>
+          </Tooltip>
+        ) : '-',
+      },
+      {
+        title: '送审预期',
+        dataIndex: 'expected_submit_at',
+        width: 150,
+        render: renderDate,
+      },
+      {
+        title: '送审日期',
+        dataIndex: 'submitted_at',
+        width: 150,
+        render: renderDate,
+      },
+      {
+        title: '上架日期',
+        dataIndex: 'listed_at',
+        width: 150,
+        render: renderDate,
+      },
+      {
+        title: '关联需求',
+        dataIndex: 'related_demand_name',
+        width: 160,
+        render: (value, record) => {
+          const demandId = String(record.related_demand_id || '').trim()
+          if (!demandId && !value) return '-'
+          return (
+            <Space orientation="vertical" size={2} className="app-version-release-demand">
+              <Tooltip title={value || demandId}>
+                <Text className="app-version-release-ellipsis">{value || demandId}</Text>
+              </Tooltip>
+              {demandId ? (
+                <Tooltip title={demandId}>
+                  <Text type="secondary" className="app-version-release-ellipsis">{demandId}</Text>
+                </Tooltip>
+              ) : null}
+            </Space>
+          )
+        },
+      },
+      {
+        title: '申请信息',
+        dataIndex: 'applicant_name',
+        width: 150,
+        render: (value, record) => (
+          <Space orientation="vertical" size={2}>
+            <Text>{value || '-'}</Text>
+            <Text type="secondary">{renderDate(record.requested_at)}</Text>
+          </Space>
+        ),
+      },
+      {
+        title: '发版负责人',
+        dataIndex: 'owner_name',
+        width: 110,
+        render: (value) => value || '-',
+      },
     ]
 
     return [
@@ -638,105 +681,16 @@ function AppVersionReleasePage() {
   }, [canManage, deletingId, handleCopyRequestNo, handleCopyText, handleDelete, openEditModal])
 
   const groupedColumns = useMemo(() => {
-    const baseColumns = [
-      {
-        title: '开发者 / APP / 进度',
-        dataIndex: 'group_name',
-        width: 280,
-        render: renderGroupName,
-      },
-      {
-        title: '记录数',
-        dataIndex: 'release_count',
-        width: 90,
-        render: (value) => <Text>{Number(value || 0)}</Text>,
-      },
-      {
-        title: '申请ID',
-        dataIndex: 'release_request_no',
-        width: 150,
-        render: (value, record) => record.row_type === 'release' && value ? (
-          <Space size={4} className="app-version-release-request-no-wrap">
-            <Tooltip title={value}>
-              <Text className="app-version-release-request-no">{value}</Text>
-            </Tooltip>
-            <Tooltip title="复制申请ID">
-              <Button
-                type="text"
-                size="small"
-                icon={<CopyOutlined />}
-                className="app-version-release-copy-btn"
-                onClick={() => handleCopyRequestNo(value)}
-              />
-            </Tooltip>
-          </Space>
-        ) : '-',
-      },
-      {
-        title: '版本号',
-        dataIndex: 'app_version',
-        width: 110,
-        render: (value, record) => record.row_type === 'release' ? (value || '-') : '-',
-      },
-      {
-        title: '类型',
-        dataIndex: 'release_type_name',
-        width: 100,
-        render: (value, record) => record.row_type === 'release'
-          ? <Tag color={record.release_type_color || 'default'}>{value || '-'}</Tag>
-          : '-',
-      },
-      {
-        title: '紧急程度',
-        dataIndex: 'urgency_name',
-        width: 92,
-        render: (value, record) => record.row_type === 'release'
-          ? <Tag color={record.urgency_color || 'default'}>{value || '-'}</Tag>
-          : '-',
-      },
-      {
-        title: '前序发版',
-        dataIndex: 'previous_release_info',
-        width: 260,
-        render: (value, record) => record.row_type === 'release' && value ? (
-          <Tooltip title={value}>
-            <Text className="app-version-release-previous-release">{value}</Text>
-          </Tooltip>
-        ) : '-',
-      },
-      {
-        title: '送审预期',
-        dataIndex: 'expected_submit_at',
-        width: 120,
-        render: (value, record) => record.row_type === 'release' ? renderDate(value) : '-',
-      },
-      {
-        title: '送审日期',
-        dataIndex: 'submitted_at',
-        width: 120,
-        render: (value, record) => record.row_type === 'release' ? renderDate(value) : '-',
-      },
-      {
-        title: '上架日期',
-        dataIndex: 'listed_at',
-        width: 120,
-        render: (value, record) => record.row_type === 'release' ? renderDate(value) : '-',
-      },
-      {
-        title: '申请信息',
-        dataIndex: 'applicant_name',
-        width: 150,
-        render: (value, record) => record.row_type === 'release' ? (
-          <Space orientation="vertical" size={2}>
-            <Text>{value || '-'}</Text>
-            <Text type="secondary">{renderDate(record.requested_at)}</Text>
-          </Space>
-        ) : '-',
-      },
-    ]
+    const groupColumn = {
+      title: '分组',
+      dataIndex: 'group_name',
+      width: 240,
+      render: renderGroupName,
+    }
 
     return [
-      ...baseColumns,
+      groupColumn,
+      ...detailColumns,
       {
         title: '操作',
         key: 'action',
@@ -786,7 +740,20 @@ function AppVersionReleasePage() {
         ) : null,
       },
     ]
-  }, [canManage, deletingId, handleCopyRequestNo, handleDelete, openEditModal, renderGroupName])
+  }, [canManage, detailColumns, deletingId, handleDelete, openEditModal, renderGroupName])
+
+  const groupSummaryText = useMemo(() => {
+    const activeGroupBy = Array.isArray(groupSummary.groupBy) && groupSummary.groupBy.length > 0
+      ? groupSummary.groupBy
+      : groupBy
+    const countMap = groupSummary.groupCounts || {}
+    const parts = activeGroupBy.map((key) => {
+      const label = getGroupByLabel(key)
+      const count = Number(countMap[key] || 0)
+      return `${label}${count > 0 ? `(${count})` : ''}`
+    })
+    return parts.length > 0 ? parts.join(' > ') : '未设置分组'
+  }, [groupBy, groupSummary.groupBy, groupSummary.groupCounts])
 
   return (
     <div className="app-version-release-page">
@@ -877,9 +844,53 @@ function AppVersionReleasePage() {
 
         {viewMode === 'group' ? (
           <>
+            <div className="app-version-release-group-config">
+              <Space direction="vertical" size={8} className="app-version-release-group-config-main">
+                <Space wrap size={8}>
+                  <Text type="secondary">分组维度</Text>
+                  <Select
+                    mode="multiple"
+                    value={groupBy}
+                    options={groupBySelectOptions}
+                    placeholder="选择分组维度"
+                    onChange={handleGroupByChange}
+                    className="app-version-release-group-select"
+                    maxTagCount="responsive"
+                  />
+                </Space>
+                <Space wrap size={6} className="app-version-release-group-order">
+                  <Text type="secondary">分组顺序</Text>
+                  {groupBy.map((item, index) => (
+                    <Space key={item} size={4} className="app-version-release-group-order-item">
+                      <Tag color="blue">{getGroupByLabel(item)}</Tag>
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<ArrowUpOutlined />}
+                        disabled={index === 0}
+                        onClick={() => moveGroupBy(index, -1)}
+                      />
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<ArrowDownOutlined />}
+                        disabled={index === groupBy.length - 1}
+                        onClick={() => moveGroupBy(index, 1)}
+                      />
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CloseOutlined />}
+                        onClick={() => removeGroupBy(item)}
+                      />
+                    </Space>
+                  ))}
+                </Space>
+              </Space>
+            </div>
             <div className="app-version-release-group-summary">
               <Text type="secondary">
-                {`共 ${groupSummary.total} 条记录 / ${groupSummary.developer_count} 个开发者 / ${groupSummary.app_count} 个APP / ${groupSummary.status_group_count} 个进度分组`}
+                {`共 ${groupSummary.total} 条记录 / 分组：${groupSummaryText}`}
               </Text>
             </div>
             <Table
@@ -888,7 +899,7 @@ function AppVersionReleasePage() {
               columns={groupedColumns}
               dataSource={groupRows}
               size="middle"
-              scroll={{ x: canManage ? 1540 : 1420 }}
+              scroll={{ x: canManage ? 2200 : 2040 }}
               pagination={false}
               expandable={{ defaultExpandAllRows: false }}
             />
@@ -897,7 +908,7 @@ function AppVersionReleasePage() {
           <Table
             rowKey="id"
             loading={loading}
-            columns={columns}
+            columns={detailColumns}
             dataSource={rows}
             size="middle"
             scroll={{ x: canManage ? 1750 : 1690 }}
