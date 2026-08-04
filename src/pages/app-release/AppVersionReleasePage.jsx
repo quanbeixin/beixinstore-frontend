@@ -1,6 +1,7 @@
 import {
   Button,
   Card,
+  Checkbox,
   Col,
   DatePicker,
   Form,
@@ -31,8 +32,10 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   deleteAppVersionReleaseApi,
+  getAppVersionReleaseSyncTargetsApi,
   getGroupedAppVersionReleasesApi,
   getAppVersionReleasesApi,
+  mergeAppVersionReleaseApi,
   updateAppVersionReleaseApi,
 } from '../../api/appVersionRelease'
 import { updatePreferencesApi } from '../../api/auth'
@@ -77,6 +80,18 @@ function formatDateValue(value) {
 
 function getUserDisplayName(user) {
   return user?.real_name || user?.username || `用户${user?.id || ''}`
+}
+
+function buildSyncTargetLabel(record) {
+  const requestNo = String(record?.release_request_no || `记录${record?.id || ''}`).trim()
+  const appVersion = String(record?.app_version || '').trim()
+  const applicantName = String(record?.applicant_name || '').trim()
+  const createdAt = String(record?.created_at || '').trim()
+  const parts = [requestNo]
+  if (appVersion) parts.push(`版本：${appVersion}`)
+  if (applicantName) parts.push(`申请人：${applicantName}`)
+  if (createdAt) parts.push(`创建时间：${createdAt}`)
+  return parts.join(' / ')
 }
 
 function getGroupByLabel(groupBy) {
@@ -165,6 +180,12 @@ function AppVersionReleasePage() {
   const [developerAccountOptions, setDeveloperAccountOptions] = useState([])
   const [editingRecord, setEditingRecord] = useState(null)
   const [remarkRecord, setRemarkRecord] = useState(null)
+  const [syncTargetLoading, setSyncTargetLoading] = useState(false)
+  const [syncingRelease, setSyncingRelease] = useState(false)
+  const [syncTargetOptions, setSyncTargetOptions] = useState([])
+  const [syncTargetId, setSyncTargetId] = useState(null)
+  const [syncModalOpen, setSyncModalOpen] = useState(false)
+  const [syncPreviousReleaseInfo, setSyncPreviousReleaseInfo] = useState(true)
 
   const canManage = canManageAppRelease()
 
@@ -372,6 +393,62 @@ function AppVersionReleasePage() {
       remark: record.remark || '',
     })
   }, [form])
+
+  const openSyncModal = useCallback(async (record) => {
+    if (!record?.id) return
+    setSyncTargetLoading(true)
+    try {
+      const result = await getAppVersionReleaseSyncTargetsApi(record.id)
+      if (!result?.success) {
+        message.error(result?.message || '获取可同步发版申请失败')
+        return
+      }
+      const options = Array.isArray(result.data) ? result.data : []
+      if (options.length === 0) {
+        message.warning('暂无可同步的后续发版申请')
+        return
+      }
+      setEditingRecord(record)
+      setSyncTargetOptions(options)
+      setSyncTargetId(options[0]?.id || null)
+      setSyncPreviousReleaseInfo(true)
+      setSyncModalOpen(true)
+    } catch (error) {
+      message.error(error?.message || '获取可同步发版申请失败')
+    } finally {
+      setSyncTargetLoading(false)
+    }
+  }, [])
+
+  const handleSyncRelease = useCallback(async () => {
+    if (!editingRecord?.id || !syncTargetId) return
+    setSyncingRelease(true)
+    try {
+      const result = await mergeAppVersionReleaseApi(editingRecord.id, {
+        target_release_id: syncTargetId,
+        sync_previous_release_info: syncPreviousReleaseInfo,
+      })
+      if (!result?.success) {
+        message.error(result?.message || '同步失败')
+        return
+      }
+      message.success('发版申请已同步')
+      setSyncModalOpen(false)
+      setEditingRecord(null)
+      setSyncTargetOptions([])
+      setSyncTargetId(null)
+      setSyncPreviousReleaseInfo(true)
+      if (viewMode === 'group') {
+        fetchGrouped()
+      } else {
+        fetchList({ page: pagination.current, pageSize: pagination.pageSize })
+      }
+    } catch (error) {
+      message.error(error?.message || '同步失败')
+    } finally {
+      setSyncingRelease(false)
+    }
+  }, [editingRecord?.id, fetchGrouped, fetchList, pagination, syncPreviousReleaseInfo, syncTargetId, viewMode])
 
   const handleSave = async () => {
     if (!editingRecord?.id) return
@@ -601,6 +678,19 @@ function AppVersionReleasePage() {
             <Text className="app-version-release-previous-release">{value}</Text>
           </Tooltip>
         ) : '-',
+      },
+      {
+        title: '备注',
+        dataIndex: 'remark',
+        width: 260,
+        render: (value) => {
+          const text = String(value || '').trim()
+          return text ? (
+            <Tooltip title={text}>
+              <Text className="app-version-release-list-remark">{text}</Text>
+            </Tooltip>
+          ) : '-'
+        },
       },
       {
         title: '送审预期',
@@ -932,7 +1022,7 @@ function AppVersionReleasePage() {
               columns={groupedColumns}
               dataSource={groupRows}
               size="middle"
-              scroll={{ x: canManage ? 2200 : 2040 }}
+              scroll={{ x: canManage ? 2460 : 2300 }}
               pagination={false}
               expandable={{ defaultExpandAllRows: false }}
             />
@@ -944,7 +1034,7 @@ function AppVersionReleasePage() {
             columns={detailColumns}
             dataSource={rows}
             size="middle"
-            scroll={{ x: canManage ? 1750 : 1690 }}
+            scroll={{ x: canManage ? 2010 : 1950 }}
             pagination={{
               current: pagination.current,
               pageSize: pagination.pageSize,
@@ -1004,12 +1094,30 @@ function AppVersionReleasePage() {
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item label="上架日期" name="listed_at">
+              <Form.Item label="上架/取消日期" name="listed_at">
                 <DatePicker format="YYYY-MM-DD" style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item label="发版负责人" name="owner_user_id" rules={[{ required: true, message: '请选择发版负责人' }]}>
+              <Form.Item
+                label={(
+                  <Space size={8}>
+                    <span>发版负责人</span>
+                    {canManage ? (
+                      <Button
+                        type="link"
+                        size="small"
+                        onClick={() => openSyncModal(editingRecord)}
+                        disabled={!editingRecord?.id}
+                      >
+                        同步发版申请至
+                      </Button>
+                    ) : null}
+                  </Space>
+                )}
+                name="owner_user_id"
+                rules={[{ required: true, message: '请选择发版负责人' }]}
+              >
                 <Select
                   showSearch
                   placeholder="选择发版负责人"
@@ -1031,6 +1139,47 @@ function AppVersionReleasePage() {
             </Col>
           </Row>
         </Form>
+      </Modal>
+
+      <Modal
+        title={editingRecord ? `同步发版申请至：${editingRecord.release_request_no || editingRecord.app_name || '-'}` : '同步发版申请'}
+        open={syncModalOpen}
+        onCancel={() => {
+          setSyncModalOpen(false)
+          setSyncTargetId(null)
+          setSyncTargetOptions([])
+          setSyncPreviousReleaseInfo(true)
+        }}
+        onOk={handleSyncRelease}
+        okText="确定同步"
+        cancelText="取消"
+        confirmLoading={syncingRelease}
+        destroyOnHidden
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <div>请选择要同步到的后续发版申请：</div>
+          <Select
+            showSearch
+            value={syncTargetId}
+            loading={syncTargetLoading}
+            placeholder="选择后续发版申请"
+            options={syncTargetOptions.map((item) => ({
+              label: buildSyncTargetLabel(item),
+              value: item.id,
+              searchText: buildSyncTargetLabel(item),
+            }))}
+            optionFilterProp="searchText"
+            filterOption={(input, option) => String(option?.searchText || option?.label || '').toLowerCase().includes(input.toLowerCase())}
+            onChange={(value) => setSyncTargetId(value)}
+            style={{ width: '100%' }}
+          />
+          <Checkbox
+            checked={syncPreviousReleaseInfo}
+            onChange={(event) => setSyncPreviousReleaseInfo(event.target.checked)}
+          >
+            同步前序发版字段
+          </Checkbox>
+        </Space>
       </Modal>
 
       <Modal

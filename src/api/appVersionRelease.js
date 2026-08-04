@@ -8,8 +8,16 @@ export function getGroupedAppVersionReleasesApi(params = {}) {
   return request.get('/app-version-releases/grouped', { params })
 }
 
+export function getAppVersionReleaseSyncTargetsApi(id) {
+  return request.get(`/app-version-releases/${id}/sync-targets`)
+}
+
 export function createAppVersionReleaseApplicationsApi(payload = {}) {
   return request.post('/app-version-releases/applications', payload)
+}
+
+export function mergeAppVersionReleaseApi(id, payload = {}) {
+  return request.post(`/app-version-releases/${id}/merge-to`, payload)
 }
 
 export function updateAppVersionReleaseApi(id, payload = {}) {

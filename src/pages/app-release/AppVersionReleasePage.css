@@ -112,6 +112,14 @@
   white-space: nowrap;
 }
 
+.app-version-release-list-remark {
+  display: block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .app-version-release-link {
   display: inline-block;
   max-width: 160px;

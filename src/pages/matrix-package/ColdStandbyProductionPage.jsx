@@ -134,6 +134,7 @@ function ColdStandbyProductionPage() {
   const [editingRecord, setEditingRecord] = useState(null)
   const [packages, setPackages] = useState([])
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
+  const [sortConfig, setSortConfig] = useState({ sort_by: '', sort_order: '' })
   const [filters, setFilters] = useState({
     keyword: '',
     developer_account_id: undefined,
@@ -192,6 +193,8 @@ function ColdStandbyProductionPage() {
         status_code: filters.status_code || undefined,
         production_stage_code: filters.production_stage_code || undefined,
         expected_cold_ready_date: filters.expected_cold_ready_date || undefined,
+        sort_by: sortConfig.sort_by || undefined,
+        sort_order: sortConfig.sort_order || undefined,
       })
       if (!result?.success) {
         message.error(result?.message || '获取冷备包生产线失败')
@@ -209,7 +212,7 @@ function ColdStandbyProductionPage() {
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }, [filters, sortConfig])
 
   useEffect(() => {
     fetchDicts()
@@ -325,6 +328,10 @@ function ColdStandbyProductionPage() {
       dataIndex: 'expected_cold_ready_date',
       key: 'expected_cold_ready_date',
       width: 160,
+      sorter: true,
+      sortOrder: sortConfig.sort_by === 'expected_cold_ready_date'
+        ? (sortConfig.sort_order === 'asc' ? 'ascend' : 'descend')
+        : null,
       render: (value) => (value ? dayjs(value).format('YYYY-MM-DD') : <Text type="secondary">未设置</Text>),
     },
     {
@@ -370,6 +377,27 @@ function ColdStandbyProductionPage() {
       ),
     },
   ]
+
+  const handleTableChange = (nextPagination, _, sorter = {}) => {
+    const sorterField = String(sorter?.field || sorter?.columnKey || '').trim()
+    const nextSortConfig = sorterField === 'expected_cold_ready_date' && sorter?.order
+      ? {
+          sort_by: 'expected_cold_ready_date',
+          sort_order: sorter.order === 'ascend' ? 'asc' : 'desc',
+        }
+      : { sort_by: '', sort_order: '' }
+    const sortChanged =
+      nextSortConfig.sort_by !== sortConfig.sort_by ||
+      nextSortConfig.sort_order !== sortConfig.sort_order
+    if (sortChanged) {
+      setSortConfig(nextSortConfig)
+      return
+    }
+    fetchPackages({
+      page: nextPagination.current,
+      pageSize: nextPagination.pageSize,
+    })
+  }
 
   return (
     <div className="cold-production-page">
@@ -466,8 +494,8 @@ function ColdStandbyProductionPage() {
             total: pagination.total,
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条`,
-            onChange: (page, pageSize) => fetchPackages({ page, pageSize }),
           }}
+          onChange={handleTableChange}
         />
       </Card>
 
