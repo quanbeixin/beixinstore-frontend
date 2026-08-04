@@ -162,11 +162,22 @@ function normalizeUserPreferences(value) {
     raw.demand_list_compact_default === '1'
       ? 1
       : 0
+  const allowedGroupBy = new Set(['developer', 'app', 'status', 'company_subject', 'owner', 'urgency'])
+  const appVersionReleaseGroupBy = Array.isArray(raw.app_version_release_group_by)
+    ? raw.app_version_release_group_by
+    : String(raw.app_version_release_group_by || '')
+      .split(',')
+      .map((item) => String(item || '').trim().toLowerCase())
+      .filter(Boolean)
+  const normalizedGroupBy = [...new Set(appVersionReleaseGroupBy.filter((item) => allowedGroupBy.has(item)))]
 
   return {
     default_home: defaultHome,
     date_display_mode: dateDisplayMode,
     demand_list_compact_default: compactDefault,
+    app_version_release_group_by: normalizedGroupBy.length > 0
+      ? normalizedGroupBy
+      : ['developer', 'app', 'status'],
   }
 }
 

@@ -79,6 +79,11 @@
   background: #fff;
 }
 
+.app-version-release-group-name {
+  white-space: nowrap;
+  display: inline-block;
+}
+
 .app-version-release-app-name {
   width: 120px;
 }

@@ -28,16 +28,17 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   deleteAppVersionReleaseApi,
   getGroupedAppVersionReleasesApi,
   getAppVersionReleasesApi,
   updateAppVersionReleaseApi,
 } from '../../api/appVersionRelease'
+import { updatePreferencesApi } from '../../api/auth'
 import { getDeveloperAccountOptionsApi } from '../../api/developerAccount'
 import { getUsersApi } from '../../api/users'
-import { getAccessSnapshot } from '../../utils/access'
+import { getAccessSnapshot, getUserPreferences, setUserPreferences } from '../../utils/access'
 import './AppVersionReleasePage.css'
 
 const { Text } = Typography
@@ -128,12 +129,21 @@ function canManageAppRelease() {
 
 function AppVersionReleasePage() {
   const [form] = Form.useForm()
+  const initialGroupBy = useMemo(() => {
+    const preferences = getUserPreferences()
+    const savedGroupBy = Array.isArray(preferences?.app_version_release_group_by)
+      ? preferences.app_version_release_group_by
+      : []
+    const filtered = savedGroupBy.filter((item) => GROUP_BY_OPTIONS.some((option) => option.value === item))
+    return filtered.length > 0 ? filtered : DEFAULT_GROUP_BY
+  }, [])
+  const groupByInitializedRef = useRef(false)
   const [viewMode, setViewMode] = useState('detail')
   const [loading, setLoading] = useState(false)
   const [groupLoading, setGroupLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
-  const [groupBy, setGroupBy] = useState(DEFAULT_GROUP_BY)
+  const [groupBy, setGroupBy] = useState(initialGroupBy)
   const [keyword, setKeyword] = useState('')
   const [appNameFilter, setAppNameFilter] = useState('')
   const [developerFilter, setDeveloperFilter] = useState('')
@@ -308,6 +318,29 @@ function AppVersionReleasePage() {
     })
   }, [])
 
+  useEffect(() => {
+    if (!groupByInitializedRef.current) {
+      groupByInitializedRef.current = true
+      return
+    }
+    if (viewMode !== 'group') return
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const result = await updatePreferencesApi({
+          app_version_release_group_by: groupBy,
+        })
+        if (result?.success) {
+          setUserPreferences(result.data || {})
+        }
+      } catch (error) {
+        message.error(error?.message || '保存分组条件失败')
+      }
+    }, 250)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [groupBy, viewMode])
+
   const developerSelectOptions = useMemo(() => {
     const optionMap = new Map()
     developerAccountOptions.forEach((item) => {
@@ -420,7 +453,7 @@ function AppVersionReleasePage() {
     if (record.row_type === 'group') {
       return (
         <Space orientation="vertical" size={2}>
-          <Text strong>
+          <Text strong className="app-version-release-group-name">
             {`${getGroupByLabel(record.group_field)}：${value || '-'}`}
           </Text>
           <Text type="secondary">{`记录数：${Number(record.release_count || 0)}`}</Text>
@@ -684,7 +717,7 @@ function AppVersionReleasePage() {
     const groupColumn = {
       title: '分组',
       dataIndex: 'group_name',
-      width: 240,
+      width: 360,
       render: renderGroupName,
     }
 
