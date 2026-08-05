@@ -63,8 +63,13 @@ const PRODUCT_CONFIG_TEMPLATE_KEYS = ['product_config_link', 'product-config-lin
 const NOTE_SECTIONS = [
   {
     type: 'DELIVERY',
-    title: 'PUSH信息补充',
+    title: 'Google-PUSH信息补充',
     placeholder: '记录投放前需要了解的账号限制、适配要求、计划使用场景等信息',
+  },
+  {
+    type: 'OPPO_PUSH',
+    title: 'OPPO-PUSH信息补充',
+    placeholder: '记录 OPPO PUSH 生产环境配置',
   },
   {
     type: 'DESIGN',
@@ -99,7 +104,7 @@ const NOTE_SECTIONS = [
 ]
 
 const SIDE_CHECK_SECTION_TYPES = NOTE_SECTIONS
-  .filter((section) => section.type !== 'BACKEND' && section.type !== 'ADVERTISING')
+  .filter((section) => !['BACKEND', 'ADVERTISING', 'OPPO_PUSH'].includes(section.type))
   .map((section) => section.type)
 
 const PRODUCTION_STAGE_KEYS = {
@@ -140,7 +145,7 @@ const PRODUCTION_STAGE_ITEMS = [
 
 const STAGE_NOTE_TYPES = {
   [PRODUCTION_STAGE_KEYS.BASIC_INFO]: ['DESIGN', 'OPERATION', 'DEVOPS'],
-  [PRODUCTION_STAGE_KEYS.FRONTEND_PUSH]: ['FRONTEND', 'DELIVERY'],
+  [PRODUCTION_STAGE_KEYS.FRONTEND_PUSH]: ['FRONTEND', 'DELIVERY', 'OPPO_PUSH'],
 }
 
 const STAGE_CONFIRM_NOTE_TYPES = {
@@ -431,8 +436,29 @@ const ADVERTISING_FIELDS = [
   },
 ]
 
+const OPPO_PUSH_FIELDS = [
+  { name: 'oppoAppId', label: 'oppoAppId', placeholder: '填写 oppoAppId' },
+  { name: 'oppoAppKey', label: 'oppoAppKey', placeholder: '填写 oppoAppKey' },
+  {
+    name: 'oppoDevAppSecret',
+    label: 'Oppo 开发者平台 app 密钥',
+    placeholder: '填写 Oppo 开发者平台 app 密钥',
+  },
+  {
+    name: 'oppoPushAppSecret',
+    label: 'Oppo Push平台 app 密钥',
+    placeholder: '填写 Oppo Push平台 app 密钥',
+  },
+  {
+    name: 'oppoMasterSecret',
+    label: 'Oppo app master 密钥',
+    placeholder: '填写 Oppo app master 密钥',
+  },
+]
+
 const STRUCTURED_NOTE_FIELDS = {
   DELIVERY: PUSH_FIELDS,
+  OPPO_PUSH: OPPO_PUSH_FIELDS,
   DESIGN: DESIGN_FIELDS,
   OPERATION: OPERATION_FIELDS,
   FRONTEND: FRONTEND_FIELDS,
@@ -1681,7 +1707,7 @@ function ColdStandbyProductionDetailPage() {
       <Space size={4} className="cold-production-operation-label">
         {labelText}
         {sectionType === 'DESIGN' ? <UploadOutlined className="cold-production-upload-label-icon" /> : null}
-        {sectionType === 'DELIVERY' || sectionType === 'OPERATION' || sectionType === 'FRONTEND' || sectionType === 'BACKEND' || sectionType === 'DEVOPS' || sectionType === 'ADVERTISING' ? (
+        {sectionType === 'DELIVERY' || sectionType === 'OPPO_PUSH' || sectionType === 'OPERATION' || sectionType === 'FRONTEND' || sectionType === 'BACKEND' || sectionType === 'DEVOPS' || sectionType === 'ADVERTISING' ? (
           <Button
             type="text"
             size="small"
@@ -1930,6 +1956,29 @@ function ColdStandbyProductionDetailPage() {
                 </Row>
               </div>
             ))}
+          </div>
+        ) : section.type === 'OPPO_PUSH' ? (
+          <div className="cold-production-push-form">
+            <div className="cold-production-push-module">
+              <div className="cold-production-push-module-title">生产环境信息</div>
+              <Row gutter={[14, 8]}>
+                {OPPO_PUSH_FIELDS.map((field) => (
+                  <Col xs={24} md={12} key={field.name}>
+                    <Form.Item
+                      name={[section.type, field.name]}
+                      label={renderStructuredFieldLabel(section.type, field)}
+                    >
+                      <Input
+                        allowClear
+                        maxLength={500}
+                        disabled={!canEdit}
+                        placeholder={field.placeholder}
+                      />
+                    </Form.Item>
+                  </Col>
+                ))}
+              </Row>
+            </div>
           </div>
         ) : section.type === 'DESIGN' ? (
           <Row gutter={[16, 12]} className="cold-production-design-layout">
@@ -2244,7 +2293,19 @@ function ColdStandbyProductionDetailPage() {
             />
           </Form.Item>
         )}
-        {section.type === 'BACKEND' ? (
+        {section.type === 'OPPO_PUSH' ? (
+          <div className="cold-production-note-meta">
+            <div className="cold-production-note-meta-updated">
+              {note?.updated_at ? (
+                <Text type="secondary">
+                  最近更新：{note.updated_by_name ? `${note.updated_by_name} / ` : ''}{note.updated_at}
+                </Text>
+              ) : (
+                <Text type="secondary">最近更新：-</Text>
+              )}
+            </div>
+          </div>
+        ) : section.type === 'BACKEND' ? (
           <div className="cold-production-note-meta">
             <div className="cold-production-note-meta-date">
               <Text type="secondary">预期完成</Text>
