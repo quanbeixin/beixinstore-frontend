@@ -797,7 +797,9 @@ function WorkLogs({ mode = 'dashboard' }) {
       demands
         .filter((item) => !isDemandFollowupItemType(selectedItemType) || !shouldExcludeDemandForFollowup(item))
         .map((item) => {
-          const fullLabel = String(item?.name || item?.id || '').trim()
+          const demandId = String(item?.id || '').trim()
+          const demandName = String(item?.name || '').trim()
+          const fullLabel = [demandId, demandName].filter(Boolean).join(' - ')
           const shortLabel = truncateText(fullLabel, 28)
           return {
             value: item.id,
@@ -814,7 +816,7 @@ function WorkLogs({ mode = 'dashboard' }) {
         .filter((item) => !isDemandFollowupItemType(selectedActualItemType) || !shouldExcludeDemandForFollowup(item))
         .map((item) => ({
           value: item.id,
-          label: item.name || item.id,
+          label: [String(item?.id || '').trim(), String(item?.name || '').trim()].filter(Boolean).join(' - '),
         })),
     [demands, selectedActualItemType],
   )

@@ -54,6 +54,7 @@ import {
 import { getNotificationTemplateFilesApi } from '../../api/matrixPackageNotification'
 import { getUsersApi } from '../../api/users'
 import { hasPermission } from '../../utils/access'
+import { isValidResourcePackage } from '../../utils/isValidResourcePackage'
 import './ColdStandbyProductionDetailPage.css'
 
 const { Text } = Typography
@@ -309,7 +310,9 @@ const DESIGN_ATTACHMENT_FIELDS = [
     name: 'designSliceDeliveryUrl',
     label: '设计资源切图交付',
     placeholder: '上传设计资源切图交付附件',
+    accept: '.zip,application/zip',
     kind: 'file',
+    validateResourcePackage: true,
   },
   {
     name: 'tokenDocUrl',
@@ -765,6 +768,14 @@ function DesignUploadField({ packageId, noteType = 'DESIGN', field, value, onCha
         throw new Error('文件大小不能超过 100MB，请压缩后再上传')
       }
       setUploading(true)
+      if (field.validateResourcePackage) {
+        const validationResult = await isValidResourcePackage(file)
+        if (!validationResult.success) {
+          const validationError = new Error(validationResult.message || '资源包校验未通过')
+          validationError.isResourcePackageValidationError = true
+          throw validationError
+        }
+      }
       const policyResult = await getMatrixPackageSideNoteUploadPolicyApi(packageId, {
         note_type: noteType,
         field_name: field.name,
@@ -803,7 +814,20 @@ function DesignUploadField({ packageId, noteType = 'DESIGN', field, value, onCha
       message.success(`${field.label}已上传`)
     } catch (error) {
       onError?.(error)
-      message.error(error?.message || `${field.label}上传失败`)
+      if (error?.isResourcePackageValidationError) {
+        Modal.error({
+          title: '资源包校验未通过',
+          content: (
+            <div style={{ maxHeight: 360, overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {error.message}
+            </div>
+          ),
+          okText: '关闭',
+          width: 560,
+        })
+      } else {
+        message.error(error?.message || `${field.label}上传失败`)
+      }
     } finally {
       setUploading(false)
     }
