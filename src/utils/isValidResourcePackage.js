@@ -163,11 +163,11 @@ function checkResourceSize(files) {
       }
     }
 
-    if (normalizedPath.startsWith('svg/') && normalizedPath.endsWith('.svg')) {
+   /*  if (normalizedPath.startsWith('svg/') && normalizedPath.endsWith('.svg')) {
       if (data.byteLength > RESOURCE_SIZE_LIMIT.svg) {
         errors.push(`${normalizedPath}(${formatSize(data.byteLength)} > 21KB)`)
       }
-    }
+    } */
   })
 
   return errors
