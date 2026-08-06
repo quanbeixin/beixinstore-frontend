@@ -100,7 +100,6 @@
 }
 
 .matrix-filter-item-status,
-.matrix-filter-item-health,
 .matrix-filter-item-delivery-channel,
 .matrix-filter-item-delivery-status {
   width: 118px;
@@ -108,6 +107,10 @@
 
 .matrix-filter-item-platform {
   width: 190px;
+}
+
+.matrix-filter-action {
+  flex: 0 0 auto;
 }
 
 .matrix-filter-card .ant-select,
@@ -140,29 +143,62 @@
   min-width: 0;
 }
 
-.matrix-health-tag {
-  display: inline-flex;
-  align-items: center;
+.delivery-platform-overview-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
+  min-width: 0;
 }
 
-.matrix-health-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  display: inline-block;
+.delivery-platform-overview-tags {
+  min-height: 22px;
 }
 
-.matrix-health-dot-normal {
-  background: #16a34a;
+.delivery-platform-summary-count {
+  font-size: 16px;
+  font-weight: 600;
 }
 
-.matrix-health-dot-watch {
-  background: #f59e0b;
+.delivery-platform-summary-count.is-active {
+  color: #16803c;
 }
 
-.matrix-health-dot-abnormal {
-  background: #dc2626;
+.delivery-platform-summary-count.is-available {
+  color: #245ec7;
+}
+
+.delivery-platform-summary-count.is-banned {
+  color: #c43232;
+}
+
+.delivery-platform-summary-table .ant-table-cell {
+  vertical-align: middle;
+}
+
+.delivery-platform-form {
+  padding-top: 8px;
+}
+
+.delivery-platform-form-head {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 7fr)) minmax(52px, 3fr);
+  gap: 12px;
+  padding: 0 0 8px;
+  color: #667085;
+  font-size: 13px;
+}
+
+.delivery-platform-form-list {
+  width: 100%;
+}
+
+.delivery-platform-form-list .ant-form-item {
+  margin-bottom: 0;
+}
+
+.delivery-platform-form-remove {
+  text-align: center;
 }
 
 .matrix-table-row-danger td {
@@ -182,6 +218,14 @@
 }
 
 @media (max-width: 768px) {
+  .delivery-platform-form-head {
+    display: none;
+  }
+
+  .delivery-platform-form-remove {
+    text-align: right;
+  }
+
   .matrix-package-head {
     flex-direction: column;
   }
@@ -203,11 +247,18 @@
   .matrix-filter-item-keyword,
   .matrix-filter-item-account,
   .matrix-filter-item-status,
-  .matrix-filter-item-health,
   .matrix-filter-item-platform,
   .matrix-filter-item-delivery-channel,
   .matrix-filter-item-delivery-status {
     width: calc(50% - 4px);
+  }
+
+  .matrix-filter-action {
+    width: calc(50% - 4px);
+  }
+
+  .matrix-filter-action .ant-btn {
+    width: 100%;
   }
 
   .matrix-filter-item-keyword {

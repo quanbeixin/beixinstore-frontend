@@ -8,6 +8,18 @@ export function getMatrixPackageApi(id) {
   return request.get(`/matrix-packages/${id}`)
 }
 
+export function getMatrixPackageDeliveryPlatformsApi(id) {
+  return request.get(`/matrix-packages/${id}/delivery-platforms`)
+}
+
+export function getMatrixPackageDeliveryPlatformOverviewApi() {
+  return request.get('/matrix-packages/delivery-platform-overview')
+}
+
+export function saveMatrixPackageDeliveryPlatformsApi(id, items = []) {
+  return request.put(`/matrix-packages/${id}/delivery-platforms`, { items })
+}
+
 export function createMatrixPackageApi(payload) {
   return request.post('/matrix-packages', payload)
 }

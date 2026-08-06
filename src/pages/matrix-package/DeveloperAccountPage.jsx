@@ -39,8 +39,6 @@ import './DeveloperAccountPage.css'
 const { Text } = Typography
 const STATUS_DICT_KEY = 'developer_account_status'
 const COMPANY_DICT_KEY = 'developer_company_subject'
-const DELIVERING_STATUS = 'DELIVERING'
-
 const DEFAULT_STATUS_OPTIONS = [
   { item_code: 'NORMAL', item_name: '正常', color: 'green' },
   { item_code: 'RISK', item_name: '风险', color: 'gold' },
@@ -158,19 +156,16 @@ function DeveloperAccountPage() {
   const [userOptions, setUserOptions] = useState([])
   const [companyOptions, setCompanyOptions] = useState([])
   const [packageStatusOptions, setPackageStatusOptions] = useState([])
-  const [packageHealthOptions, setPackageHealthOptions] = useState([])
 
   const canManage = hasPermission('matrix_package.manage')
   const statusMap = useMemo(() => buildDictMap(statusOptions), [statusOptions])
   const packageStatusMap = useMemo(() => buildDictMap(packageStatusOptions), [packageStatusOptions])
-  const packageHealthMap = useMemo(() => buildDictMap(packageHealthOptions), [packageHealthOptions])
   const treeAccounts = useMemo(() => buildCompanyTree(accounts), [accounts])
   const fetchDicts = useCallback(async () => {
-    const [accountStatusResult, companyResult, packageStatusResult, packageHealthResult] = await Promise.allSettled([
+    const [accountStatusResult, companyResult, packageStatusResult] = await Promise.allSettled([
       getDictItemsApi(STATUS_DICT_KEY, { enabledOnly: true }),
       getDictItemsApi(COMPANY_DICT_KEY, { enabledOnly: true }),
       getDictItemsApi('matrix_package_status', { enabledOnly: true }),
-      getDictItemsApi('matrix_package_health', { enabledOnly: true }),
     ])
 
     if (accountStatusResult.status === 'fulfilled' && accountStatusResult.value?.success) {
@@ -181,9 +176,6 @@ function DeveloperAccountPage() {
     }
     if (packageStatusResult.status === 'fulfilled' && packageStatusResult.value?.success) {
       setPackageStatusOptions(normalizeDictItems(packageStatusResult.value.data, []))
-    }
-    if (packageHealthResult.status === 'fulfilled' && packageHealthResult.value?.success) {
-      setPackageHealthOptions(normalizeDictItems(packageHealthResult.value.data, []))
     }
   }, [])
 
@@ -351,17 +343,6 @@ function DeveloperAccountPage() {
       render: (value, record) => {
         const meta = packageStatusMap.get(value) || { name: record.status_name || value || '-', color: record.status_color || 'default' }
         return <Tag color={record.status_color || meta.color}>{meta.name}</Tag>
-      },
-    },
-    {
-      title: '健康度',
-      dataIndex: 'health_code',
-      key: 'health_code',
-      width: 130,
-      render: (value, record) => {
-        if (record.status_code !== DELIVERING_STATUS) return <Text type="secondary">不适用</Text>
-        const meta = packageHealthMap.get(value) || { name: record.health_name || value || '-', color: record.health_color || 'default' }
-        return <Tag color={record.health_color || meta.color}>{meta.name}</Tag>
       },
     },
   ]

@@ -1,4 +1,5 @@
 import {
+  BarChartOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
@@ -25,6 +26,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd'
@@ -33,20 +35,24 @@ import { useNavigate } from 'react-router-dom'
 import {
   createMatrixPackageApi,
   deleteMatrixPackageApi,
+  getMatrixPackageDeliveryPlatformsApi,
+  getMatrixPackageDeliveryPlatformOverviewApi,
   getMatrixPackagesApi,
   getMatrixPackageSideNotesApi,
   patchMatrixPackageSideNoteFieldsApi,
+  saveMatrixPackageDeliveryPlatformsApi,
   updateMatrixPackageApi,
 } from '../../api/matrixPackage'
 import { getDeveloperAccountOptionsApi } from '../../api/developerAccount'
 import { getDictItemsApi } from '../../api/configDict'
 import { getUsersApi } from '../../api/users'
 import { hasPermission } from '../../utils/access'
+import DeliveryPlatformOverviewModal from './DeliveryPlatformOverviewModal'
+import DeliveryPlatformSummaryModal from './DeliveryPlatformSummaryModal'
 import './MatrixPackageSpecialPage.css'
 
 const { Text } = Typography
 const STATUS_DICT_KEY = 'matrix_package_status'
-const HEALTH_DICT_KEY = 'matrix_package_health'
 const PLATFORM_DICT_KEY = 'matrix_package_delivery_platform'
 const DELIVERY_STATUS_DICT_KEY = 'matrix_package_delivery_status'
 const DELIVERY_CHANNEL_DICT_KEY = 'matrix_package_delivery_channel'
@@ -90,12 +96,6 @@ const DEFAULT_STATUS_OPTIONS = [
   { item_code: 'ARCHIVED', item_name: '已归档', color: 'default' },
 ]
 
-const DEFAULT_HEALTH_OPTIONS = [
-  { item_code: 'NORMAL', item_name: '正常', color: 'green' },
-  { item_code: 'WATCH', item_name: '关注', color: 'gold' },
-  { item_code: 'ABNORMAL', item_name: '异常', color: 'red' },
-]
-
 const DEFAULT_PLATFORM_OPTIONS = [
   { item_code: 'META', item_name: 'Meta', color: 'blue' },
   { item_code: 'GOOGLE', item_name: 'Google', color: 'green' },
@@ -104,20 +104,16 @@ const DEFAULT_PLATFORM_OPTIONS = [
 ]
 
 const DEFAULT_DELIVERY_STATUS_OPTIONS = [
+  { item_code: 'PENDING', item_name: '待投', color: 'gold' },
   { item_code: 'ACTIVE', item_name: '在投', color: 'green' },
   { item_code: 'STOPPED', item_name: '停投', color: 'default' },
+  { item_code: 'BANNED', item_name: '封禁', color: 'red' },
 ]
 
 const DEFAULT_DELIVERY_CHANNEL_OPTIONS = [
   { item_code: 'SELF', item_name: '自投', color: 'green' },
   { item_code: 'AGENCY', item_name: '代理', color: 'blue' },
 ]
-
-const HEALTH_ICON_MAP = {
-  NORMAL: <span className="matrix-health-dot matrix-health-dot-normal" />,
-  WATCH: <span className="matrix-health-dot matrix-health-dot-watch" />,
-  ABNORMAL: <span className="matrix-health-dot matrix-health-dot-abnormal" />,
-}
 
 function normalizeDictItems(items, fallback) {
   const source = Array.isArray(items) && items.length > 0 ? items : fallback
@@ -134,13 +130,6 @@ function normalizeDictItems(items, fallback) {
 
 function buildDictMap(options) {
   return new Map((options || []).map((item) => [item.code, item]))
-}
-
-function normalizePlatformCodes(value) {
-  const source = Array.isArray(value)
-    ? value
-    : String(value || '').split(',')
-  return Array.from(new Set(source.map((item) => String(item || '').trim().toUpperCase()).filter(Boolean)))
 }
 
 function getStatusTone(statusCode) {
@@ -174,6 +163,19 @@ function MatrixPackageSpecialPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
+  const [deliveryPlatformModal, setDeliveryPlatformModal] = useState({
+    open: false,
+    mode: 'view',
+    record: null,
+    rows: [],
+    loading: false,
+    saving: false,
+  })
+  const [deliveryPlatformSummaryModal, setDeliveryPlatformSummaryModal] = useState({
+    open: false,
+    rows: [],
+    loading: false,
+  })
   const [packages, setPackages] = useState([])
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
   const [summary, setSummary] = useState({
@@ -200,20 +202,13 @@ function MatrixPackageSpecialPage() {
     keyword: '',
     developer_account_id: undefined,
     status_code: undefined,
-    health_code: undefined,
-    platform: [],
-    delivery_channel_code: undefined,
-    delivery_status_code: undefined,
+    platform_code: [],
+    channel_code: undefined,
+    platform_status_code: undefined,
   })
   const [developerAccountOptions, setDeveloperAccountOptions] = useState([])
   const [userOptions, setUserOptions] = useState([])
   const [statusOptions, setStatusOptions] = useState(DEFAULT_STATUS_OPTIONS.map((item) => ({
-    code: item.item_code,
-    name: item.item_name,
-    color: item.color,
-    remark: item.remark || '',
-  })))
-  const [healthOptions, setHealthOptions] = useState(DEFAULT_HEALTH_OPTIONS.map((item) => ({
     code: item.item_code,
     name: item.item_name,
     color: item.color,
@@ -240,16 +235,11 @@ function MatrixPackageSpecialPage() {
 
   const canManage = hasPermission('matrix_package.manage')
   const statusMap = useMemo(() => buildDictMap(statusOptions), [statusOptions])
-  const healthMap = useMemo(() => buildDictMap(healthOptions), [healthOptions])
-  const platformMap = useMemo(() => buildDictMap(platformOptions), [platformOptions])
-  const deliveryStatusMap = useMemo(() => buildDictMap(deliveryStatusOptions), [deliveryStatusOptions])
-  const deliveryChannelMap = useMemo(() => buildDictMap(deliveryChannelOptions), [deliveryChannelOptions])
   const isDelivering = watchedStatusCode === DELIVERING_STATUS
 
   const fetchDicts = useCallback(async () => {
-    const [statusResult, healthResult, platformResult, deliveryStatusResult, deliveryChannelResult] = await Promise.allSettled([
+    const [statusResult, platformResult, deliveryStatusResult, deliveryChannelResult] = await Promise.allSettled([
       getDictItemsApi(STATUS_DICT_KEY, { enabledOnly: true }),
-      getDictItemsApi(HEALTH_DICT_KEY, { enabledOnly: true }),
       getDictItemsApi(PLATFORM_DICT_KEY, { enabledOnly: true }),
       getDictItemsApi(DELIVERY_STATUS_DICT_KEY, { enabledOnly: true }),
       getDictItemsApi(DELIVERY_CHANNEL_DICT_KEY, { enabledOnly: true }),
@@ -257,9 +247,6 @@ function MatrixPackageSpecialPage() {
 
     if (statusResult.status === 'fulfilled' && statusResult.value?.success) {
       setStatusOptions(normalizeDictItems(statusResult.value.data, DEFAULT_STATUS_OPTIONS))
-    }
-    if (healthResult.status === 'fulfilled' && healthResult.value?.success) {
-      setHealthOptions(normalizeDictItems(healthResult.value.data, DEFAULT_HEALTH_OPTIONS))
     }
     if (platformResult.status === 'fulfilled' && platformResult.value?.success) {
       setPlatformOptions(normalizeDictItems(platformResult.value.data, DEFAULT_PLATFORM_OPTIONS))
@@ -297,10 +284,9 @@ function MatrixPackageSpecialPage() {
         keyword: filters.keyword || undefined,
         developer_account_id: filters.developer_account_id || undefined,
         status_code: filters.status_code || undefined,
-        health_code: filters.health_code || undefined,
-        platform: Array.isArray(filters.platform) && filters.platform.length > 0 ? filters.platform.join(',') : undefined,
-        delivery_channel_code: filters.delivery_channel_code || undefined,
-        delivery_status_code: filters.delivery_status_code || undefined,
+        platform_code: Array.isArray(filters.platform_code) && filters.platform_code.length > 0 ? filters.platform_code.join(',') : undefined,
+        channel_code: filters.channel_code || undefined,
+        platform_status_code: filters.platform_status_code || undefined,
       })
       if (!result?.success) {
         message.error(result?.message || '获取矩阵包列表失败')
@@ -361,10 +347,9 @@ function MatrixPackageSpecialPage() {
         keyword: filters.keyword || undefined,
         developer_account_id: filters.developer_account_id || undefined,
         status_code: statusCode || filters.status_code || undefined,
-        health_code: filters.health_code || undefined,
-        platform: Array.isArray(filters.platform) && filters.platform.length > 0 ? filters.platform.join(',') : undefined,
-        delivery_channel_code: filters.delivery_channel_code || undefined,
-        delivery_status_code: filters.delivery_status_code || undefined,
+        platform_code: Array.isArray(filters.platform_code) && filters.platform_code.length > 0 ? filters.platform_code.join(',') : undefined,
+        channel_code: filters.channel_code || undefined,
+        platform_status_code: filters.platform_status_code || undefined,
       })
       if (!result?.success) {
         message.error(result?.message || '获取矩阵包列表失败')
@@ -405,12 +390,6 @@ function MatrixPackageSpecialPage() {
   }, [filters, fetchPackages])
 
   useEffect(() => {
-    if (watchedStatusCode && watchedStatusCode !== DELIVERING_STATUS) {
-      form.setFieldValue('health_code', undefined)
-      form.setFieldValue('platform', [])
-      form.setFieldValue('delivery_channel_code', undefined)
-      form.setFieldValue('delivery_status_code', undefined)
-    }
     if (watchedStatusCode === DELIVERING_STATUS) {
       form.setFieldValue('has_operated', true)
     }
@@ -423,13 +402,9 @@ function MatrixPackageSpecialPage() {
       app_id: '',
       app_version: '',
       domain_info: '',
-      platform: [],
-      delivery_channel_code: undefined,
-      delivery_status_code: undefined,
       developer_account_id: undefined,
       owner_user_id: undefined,
       status_code: PENDING_DEV_STATUS,
-      health_code: undefined,
       has_operated: false,
     })
     setModalOpen(true)
@@ -442,13 +417,9 @@ function MatrixPackageSpecialPage() {
       app_id: record.app_id || '',
       app_version: '',
       domain_info: record.domain_info || '',
-      platform: record.status_code === DELIVERING_STATUS ? normalizePlatformCodes(record.platform_codes || record.platform) : [],
-      delivery_channel_code: record.status_code === DELIVERING_STATUS ? record.delivery_channel_code || undefined : undefined,
-      delivery_status_code: record.status_code === DELIVERING_STATUS ? record.delivery_status_code || undefined : undefined,
       developer_account_id: record.developer_account_id || undefined,
       owner_user_id: record.owner_user_id || undefined,
       status_code: record.status_code || 'COLD_STANDBY',
-      health_code: record.health_code || undefined,
       has_operated: Boolean(record.has_operated),
     })
     setModalOpen(true)
@@ -468,10 +439,6 @@ function MatrixPackageSpecialPage() {
       const { app_version: _appVersion, ...matrixPackageValues } = values
       const payload = {
         ...matrixPackageValues,
-        health_code: submitIsDelivering ? values.health_code : null,
-        platform: submitIsDelivering ? values.platform : [],
-        delivery_channel_code: submitIsDelivering ? values.delivery_channel_code : null,
-        delivery_status_code: submitIsDelivering ? values.delivery_status_code : null,
         has_operated: submitIsDelivering ? true : Boolean(values.has_operated),
       }
 
@@ -523,10 +490,7 @@ function MatrixPackageSpecialPage() {
           app_id: record.app_id || '',
           domain_info: record.domain_info || '',
           developer_account_id: record.developer_account_id || null,
-          platform: normalizePlatformCodes(record.platform_codes || record.platform),
-          delivery_status_code: record.delivery_status_code || null,
           status_code: IN_DEVELOPMENT_STATUS,
-          health_code: null,
           production_stage_code: record.production_stage_code || DEFAULT_PRODUCTION_STAGE,
           expected_cold_ready_date: record.expected_cold_ready_date || null,
           latest_progress: record.latest_progress || '',
@@ -542,6 +506,87 @@ function MatrixPackageSpecialPage() {
         return undefined
       },
     })
+  }
+
+  const openDeliveryPlatformModal = async (record, mode) => {
+    if (!record?.id) return
+    setDeliveryPlatformModal({
+      open: true,
+      mode,
+      record,
+      rows: Array.isArray(record.delivery_platform_overview) ? record.delivery_platform_overview : [],
+      loading: true,
+      saving: false,
+    })
+    try {
+      const result = await getMatrixPackageDeliveryPlatformsApi(record.id)
+      if (!result?.success) {
+        message.error(result?.message || '获取投放平台信息概览失败')
+        return
+      }
+      setDeliveryPlatformModal((prev) => (
+        prev.record?.id === record.id
+          ? { ...prev, rows: Array.isArray(result.data) ? result.data : [] }
+          : prev
+      ))
+    } catch (error) {
+      message.error(error?.message || '获取投放平台信息概览失败')
+    } finally {
+      setDeliveryPlatformModal((prev) => (
+        prev.record?.id === record.id ? { ...prev, loading: false } : prev
+      ))
+    }
+  }
+
+  const closeDeliveryPlatformModal = () => {
+    setDeliveryPlatformModal((prev) => ({ ...prev, open: false }))
+  }
+
+  const openDeliveryPlatformSummaryModal = async () => {
+    setDeliveryPlatformSummaryModal({ open: true, rows: [], loading: true })
+    try {
+      const result = await getMatrixPackageDeliveryPlatformOverviewApi()
+      if (!result?.success) {
+        message.error(result?.message || '获取平台投放总览失败')
+        return
+      }
+      setDeliveryPlatformSummaryModal((prev) => ({
+        ...prev,
+        rows: Array.isArray(result.data?.items) ? result.data.items : [],
+      }))
+    } catch (error) {
+      message.error(error?.message || '获取平台投放总览失败')
+    } finally {
+      setDeliveryPlatformSummaryModal((prev) => ({ ...prev, loading: false }))
+    }
+  }
+
+  const closeDeliveryPlatformSummaryModal = () => {
+    setDeliveryPlatformSummaryModal((prev) => ({ ...prev, open: false }))
+  }
+
+  const handleSaveDeliveryPlatforms = async (items) => {
+    const packageId = deliveryPlatformModal.record?.id
+    if (!packageId) return
+    setDeliveryPlatformModal((prev) => ({ ...prev, saving: true }))
+    try {
+      const result = await saveMatrixPackageDeliveryPlatformsApi(packageId, items)
+      if (!result?.success) {
+        message.error(result?.message || '保存投放平台信息概览失败')
+        return
+      }
+      message.success('投放平台信息概览已保存')
+      setDeliveryPlatformModal((prev) => ({
+        ...prev,
+        open: false,
+        rows: Array.isArray(result.data) ? result.data : [],
+      }))
+      fetchPackages({ page: pagination.current, pageSize: pagination.pageSize })
+    } catch (error) {
+      message.error(error?.message || '保存投放平台信息概览失败')
+    } finally {
+      setDeliveryPlatformModal((prev) => ({ ...prev, saving: false }))
+    }
   }
 
   const handleDelete = async (record) => {
@@ -563,17 +608,53 @@ function MatrixPackageSpecialPage() {
     }
   }
 
-  const renderPlatformTags = (_, record) => {
+  const renderDeliveryPlatformTags = (record) => {
     if (record.status_code !== DELIVERING_STATUS) return '-'
-    const codes = normalizePlatformCodes(record.platform_codes || record.platform)
-    if (codes.length === 0) return '-'
+    const overview = Array.isArray(record.delivery_platform_overview) ? record.delivery_platform_overview : []
+    if (overview.length === 0) return '-'
     return (
       <Space size={4} wrap>
-        {codes.map((code) => {
-          const meta = platformMap.get(code) || { name: code, color: 'default' }
-          return <Tag key={code} color={meta.color}>{meta.name}</Tag>
-        })}
+        {overview.map((item) => (
+          <Tag key={item.platform_code} color={item.status_color || 'default'}>
+            {item.platform_name || item.platform_code} / {item.channel_name || item.channel_code} / {item.status_name || item.status_code}
+          </Tag>
+        ))}
       </Space>
+    )
+  }
+
+  const renderDeliveryPlatformOverview = (_, record) => {
+    const editDisabled = !canManage || record.status_code !== DELIVERING_STATUS
+    const editDisabledReason = !canManage ? '暂无编辑权限' : '只有运营中的矩阵包可以编辑'
+    return (
+      <div className="delivery-platform-overview-cell">
+        <div className="delivery-platform-overview-tags">
+          {renderDeliveryPlatformTags(record)}
+        </div>
+        <Space size={4}>
+          <Tooltip title={editDisabled ? editDisabledReason : ''}>
+            <span>
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                disabled={editDisabled}
+                onClick={() => openDeliveryPlatformModal(record, 'edit')}
+              >
+                编辑
+              </Button>
+            </span>
+          </Tooltip>
+          <Button
+            type="link"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => openDeliveryPlatformModal(record, 'view')}
+          >
+            查看详情
+          </Button>
+        </Space>
+      </div>
     )
   }
 
@@ -618,57 +699,11 @@ function MatrixPackageSpecialPage() {
       },
     },
     {
-      title: '健康度',
-      dataIndex: 'health_code',
-      key: 'health_code',
-      width: 130,
-      render: (value, record) => {
-        if (record.status_code !== DELIVERING_STATUS) return <Text type="secondary">不适用</Text>
-        const meta = healthMap.get(value) || { name: record.health_name || value || '-', color: record.health_color || 'default' }
-        return (
-          <Tag color={record.health_color || meta.color} className="matrix-health-tag">
-            {HEALTH_ICON_MAP[value] || null}
-            {meta.name}
-          </Tag>
-        )
-      },
-    },
-    {
-      title: '投放平台',
-      dataIndex: 'platform',
-      key: 'platform',
-      width: 180,
-      render: renderPlatformTags,
-    },
-    {
-      title: '投放渠道',
-      dataIndex: 'delivery_channel_code',
-      key: 'delivery_channel_code',
-      width: 120,
-      render: (value, record) => {
-        if (record.status_code !== DELIVERING_STATUS) return '-'
-        if (!value) return '-'
-        const meta = deliveryChannelMap.get(value) || {
-          name: record.delivery_channel_name || value,
-          color: record.delivery_channel_color || 'default',
-        }
-        return <Tag color={record.delivery_channel_color || meta.color}>{meta.name}</Tag>
-      },
-    },
-    {
-      title: '投放状态',
-      dataIndex: 'delivery_status_code',
-      key: 'delivery_status_code',
-      width: 120,
-      render: (value, record) => {
-        if (record.status_code !== DELIVERING_STATUS) return '-'
-        if (!value) return '-'
-        const meta = deliveryStatusMap.get(value) || {
-          name: record.delivery_status_name || value,
-          color: record.delivery_status_color || 'default',
-        }
-        return <Tag color={record.delivery_status_color || meta.color}>{meta.name}</Tag>
-      },
+      title: '投放平台信息概览',
+      dataIndex: 'delivery_platform_overview',
+      key: 'delivery_platform_overview',
+      width: 320,
+      render: renderDeliveryPlatformOverview,
     },
     {
       title: '更新时间',
@@ -770,22 +805,11 @@ function MatrixPackageSpecialPage() {
       },
     },
     {
-      title: '健康度',
-      dataIndex: 'health_code',
-      key: 'health_code',
-      width: 110,
-      render: (value, record) => {
-        if (record.status_code !== DELIVERING_STATUS) return <Text type="secondary">不适用</Text>
-        const meta = healthMap.get(value) || { name: record.health_name || value || '-', color: record.health_color || 'default' }
-        return <Tag color={record.health_color || meta.color}>{meta.name}</Tag>
-      },
-    },
-    {
-      title: '投放平台',
-      dataIndex: 'platform',
-      key: 'platform',
-      width: 160,
-      render: renderPlatformTags,
+      title: '投放平台信息概览',
+      dataIndex: 'delivery_platform_overview',
+      key: 'delivery_platform_overview',
+      width: 260,
+      render: (_, record) => renderDeliveryPlatformTags(record),
     },
     {
       title: '更新时间',
@@ -932,42 +956,43 @@ function MatrixPackageSpecialPage() {
               onChange={(value) => setFilters((prev) => ({ ...prev, status_code: value }))}
             />
           </div>
-          <div className="matrix-filter-item matrix-filter-item-health">
-            <Select
-              allowClear
-              placeholder="健康度"
-              value={filters.health_code}
-              options={healthOptions.map((item) => ({ label: item.name, value: item.code }))}
-              onChange={(value) => setFilters((prev) => ({ ...prev, health_code: value }))}
-            />
-          </div>
           <div className="matrix-filter-item matrix-filter-item-platform">
             <Select
               allowClear
               mode="multiple"
               placeholder="投放平台"
-              value={filters.platform}
+              value={filters.platform_code}
               options={platformOptions.map((item) => ({ label: item.name, value: item.code }))}
-              onChange={(value) => setFilters((prev) => ({ ...prev, platform: Array.isArray(value) ? value : [] }))}
+              onChange={(value) => setFilters((prev) => ({ ...prev, platform_code: Array.isArray(value) ? value : [] }))}
             />
           </div>
           <div className="matrix-filter-item matrix-filter-item-delivery-channel">
             <Select
               allowClear
               placeholder="投放渠道"
-              value={filters.delivery_channel_code}
+              value={filters.channel_code}
               options={deliveryChannelOptions.map((item) => ({ label: item.name, value: item.code }))}
-              onChange={(value) => setFilters((prev) => ({ ...prev, delivery_channel_code: value }))}
+              onChange={(value) => setFilters((prev) => ({ ...prev, channel_code: value }))}
             />
           </div>
           <div className="matrix-filter-item matrix-filter-item-delivery-status">
             <Select
               allowClear
-              placeholder="投放状态"
-              value={filters.delivery_status_code}
+              placeholder="平台状态"
+              value={filters.platform_status_code}
               options={deliveryStatusOptions.map((item) => ({ label: item.name, value: item.code }))}
-              onChange={(value) => setFilters((prev) => ({ ...prev, delivery_status_code: value }))}
+              onChange={(value) => setFilters((prev) => ({ ...prev, platform_status_code: value }))}
             />
+          </div>
+          <div className="matrix-filter-action">
+            <Button
+              type="primary"
+              ghost
+              icon={<BarChartOutlined />}
+              onClick={openDeliveryPlatformSummaryModal}
+            >
+              平台投放总览
+            </Button>
           </div>
         </div>
       </Card>
@@ -978,7 +1003,7 @@ function MatrixPackageSpecialPage() {
           loading={loading}
           columns={columns}
           dataSource={packages}
-          scroll={{ x: 1680 }}
+          scroll={{ x: 1410 }}
           rowClassName={(record) => `matrix-table-row-${getStatusTone(record.status_code)}`}
           locale={{
             emptyText: (
@@ -1013,7 +1038,7 @@ function MatrixPackageSpecialPage() {
           loading={summaryModal.loading}
           columns={summaryModalColumns}
           dataSource={summaryModal.rows}
-          scroll={{ x: 1080 }}
+          scroll={{ x: 970 }}
           locale={{
             emptyText: (
               <Empty
@@ -1032,6 +1057,27 @@ function MatrixPackageSpecialPage() {
           }}
         />
       </Modal>
+
+      <DeliveryPlatformOverviewModal
+        open={deliveryPlatformModal.open}
+        mode={deliveryPlatformModal.mode}
+        matrixPackage={deliveryPlatformModal.record}
+        rows={deliveryPlatformModal.rows}
+        platformOptions={platformOptions}
+        channelOptions={deliveryChannelOptions}
+        statusOptions={deliveryStatusOptions}
+        loading={deliveryPlatformModal.loading}
+        saving={deliveryPlatformModal.saving}
+        onCancel={closeDeliveryPlatformModal}
+        onSave={handleSaveDeliveryPlatforms}
+      />
+
+      <DeliveryPlatformSummaryModal
+        open={deliveryPlatformSummaryModal.open}
+        rows={deliveryPlatformSummaryModal.rows}
+        loading={deliveryPlatformSummaryModal.loading}
+        onCancel={closeDeliveryPlatformSummaryModal}
+      />
 
       <Modal
         title={editingRecord ? '编辑矩阵包' : '新增矩阵包'}
@@ -1071,46 +1117,6 @@ function MatrixPackageSpecialPage() {
                 rules={[{ required: true, message: '请先补充好域名信息' }]}
               >
                 <Input placeholder="例如：example.com 或多个域名用逗号分隔" maxLength={255} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item label="投放平台" name="platform">
-                <Select
-                  allowClear
-                  mode="multiple"
-                  disabled={!isDelivering}
-                  placeholder={isDelivering ? '选择投放平台' : '仅运营中生效'}
-                  options={platformOptions.map((item) => ({
-                    label: item.name,
-                    value: item.code,
-                  }))}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item label="投放渠道" name="delivery_channel_code">
-                <Select
-                  allowClear
-                  disabled={!isDelivering}
-                  placeholder={isDelivering ? '选择投放渠道' : '仅运营中生效'}
-                  options={deliveryChannelOptions.map((item) => ({
-                    label: item.name,
-                    value: item.code,
-                  }))}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item label="投放状态" name="delivery_status_code">
-                <Select
-                  allowClear
-                  disabled={!isDelivering}
-                  placeholder={isDelivering ? '选择投放状态' : '仅运营中生效'}
-                  options={deliveryStatusOptions.map((item) => ({
-                    label: item.name,
-                    value: item.code,
-                  }))}
-                />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
@@ -1161,22 +1167,6 @@ function MatrixPackageSpecialPage() {
             <Col xs={24} md={12}>
               <Form.Item label="是否运营过" name="has_operated" valuePropName="checked">
                 <Switch checkedChildren="是" unCheckedChildren="否" disabled={isDelivering} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="健康度"
-                name="health_code"
-                rules={isDelivering ? [{ required: true, message: '运营中必须选择健康度' }] : []}
-              >
-                <Select
-                  disabled={!isDelivering}
-                  placeholder={isDelivering ? '选择健康度' : '仅运营中生效'}
-                  options={healthOptions.map((item) => ({
-                    label: item.name,
-                    value: item.code,
-                  }))}
-                />
               </Form.Item>
             </Col>
           </Row>

@@ -1861,7 +1861,6 @@ function ColdStandbyProductionDetailPage() {
           developer_account_id: detail.developer_account_id || null,
           owner_user_id: detail.owner_user_id || null,
           status_code: detail.status_code,
-          health_code: detail.health_code || null,
           expected_cold_ready_date: normalizedDate,
           expected_cold_ready_date_source: 'MANUAL',
         })
