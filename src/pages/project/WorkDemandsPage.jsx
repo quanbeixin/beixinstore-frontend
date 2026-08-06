@@ -113,6 +113,7 @@ const DEMAND_TABLE_REQUIRED_COLUMN_KEYS = ['id', 'name', 'action']
 const STATUS_OPTIONS = [
   { label: '待开始', value: 'TODO' },
   { label: '进行中', value: 'IN_PROGRESS' },
+  { label: '已挂起', value: 'PAUSED' },
   { label: '已完成', value: 'DONE' },
   { label: '已中止', value: 'CANCELLED' },
 ]
@@ -506,6 +507,7 @@ function buildDemandViewDateRange(config = {}) {
 function getStatusTagColor(status) {
   if (status === 'DONE') return 'success'
   if (status === 'IN_PROGRESS') return 'processing'
+  if (status === 'PAUSED') return 'default'
   if (status === 'CANCELLED') return 'default'
   return 'warning'
 }
@@ -1034,8 +1036,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [businessGroups, setBusinessGroups] = useState([])
   const [businessGroupCounts, setBusinessGroupCounts] = useState([])
   const [businessGroupAllCount, setBusinessGroupAllCount] = useState(0)
+  const [inProgressDemandCount, setInProgressDemandCount] = useState(0)
   const [completedDemandCount, setCompletedDemandCount] = useState(0)
   const [cancelledDemandCount, setCancelledDemandCount] = useState(0)
+  const [pausedDemandCount, setPausedDemandCount] = useState(0)
   const [participantRoleItems, setParticipantRoleItems] = useState([])
 
   const [page, setPage] = useState(1)
@@ -1043,7 +1047,9 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
   const [keyword, setKeyword] = useState('')
   const [keywordInput, setKeywordInput] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState(
+    isMyDemandsPage || isLaunchPlanPage ? '' : 'IN_PROGRESS',
+  )
   const [priorityFilter, setPriorityFilter] = useState('')
   const [templateFilter, setTemplateFilter] = useState([])
   const [prioritySortOrder, setPrioritySortOrder] = useState()
@@ -1440,6 +1446,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const businessGroupTabItems = useMemo(
     () => [
       { key: '__ALL__', label: `全部 (${Number(businessGroupAllCount || 0)})` },
+      { key: '__IN_PROGRESS__', label: `进行中 (${Number(inProgressDemandCount || 0)})` },
       ...businessGroupOptions.map((item) => {
         const key = String(item.value || '')
         const count = Number(businessGroupCountMap.get(key) || 0)
@@ -1450,8 +1457,17 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       }),
       { key: '__DONE__', label: `已完成 (${Number(completedDemandCount || 0)})` },
       { key: '__CANCELLED__', label: `已中止 (${Number(cancelledDemandCount || 0)})` },
+      { key: '__PAUSED__', label: `已挂起 (${Number(pausedDemandCount || 0)})` },
     ],
-    [businessGroupAllCount, businessGroupCountMap, businessGroupOptions, completedDemandCount, cancelledDemandCount],
+    [
+      businessGroupAllCount,
+      businessGroupCountMap,
+      businessGroupOptions,
+      cancelledDemandCount,
+      completedDemandCount,
+      inProgressDemandCount,
+      pausedDemandCount,
+    ],
   )
   const myDemandTabItems = useMemo(
     () => [
@@ -1488,7 +1504,11 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     ? '__DONE__'
     : showCancelledTabOnly
       ? '__CANCELLED__'
-      : businessGroupFilter || '__ALL__'
+      : statusFilter === 'IN_PROGRESS'
+        ? '__IN_PROGRESS__'
+        : statusFilter === 'PAUSED'
+          ? '__PAUSED__'
+          : businessGroupFilter || '__ALL__'
   const demandStatusOptions = showCompletedTabOnly
     ? COMPLETED_TAB_STATUS_OPTIONS
     : showCancelledTabOnly
@@ -2085,8 +2105,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
 
       setDemands(result.data?.list || [])
       setBusinessGroupAllCount(Number(result.data?.all_total || 0))
+      setInProgressDemandCount(Number(result.data?.in_progress_total || 0))
       setCompletedDemandCount(Number(result.data?.completed_total || 0))
       setCancelledDemandCount(Number(result.data?.cancelled_total || 0))
+      setPausedDemandCount(Number(result.data?.paused_total || 0))
       setBusinessGroupCounts(Array.isArray(result.data?.group_counts) ? result.data.group_counts : [])
     } catch (error) {
       message.error(error?.message || '获取需求列表失败')
@@ -2203,10 +2225,21 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setShowCancelledTabOnly(true)
       setBusinessGroupFilter('')
       setStatusFilter('')
+    } else if (nextTabKey === '__IN_PROGRESS__') {
+      setShowCompletedTabOnly(false)
+      setShowCancelledTabOnly(false)
+      setBusinessGroupFilter('')
+      setStatusFilter('IN_PROGRESS')
+    } else if (nextTabKey === '__PAUSED__') {
+      setShowCompletedTabOnly(false)
+      setShowCancelledTabOnly(false)
+      setBusinessGroupFilter('')
+      setStatusFilter('PAUSED')
     } else {
       setShowCompletedTabOnly(false)
       setShowCancelledTabOnly(false)
       setBusinessGroupFilter(nextTabKey === '__ALL__' ? '' : nextTabKey)
+      setStatusFilter(config.status || '')
     }
 
     setPage(1)
@@ -4170,15 +4203,19 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const handleResetFilters = () => {
     setKeyword('')
     setKeywordInput('')
-    setStatusFilter('')
     setPriorityFilter('')
     setTemplateFilter([])
     setPrioritySortOrder(undefined)
     setBusinessGroupFilter('')
     setBusinessGroupAllCount(0)
+    setInProgressDemandCount(0)
     setBusinessGroupCounts([])
+    setCompletedDemandCount(0)
+    setCancelledDemandCount(0)
+    setPausedDemandCount(0)
     setShowCompletedTabOnly(false)
     setShowCancelledTabOnly(false)
+    setStatusFilter(isMyDemandsPage || isLaunchPlanPage ? '' : 'IN_PROGRESS')
     setOwnerFilter(undefined)
     setUpdatedRange([])
     setScopeFilter('all')
@@ -4726,15 +4763,34 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               >
                 <Button type="link">重开</Button>
               </Popconfirm>
-            ) : (
+            ) : record.status === 'PAUSED' ? (
               <Popconfirm
-                title="确认标记为已完成？"
-                okText="完成"
+                title="确认恢复该需求？"
+                okText="恢复"
                 cancelText="取消"
-                onConfirm={() => handleQuickStatusUpdate(record, 'DONE')}
+                onConfirm={() => handleQuickStatusUpdate(record, 'IN_PROGRESS')}
               >
-                <Button type="link">完成</Button>
+                <Button type="link">恢复</Button>
               </Popconfirm>
+            ) : (
+              <>
+                <Popconfirm
+                  title="确认挂起该需求？"
+                  okText="挂起"
+                  cancelText="取消"
+                  onConfirm={() => handleQuickStatusUpdate(record, 'PAUSED')}
+                >
+                  <Button type="link">挂起</Button>
+                </Popconfirm>
+                <Popconfirm
+                  title="确认标记为已完成？"
+                  okText="完成"
+                  cancelText="取消"
+                  onConfirm={() => handleQuickStatusUpdate(record, 'DONE')}
+                >
+                  <Button type="link">完成</Button>
+                </Popconfirm>
+              </>
             )
           ) : null}
           {canTransferOwner ? (
@@ -4951,13 +5007,21 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                     setShowCancelledTabOnly(true)
                     setBusinessGroupFilter('')
                     setStatusFilter('')
+                  } else if (activeKey === '__IN_PROGRESS__') {
+                    setShowCompletedTabOnly(false)
+                    setShowCancelledTabOnly(false)
+                    setBusinessGroupFilter('')
+                    setStatusFilter('IN_PROGRESS')
+                  } else if (activeKey === '__PAUSED__') {
+                    setShowCompletedTabOnly(false)
+                    setShowCancelledTabOnly(false)
+                    setBusinessGroupFilter('')
+                    setStatusFilter('PAUSED')
                   } else {
                     setShowCompletedTabOnly(false)
                     setShowCancelledTabOnly(false)
                     setBusinessGroupFilter(activeKey === '__ALL__' ? '' : activeKey)
-                    if (statusFilter === 'DONE' || statusFilter === 'CANCELLED') {
-                      setStatusFilter('')
-                    }
+                    setStatusFilter('')
                   }
                   setPage(1)
                 }}
@@ -5614,8 +5678,13 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                         <>
                           {detailDemand.status === 'DONE' || detailDemand.status === 'CANCELLED' ? (
                             <Button onClick={() => handleQuickStatusUpdate(detailDemand, 'IN_PROGRESS')}>重开需求</Button>
+                          ) : detailDemand.status === 'PAUSED' ? (
+                            <Button onClick={() => handleQuickStatusUpdate(detailDemand, 'IN_PROGRESS')}>恢复需求</Button>
                           ) : (
-                            <Button onClick={() => handleQuickStatusUpdate(detailDemand, 'DONE')}>标记完成</Button>
+                            <Space size={8}>
+                              <Button onClick={() => handleQuickStatusUpdate(detailDemand, 'PAUSED')}>挂起需求</Button>
+                              <Button onClick={() => handleQuickStatusUpdate(detailDemand, 'DONE')}>标记完成</Button>
+                            </Space>
                           )}
                         </>
                       ) : null}
