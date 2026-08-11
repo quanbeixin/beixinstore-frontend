@@ -74,6 +74,12 @@ export function syncMatrixPackageDevopsMetaApi(id, payload = {}) {
   })
 }
 
+export function syncMatrixPackageGooglePlayMetadataApi(id) {
+  return request.post(`/matrix-packages/${id}/google-play-metadata-sync`, {}, {
+    timeout: 70000,
+  })
+}
+
 export function getMatrixPackageSideNoteUploadPolicyApi(id, payload = {}) {
   return request.post(`/matrix-packages/${id}/side-notes/upload-policy`, payload, {
     timeout: 30000,

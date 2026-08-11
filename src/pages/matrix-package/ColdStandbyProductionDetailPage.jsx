@@ -7,6 +7,7 @@ import {
   DownloadOutlined,
   EditOutlined,
   FileOutlined,
+  SyncOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
 import {
@@ -48,6 +49,7 @@ import {
   remindMatrixPackageProductionNodeApi,
   remindMatrixPackageSideNoteApi,
   syncMatrixPackageDevopsMetaApi,
+  syncMatrixPackageGooglePlayMetadataApi,
   updateMatrixPackageApi,
   updateMatrixPackageProductionNodeApi,
 } from '../../api/matrixPackage'
@@ -988,12 +990,14 @@ function ColdStandbyProductionDetailPage() {
   const [saveStatus, setSaveStatus] = useState('')
   const [confirmingType, setConfirmingType] = useState('')
   const [syncingDevopsMetaEnv, setSyncingDevopsMetaEnv] = useState('')
+  const [syncingGooglePlayMetadata, setSyncingGooglePlayMetadata] = useState(false)
   const [detail, setDetail] = useState(null)
   const [sideNotes, setSideNotes] = useState([])
   const [productionNodes, setProductionNodes] = useState([])
   const [updatingNodeCode, setUpdatingNodeCode] = useState('')
   const [nodeBlockReasons, setNodeBlockReasons] = useState({})
   const [activeProductionStage, setActiveProductionStage] = useState(PRODUCTION_STAGE_KEYS.PREPARATION)
+  const [activeNoteTypeByStage, setActiveNoteTypeByStage] = useState({})
   const [userOptions, setUserOptions] = useState([])
   const [sideNoteOwners, setSideNoteOwners] = useState({})
   const [sideNoteExpectedDates, setSideNoteExpectedDates] = useState({})
@@ -1780,6 +1784,29 @@ function ColdStandbyProductionDetailPage() {
     }
   }
 
+  const handleSyncGooglePlayMetadata = async () => {
+    if (!canEdit || !detail?.id || syncingGooglePlayMetadata) return
+    setSyncingGooglePlayMetadata(true)
+    try {
+      const result = await syncMatrixPackageGooglePlayMetadataApi(detail.id)
+      if (!result?.success) {
+        message.error(result?.message || 'Google Play 元数据同步触发失败')
+        return
+      }
+      await fetchDetail()
+      setActiveProductionStage(PRODUCTION_STAGE_KEYS.FRONTEND_PUSH)
+      setActiveNoteTypeByStage((current) => ({
+        ...current,
+        [PRODUCTION_STAGE_KEYS.FRONTEND_PUSH]: 'FRONTEND',
+      }))
+      message.success(result?.message || 'Google Play 元数据同步已触发')
+    } catch (error) {
+      message.error(error?.message || 'Google Play 元数据同步触发失败')
+    } finally {
+      setSyncingGooglePlayMetadata(false)
+    }
+  }
+
   const getStageExpectedDateValue = (stageKey) => {
     const targets = STAGE_SCHEDULE_TARGETS[stageKey] || {}
     const dates = [
@@ -2378,6 +2405,18 @@ function ColdStandbyProductionDetailPage() {
                   </Button>
                 </Space>
               ) : null}
+              {section.type === 'FRONTEND' ? (
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<SyncOutlined />}
+                  loading={syncingGooglePlayMetadata}
+                  disabled={!canEdit || syncingGooglePlayMetadata}
+                  onClick={handleSyncGooglePlayMetadata}
+                >
+                  同步 Google Play 信息
+                </Button>
+              ) : null}
             </div>
             <div className="cold-production-note-meta-updated">
               {note?.updated_at ? (
@@ -2394,15 +2433,24 @@ function ColdStandbyProductionDetailPage() {
     )
   }
 
-  const renderNoteTabs = (noteTypes) => {
+  const renderNoteTabs = (noteTypes, stageKey) => {
     const sections = noteTypes
       .map((type) => NOTE_SECTIONS.find((section) => section.type === type))
       .filter(Boolean)
     if (!sections.length) return null
+    const activeKey = sections.some((section) => section.type === activeNoteTypeByStage[stageKey])
+      ? activeNoteTypeByStage[stageKey]
+      : sections[0]?.type
     return (
       <Tabs
         className="cold-production-note-tabs"
-        defaultActiveKey={sections[0]?.type}
+        activeKey={activeKey}
+        onChange={(nextActiveKey) => {
+          setActiveNoteTypeByStage((current) => ({
+            ...current,
+            [stageKey]: nextActiveKey,
+          }))
+        }}
         items={sections.map((section) => ({
           key: section.type,
           label: section.title,
@@ -2850,7 +2898,7 @@ function ColdStandbyProductionDetailPage() {
               title="基础信息完善"
               className="cold-production-stage-main-card"
             >
-              {renderNoteTabs(STAGE_NOTE_TYPES[PRODUCTION_STAGE_KEYS.BASIC_INFO])}
+              {renderNoteTabs(STAGE_NOTE_TYPES[PRODUCTION_STAGE_KEYS.BASIC_INFO], PRODUCTION_STAGE_KEYS.BASIC_INFO)}
             </Card>
           </Col>
           <Col xs={24} lg={8}>
@@ -2869,7 +2917,7 @@ function ColdStandbyProductionDetailPage() {
               title="前端补充+PUSH配置"
               className="cold-production-stage-main-card"
             >
-              {renderNoteTabs(STAGE_NOTE_TYPES[PRODUCTION_STAGE_KEYS.FRONTEND_PUSH])}
+              {renderNoteTabs(STAGE_NOTE_TYPES[PRODUCTION_STAGE_KEYS.FRONTEND_PUSH], PRODUCTION_STAGE_KEYS.FRONTEND_PUSH)}
             </Card>
           </Col>
           <Col xs={24} lg={8}>
