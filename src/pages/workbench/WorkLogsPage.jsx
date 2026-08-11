@@ -799,12 +799,13 @@ function WorkLogs({ mode = 'dashboard' }) {
         .map((item) => {
           const demandId = String(item?.id || '').trim()
           const demandName = String(item?.name || '').trim()
-          const fullLabel = [demandId, demandName].filter(Boolean).join(' - ')
-          const shortLabel = truncateText(fullLabel, 28)
+          const displayLabel = demandName || demandId
+          const searchText = [demandName, demandId].filter(Boolean).join(' ')
+          const shortLabel = truncateText(displayLabel, 28)
           return {
             value: item.id,
-            fullLabel,
-            label: shortLabel === fullLabel ? fullLabel : <span title={fullLabel}>{shortLabel}</span>,
+            searchText,
+            label: shortLabel === displayLabel ? displayLabel : <span title={displayLabel}>{shortLabel}</span>,
           }
         }),
     [demands, selectedItemType],
@@ -816,7 +817,8 @@ function WorkLogs({ mode = 'dashboard' }) {
         .filter((item) => !isDemandFollowupItemType(selectedActualItemType) || !shouldExcludeDemandForFollowup(item))
         .map((item) => ({
           value: item.id,
-          label: [String(item?.id || '').trim(), String(item?.name || '').trim()].filter(Boolean).join(' - '),
+          label: String(item?.name || '').trim() || String(item?.id || '').trim(),
+          searchText: [String(item?.name || '').trim(), String(item?.id || '').trim()].filter(Boolean).join(' '),
         })),
     [demands, selectedActualItemType],
   )
@@ -2938,7 +2940,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                           showSearch
                           options={quickDemandOptions}
                           placeholder="请选择需求池中的需求（可选）"
-                          optionFilterProp="fullLabel"
+                          optionFilterProp="searchText"
                           onChange={(next) => {
                             if (!next) {
                               form.setFieldValue('phase_key', undefined)
@@ -4245,7 +4247,7 @@ function WorkLogs({ mode = 'dashboard' }) {
                       showSearch
                       options={actualDemandOptions}
                       placeholder="请选择需求池中的需求（可选）"
-                      optionFilterProp="label"
+                      optionFilterProp="searchText"
                       onChange={(next) => {
                         if (!next) {
                           actualForm.setFieldValue('phase_key', undefined)
