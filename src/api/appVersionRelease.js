@@ -12,6 +12,10 @@ export function getAppVersionReleaseSyncTargetsApi(id) {
   return request.get(`/app-version-releases/${id}/sync-targets`)
 }
 
+export function getAppVersionReleaseVersionInfoApi(id) {
+  return request.get(`/app-version-releases/${id}/version-info`)
+}
+
 export function createAppVersionReleaseApplicationsApi(payload = {}) {
   return request.post('/app-version-releases/applications', payload)
 }

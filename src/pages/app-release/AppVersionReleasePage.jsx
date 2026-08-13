@@ -33,6 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   deleteAppVersionReleaseApi,
   getAppVersionReleaseSyncTargetsApi,
+  getAppVersionReleaseVersionInfoApi,
   getGroupedAppVersionReleasesApi,
   getAppVersionReleasesApi,
   mergeAppVersionReleaseApi,
@@ -188,6 +189,7 @@ function AppVersionReleasePage() {
   const [syncTargetId, setSyncTargetId] = useState(null)
   const [syncModalOpen, setSyncModalOpen] = useState(false)
   const [syncPreviousReleaseInfo, setSyncPreviousReleaseInfo] = useState(true)
+  const [versionInfoModal, setVersionInfoModal] = useState({ open: false, loading: false, record: null })
 
   const canManage = canManageAppRelease()
 
@@ -528,6 +530,23 @@ function AppVersionReleasePage() {
     handleCopyText(value, '申请ID已复制')
   }, [handleCopyText])
 
+  const handleViewVersionInfo = useCallback(async (record) => {
+    if (!record?.id || !record.version_info_available) return
+    setVersionInfoModal({ open: true, loading: true, record: null })
+    try {
+      const result = await getAppVersionReleaseVersionInfoApi(record.id)
+      if (!result?.success) {
+        message.error(result?.message || '获取版本信息失败')
+        return
+      }
+      setVersionInfoModal({ open: true, loading: false, record: result.data || null })
+    } catch (error) {
+      message.error(error?.message || '获取版本信息失败')
+    } finally {
+      setVersionInfoModal((current) => ({ ...current, loading: false }))
+    }
+  }, [])
+
   const renderGroupName = useCallback((value, record) => {
     if (record.row_type === 'group') {
       return (
@@ -580,6 +599,16 @@ function AppVersionReleasePage() {
             <Tag color={record.release_type_color || 'default'}>{record.release_type_name || '-'}</Tag>
           </Space>
         ),
+      },
+      {
+        title: '版本信息',
+        dataIndex: 'version_info_available',
+        width: 110,
+        render: (value, record) => value ? (
+          <Button type="link" size="small" onClick={() => handleViewVersionInfo(record)}>
+            查看详情
+          </Button>
+        ) : '-',
       },
       {
         title: '紧急程度',
@@ -803,7 +832,7 @@ function AppVersionReleasePage() {
         ),
       },
     ]
-  }, [canManage, deletingId, handleCopyRequestNo, handleCopyText, handleDelete, openEditModal])
+  }, [canManage, deletingId, handleCopyRequestNo, handleCopyText, handleDelete, handleViewVersionInfo, openEditModal])
 
   const groupedColumns = useMemo(() => {
     const groupColumn = {
@@ -1141,6 +1170,24 @@ function AppVersionReleasePage() {
             </Col>
           </Row>
         </Form>
+      </Modal>
+
+      <Modal
+        title={versionInfoModal.record ? `版本信息：${versionInfoModal.record.version_number || '-'}` : '版本信息'}
+        open={versionInfoModal.open}
+        footer={null}
+        width={760}
+        destroyOnHidden
+        confirmLoading={versionInfoModal.loading}
+        onCancel={() => setVersionInfoModal({ open: false, loading: false, record: null })}
+      >
+        {versionInfoModal.loading ? (
+          <div style={{ minHeight: 120 }} />
+        ) : (
+          <div style={{ whiteSpace: 'pre-wrap', maxHeight: 520, overflow: 'auto' }}>
+            {versionInfoModal.record?.version_info || '-'}
+          </div>
+        )}
       </Modal>
 
       <Modal

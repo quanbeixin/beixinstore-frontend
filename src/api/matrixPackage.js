@@ -16,6 +16,10 @@ export function getMatrixPackageDeliveryPlatformOverviewApi() {
   return request.get('/matrix-packages/delivery-platform-overview')
 }
 
+export function getMatrixPackageVersionsApi(id) {
+  return request.get(`/matrix-packages/${id}/versions`)
+}
+
 export function saveMatrixPackageDeliveryPlatformsApi(id, items = []) {
   return request.put(`/matrix-packages/${id}/delivery-platforms`, { items })
 }

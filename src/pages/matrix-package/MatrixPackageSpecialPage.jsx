@@ -39,6 +39,7 @@ import {
   getMatrixPackageDeliveryPlatformOverviewApi,
   getMatrixPackagesApi,
   getMatrixPackageSideNotesApi,
+  getMatrixPackageVersionsApi,
   patchMatrixPackageSideNoteFieldsApi,
   saveMatrixPackageDeliveryPlatformsApi,
   updateMatrixPackageApi,
@@ -175,6 +176,13 @@ function MatrixPackageSpecialPage() {
     open: false,
     rows: [],
     loading: false,
+  })
+  const [versionModal, setVersionModal] = useState({
+    open: false,
+    record: null,
+    rows: [],
+    loading: false,
+    detail: null,
   })
   const [packages, setPackages] = useState([])
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
@@ -565,6 +573,29 @@ function MatrixPackageSpecialPage() {
     setDeliveryPlatformSummaryModal((prev) => ({ ...prev, open: false }))
   }
 
+  const openVersionModal = async (record) => {
+    if (!record?.id) return
+    setVersionModal({ open: true, record, rows: [], loading: true, detail: null })
+    try {
+      const result = await getMatrixPackageVersionsApi(record.id)
+      if (!result?.success) {
+        message.error(result?.message || '获取版本信息失败')
+        return
+      }
+      setVersionModal((current) => (
+        current.record?.id === record.id
+          ? { ...current, rows: Array.isArray(result.data) ? result.data : [] }
+          : current
+      ))
+    } catch (error) {
+      message.error(error?.message || '获取版本信息失败')
+    } finally {
+      setVersionModal((current) => (
+        current.record?.id === record.id ? { ...current, loading: false } : current
+      ))
+    }
+  }
+
   const handleSaveDeliveryPlatforms = async (items) => {
     const packageId = deliveryPlatformModal.record?.id
     if (!packageId) return
@@ -658,6 +689,17 @@ function MatrixPackageSpecialPage() {
     )
   }
 
+  const renderVersionInfo = (_, record) => (
+    <Button
+      type="link"
+      size="small"
+      disabled={!Number(record.version_count || 0)}
+      onClick={() => openVersionModal(record)}
+    >
+      {Number(record.version_count || 0) ? `${record.version_count} 个版本` : '-'}
+    </Button>
+  )
+
   const columns = [
     {
       title: '矩阵包',
@@ -704,6 +746,13 @@ function MatrixPackageSpecialPage() {
       key: 'delivery_platform_overview',
       width: 320,
       render: renderDeliveryPlatformOverview,
+    },
+    {
+      title: '版本信息',
+      dataIndex: 'version_count',
+      key: 'version_count',
+      width: 130,
+      render: renderVersionInfo,
     },
     {
       title: '更新时间',
@@ -1078,6 +1127,60 @@ function MatrixPackageSpecialPage() {
         loading={deliveryPlatformSummaryModal.loading}
         onCancel={closeDeliveryPlatformSummaryModal}
       />
+
+      <Modal
+        title={`${versionModal.record?.package_name || '矩阵包'}版本信息`}
+        open={versionModal.open}
+        footer={null}
+        width={760}
+        destroyOnHidden
+        onCancel={() => setVersionModal((current) => ({ ...current, open: false, detail: null }))}
+      >
+        {versionModal.detail ? (
+          <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+            <Space>
+              <Text strong>版本号</Text>
+              <Tag color="blue">{versionModal.detail.version_number || '-'}</Tag>
+            </Space>
+            <div>
+              <Text strong>版本信息</Text>
+              <div style={{ whiteSpace: 'pre-wrap', marginTop: 8, maxHeight: 460, overflow: 'auto' }}>
+                {versionModal.detail.version_info || '-'}
+              </div>
+            </div>
+          </Space>
+        ) : (
+          <Table
+            rowKey="id"
+            size="small"
+            loading={versionModal.loading}
+            dataSource={versionModal.rows}
+            pagination={false}
+            columns={[
+              { title: '版本号', dataIndex: 'version_number', width: 180, render: (value) => <Tag color="blue">{value || '-'}</Tag> },
+              { title: '更新时间', dataIndex: 'updated_at', width: 180, render: (value) => value || '-' },
+              {
+                title: '操作',
+                width: 120,
+                render: (_, row) => (
+                  <Button
+                    type="link"
+                    onClick={() => setVersionModal((current) => ({ ...current, detail: row }))}
+                  >
+                    查看详情
+                  </Button>
+                ),
+              },
+            ]}
+            locale={{ emptyText: '暂无版本信息' }}
+          />
+        )}
+        {versionModal.detail ? (
+          <Button type="link" onClick={() => setVersionModal((current) => ({ ...current, detail: null }))}>
+            返回版本列表
+          </Button>
+        ) : null}
+      </Modal>
 
       <Modal
         title={editingRecord ? '编辑矩阵包' : '新增矩阵包'}
