@@ -43,6 +43,7 @@ import { updatePreferencesApi } from '../../api/auth'
 import { getDeveloperAccountOptionsApi } from '../../api/developerAccount'
 import { getUsersApi } from '../../api/users'
 import { getAccessSnapshot, getUserPreferences, setUserPreferences } from '../../utils/access'
+import VersionInfoDetail from '../../components/VersionInfoDetail'
 import './AppVersionReleasePage.css'
 
 const { Text } = Typography
@@ -1094,7 +1095,7 @@ function AppVersionReleasePage() {
         confirmLoading={saving}
         okText="保存"
         cancelText="取消"
-        width={760}
+        width={880}
         destroyOnHidden
       >
         <Form form={form} layout="vertical">
@@ -1184,9 +1185,7 @@ function AppVersionReleasePage() {
         {versionInfoModal.loading ? (
           <div style={{ minHeight: 120 }} />
         ) : (
-          <div style={{ whiteSpace: 'pre-wrap', maxHeight: 520, overflow: 'auto' }}>
-            {versionInfoModal.record?.version_info || '-'}
-          </div>
+          <VersionInfoDetail record={versionInfoModal.record} />
         )}
       </Modal>
 

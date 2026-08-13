@@ -50,6 +50,7 @@ import { getUsersApi } from '../../api/users'
 import { hasPermission } from '../../utils/access'
 import DeliveryPlatformOverviewModal from './DeliveryPlatformOverviewModal'
 import DeliveryPlatformSummaryModal from './DeliveryPlatformSummaryModal'
+import VersionInfoDetail from '../../components/VersionInfoDetail'
 import './MatrixPackageSpecialPage.css'
 
 const { Text } = Typography
@@ -1132,23 +1133,12 @@ function MatrixPackageSpecialPage() {
         title={`${versionModal.record?.package_name || '矩阵包'}版本信息`}
         open={versionModal.open}
         footer={null}
-        width={760}
+        width={880}
         destroyOnHidden
         onCancel={() => setVersionModal((current) => ({ ...current, open: false, detail: null }))}
       >
         {versionModal.detail ? (
-          <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-            <Space>
-              <Text strong>版本号</Text>
-              <Tag color="blue">{versionModal.detail.version_number || '-'}</Tag>
-            </Space>
-            <div>
-              <Text strong>版本信息</Text>
-              <div style={{ whiteSpace: 'pre-wrap', marginTop: 8, maxHeight: 460, overflow: 'auto' }}>
-                {versionModal.detail.version_info || '-'}
-              </div>
-            </div>
-          </Space>
+          <VersionInfoDetail record={versionModal.detail} />
         ) : (
           <Table
             rowKey="id"
@@ -1158,6 +1148,14 @@ function MatrixPackageSpecialPage() {
             pagination={false}
             columns={[
               { title: '版本号', dataIndex: 'version_number', width: 180, render: (value) => <Tag color="blue">{value || '-'}</Tag> },
+              {
+                title: '版本状态',
+                dataIndex: 'version_status_name',
+                width: 120,
+                render: (value, row) => (
+                  <Tag color={row.version_status_color || 'default'}>{value || '历史版本'}</Tag>
+                ),
+              },
               { title: '更新时间', dataIndex: 'updated_at', width: 180, render: (value) => value || '-' },
               {
                 title: '操作',
