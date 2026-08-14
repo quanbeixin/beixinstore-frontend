@@ -354,6 +354,20 @@ export const PRIVATE_ROUTES = [
     },
   },
   {
+    path: '/app-version-release/demand-coverage',
+    componentKey: 'appReleaseDemandCoverage',
+    requiredPermission: 'demand.view',
+    page: {
+      title: 'APP发版需求',
+      subtitle: '按需要 APP 发版的需求查看矩阵包功能覆盖与发版状态。',
+    },
+    menu: {
+      section: 'appRelease',
+      label: 'APP发版需求',
+      icon: 'tool',
+    },
+  },
+  {
     path: '/work-demands',
     componentKey: 'workDemands',
     requiredPermission: 'demand.view',

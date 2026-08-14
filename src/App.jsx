@@ -60,6 +60,7 @@ const FeedbackAIPromptConfig = lazy(() => import('./pages/feedback/AIPromptConfi
 const ImportantEmailConfig = lazy(() => import('./pages/feedback/ImportantEmailConfigPage'))
 const CulturePushConfig = lazy(() => import('./pages/culture/CulturePushConfigPage'))
 const AppVersionRelease = lazy(() => import('./pages/app-release/AppVersionReleasePage'))
+const AppReleaseDemandCoverage = lazy(() => import('./pages/app-release/AppReleaseDemandCoveragePage'))
 const AppVersionReleaseApply = lazy(() => import('./pages/app-release/AppVersionReleaseApplyPage'))
 const ColdStandbyProduction = lazy(() => import('./pages/matrix-package/ColdStandbyProductionPage'))
 const ColdStandbyProductionDetail = lazy(() => import('./pages/matrix-package/ColdStandbyProductionDetailPage'))
@@ -89,6 +90,7 @@ const PAGE_COMPONENTS = {
   importantEmailConfig: ImportantEmailConfig,
   culturePushConfig: CulturePushConfig,
   appVersionRelease: AppVersionRelease,
+  appReleaseDemandCoverage: AppReleaseDemandCoverage,
   appVersionReleaseApply: AppVersionReleaseApply,
   coldStandbyProduction: ColdStandbyProduction,
   coldStandbyProductionDetail: ColdStandbyProductionDetail,
