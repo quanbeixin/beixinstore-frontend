@@ -1,4 +1,4 @@
-import { CopyOutlined, FileTextOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import { CopyOutlined, DownloadOutlined, FileTextOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import {
   Button,
   Card,
@@ -111,6 +111,24 @@ function getThisWeekToTodayDateRange() {
 
 function formatRate(value) {
   return `${toNumber(value, 0).toFixed(1)}%`
+}
+
+function csvEscape(value) {
+  const text = String(value ?? '')
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function downloadCsv(filename, rows = []) {
+  const content = rows.map((row) => row.map((cell) => csvEscape(cell)).join(',')).join('\n')
+  const blob = new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.setAttribute('download', filename)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
 }
 
 function buildTopMembersText(rows = [], limit = 5, order = 'desc') {
@@ -579,6 +597,74 @@ function MemberRhythmBoard() {
     message.error('复制失败，请手动复制')
   }, [weeklyReportText])
 
+  const handleExportMembers = useCallback(() => {
+    if (memberList.length === 0) {
+      message.warning('当前没有可导出的成员工作节奏数据')
+      return
+    }
+
+    const startDateText = dateRange?.[0]?.format('YYYY-MM-DD') || '-'
+    const endDateText = dateRange?.[1]?.format('YYYY-MM-DD') || '-'
+    const departmentLabel = departmentId ? departmentLabelById.get(Number(departmentId)) || `部门#${departmentId}` : '全部'
+    const memberLabel = memberUserId ? ownerLabelById.get(Number(memberUserId)) || `用户#${memberUserId}` : '全部'
+    const businessGroupLabel = businessGroupCode
+      ? businessGroupLabelByCode.get(String(businessGroupCode)) || String(businessGroupCode)
+      : '全部'
+    const keywordText = String(keyword || '').trim() || '无'
+
+    const rows = [
+      ['成员工作节奏导出'],
+      ['导出时间', dayjs().format('YYYY-MM-DD HH:mm:ss')],
+      ['时间范围', `${startDateText} ~ ${endDateText}`],
+      ['部门', departmentLabel],
+      ['成员', memberLabel],
+      ['业务组', businessGroupLabel],
+      ['关键词', keywordText],
+      ['成员数', toNumber(summary.member_count, 0)],
+      ['实际总用时(h)', toNumber(summary.total_actual_hours, 0).toFixed(1)],
+      ['平均饱和度', formatRate(summary.avg_saturation_rate)],
+      [],
+      [
+        '成员ID',
+        '成员',
+        '部门',
+        '实际投入天数',
+        '工作日数',
+        '需求数',
+        '实际投入(h)',
+        '日均实际(h)',
+        '平均饱和度',
+        '最后投入日期',
+      ],
+      ...memberList.map((item) => [
+        item.user_id || '',
+        item.username || '',
+        item.department_name || '',
+        toNumber(item.recorded_days ?? item.filled_days, 0),
+        toNumber(item.workday_count, 0),
+        toNumber(item.demand_count, 0),
+        toNumber(item.total_actual_hours, 0).toFixed(1),
+        toNumber(item.avg_actual_hours_per_day, 0).toFixed(1),
+        formatRate(item.avg_saturation_rate),
+        formatBeijingDate(item.last_log_date) || '',
+      ]),
+    ]
+
+    downloadCsv(`成员工作节奏-${startDateText}_${endDateText}-${dayjs().format('YYYYMMDD-HHmmss')}.csv`, rows)
+    message.success('导出成功')
+  }, [
+    businessGroupCode,
+    businessGroupLabelByCode,
+    dateRange,
+    departmentId,
+    departmentLabelById,
+    keyword,
+    memberList,
+    memberUserId,
+    ownerLabelById,
+    summary,
+  ])
+
   const activeFilterTags = useMemo(() => {
     const tags = []
     const startText = dateRange?.[0]?.format('YYYY-MM-DD')
@@ -902,6 +988,9 @@ function MemberRhythmBoard() {
           <Space>
             <Button icon={<QuestionCircleOutlined />} onClick={() => setMetricModalOpen(true)}>
               口径说明
+            </Button>
+            <Button icon={<DownloadOutlined />} onClick={handleExportMembers} disabled={memberList.length === 0}>
+              导出
             </Button>
             <Tooltip title="按当前筛选条件生成本周/当前周期周报文案">
               <Button

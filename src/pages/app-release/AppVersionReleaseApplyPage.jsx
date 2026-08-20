@@ -4,6 +4,7 @@ import {
   Card,
   Col,
   DatePicker,
+  Empty,
   Form,
   Input,
   Modal,
@@ -15,13 +16,18 @@ import {
   Typography,
   message,
 } from 'antd'
-import { SendOutlined } from '@ant-design/icons'
+import { EyeOutlined, SendOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createAppVersionReleaseApplicationsApi, getAppVersionReleasesApi } from '../../api/appVersionRelease'
-import { getMatrixPackageSideNotesApi, getMatrixPackagesApi } from '../../api/matrixPackage'
+import {
+  getMatrixPackageSideNotesApi,
+  getMatrixPackagesApi,
+  getMatrixPackageVersionsApi,
+} from '../../api/matrixPackage'
 import { getWorkDemandsApi } from '../../api/work'
+import VersionInfoDetail from '../../components/VersionInfoDetail'
 import './AppVersionReleaseApplyPage.css'
 
 const { Text } = Typography
@@ -180,6 +186,15 @@ function AppVersionReleaseApplyPage() {
   const [packages, setPackages] = useState([])
   const [demands, setDemands] = useState([])
   const [packagePrefillMap, setPackagePrefillMap] = useState({})
+  const [versionInfoCache, setVersionInfoCache] = useState({})
+  const [versionInfoModal, setVersionInfoModal] = useState({
+    open: false,
+    loading: false,
+    packageId: null,
+    packageName: '',
+    versionNumber: '',
+    record: null,
+  })
 
   const fetchPackages = useCallback(async () => {
     setPackageLoading(true)
@@ -229,6 +244,7 @@ function AppVersionReleaseApplyPage() {
   const packageOptions = useMemo(() => packages.map(buildPackageOption), [packages])
   const demandOptions = useMemo(() => demands.map(buildDemandOption), [demands])
   const watchedPackageIds = Form.useWatch('package_ids', form)
+  const watchedPackageItems = Form.useWatch('package_items', form)
   const selectedPackageIds = useMemo(() => (
     Array.isArray(watchedPackageIds) ? watchedPackageIds : []
   ), [watchedPackageIds])
@@ -313,6 +329,88 @@ function AppVersionReleaseApplyPage() {
       form.setFieldsValue({ package_items: nextItems })
     }
   }, [form, packagePrefillMap, selectedPackageIds])
+
+  const findVersionInfo = useCallback((records, versionNumber) => {
+    const normalizedVersion = String(versionNumber || '').trim().toLowerCase()
+    if (!normalizedVersion) return null
+    return (Array.isArray(records) ? records : []).find(
+      (item) => String(item?.version_number || '').trim().toLowerCase() === normalizedVersion,
+    ) || null
+  }, [])
+
+  const openVersionInfo = useCallback(async (pkg, index) => {
+    const packageId = Number(pkg?.id)
+    const versionNumber = String(
+      watchedPackageItems?.[index]?.app_version || packagePrefillMap[packageId]?.app_version || '',
+    ).trim()
+    if (!packageId || !versionNumber) {
+      message.warning('当前矩阵包尚未配置APP版本号')
+      return
+    }
+
+    const cached = versionInfoCache[packageId]
+    if (cached?.loaded) {
+      setVersionInfoModal({
+        open: true,
+        loading: false,
+        packageId,
+        packageName: pkg.package_name || `矩阵包 ${packageId}`,
+        versionNumber,
+        record: findVersionInfo(cached.rows, versionNumber),
+      })
+      return
+    }
+
+    setVersionInfoModal({
+      open: true,
+      loading: true,
+      packageId,
+      packageName: pkg.package_name || `矩阵包 ${packageId}`,
+      versionNumber,
+      record: null,
+    })
+    setVersionInfoCache((current) => ({
+      ...current,
+      [packageId]: { loaded: false, loading: true, rows: [] },
+    }))
+    try {
+      const result = await getMatrixPackageVersionsApi(packageId)
+      if (!result?.success) {
+        message.error(result?.message || '获取版本信息失败')
+        setVersionInfoCache((current) => ({
+          ...current,
+          [packageId]: { loaded: false, loading: false, rows: [] },
+        }))
+        setVersionInfoModal((current) => (
+          current.packageId === packageId && current.versionNumber === versionNumber
+            ? { ...current, loading: false }
+            : current
+        ))
+        return
+      }
+      const rows = Array.isArray(result.data) ? result.data : []
+      setVersionInfoCache((current) => ({
+        ...current,
+        [packageId]: { loaded: true, loading: false, rows },
+      }))
+      setVersionInfoModal((current) => (
+        current.packageId === packageId && current.versionNumber === versionNumber
+          ? { ...current, loading: false, record: findVersionInfo(rows, versionNumber) }
+          : current
+      ))
+    } catch (error) {
+      message.error(error?.message || '获取版本信息失败')
+      setVersionInfoCache((current) => ({
+        ...current,
+        [packageId]: { loaded: false, loading: false, rows: [] },
+      }))
+      setVersionInfoModal((current) => (
+        current.packageId === packageId && current.versionNumber === versionNumber
+          ? { ...current, loading: false }
+          : current
+      ))
+    }
+  }, [findVersionInfo, packagePrefillMap, versionInfoCache, watchedPackageItems])
 
   const showConflicts = (conflicts = []) => {
     Modal.warning({
@@ -425,7 +523,11 @@ function AppVersionReleaseApplyPage() {
               </Form.Item>
             </Col>
             <Col xs={24}>
-              <Form.Item label="关联需求" name="related_demand_id">
+              <Form.Item
+                label="关联需求"
+                name="related_demand_id"
+                rules={[{ required: true, message: '请选择关联需求' }]}
+              >
                 <Select
                   allowClear
                   showSearch
@@ -458,48 +560,81 @@ function AppVersionReleaseApplyPage() {
                     <Form.Item name={['package_items', index, 'package_id']} hidden>
                       <Input />
                     </Form.Item>
-                    <Row gutter={12} className="app-version-release-apply-package-fields">
-                      <Col xs={24} md={6}>
-                        <Form.Item
-                          label="版本号"
-                          name={['package_items', index, 'app_version']}
-                          rules={[{ required: true, message: '请填写版本号' }]}
+                    <div className="app-version-release-apply-package-layout">
+                      <Row gutter={12} className="app-version-release-apply-package-fields">
+                        <Col xs={24} md={6}>
+                          <Form.Item
+                            label="版本号"
+                            name={['package_items', index, 'app_version']}
+                            rules={[{ required: true, message: '请填写版本号' }]}
+                          >
+                            <Input disabled maxLength={80} placeholder="从矩阵包APP版本号自动带出" />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={6}>
+                          <Form.Item
+                            label="紧急程度"
+                            name={['package_items', index, 'urgency_code']}
+                            rules={[{ required: true, message: '请选择紧急程度' }]}
+                          >
+                            <Select options={URGENCY_OPTIONS} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={7}>
+                          <Form.Item
+                            label="APP后台地址"
+                            name={['package_items', index, 'app_console_url']}
+                            rules={[{ required: true, whitespace: true, message: '请填写APP后台地址' }]}
+                          >
+                            <Input allowClear maxLength={1000} placeholder="https://play.google.com/console/..." />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={5}>
+                          <Form.Item
+                            label="送审预期"
+                            name={['package_items', index, 'expected_submit_at']}
+                          >
+                            <DatePicker
+                              format="YYYY-MM-DD"
+                              placeholder="选择送审预期"
+                              disabledDate={(current) => current && current < dayjs().startOf('day')}
+                              style={{ width: '100%' }}
+                            />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                      <div className="app-version-release-apply-version-entry">
+                        <div>
+                          <Text strong>当前版本信息</Text>
+                          <div className="app-version-release-apply-version-entry-meta">
+                            {watchedPackageItems?.[index]?.app_version || packagePrefillMap[Number(pkg.id)]?.app_version || '暂无版本号'}
+                          </div>
+                          {versionInfoCache[Number(pkg.id)]?.loaded ? (
+                            <Tag
+                              color={findVersionInfo(
+                                versionInfoCache[Number(pkg.id)]?.rows,
+                                watchedPackageItems?.[index]?.app_version || packagePrefillMap[Number(pkg.id)]?.app_version,
+                              ) ? 'green' : 'default'}
+                              className="app-version-release-apply-version-entry-status"
+                            >
+                              {findVersionInfo(
+                                versionInfoCache[Number(pkg.id)]?.rows,
+                                watchedPackageItems?.[index]?.app_version || packagePrefillMap[Number(pkg.id)]?.app_version,
+                              ) ? '已回传' : '暂无'}
+                            </Tag>
+                          ) : null}
+                        </div>
+                        <Button
+                          type="primary"
+                          ghost
+                          icon={<EyeOutlined />}
+                          loading={Boolean(versionInfoCache[Number(pkg.id)]?.loading)}
+                          onClick={() => openVersionInfo(pkg, index)}
                         >
-                          <Input disabled maxLength={80} placeholder="从矩阵包APP版本号自动带出" />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} md={6}>
-                        <Form.Item
-                          label="紧急程度"
-                          name={['package_items', index, 'urgency_code']}
-                          rules={[{ required: true, message: '请选择紧急程度' }]}
-                        >
-                          <Select options={URGENCY_OPTIONS} />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} md={7}>
-                        <Form.Item
-                          label="APP后台地址"
-                          name={['package_items', index, 'app_console_url']}
-                          rules={[{ required: true, whitespace: true, message: '请填写APP后台地址' }]}
-                        >
-                          <Input allowClear maxLength={1000} placeholder="https://play.google.com/console/..." />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} md={5}>
-                        <Form.Item
-                          label="送审预期"
-                          name={['package_items', index, 'expected_submit_at']}
-                        >
-                          <DatePicker
-                            format="YYYY-MM-DD"
-                            placeholder="选择送审预期"
-                            disabledDate={(current) => current && current < dayjs().startOf('day')}
-                            style={{ width: '100%' }}
-                          />
-                        </Form.Item>
-                      </Col>
-                    </Row>
+                          查看详情
+                        </Button>
+                      </div>
+                    </div>
                   </Card>
                 ))}
               </div>
@@ -526,6 +661,22 @@ function AppVersionReleaseApplyPage() {
           </div>
         </Form>
       </Card>
+
+      <Modal
+        title={`${versionInfoModal.packageName || '矩阵包'} · 版本 ${versionInfoModal.versionNumber || '-'}`}
+        open={versionInfoModal.open}
+        footer={null}
+        width={880}
+        loading={versionInfoModal.loading}
+        destroyOnHidden
+        onCancel={() => setVersionInfoModal((current) => ({ ...current, open: false }))}
+      >
+        {versionInfoModal.record ? (
+          <VersionInfoDetail record={versionInfoModal.record} />
+        ) : !versionInfoModal.loading ? (
+          <Empty description="当前版本暂无回传的版本信息" />
+        ) : null}
+      </Modal>
     </div>
   )
 }

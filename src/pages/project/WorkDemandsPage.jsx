@@ -60,6 +60,7 @@ import {
   getDemandWorkflowNodeOptionsApi,
   getDemandViewByIdApi,
   getDemandViewsApi,
+  getLaunchScheduleDemandsApi,
   generateDemandScoreTaskApi,
   getProjectTemplateByIdApi,
   getProjectTemplatesApi,
@@ -1060,6 +1061,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [showCancelledTabOnly, setShowCancelledTabOnly] = useState(false)
   const [ownerFilter, setOwnerFilter] = useState()
   const [updatedRange, setUpdatedRange] = useState([])
+  const [launchReleaseRange, setLaunchReleaseRange] = useState([])
   const [scopeFilter, setScopeFilter] = useState('all')
   const [compactView, setCompactView] = useState(() => {
     const preferences = getUserPreferences()
@@ -2088,21 +2090,22 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         params.exclude_cancelled = true
       }
       if (isLaunchPlanPage) {
-        params.expected_release_only = true
-        params.order_by_expected_release_date = true
-      }
-      if (ownerFilter) params.owner_user_id = ownerFilter
-      if (Array.isArray(updatedRange) && updatedRange.length === 2 && updatedRange[0] && updatedRange[1]) {
+        if (Array.isArray(launchReleaseRange) && launchReleaseRange.length === 2 && launchReleaseRange[0] && launchReleaseRange[1]) {
+          params.start_date = launchReleaseRange[0].format('YYYY-MM-DD')
+          params.end_date = launchReleaseRange[1].format('YYYY-MM-DD')
+        }
+      } else if (Array.isArray(updatedRange) && updatedRange.length === 2 && updatedRange[0] && updatedRange[1]) {
         params.updated_start_date = updatedRange[0].format('YYYY-MM-DD')
         params.updated_end_date = updatedRange[1].format('YYYY-MM-DD')
       }
+      if (ownerFilter) params.owner_user_id = ownerFilter
       if (isMyDemandsPage) {
         params.relation_scope = myDemandTabKey === 'participated' ? 'participated' : 'owned'
       } else if (scopeFilter === 'mine') {
         params.mine = true
       }
 
-      const result = await getWorkDemandsApi(params)
+      const result = await (isLaunchPlanPage ? getLaunchScheduleDemandsApi(params) : getWorkDemandsApi(params))
       if (!result?.success) {
         message.error(result?.message || '获取需求列表失败')
         return
@@ -2134,6 +2137,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     showCancelledTabOnly,
     ownerFilter,
     updatedRange,
+    launchReleaseRange,
     isMyDemandsPage,
     isLaunchPlanPage,
     myDemandTabKey,
@@ -4231,6 +4235,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setStatusFilter(isMyDemandsPage || isLaunchPlanPage ? '' : 'IN_PROGRESS')
     setOwnerFilter(undefined)
     setUpdatedRange([])
+    setLaunchReleaseRange([])
     setScopeFilter('all')
     setVisibleColumnKeys([])
     setPage(1)
@@ -4371,12 +4376,20 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       template_labels: selectedTemplateLabels,
       template_label: selectedTemplateLabels.join('、'),
       updated_start_date:
-        Array.isArray(updatedRange) && updatedRange[0] ? updatedRange[0].format('YYYY-MM-DD') : '',
+        !isLaunchPlanPage && Array.isArray(updatedRange) && updatedRange[0] ? updatedRange[0].format('YYYY-MM-DD') : '',
       updated_end_date:
-        Array.isArray(updatedRange) && updatedRange[1] ? updatedRange[1].format('YYYY-MM-DD') : '',
+        !isLaunchPlanPage && Array.isArray(updatedRange) && updatedRange[1] ? updatedRange[1].format('YYYY-MM-DD') : '',
       updated_range_label:
-        Array.isArray(updatedRange) && updatedRange[0] && updatedRange[1]
+        !isLaunchPlanPage && Array.isArray(updatedRange) && updatedRange[0] && updatedRange[1]
           ? `${updatedRange[0].format('YYYY-MM-DD')} ~ ${updatedRange[1].format('YYYY-MM-DD')}`
+          : '',
+      expected_release_start_date:
+        isLaunchPlanPage && Array.isArray(launchReleaseRange) && launchReleaseRange[0]
+          ? launchReleaseRange[0].format('YYYY-MM-DD')
+          : '',
+      expected_release_end_date:
+        isLaunchPlanPage && Array.isArray(launchReleaseRange) && launchReleaseRange[1]
+          ? launchReleaseRange[1].format('YYYY-MM-DD')
           : '',
       mine: scopeFilter === 'mine',
       scope_label: scopeFilter === 'mine' ? '我负责/参与' : '全部需求',
@@ -4397,6 +4410,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     compactView,
     isLaunchPlanPage,
     keyword,
+    launchReleaseRange,
     ownerFilter,
     ownerOptions,
     priorityFilter,
@@ -5251,12 +5265,16 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
               )}
               <RangePicker
                 style={{ width: 250 }}
-                value={updatedRange?.length ? updatedRange : null}
+                value={isLaunchPlanPage ? (launchReleaseRange?.length ? launchReleaseRange : null) : (updatedRange?.length ? updatedRange : null)}
                 onChange={(values) => {
-                  setUpdatedRange(values || [])
+                  if (isLaunchPlanPage) {
+                    setLaunchReleaseRange(values || [])
+                  } else {
+                    setUpdatedRange(values || [])
+                  }
                   setPage(1)
                 }}
-                placeholder={['更新开始', '更新结束']}
+                placeholder={isLaunchPlanPage ? ['上线开始', '上线结束'] : ['更新开始', '更新结束']}
               />
               {isMyDemandsPage ? null : (
                 <Select

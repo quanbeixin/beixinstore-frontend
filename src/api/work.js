@@ -188,6 +188,11 @@ export function getWorkDemandsApi(params) {
   return cachedRequest(key, () => request.get('/work/demands', { params }))
 }
 
+export function getLaunchScheduleDemandsApi(params) {
+  const key = `launch-schedule-demands-${JSON.stringify(params)}`
+  return cachedRequest(key, () => request.get('/work/demands/launch-schedule', { params }))
+}
+
 export function getDemandViewsApi() {
   return request.get('/work/demands/views')
 }
