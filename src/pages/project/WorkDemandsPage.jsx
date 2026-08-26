@@ -281,6 +281,11 @@ const DEMAND_COLUMN_VISIBILITY_STORAGE_KEY_PREFIX = 'work_demands_visible_column
 const DEMAND_DETAIL_TAB_STATE_KEY_PREFIX = 'work_demand_detail_tab_state'
 const DEMAND_GROUP_COLLAPSE_STATE_KEY_PREFIX = 'work_demands_group_collapsed_state'
 const DEMAND_LIST_SCROLL_RESTORE_KEY_PREFIX = 'work_demands_list_scroll_restore'
+const LAUNCH_PLAN_HIDDEN_COLUMN_KEYS = new Set([
+  'status',
+  'current_node_name',
+  'current_node_schedule',
+])
 const VALUE_REVIEW_LAUNCH_CUTOFF_DATE = '2026-05-01'
 const DEMAND_VIEW_VISIBILITY_OPTIONS = [
   { label: '仅自己可见', value: 'PRIVATE' },
@@ -777,6 +782,27 @@ function normalizeParticipantRoleUserMap(value, participantRoles = []) {
     result[role] = role === PROJECT_MANAGER_ROLE_KEY ? userIds.slice(0, 1) : userIds
   })
   return result
+}
+
+function getDemandRoleUserText(record, roleKey, userLabelMap = new Map()) {
+  const normalizedRoleKey = normalizeParticipantRoles([roleKey])[0] || ''
+  if (!normalizedRoleKey || record?.__group) return ''
+
+  const participantRoles = normalizeParticipantRoles(record?.participant_roles)
+  if (!participantRoles.includes(normalizedRoleKey)) return '-'
+
+  const roleUserMap = normalizeParticipantRoleUserMap(record?.participant_role_user_map, participantRoles)
+  const userIds = Array.isArray(roleUserMap?.[normalizedRoleKey]) ? roleUserMap[normalizedRoleKey] : []
+  if (userIds.length === 0) return '-'
+
+  return userIds
+    .map((userId) => {
+      const normalizedUserId = Number(userId)
+      if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) return ''
+      return userLabelMap.get(normalizedUserId) || `用户${normalizedUserId}`
+    })
+    .filter(Boolean)
+    .join('、') || '-'
 }
 
 function isResearchTemplate(templateId) {
@@ -1616,6 +1642,20 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     })
     return map
   }, [ownerLabelMap, workflowAssigneeOptions])
+
+  const renderLaunchPlanRoleUsers = useCallback(
+    (record, roleKey) => {
+      if (record?.__group) return null
+      const text = getDemandRoleUserText(record, roleKey, roleSyncUserLabelMap)
+      if (!text || text === '-') return '-'
+      return (
+        <Typography.Text ellipsis={{ tooltip: text }} style={{ maxWidth: 150 }}>
+          {text}
+        </Typography.Text>
+      )
+    },
+    [roleSyncUserLabelMap],
+  )
 
   const modalRoleAssignmentRows = useMemo(() => {
     const normalizedRoles = normalizeParticipantRoles(modalParticipantRoles)
@@ -4625,21 +4665,30 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         dataIndex: 'frontend_dev_stage_estimated_hours',
         key: 'frontend_dev_stage_estimated_hours',
         width: 140,
-        render: (value, record) => (record?.__group ? null : formatOptionalStageEstimatedHours(value)),
+        render: (value, record) =>
+          isLaunchPlanPage
+            ? renderLaunchPlanRoleUsers(record, 'FRONTEND_DEV')
+            : record?.__group ? null : formatOptionalStageEstimatedHours(value),
       },
       {
         title: '后端开发',
         dataIndex: 'backend_dev_stage_estimated_hours',
         key: 'backend_dev_stage_estimated_hours',
         width: 140,
-        render: (value, record) => (record?.__group ? null : formatOptionalStageEstimatedHours(value)),
+        render: (value, record) =>
+          isLaunchPlanPage
+            ? renderLaunchPlanRoleUsers(record, 'BACKEND_DEV')
+            : record?.__group ? null : formatOptionalStageEstimatedHours(value),
       },
       {
-        title: '测试通测',
+        title: isLaunchPlanPage ? '测试' : '测试通测',
         dataIndex: 'test_notify_stage_estimated_hours',
         key: 'test_notify_stage_estimated_hours',
         width: 140,
-        render: (value, record) => (record?.__group ? null : formatOptionalStageEstimatedHours(value)),
+        render: (value, record) =>
+          isLaunchPlanPage
+            ? renderLaunchPlanRoleUsers(record, 'QA')
+            : record?.__group ? null : formatOptionalStageEstimatedHours(value),
       },
       {
         title: '优先级',
@@ -4861,6 +4910,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       )),
     })
 
+    if (isLaunchPlanPage) {
+      return columns.filter((column) => !LAUNCH_PLAN_HIDDEN_COLUMN_KEYS.has(getTableColumnKey(column)))
+    }
+
     return columns
   }, [
     canTransferOwner,
@@ -4871,6 +4924,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     openEditModal,
     canEditDemandRecord,
     handleCopyDemandName,
+    renderLaunchPlanRoleUsers,
     isQuickFieldSaving,
     handleQuickFieldSave,
     handleQuickStatusUpdate,
@@ -4946,43 +5000,76 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       return
     }
 
-    const rows = [
-      [
-        '需求ID',
-        '需求名称',
-        '需求负责人',
-        '业务组',
-        '状态',
-        '优先级',
-        '需求阶段',
-        '当前进行中节点',
-        '节点排期',
-        '预期上线时间',
-        '代码分支',
-        '备注信息（上线表）',
-        '最近更新',
-      ],
-      ...exportRows.map((item) => [
-        item?.id || '-',
-        item?.name || '-',
-        item?.owner_name || '-',
-        item?.business_group_name || item?.business_group_code || '-',
-        getStatusLabel(item?.status),
-        item?.priority || '-',
-        item?.current_phase_name || '-',
-        item?.current_node_name || '-',
-        formatDemandNodeSchedule(item),
-        formatBeijingDate(item?.expected_release_date) || '-',
-        item?.code_branch || '-',
-        item?.release_note || '-',
-        formatBeijingDateTime(item?.updated_at) || '-',
-      ]),
-    ]
+    const rows = isLaunchPlanPage
+      ? [
+          [
+            '需求ID',
+            '需求名称',
+            '需求负责人',
+            '业务组',
+            '优先级',
+            '需求阶段',
+            '前端开发',
+            '后端开发',
+            '测试',
+            '预期上线时间',
+            '代码分支',
+            '备注信息（上线表）',
+            '最近更新',
+          ],
+          ...exportRows.map((item) => [
+            item?.id || '-',
+            item?.name || '-',
+            item?.owner_name || '-',
+            item?.business_group_name || item?.business_group_code || '-',
+            item?.priority || '-',
+            item?.current_phase_name || '-',
+            getDemandRoleUserText(item, 'FRONTEND_DEV', roleSyncUserLabelMap),
+            getDemandRoleUserText(item, 'BACKEND_DEV', roleSyncUserLabelMap),
+            getDemandRoleUserText(item, 'QA', roleSyncUserLabelMap),
+            formatBeijingDate(item?.expected_release_date) || '-',
+            item?.code_branch || '-',
+            item?.release_note || '-',
+            formatBeijingDateTime(item?.updated_at) || '-',
+          ]),
+        ]
+      : [
+          [
+            '需求ID',
+            '需求名称',
+            '需求负责人',
+            '业务组',
+            '状态',
+            '优先级',
+            '需求阶段',
+            '当前进行中节点',
+            '节点排期',
+            '预期上线时间',
+            '代码分支',
+            '备注信息（上线表）',
+            '最近更新',
+          ],
+          ...exportRows.map((item) => [
+            item?.id || '-',
+            item?.name || '-',
+            item?.owner_name || '-',
+            item?.business_group_name || item?.business_group_code || '-',
+            getStatusLabel(item?.status),
+            item?.priority || '-',
+            item?.current_phase_name || '-',
+            item?.current_node_name || '-',
+            formatDemandNodeSchedule(item),
+            formatBeijingDate(item?.expected_release_date) || '-',
+            item?.code_branch || '-',
+            item?.release_note || '-',
+            formatBeijingDateTime(item?.updated_at) || '-',
+          ]),
+        ]
 
     const filePrefix = isLaunchPlanPage ? '上线计划表' : isMyDemandsPage ? '我的需求' : '需求池'
     downloadCsv(`${filePrefix}-${dayjs().format('YYYYMMDD-HHmmss')}.csv`, rows)
     message.success('导出成功')
-  }, [groupedDemands, isLaunchPlanPage, isMyDemandsPage])
+  }, [groupedDemands, isLaunchPlanPage, isMyDemandsPage, roleSyncUserLabelMap])
 
   return (
     <div style={{ padding: 8 }}>
