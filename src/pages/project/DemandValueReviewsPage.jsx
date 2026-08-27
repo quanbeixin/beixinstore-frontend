@@ -106,17 +106,24 @@ function DemandValueReviewsPage() {
   }, [params?.id])
 
   const loadRows = useCallback(
-    async ({ page = 1, pageSize = 20 } = {}) => {
+    async ({
+      page = 1,
+      pageSize = 20,
+      keyword: nextKeyword = keyword,
+      status: nextStatus = status,
+      sortBy: nextSortBy = sortBy,
+      sortOrder: nextSortOrder = sortOrder,
+    } = {}) => {
       setLoading(true)
       try {
         const values = form.getFieldsValue()
         const range = Array.isArray(values?.created_range) ? values.created_range : []
         const reviewDateRange = Array.isArray(values?.review_date_range) ? values.review_date_range : []
         const result = await getDemandValueReviewsApi({
-          keyword: keyword || undefined,
-          status: status || undefined,
-          sort_by: sortBy || undefined,
-          sort_order: sortOrder || undefined,
+          keyword: nextKeyword || undefined,
+          status: nextStatus || undefined,
+          sort_by: nextSortBy || undefined,
+          sort_order: nextSortOrder || undefined,
           page,
           pageSize,
           start_date: range[0] ? dayjs(range[0]).format('YYYY-MM-DD') : undefined,
@@ -441,6 +448,13 @@ function DemandValueReviewsPage() {
         dataIndex: 'demand_expected_release_date',
         key: 'demand_expected_release_date',
         width: 120,
+        sorter: true,
+        sortOrder:
+          sortBy === 'demand_expected_release_date'
+            ? sortOrder === 'asc'
+              ? 'ascend'
+              : 'descend'
+            : null,
         render: (value) => formatBeijingDate(value) || '-',
       },
       {
@@ -572,10 +586,9 @@ function DemandValueReviewsPage() {
               options={STATUS_OPTIONS}
               value={status}
               onChange={(value) => {
-                setStatus(value || '')
-                setTimeout(() => {
-                  loadRows({ page: 1, pageSize: pagination.pageSize })
-                }, 0)
+                const nextStatus = value || ''
+                setStatus(nextStatus)
+                loadRows({ page: 1, pageSize: pagination.pageSize, status: nextStatus })
               }}
             />
             <Form form={form} component={false}>
@@ -624,13 +637,20 @@ function DemandValueReviewsPage() {
               const sorterValue = Array.isArray(sorter) ? sorter[0] : sorter
               const field = String(sorterValue?.field || '').trim()
               const order = String(sorterValue?.order || '').trim()
-              const nextSortBy = field === 'overall_score' && order ? 'overall_score' : ''
+              const nextSortBy =
+                field === 'overall_score' && order
+                  ? 'overall_score'
+                  : field === 'demand_expected_release_date' && order
+                    ? 'demand_expected_release_date'
+                    : ''
               const nextSortOrder = order === 'ascend' ? 'asc' : order === 'descend' ? 'desc' : ''
               setSortBy(nextSortBy)
               setSortOrder(nextSortOrder)
               loadRows({
                 page: Number(nextPagination?.current || 1),
                 pageSize: Number(nextPagination?.pageSize || pagination.pageSize),
+                sortBy: nextSortBy,
+                sortOrder: nextSortOrder,
               })
             }}
             scroll={{ x: 1300 }}

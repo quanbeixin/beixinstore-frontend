@@ -475,6 +475,7 @@ function normalizeDemandViewConfig(config = {}) {
     keyword: String(source.keyword || '').trim(),
     status: String(source.status || '').trim().toUpperCase(),
     priority: String(source.priority || '').trim().toUpperCase(),
+    business_group_code: String(source.business_group_code || '').trim(),
     template_ids: templateIds,
     active_tab_key: activeTabKey || '__ALL__',
     owner_user_id: Number.isInteger(Number(source.owner_user_id)) && Number(source.owner_user_id) > 0
@@ -1553,6 +1554,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       keyword: String(keyword || '').trim(),
       status: showCompletedTabOnly || showCancelledTabOnly ? '' : String(statusFilter || '').trim().toUpperCase(),
       priority: String(priorityFilter || '').trim().toUpperCase(),
+      business_group_code: businessGroupFilter,
       template_ids: Array.isArray(templateFilter) ? templateFilter : [],
       active_tab_key: activeDemandTabKey,
       owner_user_id: Number(ownerFilter || 0) > 0 ? Number(ownerFilter) : null,
@@ -1566,6 +1568,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     [
       activeDemandTabKey,
       compactView,
+      businessGroupFilter,
       keyword,
       ownerFilter,
       priorityFilter,
@@ -2246,6 +2249,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setKeywordInput(config.keyword || '')
     setStatusFilter(config.status || '')
     setPriorityFilter(config.priority || '')
+    setBusinessGroupFilter(config.business_group_code || '')
     setTemplateFilter(Array.isArray(config.template_ids) ? config.template_ids : [])
     setOwnerFilter(config.owner_user_id || undefined)
     setUpdatedRange(buildDemandViewDateRange(config))
@@ -5350,6 +5354,21 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                   }}
                 />
               )}
+              {isLaunchPlanPage ? (
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  style={{ width: 180 }}
+                  placeholder="业务组"
+                  options={businessGroupOptions}
+                  value={businessGroupFilter || undefined}
+                  onChange={(value) => {
+                    setBusinessGroupFilter(value || '')
+                    setPage(1)
+                  }}
+                />
+              ) : null}
               <RangePicker
                 style={{ width: 250 }}
                 value={isLaunchPlanPage ? (launchReleaseRange?.length ? launchReleaseRange : null) : (updatedRange?.length ? updatedRange : null)}
