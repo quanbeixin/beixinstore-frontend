@@ -39,6 +39,7 @@ import {
   createFeedbackApi,
   deleteFeedbackApi,
   getAllFeedbackApi,
+  getFeedbackByIdApi,
   translateFeedbackReplyToEnglishApi,
   updateFeedbackApi,
   updateFeedbackStatusApi,
@@ -97,6 +98,8 @@ const DUPLICATE_TIME_WINDOW_MINUTES = 5
 const DUPLICATE_TIME_WINDOW_MS = DUPLICATE_TIME_WINDOW_MINUTES * 60 * 1000
 const AI_CATEGORY_PREVIEW_CHARS = 10
 const AI_BATCH_ANALYZE_LIMIT = 50
+const AI_ANALYSIS_POLL_INTERVAL_MS = 2000
+const AI_ANALYSIS_POLL_TIMEOUT_MS = 45000
 const IMPORTANT_EMAIL_TAB_KEY = '__important__'
 const STATUS_META = {
   pending: { label: '待处理', color: 'orange' },
@@ -488,6 +491,37 @@ function FeedbackListPage() {
     return () => clearTimeout(timer)
   }, [fetchRows, filters.searchText])
 
+  const waitForFeedbackAnalysis = useCallback(async (feedbackId) => {
+    const normalizedId = Number(feedbackId || 0)
+    if (!normalizedId) return false
+
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < AI_ANALYSIS_POLL_TIMEOUT_MS) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, AI_ANALYSIS_POLL_INTERVAL_MS)
+      })
+
+      const result = await getFeedbackByIdApi(normalizedId)
+      const row = result?.data || null
+      if (row?.ai_processed) {
+        setRows((prevRows) => (
+          Array.isArray(prevRows)
+            ? prevRows.map((item) => (Number(item?.id) === normalizedId ? { ...item, ...row } : item))
+            : prevRows
+        ))
+        if (Number(viewingRow?.id) === normalizedId) {
+          setViewingRow((prev) => ({ ...(prev || {}), ...row }))
+        }
+        if (Number(editingRow?.id) === normalizedId) {
+          setEditingRow((prev) => ({ ...(prev || {}), ...row }))
+        }
+        return true
+      }
+    }
+
+    return false
+  }, [editingRow?.id, viewingRow?.id])
+
   const groupedRows = useMemo(() => {
     const list = Array.isArray(rows) ? rows : []
     const groupCounts = new Array(list.length).fill(0)
@@ -799,22 +833,32 @@ function FeedbackListPage() {
   }
 
   const handleAnalyzeSingle = async (record) => {
+    const feedbackId = Number(record?.id || 0)
+    if (!feedbackId) return
+
     setAnalyzingIds((prev) => {
       const next = new Set(prev)
-      next.add(record.id)
+      next.add(feedbackId)
       return next
     })
 
     try {
-      await analyzeSingleFeedbackApi(record.id)
-      message.success('分析完成')
-      fetchRows()
+      const result = await analyzeSingleFeedbackApi(feedbackId)
+      message.success(result?.message || 'AI 分析已开始')
+      fetchRows({ _ts: Date.now() })
+      const completed = await waitForFeedbackAnalysis(feedbackId)
+      if (completed) {
+        message.success('分析完成')
+        fetchRows({ _ts: Date.now() })
+      } else {
+        message.warning('AI 分析仍在后台进行，可稍后刷新查看')
+      }
     } catch (error) {
       message.error(error?.message || '分析失败')
     } finally {
       setAnalyzingIds((prev) => {
         const next = new Set(prev)
-        next.delete(record.id)
+        next.delete(feedbackId)
         return next
       })
     }
@@ -1096,8 +1140,10 @@ function FeedbackListPage() {
       dataIndex: 'ai_processed',
       key: 'ai_processed',
       width: 100,
-      render: (value) => (
-        <Tag color={value ? 'green' : 'default'}>{value ? '已处理' : '未处理'}</Tag>
+      render: (value, record) => (
+        analyzingIds.has(record?.id)
+          ? <Tag color="processing">分析中</Tag>
+          : <Tag color={value ? 'green' : 'default'}>{value ? '已处理' : '未处理'}</Tag>
       ),
     },
     {
