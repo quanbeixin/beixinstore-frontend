@@ -234,7 +234,6 @@ function AppVersionReleasePage() {
         page: 1,
         pageSize: 50,
         keyword: String(keyword || '').trim(),
-        exclude_completed: 1,
         exclude_cancelled: 1,
       })
       if (result?.success) setDemandOptions(Array.isArray(result.data?.list) ? result.data.list : [])

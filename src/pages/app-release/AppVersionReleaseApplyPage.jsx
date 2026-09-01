@@ -221,7 +221,6 @@ function AppVersionReleaseApplyPage() {
       const result = await getWorkDemandsApi({
         page: 1,
         pageSize: 200,
-        exclude_completed: 1,
         exclude_cancelled: 1,
       })
       if (!result?.success) {
