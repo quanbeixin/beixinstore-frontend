@@ -2,6 +2,7 @@ import {
   CheckOutlined,
   CopyOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   EditOutlined,
   EyeOutlined,
   RobotOutlined,
@@ -100,10 +101,31 @@ const AI_CATEGORY_PREVIEW_CHARS = 10
 const AI_BATCH_ANALYZE_LIMIT = 50
 const AI_ANALYSIS_POLL_INTERVAL_MS = 2000
 const AI_ANALYSIS_POLL_TIMEOUT_MS = 45000
+const FEEDBACK_EXPORT_PAGE_SIZE = 100
+const FEEDBACK_EXPORT_MAX_ROWS = 10000
 const IMPORTANT_EMAIL_TAB_KEY = '__important__'
 const STATUS_META = {
   pending: { label: '待处理', color: 'orange' },
   processed: { label: '已处理', color: 'green' },
+}
+const EXPORT_COLUMN_LABELS = {
+  date: '提交日期',
+  user_email: '用户邮箱',
+  email_subject: '邮件标题',
+  product: '产品',
+  channel: '反馈渠道',
+  status: '处理状态',
+  user_question: '用户问题',
+  user_question_cn: '用户问题（中文）',
+  ai_primary_category: 'AI主分类',
+  ai_sentiment: '情绪',
+  user_request: '用户需求摘要',
+  is_new_request: '是否新需求',
+  ai_reply: 'AI回复（中文）',
+  ai_reply_en: 'AI回复（英文）',
+  ai_processed: 'AI处理',
+  support_reply: '人工回复（中文）',
+  support_reply_en: '人工回复（英文）',
 }
 
 function readVisibleColumns() {
@@ -281,6 +303,36 @@ function getAllCategories(record) {
   return [primary].filter(Boolean)
 }
 
+function formatFeedbackStatus(value) {
+  return STATUS_META[String(value || '').trim()]?.label || String(value || '').trim() || '-'
+}
+
+function formatBooleanLabel(value, trueLabel, falseLabel) {
+  return value ? trueLabel : falseLabel
+}
+
+function buildFeedbackExportRow(record = {}) {
+  return {
+    [EXPORT_COLUMN_LABELS.date]: toDateTimeString(record.date),
+    [EXPORT_COLUMN_LABELS.user_email]: record.user_email || '',
+    [EXPORT_COLUMN_LABELS.email_subject]: record.email_subject || '',
+    [EXPORT_COLUMN_LABELS.product]: record.product || '',
+    [EXPORT_COLUMN_LABELS.channel]: record.channel || '',
+    [EXPORT_COLUMN_LABELS.status]: formatFeedbackStatus(record.status),
+    [EXPORT_COLUMN_LABELS.user_question]: record.user_question || '',
+    [EXPORT_COLUMN_LABELS.user_question_cn]: record.user_question_cn || '',
+    [EXPORT_COLUMN_LABELS.ai_primary_category]: getPrimaryCategory(record),
+    [EXPORT_COLUMN_LABELS.ai_sentiment]: record.ai_sentiment || '',
+    [EXPORT_COLUMN_LABELS.user_request]: record.user_request || '',
+    [EXPORT_COLUMN_LABELS.is_new_request]: formatBooleanLabel(record.is_new_request, '新需求', '已知需求'),
+    [EXPORT_COLUMN_LABELS.ai_reply]: record.ai_reply || '',
+    [EXPORT_COLUMN_LABELS.ai_reply_en]: record.ai_reply_en || '',
+    [EXPORT_COLUMN_LABELS.ai_processed]: formatBooleanLabel(record.ai_processed, '已处理', '未处理'),
+    [EXPORT_COLUMN_LABELS.support_reply]: record.support_reply || '',
+    [EXPORT_COLUMN_LABELS.support_reply_en]: record.support_reply_en || '',
+  }
+}
+
 function parseImportRows(jsonRows) {
   return (Array.isArray(jsonRows) ? jsonRows : [])
     .map((row) => ({
@@ -326,6 +378,7 @@ function FeedbackListPage() {
   const [visibleColumns, setVisibleColumns] = useState(readVisibleColumns)
   const [selectedRowKeys, setSelectedRowKeys] = useState([])
   const [batchStatusLoading, setBatchStatusLoading] = useState(false)
+  const [exportLoading, setExportLoading] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isMockModalOpen, setIsMockModalOpen] = useState(false)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
@@ -403,31 +456,45 @@ function FeedbackListPage() {
     () => buildImportantEmailMap(importantEmailRules),
     [importantEmailRules],
   )
+  const currentPage = pagination.current
+  const currentPageSize = pagination.pageSize
+
+  const buildListQueryParams = useCallback((overrides = {}) => ({
+    page: overrides.page || currentPage,
+    pageSize: overrides.pageSize || currentPageSize,
+    searchText: filters.searchText || undefined,
+    product: activeTab !== 'all' && activeTab !== IMPORTANT_EMAIL_TAB_KEY ? activeTab : undefined,
+    onlyImportantEmail: activeTab === IMPORTANT_EMAIL_TAB_KEY ? true : undefined,
+    status: filters.status || undefined,
+    isNewRequest: filters.isNewRequest,
+    aiCategory: filters.aiCategory || undefined,
+    dateStart: filters.dateRange?.[0]
+      ? filters.dateRange[0].startOf('day').format('YYYY-MM-DD HH:mm:ss')
+      : undefined,
+    dateEnd: filters.dateRange?.[1]
+      ? filters.dateRange[1].endOf('day').format('YYYY-MM-DD HH:mm:ss')
+      : undefined,
+    _ts: Number(overrides._ts) || Date.now(),
+  }), [
+    activeTab,
+    filters.aiCategory,
+    filters.dateRange,
+    filters.isNewRequest,
+    filters.searchText,
+    filters.status,
+    currentPage,
+    currentPageSize,
+  ])
 
   const fetchRows = useCallback(async (overrides = {}) => {
     const requestSeq = fetchSeqRef.current + 1
     fetchSeqRef.current = requestSeq
     setLoading(true)
     try {
-      const current = overrides.page || pagination.current
-      const pageSize = overrides.pageSize || pagination.pageSize
-      const result = await getAllFeedbackApi({
-        page: current,
-        pageSize,
-        searchText: filters.searchText || undefined,
-        product: activeTab !== 'all' && activeTab !== IMPORTANT_EMAIL_TAB_KEY ? activeTab : undefined,
-        onlyImportantEmail: activeTab === IMPORTANT_EMAIL_TAB_KEY ? true : undefined,
-        status: filters.status || undefined,
-        isNewRequest: filters.isNewRequest,
-        aiCategory: filters.aiCategory || undefined,
-        dateStart: filters.dateRange?.[0]
-          ? filters.dateRange[0].startOf('day').format('YYYY-MM-DD HH:mm:ss')
-          : undefined,
-        dateEnd: filters.dateRange?.[1]
-          ? filters.dateRange[1].endOf('day').format('YYYY-MM-DD HH:mm:ss')
-          : undefined,
-        _ts: Number(overrides._ts) || Date.now(),
-      })
+      const queryParams = buildListQueryParams(overrides)
+      const current = queryParams.page
+      const pageSize = queryParams.pageSize
+      const result = await getAllFeedbackApi(queryParams)
 
       if (requestSeq !== fetchSeqRef.current) {
         return
@@ -471,13 +538,7 @@ function FeedbackListPage() {
       }
     }
   }, [
-    activeTab,
-    pagination,
-    filters.searchText,
-    filters.dateRange,
-    filters.status,
-    filters.isNewRequest,
-    filters.aiCategory,
+    buildListQueryParams,
   ])
 
   useEffect(() => {
@@ -704,6 +765,62 @@ function FeedbackListPage() {
       message.error(error?.message || '批量状态更新失败')
     } finally {
       setBatchStatusLoading(false)
+    }
+  }
+
+  const fetchFeedbackRowsForExport = async () => {
+    const collectedRows = []
+    let currentPage = 1
+    let total = 0
+
+    do {
+      const result = await getAllFeedbackApi(buildListQueryParams({
+        page: currentPage,
+        pageSize: FEEDBACK_EXPORT_PAGE_SIZE,
+        _ts: Date.now(),
+      }))
+      const pageRows = Array.isArray(result?.data) ? result.data : []
+      const paginationData = result?.pagination || {}
+      total = Number(paginationData.total || pageRows.length || 0)
+      collectedRows.push(...pageRows)
+
+      if (pageRows.length === 0) break
+      currentPage += 1
+    } while (collectedRows.length < total && collectedRows.length < FEEDBACK_EXPORT_MAX_ROWS)
+
+    if (total > FEEDBACK_EXPORT_MAX_ROWS) {
+      message.warning(`当前筛选结果共 ${total} 条，本次最多导出前 ${FEEDBACK_EXPORT_MAX_ROWS} 条`)
+    }
+
+    return collectedRows.slice(0, FEEDBACK_EXPORT_MAX_ROWS)
+  }
+
+  const handleExportFeedback = async () => {
+    const selectedKeySet = new Set((selectedRowKeys || []).map((item) => String(item)))
+
+    setExportLoading(true)
+    try {
+      const sourceRows = await fetchFeedbackRowsForExport()
+      const exportRows = selectedKeySet.size > 0
+        ? sourceRows.filter((item) => selectedKeySet.has(String(item?.id)))
+        : sourceRows
+
+      if (!exportRows.length) {
+        message.warning(selectedKeySet.size > 0 ? '当前筛选结果中没有可导出的已选数据' : '当前筛选结果暂无可导出数据')
+        return
+      }
+
+      const worksheet = XLSX.utils.json_to_sheet(exportRows.map((item) => buildFeedbackExportRow(item)))
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, '用户问题记录')
+      const scopeText = selectedKeySet.size > 0 ? '已选' : '筛选结果'
+      const timestamp = dayjs().format('YYYY-MM-DD_HHmmss')
+      XLSX.writeFile(workbook, `用户问题记录导出_${scopeText}_${timestamp}.xlsx`)
+      message.success(`已导出 ${exportRows.length} 条用户问题记录`)
+    } catch (error) {
+      message.error(error?.message || '导出失败')
+    } finally {
+      setExportLoading(false)
     }
   }
 
@@ -1339,6 +1456,15 @@ function FeedbackListPage() {
           onClick={handleAiAnalyzeBatch}
         >
           AI 批量分析
+        </Button>
+
+        <Button
+          icon={<DownloadOutlined />}
+          disabled={groupedRows.length === 0}
+          loading={exportLoading}
+          onClick={handleExportFeedback}
+        >
+          批量导出
         </Button>
 
         <Button icon={<UploadOutlined />} onClick={() => setIsImportModalOpen(true)}>
