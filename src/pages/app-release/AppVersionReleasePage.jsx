@@ -42,6 +42,7 @@ import {
 import { updatePreferencesApi } from '../../api/auth'
 import { getDeveloperAccountOptionsApi } from '../../api/developerAccount'
 import { getUsersApi } from '../../api/users'
+import { getWorkDemandsApi } from '../../api/work'
 import { getAccessSnapshot, getUserPreferences, setUserPreferences } from '../../utils/access'
 import VersionInfoDetail from '../../components/VersionInfoDetail'
 import './AppVersionReleasePage.css'
@@ -108,6 +109,14 @@ function buildUserOption(user) {
     label: user.department_name ? `${name} / ${user.department_name}` : name,
     value: user.id,
     searchText: `${name} ${user.username || ''} ${user.department_name || ''}`,
+  }
+}
+
+function buildDemandOption(item) {
+  return {
+    label: `${item.name || item.id}（${item.id || '-'}）`,
+    value: item.id,
+    searchText: `${item.id || ''} ${item.name || ''} ${item.owner_name || ''}`,
   }
 }
 
@@ -182,6 +191,8 @@ function AppVersionReleasePage() {
   const [urgencyOptions, setUrgencyOptions] = useState([])
   const [userOptions, setUserOptions] = useState([])
   const [developerAccountOptions, setDeveloperAccountOptions] = useState([])
+  const [demandOptions, setDemandOptions] = useState([])
+  const [demandLoading, setDemandLoading] = useState(false)
   const [editingRecord, setEditingRecord] = useState(null)
   const [remarkRecord, setRemarkRecord] = useState(null)
   const [syncTargetLoading, setSyncTargetLoading] = useState(false)
@@ -213,6 +224,24 @@ function AppVersionReleasePage() {
       }
     } catch (error) {
       message.error(error?.message || '获取开发者账号选项失败')
+    }
+  }, [])
+
+  const fetchDemandOptions = useCallback(async (keyword = '') => {
+    setDemandLoading(true)
+    try {
+      const result = await getWorkDemandsApi({
+        page: 1,
+        pageSize: 50,
+        keyword: String(keyword || '').trim(),
+        exclude_completed: 1,
+        exclude_cancelled: 1,
+      })
+      if (result?.success) setDemandOptions(Array.isArray(result.data?.list) ? result.data.list : [])
+    } catch (error) {
+      message.error(error?.message || '获取需求列表失败')
+    } finally {
+      setDemandLoading(false)
     }
   }, [])
 
@@ -386,6 +415,13 @@ function AppVersionReleasePage() {
 
   const openEditModal = useCallback((record) => {
     setEditingRecord(record)
+    if (record?.related_demand_id) {
+      setDemandOptions((current) => {
+        if (current.some((item) => String(item.id) === String(record.related_demand_id))) return current
+        return [{ id: record.related_demand_id, name: record.related_demand_name || record.related_demand_id }, ...current]
+      })
+    }
+    fetchDemandOptions()
     form.setFieldsValue({
       release_type: record.release_type || 'VERSION_UPDATE',
       release_status: record.release_status || 'PENDING_PLAN',
@@ -394,10 +430,11 @@ function AppVersionReleasePage() {
       submitted_at: toDateValue(record.submitted_at),
       listed_at: toDateValue(record.listed_at),
       owner_user_id: record.owner_user_id || undefined,
+      related_demand_id: record.related_demand_id || undefined,
       previous_release_info: record.previous_release_info || '',
       remark: record.remark || '',
     })
-  }, [form])
+  }, [fetchDemandOptions, form])
 
   const openSyncModal = useCallback(async (record) => {
     if (!record?.id) return
@@ -468,6 +505,7 @@ function AppVersionReleasePage() {
         submitted_at: formatDateValue(values.submitted_at),
         listed_at: formatDateValue(values.listed_at),
         owner_user_id: values.owner_user_id || null,
+        related_demand_id: values.related_demand_id || null,
         previous_release_info: values.previous_release_info || '',
         remark: values.remark || '',
       })
@@ -1156,6 +1194,28 @@ function AppVersionReleasePage() {
                   optionFilterProp="searchText"
                   filterOption={(input, option) => String(option?.searchText || '').toLowerCase().includes(input.toLowerCase())}
                   options={userOptions.map(buildUserOption)}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item label="关联需求" name="related_demand_id">
+                <Select
+                  allowClear
+                  showSearch
+                  loading={demandLoading}
+                  placeholder="搜索并选择关联需求"
+                  optionFilterProp="searchText"
+                  filterOption={false}
+                  onSearch={fetchDemandOptions}
+                  options={[
+                    ...(editingRecord?.related_demand_id ? [{
+                      id: editingRecord.related_demand_id,
+                      name: editingRecord.related_demand_name || editingRecord.related_demand_id,
+                    }] : []),
+                    ...demandOptions,
+                  ]
+                    .filter((item, index, list) => list.findIndex((candidate) => String(candidate.id) === String(item.id)) === index)
+                    .map(buildDemandOption)}
                 />
               </Form.Item>
             </Col>
