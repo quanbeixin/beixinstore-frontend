@@ -100,6 +100,7 @@ function AppReleaseDemandCoveragePage() {
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState([])
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
+  const [releasePackageSortOrder, setReleasePackageSortOrder] = useState('asc')
   const [coverageModal, setCoverageModal] = useState({ open: false, demand: null })
   const [coverageFilter, setCoverageFilter] = useState('all')
   const [releasePackageModal, setReleasePackageModal] = useState({ open: false, demand: null })
@@ -114,6 +115,7 @@ function AppReleaseDemandCoveragePage() {
         pageSize,
         keyword: keyword || undefined,
         status: status || undefined,
+        sort_order: releasePackageSortOrder,
       })
       if (!result?.success) {
         message.error(result?.message || '获取APP发版需求失败')
@@ -130,7 +132,7 @@ function AppReleaseDemandCoveragePage() {
     } finally {
       setLoading(false)
     }
-  }, [currentPageSize, keyword, status])
+  }, [currentPageSize, keyword, releasePackageSortOrder, status])
 
   useEffect(() => {
     loadData(1, currentPageSize)
@@ -225,6 +227,9 @@ function AppReleaseDemandCoveragePage() {
     {
       title: '关联发版包',
       key: 'release_package_summary',
+      sorter: true,
+      sortOrder: releasePackageSortOrder === 'asc' ? 'ascend' : 'descend',
+      sortDirections: ['ascend', 'descend', 'ascend'],
       render: (_, record) => renderReleasePackageSummary(
         record.release_package_summary,
         () => setReleasePackageModal({ open: true, demand: record }),
@@ -344,7 +349,15 @@ function AppReleaseDemandCoveragePage() {
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条`,
           }}
-          onChange={(nextPagination) => loadData(nextPagination.current, nextPagination.pageSize)}
+          onChange={(nextPagination, _, sorter) => {
+            const nextSortOrder = sorter.order === 'descend' ? 'desc' : 'asc'
+            if (nextSortOrder !== releasePackageSortOrder) {
+              setReleasePackageSortOrder(nextSortOrder)
+              setPagination((current) => ({ ...current, current: 1, pageSize: nextPagination.pageSize }))
+              return
+            }
+            loadData(nextPagination.current, nextPagination.pageSize)
+          }}
           locale={{ emptyText: '暂无需要 APP 发版的需求' }}
         />
       </Card>
