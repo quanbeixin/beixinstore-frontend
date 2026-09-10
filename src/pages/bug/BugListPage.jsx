@@ -225,7 +225,10 @@ function buildBugListQueryString({
 }) {
   const params = new URLSearchParams()
   const normalizedViewId = Number(viewId || 0)
-  if (normalizedViewId > 0) params.set('view_id', String(normalizedViewId))
+  if (normalizedViewId > 0) {
+    params.set('view_id', String(normalizedViewId))
+    params.set('view_state', 'current')
+  }
 
   const normalizedKeyword = String(keyword || '').trim()
   if (normalizedKeyword) params.set('keyword', normalizedKeyword)
@@ -891,13 +894,21 @@ function BugListPage({
   ])
 
   useEffect(() => {
-    const viewIdFromQuery = Number(new URLSearchParams(location.search || '').get('view_id') || 0)
+    const queryParams = new URLSearchParams(location.search || '')
+    const viewIdFromQuery = Number(queryParams.get('view_id') || 0)
     if (!viewIdFromQuery) {
       suppressViewAutoApplyRef.current = false
       return
     }
     if (suppressViewAutoApplyRef.current) return
     if (Number(activeViewId || 0) === viewIdFromQuery) return
+
+    // A synchronized list URL already contains the current filters. Restore the
+    // selected view without replacing those filters with the saved defaults.
+    if (queryParams.get('view_state') === 'current') {
+      setActiveViewId(viewIdFromQuery)
+      return
+    }
 
     loadAndApplyBugView(viewIdFromQuery, { syncUrl: false, silent: true }).catch((error) => {
       message.error(error?.message || '加载分享视图失败')
