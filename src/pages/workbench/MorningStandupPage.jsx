@@ -475,6 +475,39 @@ function getTodayHoursDetailRows(items = [], type = 'planned') {
     .sort((a, b) => b.hours - a.hours || Number(b.id || 0) - Number(a.id || 0))
 }
 
+function groupTodayHoursDetailRowsByMember(items = [], type = 'planned') {
+  const groups = new Map()
+
+  ;(Array.isArray(items) ? items : []).forEach((item) => {
+    const userId = Number(item?.user_id)
+    const username = String(item?.username || '').trim() || '未知人员'
+    const memberKey = Number.isInteger(userId) && userId > 0 ? `user-${userId}` : `name-${username}`
+    const group = groups.get(memberKey) || {
+      key: `${type}-${memberKey}`,
+      row_type: 'member',
+      username,
+      hours: 0,
+      children: [],
+    }
+
+    group.hours += toNumber(item?.hours, 0)
+    group.children.push({
+      ...item,
+      key: `${type}-item-${item.id}`,
+      row_type: 'item',
+    })
+    groups.set(memberKey, group)
+  })
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      hours: toNumber(group.hours, 0),
+      item_count: group.children.length,
+    }))
+    .sort((a, b) => b.hours - a.hours || a.username.localeCompare(b.username, 'zh-CN'))
+}
+
 function MorningStandupBoard() {
   const currentUser = useMemo(() => getCurrentUser(), [])
   const access = useMemo(() => getAccessSnapshot(), [])
@@ -1600,6 +1633,10 @@ function MorningStandupBoard() {
 
   const currentHoursDetailItems =
     hoursDetailModal.type === 'actual' ? todayActualDetailItems : todayPlannedDetailItems
+  const currentHoursDetailTree = useMemo(
+    () => groupTodayHoursDetailRowsByMember(currentHoursDetailItems, hoursDetailModal.type),
+    [currentHoursDetailItems, hoursDetailModal.type],
+  )
   const currentHoursDetailTitle = hoursDetailModal.type === 'actual' ? '今日实际用时明细' : '今日计划用时明细'
   const currentHoursField = hoursDetailModal.type === 'actual' ? 'today_actual_hours' : 'today_planned_hours'
   const currentHoursTotal = currentHoursDetailItems.reduce((sum, item) => sum + toNumber(item?.hours, 0), 0)
@@ -2465,58 +2502,69 @@ function MorningStandupBoard() {
           <Empty description="当前没有可校准的明细事项" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
           <Table
-            rowKey={(record) => `${hoursDetailModal.type}-${record.id}`}
+            key={hoursDetailModal.type}
+            rowKey="key"
             size="small"
             pagination={false}
-            dataSource={currentHoursDetailItems}
+            dataSource={currentHoursDetailTree}
             scroll={{ x: 760 }}
+            expandable={{ defaultExpandAllRows: true }}
+            rowClassName={(record) => (record.row_type === 'member' ? 'morning-hours-member-row' : '')}
             columns={[
               {
-                title: '事项',
+                title: '人员 / 事项',
                 key: 'item',
                 render: (_, record) => (
-                  <div>
-                    <div style={{ fontWeight: 600, color: '#0f172a' }}>{record.description || record.item_type_name || '-'}</div>
-                    <div style={{ fontSize: 12, color: '#667085' }}>
-                      {record.item_type_name || '-'} · #{record.id}
+                  record.row_type === 'member' ? (
+                    <Space size={8}>
+                      <TeamOutlined style={{ color: '#1677ff' }} />
+                      <Text strong>{record.username}</Text>
+                      <Tag>{`${record.item_count} 项`}</Tag>
+                    </Space>
+                  ) : (
+                    <div>
+                      <div style={{ fontWeight: 600, color: '#0f172a' }}>{record.description || record.item_type_name || '-'}</div>
+                      <div style={{ fontSize: 12, color: '#667085' }}>
+                        {record.item_type_name || '-'} · #{record.id}
+                      </div>
                     </div>
-                  </div>
+                  )
                 ),
               },
               {
                 title: '需求',
                 key: 'demand',
                 width: 180,
-                render: (_, record) => renderDemandNameWithLimit(record.demand_name || record.demand_id, 24, record.demand_id),
+                render: (_, record) =>
+                  record.row_type === 'member'
+                    ? <Text type="secondary">-</Text>
+                    : renderDemandNameWithLimit(record.demand_name || record.demand_id, 24, record.demand_id),
               },
               {
                 title: '阶段',
                 dataIndex: 'phase_name',
                 key: 'phase_name',
                 width: 160,
-                render: (value) => value || '-',
-              },
-              {
-                title: '负责人',
-                dataIndex: 'username',
-                key: 'username',
-                width: 120,
-                render: (value) => value || '-',
+                render: (value, record) => record.row_type === 'member' ? <Text type="secondary">-</Text> : value || '-',
               },
               {
                 title: hoursDetailModal.type === 'actual' ? '今日实际(h)' : '今日计划(h)',
                 key: 'hours',
                 width: 120,
-                render: (_, record) => toNumber(record?.[currentHoursField], 0).toFixed(1),
+                render: (_, record) => (
+                  <Text strong={record.row_type === 'member'}>
+                    {`${toNumber(record.row_type === 'member' ? record.hours : record?.[currentHoursField], 0).toFixed(1)}h`}
+                  </Text>
+                ),
               },
             ]}
             summary={() => (
               <Table.Summary.Row>
-                <Table.Summary.Cell index={0} colSpan={4}>
+                <Table.Summary.Cell index={0} colSpan={3}>
                   <Text strong>合计</Text>
                 </Table.Summary.Cell>
-                <Table.Summary.Cell index={1}>
-                  <Text strong>{currentHoursTotal.toFixed(1)}</Text>
+                <Table.Summary.Cell index={3}>
+                  <Text strong>{`${currentHoursTotal.toFixed(1)}h`}</Text>
                 </Table.Summary.Cell>
               </Table.Summary.Row>
             )}

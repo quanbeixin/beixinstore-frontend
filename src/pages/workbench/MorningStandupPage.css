@@ -324,6 +324,14 @@
   background: rgba(240, 249, 255, 0.78) !important;
 }
 
+.morning-hours-member-row > td {
+  background: #f8fafc !important;
+}
+
+.morning-hours-member-row:hover > td {
+  background: #f0f7ff !important;
+}
+
 .morning-board-table .ant-tag {
   margin-inline-end: 4px;
   line-height: 18px;
