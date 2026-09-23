@@ -184,10 +184,29 @@ function getSnapshot(configuration) {
   }
 }
 
+function normalizeFeature(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function getFeatures(value) {
+  const { parsed } = parseVersionInfo(value)
+  return Array.isArray(parsed?.features) ? parsed.features.filter(Boolean) : []
+}
+
 export default function VersionInfoDetail({ record }) {
   const { parsed, raw } = useMemo(() => parseVersionInfo(record?.version_info), [record?.version_info])
   const snapshot = useMemo(() => getSnapshot(parsed?.configuration || {}), [parsed])
   const features = Array.isArray(parsed?.features) ? parsed.features.filter(Boolean) : []
+  const comparison = record?.comparison || {}
+  const baselineFeatures = useMemo(
+    () => getFeatures(comparison.baseline_version_info),
+    [comparison.baseline_version_info],
+  )
+  const baselineFeatureSet = useMemo(
+    () => new Set(baselineFeatures.map(normalizeFeature).filter(Boolean)),
+    [baselineFeatures],
+  )
+  const hasBaseline = Boolean(comparison.has_baseline)
 
   if (!parsed) {
     return (
@@ -217,13 +236,30 @@ export default function VersionInfoDetail({ record }) {
 
       {features.length > 0 ? (
         <section className="version-info-feature-section">
-          <div className="version-info-section-heading">
-            <span className="version-info-section-icon"><InfoCircleOutlined /></span>
-            <Text strong>需求覆盖</Text>
+          <div className="version-info-feature-heading">
+            <div className="version-info-section-heading">
+              <span className="version-info-section-icon"><InfoCircleOutlined /></span>
+              <Text strong>需求覆盖</Text>
+            </div>
+            {hasBaseline ? (
+              <Text type="secondary" className="version-info-feature-comparison">
+                当前版本：{record?.version_number || '-'} · 对比最近已上架：{comparison.baseline_version_number || '-'}
+              </Text>
+            ) : (
+              <Text type="secondary" className="version-info-feature-comparison">暂无可对比的已上架版本</Text>
+            )}
           </div>
           <ul className="version-info-feature-list">
-            {features.map((feature, index) => <li key={`${feature}-${index}`}>{feature}</li>)}
+            {features.map((feature, index) => {
+              const isAdded = hasBaseline && !baselineFeatureSet.has(normalizeFeature(feature))
+              return (
+                <li key={`${feature}-${index}`} className={isAdded ? 'version-info-feature-added' : ''}>
+                  {feature}
+                </li>
+              )
+            })}
           </ul>
+          {hasBaseline ? <Text type="secondary" className="version-info-feature-legend">绿色 = 相比最近已上架版本新增</Text> : null}
         </section>
       ) : null}
 

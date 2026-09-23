@@ -597,11 +597,10 @@ function buildGeneratedH5Values(packageDetail) {
 }
 
 function buildGeneratedTrackingValues(packageDetail) {
-  const packageName = normalizeH5PackageName(packageDetail?.package_name)
   const domain = normalizeH5Domain(packageDetail?.domain_info)
   return {
-    prodTrackingUrl: packageName && domain ? `https://${packageName}.data.app.${domain}` : '',
-    testTrackingUrl: packageName && domain ? `https://${packageName}.test-data.app.${domain}` : '',
+    prodTrackingUrl: domain ? `https://data.app.${domain}` : '',
+    testTrackingUrl: 'https://aws-test-data.geesdev.com',
   }
 }
 

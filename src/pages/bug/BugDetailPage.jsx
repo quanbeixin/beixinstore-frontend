@@ -430,6 +430,8 @@ function BugDetailPage() {
     ),
   }), [transitionButtons])
 
+  const isNewBug = String(detail?.status_code || '').trim().toUpperCase() === 'NEW'
+
   const runTransition = async (button) => {
     try {
       const actionKey = toActionKey(button?.actionKey || button?.transition?.action_key)
@@ -1420,7 +1422,7 @@ function BugDetailPage() {
                           <div className="bug-detail-page__tab-section">
                             <div className="bug-detail-page__tab-section-title">流转操作</div>
                             <Form form={remarkForm} layout="vertical" requiredMark={false} className="bug-detail-page__transition-form">
-                              {canSeeFixModule ? (
+                              {canSeeFixModule && !isNewBug ? (
                                 <Form.Item
                                   label="修复方案&影响范围"
                                   name="fix_solution"

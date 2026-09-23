@@ -4585,7 +4585,13 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                 type="link"
                 className={isLaunchPlanPage ? 'work-demand-list__name-trigger' : undefined}
                 style={isLaunchPlanPage ? undefined : { padding: 0 }}
-                onClick={() => openDetailDrawer(record)}
+                onClick={() => {
+                  if (isLaunchPlanPage) {
+                    window.open(`/work-demands/${encodeURIComponent(record.id)}`, '_blank', 'noopener,noreferrer')
+                    return
+                  }
+                  openDetailDrawer(record)
+                }}
               >
                 <span className="work-demand-list__name-text" title={value || '-'}>
                   {value || '-'}

@@ -43,6 +43,18 @@
   padding: 18px 0 4px;
 }
 
+.version-info-feature-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.version-info-feature-comparison,
+.version-info-feature-legend {
+  font-size: 12px;
+}
+
 .version-info-section-heading {
   display: flex;
   align-items: center;
@@ -80,6 +92,16 @@
   padding: 0;
   color: #4f5f78;
   line-height: 1.7;
+}
+
+.version-info-feature-added {
+  color: #389e0d;
+  font-weight: 600;
+}
+
+.version-info-feature-legend {
+  display: block;
+  margin: 6px 0 0 30px;
 }
 
 .version-info-sections {
@@ -177,6 +199,12 @@
 }
 
 @media (max-width: 680px) {
+  .version-info-feature-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
   .version-info-sections {
     grid-template-columns: 1fr;
   }
