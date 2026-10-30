@@ -277,12 +277,16 @@ const DEVOPS_GOOGLE_ENV_SECTIONS = [
   {
     key: 'prod',
     title: '生产环境信息',
-    fields: DEVOPS_GOOGLE_FIELD_DEFINITIONS.map((field) => ({
+    fields: [...DEVOPS_GOOGLE_FIELD_DEFINITIONS.map((field) => ({
       name: `prod${field.key[0].toUpperCase()}${field.key.slice(1)}`,
       label: field.label,
       placeholder: `填写生产环境${field.label}`,
       legacyName: field.key,
-    })),
+    })), {
+      name: 'prodCdnDomainUrl',
+      label: 'CDN域名地址',
+      placeholder: '填写正式环境CDN域名地址',
+    }],
   },
   {
     key: 'test',
