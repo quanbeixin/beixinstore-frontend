@@ -71,6 +71,7 @@ function Register() {
               name="real_name"
               rules={[
                 { required: true, message: '请输入真实姓名' },
+                { pattern: /^\p{Script=Han}{2,32}$/u, message: '真实姓名必须为 2-32 个中文汉字' },
                 { min: 2, message: '真实姓名至少 2 个字符' },
                 { max: 32, message: '真实姓名最多 32 个字符' },
               ]}
@@ -81,13 +82,14 @@ function Register() {
             <Form.Item
               name="email"
               rules={[
+                { required: true, whitespace: true, message: '请输入邮箱' },
                 {
                   type: 'email',
                   message: '邮箱格式不正确',
                 },
               ]}
             >
-              <Input prefix={<MailOutlined />} placeholder="邮箱（可选）" size="large" />
+              <Input prefix={<MailOutlined />} placeholder="邮箱" size="large" />
             </Form.Item>
 
             <Form.Item
