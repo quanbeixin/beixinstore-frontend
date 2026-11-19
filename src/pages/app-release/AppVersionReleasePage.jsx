@@ -31,6 +31,7 @@ import {
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  updateAppVersionReleaseRegressionApi,
   deleteAppVersionReleaseApi,
   getAppVersionReleaseSyncTargetsApi,
   getAppVersionReleaseVersionInfoApi,
@@ -177,6 +178,7 @@ function AppVersionReleasePage() {
   const [developerFilter, setDeveloperFilter] = useState('')
   const [urgencyFilter, setUrgencyFilter] = useState('')
   const [releaseStatus, setReleaseStatus] = useState('')
+  const [regressionFilter, setRegressionFilter] = useState('')
   const [requestNoFilter, setRequestNoFilter] = useState('')
   const [pagination, setPagination] = useState(DEFAULT_PAGINATION)
   const [rows, setRows] = useState([])
@@ -203,6 +205,10 @@ function AppVersionReleasePage() {
   const [syncPreviousReleaseInfo, setSyncPreviousReleaseInfo] = useState(true)
   const [versionInfoModal, setVersionInfoModal] = useState({ open: false, loading: false, record: null })
 
+  const [regressionSavingId, setRegressionSavingId] = useState(null)
+  const access = getAccessSnapshot()
+  const canManageRegression = Boolean(access?.is_super_admin) || (access?.role_keys || []).some((key) => String(key).toUpperCase() === 'APP_VERSION_REGRESSION_MANAGER')
+    || (access?.role_names || []).some((name) => String(name).trim().toLowerCase() === 'app版本回归管理员')
   const canManage = canManageAppRelease()
 
   const fetchUsers = useCallback(async () => {
@@ -235,6 +241,7 @@ function AppVersionReleasePage() {
         pageSize: 50,
         keyword: String(keyword || '').trim(),
         exclude_cancelled: 1,
+        requires_app_release: 1,
       })
       if (result?.success) setDemandOptions(Array.isArray(result.data?.list) ? result.data.list : [])
     } catch (error) {
@@ -250,8 +257,9 @@ function AppVersionReleasePage() {
     app_developer: developerFilter || undefined,
     urgency_code: urgencyFilter || undefined,
     release_status: releaseStatus || undefined,
+    regression_status: regressionFilter || undefined,
     release_request_no: requestNoFilter || undefined,
-  }), [appNameFilter, developerFilter, keyword, releaseStatus, requestNoFilter, urgencyFilter])
+  }), [appNameFilter, developerFilter, keyword, regressionFilter, releaseStatus, requestNoFilter, urgencyFilter])
 
   const fetchList = useCallback(async (extra = {}) => {
     const nextPage = extra.page || 1
@@ -585,6 +593,25 @@ function AppVersionReleasePage() {
     }
   }, [])
 
+  const handleRegressionChange = useCallback(async (record, status) => {
+    setRegressionSavingId(record.id)
+    try {
+      const result = await updateAppVersionReleaseRegressionApi(record.id, status)
+      if (!result?.success) {
+        message.error(result?.message || '更新回归进度失败')
+        return
+      }
+      if (result.notification_failed) message.warning('回归进度已保存，通知未全部发送成功，请联系管理员检查')
+      else message.success('回归进度已更新')
+      if (viewMode === 'group') await fetchGrouped()
+      else await fetchList({ page: pagination.current, pageSize: pagination.pageSize })
+    } catch (error) {
+      message.error(error?.message || '更新回归进度失败')
+    } finally {
+      setRegressionSavingId(null)
+    }
+  }, [fetchGrouped, fetchList, pagination, viewMode])
+
   const renderGroupName = useCallback((value, record) => {
     if (record.row_type === 'group') {
       return (
@@ -647,6 +674,23 @@ function AppVersionReleasePage() {
             查看详情
           </Button>
         ) : '-',
+      },
+      {
+        title: '回归进度',
+        dataIndex: 'regression_status',
+        width: 135,
+        render: (value, record) => record.row_type === 'group' ? null : canManageRegression ? (
+          <Select
+            size="small"
+            style={{ width: 112 }}
+            value={value || 'PENDING'}
+            loading={regressionSavingId === record.id}
+            disabled={regressionSavingId !== null}
+            aria-label="回归进度"
+            options={[{ value: 'PENDING', label: '待回归' }, { value: 'PASSED', label: '回归通过' }]}
+            onChange={(status) => handleRegressionChange(record, status)}
+          />
+        ) : <Tag color={value === 'PASSED' ? 'green' : 'default'}>{value === 'PASSED' ? '回归通过' : '待回归'}</Tag>,
       },
       {
         title: '紧急程度',
@@ -870,7 +914,7 @@ function AppVersionReleasePage() {
         ),
       },
     ]
-  }, [canManage, deletingId, handleCopyRequestNo, handleCopyText, handleDelete, handleViewVersionInfo, openEditModal])
+  }, [canManageRegression, regressionSavingId, handleRegressionChange, canManage, deletingId, handleCopyRequestNo, handleCopyText, handleDelete, handleViewVersionInfo, openEditModal])
 
   const groupedColumns = useMemo(() => {
     const groupColumn = {
@@ -1006,6 +1050,20 @@ function AppVersionReleasePage() {
               options={statusSelectOptions}
               onChange={(value) => {
                 setReleaseStatus(value)
+                setPagination((current) => ({ ...current, current: 1 }))
+              }}
+              className="app-version-release-status"
+            />
+            <Select
+              aria-label="回归进度筛选"
+              value={regressionFilter}
+              options={[
+                { value: '', label: '全部回归进度' },
+                { value: 'PENDING', label: '待回归' },
+                { value: 'PASSED', label: '回归通过' },
+              ]}
+              onChange={(value) => {
+                setRegressionFilter(value)
                 setPagination((current) => ({ ...current, current: 1 }))
               }}
               className="app-version-release-status"

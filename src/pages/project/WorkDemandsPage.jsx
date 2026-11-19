@@ -625,6 +625,7 @@ function buildDetailBasicSnapshot(source = {}) {
     release_note: String(source.release_note || ''),
     business_value_expectation: String(source.business_value_expectation || ''),
     requires_app_release: Boolean(Number(source.requires_app_release)),
+    release_without_code_change: Boolean(Number(source.release_without_code_change)),
     group_chat_mode: normalizedGroupChatMode,
     group_chat_id: normalizedGroupChatId,
   }
@@ -651,6 +652,7 @@ function buildDetailBasicPayload(snapshot = {}, lastSavedSnapshot = null) {
     release_note: snapshot.release_note || null,
     business_value_expectation: snapshot.business_value_expectation || null,
     requires_app_release: Boolean(snapshot.requires_app_release),
+    release_without_code_change: Boolean(snapshot.release_without_code_change),
     group_chat_mode: snapshot.group_chat_mode || 'none',
     group_chat_id:
       snapshot.group_chat_mode === 'bind' || snapshot.group_chat_mode === 'auto'
@@ -1143,6 +1145,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
   const [detailReleaseNote, setDetailReleaseNote] = useState('')
   const [detailBusinessValueExpectation, setDetailBusinessValueExpectation] = useState('')
   const [detailRequiresAppRelease, setDetailRequiresAppRelease] = useState(false)
+  const [detailReleaseWithoutCodeChange, setDetailReleaseWithoutCodeChange] = useState(false)
   const [detailGroupChatMode, setDetailGroupChatMode] = useState('none')
   const [detailGroupChatId, setDetailGroupChatId] = useState(undefined)
   const [workflowLoading, setWorkflowLoading] = useState(false)
@@ -1194,6 +1197,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         release_note: detailReleaseNote,
         business_value_expectation: detailBusinessValueExpectation,
         requires_app_release: detailRequiresAppRelease,
+        release_without_code_change: detailReleaseWithoutCodeChange,
         group_chat_mode: detailGroupChatMode,
         group_chat_id: detailGroupChatId,
       }),
@@ -1213,6 +1217,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       detailReleaseNote,
       detailBusinessValueExpectation,
       detailRequiresAppRelease,
+      detailReleaseWithoutCodeChange,
       detailStatus,
       detailTemplateId,
       detailTestCaseLink,
@@ -2673,6 +2678,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       release_note: '',
       business_value_expectation: '',
       requires_app_release: false,
+      release_without_code_change: false,
       group_chat_mode: 'none',
       group_chat_id: undefined,
       business_group_code: undefined,
@@ -2735,6 +2741,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         release_note: latestRecord.release_note || '',
         business_value_expectation: latestRecord.business_value_expectation || '',
         requires_app_release: Boolean(Number(latestRecord.requires_app_release)),
+        release_without_code_change: Boolean(Number(latestRecord.release_without_code_change)),
         group_chat_mode: latestRecord.group_chat_mode || 'none',
         group_chat_id: normalizeFeishuChatId(latestRecord.group_chat_id) || undefined,
         business_group_code: latestRecord.business_group_code || undefined,
@@ -2888,6 +2895,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
         release_note: values.release_note || null,
         business_value_expectation: values.business_value_expectation || null,
         requires_app_release: Boolean(values.requires_app_release),
+        release_without_code_change: Boolean(values.release_without_code_change),
         group_chat_mode: values.group_chat_mode || 'none',
         group_chat_id:
           values.group_chat_mode === 'bind' || values.group_chat_mode === 'auto'
@@ -3097,6 +3105,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setDetailBackendTechSolution('')
     setDetailBusinessValueExpectation('')
     setDetailRequiresAppRelease(false)
+    setDetailReleaseWithoutCodeChange(false)
     setDetailTabKey('basic')
     setWorkflowData(null)
     setWorkflowWarning('')
@@ -3172,6 +3181,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
     setDetailBackendTechSolution('')
     setDetailBusinessValueExpectation('')
     setDetailRequiresAppRelease(false)
+    setDetailReleaseWithoutCodeChange(false)
     setDetailTabKey('basic')
     setWorkflowData(null)
     setWorkflowWarning('')
@@ -3266,6 +3276,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setDetailReleaseNote('')
       setDetailBusinessValueExpectation('')
       setDetailRequiresAppRelease(false)
+      setDetailReleaseWithoutCodeChange(false)
       setDetailGroupChatMode('none')
       setDetailGroupChatId(undefined)
       return
@@ -3288,6 +3299,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       release_note: detailDemand.release_note || '',
       business_value_expectation: detailDemand.business_value_expectation || '',
       requires_app_release: detailDemand.requires_app_release,
+      release_without_code_change: detailDemand.release_without_code_change,
       group_chat_mode: detailDemand.group_chat_mode || 'none',
       group_chat_id: normalizeFeishuChatId(detailDemand.group_chat_id) || undefined,
     })
@@ -3310,6 +3322,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
       setDetailReleaseNote(detailDemand.release_note || '')
       setDetailBusinessValueExpectation(detailDemand.business_value_expectation || '')
       setDetailRequiresAppRelease(Boolean(Number(detailDemand.requires_app_release)))
+      setDetailReleaseWithoutCodeChange(Boolean(Number(detailDemand.release_without_code_change)))
       setDetailGroupChatMode(detailDemand.group_chat_mode || 'none')
       setDetailGroupChatId(normalizeFeishuChatId(detailDemand.group_chat_id) || undefined)
       if (!canEditDemandRecord(detailDemand)) {
@@ -5561,6 +5574,10 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
             <Switch checkedChildren="需要" unCheckedChildren="不需要" />
           </Form.Item>
 
+          <Form.Item label="是否仅发版无代码变更" name="release_without_code_change" valuePropName="checked">
+            <Switch checkedChildren="是" unCheckedChildren="否" />
+          </Form.Item>
+
           <Form.Item
             label="需求负责人"
             name="owner_user_id"
@@ -5991,6 +6008,7 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                               onBlur={flushDetailBasicAutoSave}
                             />
                           </div>
+                          <div className="work-demand-detail__release-flags">
                           <div className="work-demand-detail__field">
                             <Text type="secondary">是否需要 APP 发版</Text>
                             <Switch
@@ -6002,6 +6020,19 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                                 setDetailRequiresAppRelease(checked)
                               }}
                             />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">是否仅发版无代码变更</Text>
+                            <Switch
+                              checked={detailReleaseWithoutCodeChange}
+                              checkedChildren="是"
+                              unCheckedChildren="否"
+                              onChange={(checked) => {
+                                queueDetailBasicAutoSave('immediate')
+                                setDetailReleaseWithoutCodeChange(checked)
+                              }}
+                            />
+                          </div>
                           </div>
                           <div className="work-demand-detail__field">
                             <Text type="secondary">状态</Text>
@@ -6305,12 +6336,18 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                             <Text type="secondary">需求业务价值预期</Text>
                             <Input.TextArea value={detailDemand.business_value_expectation || '-'} readOnly rows={3} />
                           </div>
+                          <div className="work-demand-detail__release-flags">
                           <div className="work-demand-detail__field">
                             <Text type="secondary">是否需要 APP 发版</Text>
                             <Input
                               value={Number(detailDemand.requires_app_release) ? '需要' : '不需要'}
                               readOnly
                             />
+                          </div>
+                          <div className="work-demand-detail__field">
+                            <Text type="secondary">是否仅发版无代码变更</Text>
+                            <Input value={Number(detailDemand.release_without_code_change) ? '是' : '否'} readOnly />
+                          </div>
                           </div>
                           <div className="work-demand-detail__field">
                             <Text type="secondary">状态</Text>
@@ -6464,6 +6501,26 @@ function WorkDemands({ pageMode = 'pool' } = {}) {
                         ) : null}
                       </div>
                     </div>
+                  ),
+                },
+                {
+                  key: 'release_date_history',
+                  label: '历史修改记录',
+                  children: (
+                    <Table
+                      rowKey="id"
+                      size="small"
+                      dataSource={detailDemand.release_date_history || []}
+                      pagination={{ pageSize: 10 }}
+                      scroll={{ x: 650 }}
+                      columns={[
+                        { title: '修改人', dataIndex: 'operator_name', render: (value, row) => `${value || '系统'}${row.operator_user_id ? `（ID：${row.operator_user_id}）` : ''}` },
+                        { title: '修改时间', dataIndex: 'created_at', width: 180 },
+                        { title: '修改内容', key: 'change', render: (_, row) => `预期上线时间：${row.before_date || '未设置'} → ${row.after_date || '未设置'}` },
+                        { title: '来源', dataIndex: 'source', render: (value) => ({ MANUAL: '人工修改', WORKFLOW_COMPLETED: '系统：流程完成', MATRIX_PACKAGE_SCHEDULE: '系统：矩阵包排期同步' }[value] || value) },
+                      ]}
+                      locale={{ emptyText: '暂无预期上线时间修改记录' }}
+                    />
                   ),
                 },
                 {

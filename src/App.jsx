@@ -291,6 +291,34 @@ function App() {
   const [, setVisibilityVersion] = useState(0)
 
   useEffect(() => {
+    let checking = false
+    let lastCheckedAt = 0
+    const checkSession = async () => {
+      if (document.visibilityState !== 'visible' || !getToken()) return
+      if (window.location.pathname === '/login' || window.location.pathname === '/register') return
+      if (checking || Date.now() - lastCheckedAt < 5000) return
+
+      checking = true
+      lastCheckedAt = Date.now()
+      try {
+        // The shared HTTP interceptor handles expired sessions and the return URL.
+        await getAccessApi()
+      } catch {
+        // Network failures leave the current session and form intact.
+      } finally {
+        checking = false
+      }
+    }
+
+    document.addEventListener('visibilitychange', checkSession)
+    window.addEventListener('focus', checkSession)
+    return () => {
+      document.removeEventListener('visibilitychange', checkSession)
+      window.removeEventListener('focus', checkSession)
+    }
+  }, [])
+
+  useEffect(() => {
     let active = true
     let requestId = 0
 

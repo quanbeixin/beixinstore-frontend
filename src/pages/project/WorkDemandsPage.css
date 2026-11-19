@@ -579,6 +579,13 @@
   grid-column: 1 / -1;
 }
 
+.work-demand-detail__release-flags {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
 .work-demand-detail__field .ant-typography {
   font-size: 12px;
 }

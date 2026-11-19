@@ -2,6 +2,7 @@ import {
   AlertOutlined,
   DeleteOutlined,
   EditOutlined,
+  EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
   TeamOutlined,
@@ -160,6 +161,19 @@ function OwnerWorkbench() {
   const [assignStatusManuallyChanged, setAssignStatusManuallyChanged] = useState(false)
   const [noEstimateLoadingMap, setNoEstimateLoadingMap] = useState({})
   const [deletingLogId, setDeletingLogId] = useState(null)
+  const [dailyDetail, setDailyDetail] = useState({ open: false, loading: false, row: null, entries: [] })
+  const openDailyDetail = async (row) => {
+    setDailyDetail({ open: true, loading: true, row, entries: [] })
+    try {
+      const result = await getOwnerWorkbenchApi({ log_id: row.id })
+      if (!result?.success) throw new Error(result?.message || '获取每日详情失败')
+      setDailyDetail(prev => prev.row === row ? { ...prev, entries: result.data?.daily_entries || [] } : prev)
+    } catch (error) {
+      message.error(error?.message || '获取每日详情失败')
+    } finally {
+      setDailyDetail(prev => prev.row === row ? { ...prev, loading: false } : prev)
+    }
+  }
 
   const [keyword, setKeyword] = useState('')
   const [memberFilter, setMemberFilter] = useState()
@@ -921,10 +935,11 @@ function OwnerWorkbench() {
     {
       title: '操作',
       key: 'action',
-      width: 300,
+      width: 410,
       fixed: 'right',
       render: (_, row) => (
         <Space size={4}>
+          <Button type="link" icon={<EyeOutlined />} onClick={() => openDailyDetail(row)}>每日详情</Button>
           <Button type="link" icon={<EditOutlined />} onClick={() => openEstimateModal(row)}>
             维护评估
           </Button>
@@ -1027,6 +1042,21 @@ function OwnerWorkbench() {
 
   return (
     <div className="owner-workbench-page">
+      <Modal title={`${dailyDetail.row?.username || dailyDetail.row?.user_name || '成员'} · 事项每日详情`}
+        open={dailyDetail.open} onCancel={() => setDailyDetail(prev => ({ ...prev, open: false }))} footer={null} width={860}>
+        <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{dailyDetail.row?.description || '-'}</Typography.Paragraph>
+        <Table rowKey="id" loading={dailyDetail.loading} dataSource={dailyDetail.entries} pagination={false}
+          scroll={{ x: 600, y: 420 }} locale={{ emptyText: '该事项暂无每日记录' }}
+          columns={[
+            { title: '日期', dataIndex: 'entry_date', width: 120 },
+            { title: '当日工作内容', dataIndex: 'description', render: value => <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{value || '-'}</span> },
+            { title: '实际用时(h)', dataIndex: 'actual_hours', width: 120, render: value => Number(value || 0).toFixed(1) },
+          ]}
+          summary={() => <Table.Summary.Row>
+            <Table.Summary.Cell index={0} colSpan={2}>合计</Table.Summary.Cell>
+            <Table.Summary.Cell index={2}>{dailyDetail.entries.reduce((sum, entry) => sum + Number(entry.actual_hours || 0), 0).toFixed(1)}</Table.Summary.Cell>
+          </Table.Summary.Row>} />
+      </Modal>
       <div className="owner-workbench-layout">
       <Card
         variant="borderless"

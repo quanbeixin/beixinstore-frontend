@@ -3,6 +3,7 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   EditOutlined,
   EyeOutlined,
   FireOutlined,
@@ -58,6 +59,7 @@ const STATUS_DICT_KEY = 'matrix_package_status'
 const PLATFORM_DICT_KEY = 'matrix_package_delivery_platform'
 const DELIVERY_STATUS_DICT_KEY = 'matrix_package_delivery_status'
 const DELIVERY_CHANNEL_DICT_KEY = 'matrix_package_delivery_channel'
+const PACKAGE_CATEGORY_DICT_KEY = 'package_category'
 const DELIVERING_STATUS = 'DELIVERING'
 const PENDING_DEV_STATUS = 'PENDING_DEV'
 const IN_DEVELOPMENT_STATUS = 'IN_DEVELOPMENT'
@@ -186,6 +188,7 @@ function MatrixPackageSpecialPage() {
     detail: null,
   })
   const [packages, setPackages] = useState([])
+  const [exporting, setExporting] = useState(false)
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
   const [summary, setSummary] = useState({
     total: 0,
@@ -210,6 +213,7 @@ function MatrixPackageSpecialPage() {
   const [filters, setFilters] = useState({
     keyword: '',
     developer_account_id: undefined,
+    appType: undefined,
     status_code: undefined,
     platform_code: [],
     channel_code: undefined,
@@ -241,17 +245,19 @@ function MatrixPackageSpecialPage() {
     color: item.color,
     remark: item.remark || '',
   })))
+  const [packageCategoryOptions, setPackageCategoryOptions] = useState([])
 
   const canManage = hasPermission('matrix_package.manage')
   const statusMap = useMemo(() => buildDictMap(statusOptions), [statusOptions])
   const isDelivering = watchedStatusCode === DELIVERING_STATUS
 
   const fetchDicts = useCallback(async () => {
-    const [statusResult, platformResult, deliveryStatusResult, deliveryChannelResult] = await Promise.allSettled([
+    const [statusResult, platformResult, deliveryStatusResult, deliveryChannelResult, packageCategoryResult] = await Promise.allSettled([
       getDictItemsApi(STATUS_DICT_KEY, { enabledOnly: true }),
       getDictItemsApi(PLATFORM_DICT_KEY, { enabledOnly: true }),
       getDictItemsApi(DELIVERY_STATUS_DICT_KEY, { enabledOnly: true }),
       getDictItemsApi(DELIVERY_CHANNEL_DICT_KEY, { enabledOnly: true }),
+      getDictItemsApi(PACKAGE_CATEGORY_DICT_KEY, { enabledOnly: true }),
     ])
 
     if (statusResult.status === 'fulfilled' && statusResult.value?.success) {
@@ -265,6 +271,9 @@ function MatrixPackageSpecialPage() {
     }
     if (deliveryChannelResult.status === 'fulfilled' && deliveryChannelResult.value?.success) {
       setDeliveryChannelOptions(normalizeDictItems(deliveryChannelResult.value.data, DEFAULT_DELIVERY_CHANNEL_OPTIONS))
+    }
+    if (packageCategoryResult.status === 'fulfilled' && packageCategoryResult.value?.success) {
+      setPackageCategoryOptions(normalizeDictItems(packageCategoryResult.value.data, []).map((item) => ({ ...item, code: Number(item.code) })))
     }
   }, [])
 
@@ -292,6 +301,7 @@ function MatrixPackageSpecialPage() {
         pageSize: nextPageSize,
         keyword: filters.keyword || undefined,
         developer_account_id: filters.developer_account_id || undefined,
+        appType: filters.appType || undefined,
         status_code: filters.status_code || undefined,
         platform_code: Array.isArray(filters.platform_code) && filters.platform_code.length > 0 ? filters.platform_code.join(',') : undefined,
         channel_code: filters.channel_code || undefined,
@@ -355,6 +365,7 @@ function MatrixPackageSpecialPage() {
         pageSize: nextPageSize,
         keyword: filters.keyword || undefined,
         developer_account_id: filters.developer_account_id || undefined,
+        appType: filters.appType || undefined,
         status_code: statusCode || filters.status_code || undefined,
         platform_code: Array.isArray(filters.platform_code) && filters.platform_code.length > 0 ? filters.platform_code.join(',') : undefined,
         channel_code: filters.channel_code || undefined,
@@ -408,6 +419,7 @@ function MatrixPackageSpecialPage() {
     setEditingRecord(null)
     form.setFieldsValue({
       package_name: '',
+      appType: 1,
       app_id: '',
       app_version: '',
       domain_info: '',
@@ -423,6 +435,7 @@ function MatrixPackageSpecialPage() {
     setEditingRecord(record)
     form.setFieldsValue({
       package_name: record.package_name || '',
+      appType: record.appType || 1,
       app_id: record.app_id || '',
       app_version: '',
       domain_info: record.domain_info || '',
@@ -701,6 +714,82 @@ function MatrixPackageSpecialPage() {
     </Button>
   )
 
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const rows = []
+      let page = 1
+      let total = 0
+      do {
+        const result = await getMatrixPackagesApi({
+          page,
+          pageSize: 100,
+          keyword: filters.keyword || undefined,
+          developer_account_id: filters.developer_account_id || undefined,
+          appType: filters.appType || undefined,
+          status_code: filters.status_code || undefined,
+          platform_code: filters.platform_code?.length ? filters.platform_code.join(',') : undefined,
+          channel_code: filters.channel_code || undefined,
+          platform_status_code: filters.platform_status_code || undefined,
+        })
+        if (!result?.success) throw new Error(result?.message || '获取导出数据失败')
+        const batch = result.data?.list
+        if (!Array.isArray(batch)) throw new Error('导出数据格式不正确')
+        total = Number(result.data.total || 0)
+        if (batch.length === 0 && rows.length < total) throw new Error('导出数据不完整，请重试')
+        rows.push(...batch)
+        page += 1
+      } while (rows.length < total)
+      if (rows.length === 0) {
+        message.info('当前筛选下没有可导出的矩阵包')
+        return
+      }
+
+      const data = [['矩阵包名称', '包ID', '域名', '开发者账号', '开发者公司', '负责人', '包状态', '关联需求编号', '关联需求名称', '投放平台及状态', '版本数量', '版本信息', '更新时间']]
+      // Fetch version summaries sequentially to avoid flooding the API.
+      for (const row of rows) {
+        let versions = []
+        if (Number(row.version_count) > 0) {
+          const result = await getMatrixPackageVersionsApi(row.id)
+          if (!result?.success || !Array.isArray(result.data)) throw new Error(`${row.package_name}：获取版本信息失败`)
+          versions = result.data
+        }
+        data.push([
+          row.package_name, row.app_id, row.domain_info,
+          row.developer_account_name, row.developer_company_name, row.owner_name,
+          statusMap.get(row.status_code)?.name || row.status_name || row.status_code,
+          row.linked_demand_id, row.linked_demand_name,
+          (row.delivery_platform_overview || []).map(item => [
+            item.platform_name || item.platform_code,
+            item.channel_name || item.channel_code,
+            item.status_name || item.status_code,
+          ].filter(Boolean).join(' / ')).join('\n'),
+          row.version_count,
+          versions.map(item => [item.version_number, item.version_status_name].filter(Boolean).join(' / ')).join('\n'),
+          row.updated_at,
+        ])
+      }
+      const csv = data.map(cells => cells.map(value => {
+        const text = String(value ?? '')
+        const safe = /^[\s]*[=+@-]/.test(text) ? `'${text}` : text
+        return `"${safe.replaceAll('"', '""')}"`
+      }).join(',')).join('\r\n')
+      const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `矩阵包全景图-${new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })}.csv`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      message.success(`已导出 ${rows.length} 个矩阵包`)
+    } catch (error) {
+      message.error(error?.message || '导出失败，请重试')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const columns = [
     {
       title: '矩阵包',
@@ -747,6 +836,16 @@ function MatrixPackageSpecialPage() {
       key: 'delivery_platform_overview',
       width: 320,
       render: renderDeliveryPlatformOverview,
+    },
+    {
+      title: '应用类型',
+      dataIndex: 'appType',
+      key: 'appType',
+      width: 110,
+      render: (value) => {
+        const category = packageCategoryOptions.find((item) => item.code === value)
+        return category ? <Tag color={category.color}>{category.name}</Tag> : (value || '-')
+      },
     },
     {
       title: '版本信息',
@@ -941,6 +1040,9 @@ function MatrixPackageSpecialPage() {
           >
             刷新
           </Button>
+          <Button icon={<DownloadOutlined />} loading={exporting} onClick={handleExport}>
+            导出
+          </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate} disabled={!canManage}>
             新增矩阵包
           </Button>
@@ -995,6 +1097,15 @@ function MatrixPackageSpecialPage() {
                 value: item.id,
               }))}
               onChange={(value) => setFilters((prev) => ({ ...prev, developer_account_id: value }))}
+            />
+          </div>
+          <div className="matrix-filter-item matrix-filter-item-category">
+            <Select
+              allowClear
+              placeholder="应用类型"
+              value={filters.appType}
+              options={packageCategoryOptions.map((item) => ({ label: item.name, value: item.code }))}
+              onChange={(value) => setFilters((prev) => ({ ...prev, appType: value }))}
             />
           </div>
           <div className="matrix-filter-item matrix-filter-item-status">
@@ -1209,6 +1320,18 @@ function MatrixPackageSpecialPage() {
             <Col xs={24} md={12}>
               <Form.Item label="包ID（应用ID）" name="app_id">
                 <Input placeholder="填写包ID或应用ID" maxLength={80} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="应用类型"
+                name="appType"
+                rules={[{ required: true, message: '请选择应用类型' }]}
+              >
+                <Select
+                  placeholder="选择应用类型"
+                  options={packageCategoryOptions.map((item) => ({ label: item.name, value: item.code }))}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>

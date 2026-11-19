@@ -129,6 +129,11 @@ const CONDITION_FIELD_OPTIONS_BY_EVENT = {
     { label: '新状态', value: 'to_status' },
     { label: '业务线ID', value: 'business_line_id' },
   ],
+  demand_release_tomorrow_summary: [
+    { label: '计划上线日期', value: 'expected_release_date' },
+    { label: '需求数量', value: 'demand_count' },
+    { label: '需求清单（含@Owner）', value: 'demand_summary' },
+  ],
   demand_score_assign: [
     { label: '需求ID', value: 'demand_id' },
     { label: '评价人ID', value: 'evaluator_user_id' },
@@ -287,6 +292,8 @@ const EVENT_TYPE_GROUPED_OPTIONS = [
       { label: '需求创建', value: 'demand_create' },
       { label: '需求指派', value: 'demand_assign' },
       { label: '需求状态变更', value: 'demand_status_change' },
+      { label: '需求上线预提醒', value: 'demand_release_pre_remind' },
+      { label: '明天待上线需求内容通知', value: 'demand_release_tomorrow_summary' },
       { label: '需求评分提醒', value: 'demand_score_assign' },
       { label: '节点指派', value: 'node_assign' },
       { label: '节点驳回', value: 'node_reject' },
@@ -2239,6 +2246,12 @@ function NotificationRulesPage() {
         }
       >
         <Form form={form} layout="vertical">
+          {selectedEventType === 'demand_release_tomorrow_summary' ? (
+            <Alert type="info" showIcon message="每天北京时间18:50汇总明天待上线需求，@需求Owner。请选择一个飞书接收群；试发会立即读取真实明日需求并发送到该群，不影响晚间正式通知的去重。" style={{ marginBottom: 16 }} />
+          ) : null}
+          {selectedEventType === 'demand_release_pre_remind' ? (
+            <Alert type="info" showIcon message="北京时间预期上线前一天 09:30，向需求绑定群发送；已完成、已取消或未绑定群的需求不发送。同一需求同一上线日期仅提醒一次，失败自动重试。" style={{ marginBottom: 16 }} />
+          ) : null}
           {editingRule ? (
             <Form.Item label="规则编码">
               <Input value={editingRule.rule_code || '-'} disabled />

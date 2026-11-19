@@ -206,6 +206,9 @@ export default function VersionInfoDetail({ record }) {
     () => new Set(baselineFeatures.map(normalizeFeature).filter(Boolean)),
     [baselineFeatures],
   )
+  const inactiveFeatureSet = new Set(
+    (Array.isArray(record?.inactive_features) ? record.inactive_features : []).map(normalizeFeature),
+  )
   const hasBaseline = Boolean(comparison.has_baseline)
 
   if (!parsed) {
@@ -251,10 +254,18 @@ export default function VersionInfoDetail({ record }) {
           </div>
           <ul className="version-info-feature-list">
             {features.map((feature, index) => {
-              const isAdded = hasBaseline && !baselineFeatureSet.has(normalizeFeature(feature))
+              const normalizedFeature = normalizeFeature(feature)
+              const isInactive = inactiveFeatureSet.has(normalizedFeature)
+              const isAdded = !isInactive && hasBaseline && !baselineFeatureSet.has(normalizedFeature)
               return (
-                <li key={`${feature}-${index}`} className={isAdded ? 'version-info-feature-added' : ''}>
-                  {feature}
+                <li
+                  key={`${feature}-${index}`}
+                  className={[
+                    isAdded ? 'version-info-feature-added' : '',
+                    isInactive ? 'version-info-feature-inactive' : '',
+                  ].filter(Boolean).join(' ')}
+                >
+                  {isInactive ? `${feature} - 本包无需生效` : feature}
                 </li>
               )
             })}

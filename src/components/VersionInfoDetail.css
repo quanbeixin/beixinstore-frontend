@@ -99,6 +99,11 @@
   font-weight: 600;
 }
 
+.version-info-feature-inactive {
+  color: #cf1322;
+  font-weight: 600;
+}
+
 .version-info-feature-legend {
   display: block;
   margin: 6px 0 0 30px;

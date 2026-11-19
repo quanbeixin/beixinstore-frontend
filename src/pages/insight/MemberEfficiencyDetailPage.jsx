@@ -1,5 +1,6 @@
 import {
   DownloadOutlined,
+  EyeOutlined,
   EditOutlined,
   QuestionCircleOutlined,
   ReloadOutlined,
@@ -227,6 +228,24 @@ function MemberEfficiencyDetailPage() {
   const [loading, setLoading] = useState(false)
   const [savingOwnerEstimate, setSavingOwnerEstimate] = useState(false)
   const [userId, setUserId] = useState()
+  const [dailyDetail, setDailyDetail] = useState({ open: false, loading: false, row: null, entries: [] })
+  const openDailyDetail = async (row) => {
+    setDailyDetail({ open: true, loading: true, row, entries: [] })
+    try {
+      const result = await getMemberEfficiencyDetailApi({
+        user_id: userId,
+        log_id: row.log_id,
+        start_date: data.filters?.start_date || dateRange?.[0]?.format('YYYY-MM-DD'),
+        end_date: data.filters?.end_date || dateRange?.[1]?.format('YYYY-MM-DD'),
+      })
+      if (!result?.success) throw new Error(result?.message || '获取每日详情失败')
+      setDailyDetail(prev => prev.row === row ? { ...prev, entries: result.data?.daily_entries || [] } : prev)
+    } catch (error) {
+      message.error(error?.message || '获取每日详情失败')
+    } finally {
+      setDailyDetail(prev => prev.row === row ? { ...prev, loading: false } : prev)
+    }
+  }
   const [dateRange, setDateRange] = useState(getDefaultDateRange)
   const [ownerEstimateModal, setOwnerEstimateModal] = useState({
     open: false,
@@ -812,6 +831,15 @@ function MemberEfficiencyDetailPage() {
       render: (_, row) =>
         row.__isTypeGroup ? '-' : `${row.expected_start_date || '-'} ~ ${row.expected_completion_date || '-'}`,
     },
+    {
+      title: '操作',
+      key: 'daily_detail',
+      width: 120,
+      fixed: 'right',
+      render: (_, row) => row.__isTypeGroup ? null : (
+        <Button type="link" icon={<EyeOutlined />} onClick={() => openDailyDetail(row)}>每日详情</Button>
+      ),
+    },
   ]
 
   const demandBugColumns = [
@@ -908,6 +936,34 @@ function MemberEfficiencyDetailPage() {
 
   return (
     <div className="efficiency-detail-page">
+      <Modal
+        title={`${summary.username || ''} · 事项每日详情`}
+        open={dailyDetail.open}
+        onCancel={() => setDailyDetail(prev => ({ ...prev, open: false }))}
+        footer={null}
+        width={860}
+      >
+        <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+          {dailyDetail.row?.description || dailyDetail.row?.item_type_name}
+        </Typography.Paragraph>
+        <Table
+          rowKey="id"
+          loading={dailyDetail.loading}
+          dataSource={dailyDetail.entries}
+          pagination={false}
+          scroll={{ x: 600, y: 420 }}
+          locale={{ emptyText: '当前筛选周期暂无每日记录' }}
+          columns={[
+            { title: '日期', dataIndex: 'entry_date', width: 120 },
+            { title: '当日工作内容', dataIndex: 'description', render: value => <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{value || '-'}</span> },
+            { title: '实际用时(h)', dataIndex: 'actual_hours', width: 120, render: value => formatHours(value) },
+          ]}
+          summary={() => <Table.Summary.Row>
+            <Table.Summary.Cell index={0} colSpan={2}>合计</Table.Summary.Cell>
+            <Table.Summary.Cell index={2}>{formatHours(dailyDetail.entries.reduce((sum, entry) => sum + Number(entry.actual_hours || 0), 0))}</Table.Summary.Cell>
+          </Table.Summary.Row>}
+        />
+      </Modal>
       <div className="efficiency-detail-page__layout">
         <Card variant="borderless" className="efficiency-detail-hero">
           <div className="efficiency-detail-hero__row">

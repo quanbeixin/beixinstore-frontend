@@ -320,6 +320,7 @@ function DictCenter() {
       requireDemand: false,
       ownerEstimateRule: 'NONE',
       extraJson: '',
+      appTypeValue: '',
     })
     setItemModalOpen(true)
   }
@@ -327,7 +328,9 @@ function DictCenter() {
   const openEditItem = (record) => {
     setEditingItem(record)
     itemForm.setFieldsValue({
+      itemCode: record.item_code,
       itemName: record.item_name,
+      appTypeValue: parseJsonObject(record.extra_json)?.appTypeValue || '',
       sortOrder: record.sort_order,
       enabled: Boolean(record.enabled),
       color: record.color,
@@ -354,6 +357,9 @@ function DictCenter() {
       const values = await itemForm.validateFields()
       const extraJsonText = String(values.extraJson || '').trim()
       let finalExtraJson = extraJsonText || null
+      if (itemModalTypeKey === 'package_category') {
+        finalExtraJson = JSON.stringify({ ...(parseJsonObject(extraJsonText) || {}), appTypeValue: values.appTypeValue.trim() })
+      }
 
       let baseObj = null
       if (isIssueTypeItem || isDemandPhaseTypeItem) {
@@ -389,6 +395,7 @@ function DictCenter() {
       let result
       if (editingItem) {
         result = await updateDictItemApi(editingItem.id, {
+          itemCode: values.itemCode?.trim().toUpperCase(),
           itemName: values.itemName,
           sortOrder: values.sortOrder,
           enabled: values.enabled,
@@ -880,21 +887,21 @@ function DictCenter() {
         forceRender
       >
         <Form form={itemForm} layout="vertical" style={{ marginTop: 16 }}>
-          {!editingItem && (
+          <>
             <Form.Item
               label="字典项编码（itemCode）"
               name="itemCode"
               rules={[
                 { required: true, message: '请输入字典项编码' },
                 {
-                  pattern: /^[A-Za-z][A-Za-z0-9_]{1,63}$/,
-                  message: '仅支持字母、数字、下划线，需字母开头',
+                  pattern: itemModalTypeKey === 'package_category' ? /^[1-9]\d{0,8}$/ : /^[A-Za-z][A-Za-z0-9_]{1,63}$/,
+                  message: itemModalTypeKey === 'package_category' ? '请输入正整数编码，例如 1、2、3' : '仅支持字母、数字、下划线，需字母开头',
                 },
               ]}
             >
-              <Input placeholder="示例：enabled（保存时会自动转为 ENABLED）" />
+              <Input placeholder={itemModalTypeKey === 'package_category' ? '例如：1、2、3、4' : '示例：enabled（保存时会自动转为 ENABLED）'} />
             </Form.Item>
-          )}
+          </>
 
           <Form.Item
             label="字典项名称"
@@ -903,6 +910,12 @@ function DictCenter() {
           >
             <Input placeholder="示例：启用" />
           </Form.Item>
+
+          {itemModalTypeKey === 'package_category' ? (
+            <Form.Item label="appTypeValue" name="appTypeValue" rules={[{ required: true, whitespace: true, message: '请输入应用类型值，例如 SEO' }]}>
+              <Input placeholder="例如：A1、CHATBOT、SEO" />
+            </Form.Item>
+          ) : null}
 
           <Form.Item label="排序" name="sortOrder" initialValue={0}>
             <InputNumber min={0} style={{ width: '100%' }} />

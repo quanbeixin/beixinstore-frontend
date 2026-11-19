@@ -1,11 +1,13 @@
-import { EyeOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
+import { ReloadOutlined, SearchOutlined } from '@ant-design/icons'
 import {
   Button,
   Card,
   Input,
   Modal,
+  Popover,
   Select,
   Space,
+  Switch,
   Table,
   Tag,
   Tooltip,
@@ -13,9 +15,12 @@ import {
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getAppReleaseDemandCoverageApi } from '../../api/appVersionRelease'
-import { getAppVersionReleaseVersionInfoApi } from '../../api/appVersionRelease'
-import VersionInfoDetail from '../../components/VersionInfoDetail'
+import {
+  getAppReleaseDemandCoverageApi,
+  getAppReleaseOperatingAppsApi,
+  saveAppReleaseOperatingAppsApi,
+} from '../../api/appVersionRelease'
+import { hasPermission } from '../../utils/access'
 import './AppReleaseDemandCoveragePage.css'
 
 const { Text } = Typography
@@ -34,7 +39,6 @@ function renderCoverageSummary(summary = {}, onClick, filterOptions = {}) {
     ['covered', '已覆盖', 'green', '功能所在版本已上架的矩阵包数量。'],
     ['in_review', '审核中', 'gold', '功能所在版本对应的发版申请处于审核中的矩阵包数量。'],
     ['application_submitted', '已申请', 'cyan', '功能所在版本对应的发版申请处于待规划或排队中的矩阵包数量。'],
-    ['release_only', '仅发版', 'purple', '未在版本信息中匹配到该需求功能，但存在关联发版申请，表示无需修改 APP 底层代码，仅需重新打包发版。'],
   ]
   const activeFilter = filterOptions.activeFilter || 'all'
   const onFilter = filterOptions.onFilter
@@ -66,33 +70,6 @@ function renderCoverageSummary(summary = {}, onClick, filterOptions = {}) {
   return onClick ? <Button type="link" className="app-release-demand-coverage-summary-button" onClick={onClick}>{content}</Button> : content
 }
 
-function renderReleasePackageSummary(summary = {}, onClick) {
-  const total = Number(summary.total || 0)
-  const statusItems = [
-    ['listed', '已上架', 'green', '同一需求、同一矩阵包下，最新发版申请状态为已上架的矩阵包数量。'],
-    ['in_review', '审核中', 'gold', '同一需求、同一矩阵包下，最新发版申请状态为审核中的矩阵包数量。'],
-    ['queued', '排队中', 'geekblue', '同一需求、同一矩阵包下，最新发版申请状态为排队中的矩阵包数量。'],
-    ['pending_plan', '待规划', 'magenta', '同一需求、同一矩阵包下，最新发版申请状态为待规划的矩阵包数量。'],
-    ['rejected', '被拒审', 'red', '同一需求、同一矩阵包下，最新发版申请状态为被拒审的矩阵包数量。'],
-    ['cancelled', '取消', 'default', '同一需求、同一矩阵包下，最新发版申请状态为取消的矩阵包数量。'],
-  ]
-  const content = (
-    <Space className="app-release-demand-coverage-summary" size={2} wrap>
-      {statusItems
-        .filter(([key]) => Number(summary[key] || 0) > 0)
-        .map(([key, label, color, description]) => (
-          <Tooltip key={key} title={description}>
-            <Tag color={color}>{label} {Number(summary[key] || 0)}</Tag>
-          </Tooltip>
-        ))}
-      <Tooltip title="同一需求、同一矩阵包只统计一次，按该包最新发版申请计数。">
-        <Text type="secondary">共 {total} 个包</Text>
-      </Tooltip>
-    </Space>
-  )
-  return onClick ? <Button type="link" className="app-release-demand-coverage-summary-button" onClick={onClick}>{content}</Button> : content
-}
-
 function AppReleaseDemandCoveragePage() {
   const [keywordInput, setKeywordInput] = useState('')
   const [keyword, setKeyword] = useState('')
@@ -100,11 +77,15 @@ function AppReleaseDemandCoveragePage() {
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState([])
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
-  const [releasePackageSortOrder, setReleasePackageSortOrder] = useState('asc')
   const [coverageModal, setCoverageModal] = useState({ open: false, demand: null })
   const [coverageFilter, setCoverageFilter] = useState('all')
-  const [releasePackageModal, setReleasePackageModal] = useState({ open: false, demand: null })
-  const [versionInfoModal, setVersionInfoModal] = useState({ open: false, loading: false, record: null })
+  const [operatingApps, setOperatingApps] = useState([])
+  const [operatingAppKeyword, setOperatingAppKeyword] = useState('')
+  const [operatingAppsLoading, setOperatingAppsLoading] = useState(false)
+  const [operatingAppsModal, setOperatingAppsModal] = useState({ open: false, demand: null })
+  const [selectedOperatingAppIds, setSelectedOperatingAppIds] = useState([])
+  const [savingOperatingApps, setSavingOperatingApps] = useState(false)
+  const canManageDemands = hasPermission('demand.manage')
   const currentPageSize = pagination.pageSize
 
   const loadData = useCallback(async (current = 1, pageSize = currentPageSize) => {
@@ -115,7 +96,6 @@ function AppReleaseDemandCoveragePage() {
         pageSize,
         keyword: keyword || undefined,
         status: status || undefined,
-        sort_order: releasePackageSortOrder,
       })
       if (!result?.success) {
         message.error(result?.message || '获取APP发版需求失败')
@@ -132,11 +112,31 @@ function AppReleaseDemandCoveragePage() {
     } finally {
       setLoading(false)
     }
-  }, [currentPageSize, keyword, releasePackageSortOrder, status])
+  }, [currentPageSize, keyword, status])
 
   useEffect(() => {
     loadData(1, currentPageSize)
   }, [currentPageSize, loadData])
+
+  const loadOperatingApps = useCallback(async () => {
+    setOperatingAppsLoading(true)
+    try {
+      const result = await getAppReleaseOperatingAppsApi()
+      if (!result?.success) {
+        message.error(result?.message || '获取计划运营 APP 失败')
+        return
+      }
+      setOperatingApps(Array.isArray(result.data) ? result.data : [])
+    } catch (error) {
+      message.error(error?.message || '获取计划运营 APP 失败')
+    } finally {
+      setOperatingAppsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadOperatingApps()
+  }, [loadOperatingApps])
 
   const openCoverage = (record) => {
     setCoverageModal({ open: true, demand: record })
@@ -147,29 +147,35 @@ function AppReleaseDemandCoveragePage() {
     setCoverageModal({ open: false, demand: null })
   }
 
-  const closeReleasePackage = () => {
-    setReleasePackageModal({ open: false, demand: null })
+  const openOperatingApps = (demand) => {
+    const savedIds = demand.operating_app_package_ids
+    setSelectedOperatingAppIds(Array.isArray(savedIds)
+      ? savedIds.map(Number).filter((id) => operatingApps.some((app) => app.matrix_package_id === id))
+      : operatingApps.map((app) => app.matrix_package_id))
+    setOperatingAppKeyword('')
+    setOperatingAppsModal({ open: true, demand })
   }
 
-  const handleViewVersionInfo = async (record) => {
-    if (!record?.release_id) return
-    setVersionInfoModal({ open: true, loading: true, record: null })
+  const saveOperatingApps = async () => {
+    const demandId = operatingAppsModal.demand?.id
+    if (!demandId) return
+    setSavingOperatingApps(true)
     try {
-      const result = await getAppVersionReleaseVersionInfoApi(record.release_id)
+      const result = await saveAppReleaseOperatingAppsApi(demandId, selectedOperatingAppIds)
       if (!result?.success) {
-        message.error(result?.message || '获取版本信息失败')
+        message.error(result?.message || '保存计划运营 APP 失败')
         return
       }
-      if (!result.data) {
-        message.info('该发版版本暂无版本信息')
-        setVersionInfoModal({ open: false, loading: false, record: null })
-        return
-      }
-      setVersionInfoModal({ open: true, loading: false, record: result.data })
+      const selectedIds = Array.isArray(result.data) ? result.data.map(Number) : []
+      setRows((currentRows) => currentRows.map((row) => String(row.id) === String(demandId)
+        ? { ...row, operating_app_package_ids: selectedIds }
+        : row))
+      setOperatingAppsModal({ open: false, demand: null })
+      message.success('计划运营 APP 已保存')
     } catch (error) {
-      message.error(error?.message || '获取版本信息失败')
+      message.error(error?.message || '保存计划运营 APP 失败')
     } finally {
-      setVersionInfoModal((current) => ({ ...current, loading: false }))
+      setSavingOperatingApps(false)
     }
   }
 
@@ -178,6 +184,14 @@ function AppReleaseDemandCoveragePage() {
     if (coverageFilter === 'all') return packageRows
     return packageRows.filter((row) => row.coverage_status === coverageFilter.toUpperCase())
   }, [coverageFilter, coverageModal.demand])
+
+  const filteredOperatingApps = useMemo(() => {
+    const keywordValue = operatingAppKeyword.trim().toLowerCase()
+    if (!keywordValue) return operatingApps
+    return operatingApps.filter((app) => (
+      `${app.package_name || ''} ${app.app_id || ''}`.toLowerCase().includes(keywordValue)
+    ))
+  }, [operatingAppKeyword, operatingApps])
 
   const columns = [
     {
@@ -225,18 +239,30 @@ function AppReleaseDemandCoveragePage() {
       render: (value) => value || '-',
     },
     {
-      title: '关联发版包',
-      key: 'release_package_summary',
-      sorter: true,
-      sortOrder: releasePackageSortOrder === 'asc' ? 'ascend' : 'descend',
-      sortDirections: ['ascend', 'descend', 'ascend'],
-      render: (_, record) => renderReleasePackageSummary(
-        record.release_package_summary,
-        () => setReleasePackageModal({ open: true, demand: record }),
-      ),
+      title: '仅发版无代码变更',
+      dataIndex: 'release_without_code_change',
+      width: 150,
+      render: (value) => <Tag color={value ? 'blue' : 'default'}>{value ? '是' : '否'}</Tag>,
     },
     {
-      title: '覆盖范围',
+      title: '计划运营 APP',
+      key: 'operating_apps',
+      width: 190,
+      render: (_, record) => {
+        const ids = Array.isArray(record.operating_app_package_ids)
+          ? record.operating_app_package_ids
+          : operatingApps.map((app) => app.matrix_package_id)
+        const selected = operatingApps.filter((app) => ids.includes(app.matrix_package_id))
+        const label = `${selected.length}/${operatingApps.length}`
+        return canManageDemands ? (
+          <Button type="link" size="small" disabled={operatingAppsLoading} onClick={() => openOperatingApps(record)}>
+            {label}
+          </Button>
+        ) : <Text>{label}</Text>
+      },
+    },
+    {
+      title: '已上架覆盖范围',
       key: 'coverage_summary',
       render: (_, record) => renderCoverageSummary(record.coverage_summary, () => openCoverage(record)),
     },
@@ -294,7 +320,7 @@ function AppReleaseDemandCoveragePage() {
 
   return (
     <div className="app-release-demand-coverage-page">
-      <Card className="app-release-demand-coverage-card" bordered={false}>
+      <Card className="app-release-demand-coverage-card" variant="borderless">
         <div className="app-release-demand-coverage-toolbar">
           <Space wrap>
             <Input
@@ -341,7 +367,7 @@ function AppReleaseDemandCoveragePage() {
           loading={loading}
           dataSource={rows}
           columns={columns}
-          scroll={{ x: 980 }}
+          scroll={{ x: 1210 }}
           pagination={{
             current: pagination.current,
             pageSize: pagination.pageSize,
@@ -349,13 +375,7 @@ function AppReleaseDemandCoveragePage() {
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条`,
           }}
-          onChange={(nextPagination, _, sorter) => {
-            const nextSortOrder = sorter.order === 'descend' ? 'desc' : 'asc'
-            if (nextSortOrder !== releasePackageSortOrder) {
-              setReleasePackageSortOrder(nextSortOrder)
-              setPagination((current) => ({ ...current, current: 1, pageSize: nextPagination.pageSize }))
-              return
-            }
+          onChange={(nextPagination) => {
             loadData(nextPagination.current, nextPagination.pageSize)
           }}
           locale={{ emptyText: '暂无需要 APP 发版的需求' }}
@@ -363,7 +383,113 @@ function AppReleaseDemandCoveragePage() {
       </Card>
 
       <Modal
-        title={coverageModal.demand ? `${coverageModal.demand.id} · ${coverageModal.demand.name} · 覆盖范围` : '覆盖范围'}
+        title={operatingAppsModal.demand
+          ? `${operatingAppsModal.demand.id} · ${operatingAppsModal.demand.name} · 计划运营 APP`
+          : '计划运营 APP'}
+        open={operatingAppsModal.open}
+        width={980}
+        destroyOnHidden
+        confirmLoading={savingOperatingApps}
+        onCancel={() => setOperatingAppsModal({ open: false, demand: null })}
+        onOk={saveOperatingApps}
+        okText="保存"
+      >
+        <div className="app-release-operating-apps-toolbar">
+          <Input
+            className="app-release-operating-apps-search"
+            value={operatingAppKeyword}
+            prefix={<SearchOutlined />}
+            allowClear
+            placeholder="搜索 APP 名称或包 ID"
+            onChange={(event) => setOperatingAppKeyword(event.target.value)}
+          />
+          <Space size={8}>
+            <Text>全选</Text>
+            <Switch
+              checked={operatingApps.length > 0 && selectedOperatingAppIds.length === operatingApps.length}
+              disabled={operatingAppsLoading || operatingApps.length === 0}
+              onChange={(checked) => setSelectedOperatingAppIds(
+                checked ? operatingApps.map((app) => app.matrix_package_id) : [],
+              )}
+            />
+          </Space>
+          <Text type="secondary">已选择 {selectedOperatingAppIds.length} / {operatingApps.length}</Text>
+        </div>
+        <Table
+          rowKey="matrix_package_id"
+          size="small"
+          loading={operatingAppsLoading}
+          dataSource={filteredOperatingApps}
+          pagination={false}
+          columns={[
+            {
+              title: 'APP 名称',
+              dataIndex: 'package_name',
+              width: 220,
+              render: (value, record) => (
+                <Space direction="vertical" size={0}>
+                  <Text strong>{value || '-'}</Text>
+                  <Text type="secondary">{record.app_id || '-'}</Text>
+                </Space>
+              ),
+            },
+            {
+              title: '当前版本',
+              dataIndex: 'current_version',
+              width: 180,
+              render: (value, record) => {
+                if (!value) return <Text type="secondary">暂无已上架版本</Text>
+                const items = Array.isArray(record.features) ? record.features : []
+                return (
+                  <Popover
+                    trigger="click"
+                    placement="left"
+                    title={`${record.package_name || 'APP'} · ${value} · 版本信息`}
+                    content={(
+                      items.length > 0 ? (
+                        <ul className="app-release-operating-apps-feature-list">
+                          {items.map((feature, index) => <li key={`${feature}-${index}`}>{feature}</li>)}
+                        </ul>
+                      ) : <Text type="secondary">暂无版本信息</Text>
+                    )}
+                  >
+                    <Button type="link" size="small">
+                      {value}
+                    </Button>
+                  </Popover>
+                )
+              },
+            },
+            {
+              title: '是否计划运营',
+              key: 'is_operating',
+              width: 150,
+              render: (_, record) => {
+                const checked = selectedOperatingAppIds.includes(record.matrix_package_id)
+                return (
+                  <Switch
+                    checked={checked}
+                    checkedChildren="是"
+                    unCheckedChildren="否"
+                    disabled={!canManageDemands || savingOperatingApps}
+                    aria-label={`${record.package_name || 'APP'}是否计划运营`}
+                    onChange={(nextChecked) => setSelectedOperatingAppIds((current) => (
+                      nextChecked
+                        ? Array.from(new Set([...current, record.matrix_package_id]))
+                        : current.filter((id) => id !== record.matrix_package_id)
+                    ))}
+                  />
+                )
+              },
+            },
+          ]}
+          scroll={{ x: 650, y: 460 }}
+          locale={{ emptyText: '暂无可选 APP' }}
+        />
+      </Modal>
+
+      <Modal
+        title={coverageModal.demand ? `${coverageModal.demand.id} · ${coverageModal.demand.name} · 已上架覆盖范围` : '已上架覆盖范围'}
         open={coverageModal.open}
         width={1120}
         footer={null}
@@ -387,90 +513,6 @@ function AppReleaseDemandCoveragePage() {
         />
       </Modal>
 
-      <Modal
-        title={releasePackageModal.demand ? `${releasePackageModal.demand.id} · ${releasePackageModal.demand.name} · 关联发版包` : '关联发版包'}
-        open={releasePackageModal.open}
-        width={900}
-        footer={null}
-        destroyOnHidden
-        onCancel={closeReleasePackage}
-      >
-        <Table
-          rowKey="matrix_package_id"
-          size="small"
-          dataSource={releasePackageModal.demand?.release_package_coverage || []}
-          pagination={false}
-          columns={[
-            {
-              title: '矩阵包',
-              dataIndex: 'package_name',
-              width: 220,
-              render: (value, record) => (
-                <Space direction="vertical" size={0}>
-                  <Text strong>{value || '-'}</Text>
-                  <Text type="secondary">{record.app_id || '-'}</Text>
-                </Space>
-              ),
-            },
-            {
-              title: '申请版本',
-              dataIndex: 'application_versions',
-              width: 220,
-              render: (value) => Array.isArray(value) && value.length > 0 ? (
-                <Space direction="vertical" size={0}>
-                  {value.map((item) => (
-                    <span key={item.release_id}>
-                      {item.app_version || '-'}{item.release_request_no ? `（${item.release_request_no}）` : ''}
-                    </span>
-                  ))}
-                </Space>
-              ) : '-',
-            },
-            {
-              title: '发版版本',
-              dataIndex: 'app_version',
-              width: 150,
-              render: (value, record) => value ? (
-                <Space size={2}>
-                  <span>{value}</span>
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<EyeOutlined />}
-                    aria-label={`查看${value}版本信息`}
-                    title="查看版本信息"
-                    onClick={() => handleViewVersionInfo(record)}
-                  />
-                </Space>
-              ) : '-'
-            },
-            {
-              title: '发版进度',
-              dataIndex: 'release_status_name',
-              width: 120,
-              render: (value, record) => <Tag color={record.release_status_color || 'default'}>{value || '-'}</Tag>,
-            },
-          ]}
-          scroll={{ x: 900, y: 520 }}
-          locale={{ emptyText: '暂无关联发版包' }}
-        />
-      </Modal>
-
-      <Modal
-        title={versionInfoModal.record ? `版本信息：${versionInfoModal.record.version_number || '-'}` : '版本信息'}
-        open={versionInfoModal.open}
-        footer={null}
-        width={760}
-        destroyOnHidden
-        confirmLoading={versionInfoModal.loading}
-        onCancel={() => setVersionInfoModal({ open: false, loading: false, record: null })}
-      >
-        {versionInfoModal.loading ? (
-          <div style={{ minHeight: 120 }} />
-        ) : (
-          <VersionInfoDetail record={versionInfoModal.record} />
-        )}
-      </Modal>
     </div>
   )
 }

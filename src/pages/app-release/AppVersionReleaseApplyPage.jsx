@@ -222,6 +222,7 @@ function AppVersionReleaseApplyPage() {
         page: 1,
         pageSize: 200,
         exclude_cancelled: 1,
+        requires_app_release: 1,
       })
       if (!result?.success) {
         message.error(result?.message || '获取需求列表失败')

@@ -99,6 +99,10 @@
   width: 190px;
 }
 
+.matrix-filter-item-category {
+  width: 130px;
+}
+
 .matrix-filter-item-status,
 .matrix-filter-item-delivery-channel,
 .matrix-filter-item-delivery-status {
@@ -246,6 +250,7 @@
   .matrix-filter-item,
   .matrix-filter-item-keyword,
   .matrix-filter-item-account,
+  .matrix-filter-item-category,
   .matrix-filter-item-status,
   .matrix-filter-item-platform,
   .matrix-filter-item-delivery-channel,

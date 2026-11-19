@@ -8,6 +8,16 @@ export function getAppReleaseDemandCoverageApi(params = {}) {
   return request.get('/app-version-releases/demand-coverage', { params })
 }
 
+export function getAppReleaseOperatingAppsApi() {
+  return request.get('/app-version-releases/demand-coverage/operating-apps')
+}
+
+export function saveAppReleaseOperatingAppsApi(demandId, matrixPackageIds) {
+  return request.put(`/app-version-releases/demand-coverage/${encodeURIComponent(demandId)}/operating-apps`, {
+    matrix_package_ids: matrixPackageIds,
+  })
+}
+
 export function getGroupedAppVersionReleasesApi(params = {}) {
   return request.get('/app-version-releases/grouped', { params })
 }
@@ -34,4 +44,8 @@ export function updateAppVersionReleaseApi(id, payload = {}) {
 
 export function deleteAppVersionReleaseApi(id) {
   return request.delete(`/app-version-releases/${id}`)
+}
+
+export function updateAppVersionReleaseRegressionApi(id, regressionStatus) {
+  return request.put(`/app-version-releases/${id}/regression`, { regression_status: regressionStatus })
 }
