@@ -233,6 +233,9 @@ export default function VersionInfoDetail({ record }) {
           <Text className="version-info-eyebrow">前端构建版本</Text>
           <Title level={4} className="version-info-title">{snapshot.appName || '未命名应用'}</Title>
           {record?.updated_at ? <Text className="version-info-updated-at">更新于 {record.updated_at}</Text> : null}
+          <Text type="secondary" className="version-info-feature-legend">
+            本次新增：绿粗生效、红粗无需生效；历史已有：灰色生效、灰粗无需生效。
+          </Text>
         </div>
         <Tag color="blue" className="version-info-version-tag">{record?.version_number || '未填写版本号'}</Tag>
       </div>
@@ -249,14 +252,14 @@ export default function VersionInfoDetail({ record }) {
                 当前版本：{record?.version_number || '-'} · 对比最近已上架：{comparison.baseline_version_number || '-'}
               </Text>
             ) : (
-              <Text type="secondary" className="version-info-feature-comparison">暂无可对比的已上架版本</Text>
+              <Text type="secondary" className="version-info-feature-comparison">暂无可对比的已上架版本，全部按本次新增展示</Text>
             )}
           </div>
           <ul className="version-info-feature-list">
             {features.map((feature, index) => {
               const normalizedFeature = normalizeFeature(feature)
               const isInactive = inactiveFeatureSet.has(normalizedFeature)
-              const isAdded = !isInactive && hasBaseline && !baselineFeatureSet.has(normalizedFeature)
+              const isAdded = !hasBaseline || !baselineFeatureSet.has(normalizedFeature)
               return (
                 <li
                   key={`${feature}-${index}`}
@@ -270,7 +273,6 @@ export default function VersionInfoDetail({ record }) {
               )
             })}
           </ul>
-          {hasBaseline ? <Text type="secondary" className="version-info-feature-legend">绿色 = 相比最近已上架版本新增</Text> : null}
         </section>
       ) : null}
 

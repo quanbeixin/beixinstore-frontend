@@ -25,6 +25,7 @@ import {
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,
+  ExportOutlined,
   FileTextOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
@@ -69,6 +70,14 @@ const GROUP_BY_OPTIONS = [
   { value: 'urgency', label: '紧急程度' },
 ]
 const DEFAULT_GROUP_BY = ['developer', 'app', 'status']
+const VIRTUAL_MACHINE_BASE_URL = 'http://192.168.1.250:8100/'
+
+function getVirtualMachineUrl(developer) {
+  const url = new URL(VIRTUAL_MACHINE_BASE_URL)
+  url.searchParams.set('system', 'admin')
+  url.searchParams.set('developer', String(developer || '').trim().replace(/\s+/g, '-'))
+  return url.toString()
+}
 
 function renderDate(value) {
   return value ? String(value).slice(0, 10) : '-'
@@ -781,6 +790,30 @@ function AppVersionReleasePage() {
         dataIndex: 'release_status_name',
         width: 110,
         render: (value, record) => <Tag color={record.release_status_color || 'default'}>{value || '-'}</Tag>,
+      },
+      {
+        title: '虚拟机',
+        key: 'virtual_machine',
+        width: 100,
+        render: (_, record) => {
+          if (record.row_type === 'group') return null
+          const developer = String(record.app_developer || '').trim()
+          return (
+            <Tooltip title={developer ? `为 ${developer} 打开虚拟机开关机页面` : '该记录未设置开发者账号'}>
+              <Button
+                type="link"
+                size="small"
+                icon={<ExportOutlined />}
+                href={developer ? getVirtualMachineUrl(developer) : undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                disabled={!developer}
+              >
+                开关机
+              </Button>
+            </Tooltip>
+          )
+        },
       },
       {
         title: '前序发版',
